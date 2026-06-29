@@ -1,0 +1,19 @@
+# dependencies & build output
+node_modules/
+dist/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# editor / OS
+*.local
+.DS_Store
+Thumbs.db
+
+# previous implementation — kept on disk, not tracked
+web/
+
+# unused 1 MB SQLite mirror of the catalogs (the app reads public/data/*.json)
+game.db

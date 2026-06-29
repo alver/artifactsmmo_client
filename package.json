@@ -1,0 +1,23 @@
+{
+  "name": "artifactsmmo-client",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A from-scratch web client for ArtifactsMMO: sync account state once, track it locally from action responses, no polling.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@preact/signals": "^1.3.2",
+    "preact": "^10.25.4"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.9.3",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7"
+  }
+}

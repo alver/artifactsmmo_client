@@ -1,0 +1,69 @@
+// Boot + reconcile. The whole rate-limit strategy lives here:
+//   boot() → paint instantly from localStorage, load catalogs from bundled files,
+//            then do exactly ONE authoritative sync of the per-account state.
+// After that, nothing polls — state stays current from action responses
+// (state/apply.ts). The user can force another sync with reconcile().
+
+import {
+  account,
+  authed,
+  bankDetails,
+  bankItems,
+  catalogReady,
+  characters,
+  lastError,
+  syncedAt,
+  syncing,
+} from "./store";
+import { loadPersisted, saveState } from "./persist";
+import { api, getAllPages, hasToken } from "../api/client";
+import { loadCatalog } from "../catalog";
+import type { Account, BankDetails, BankItem, Character } from "../types/api";
+
+export async function boot(): Promise<void> {
+  loadPersisted(); // instant paint from last session
+  authed.value = hasToken();
+  await loadCatalog(); // static data into memory (bundled files, no API budget)
+  catalogReady.value = true;
+  if (authed.value) await reconcile();
+}
+
+/** One authoritative read of the per-account state. Safe to call on demand. */
+export async function reconcile(): Promise<void> {
+  if (!hasToken()) return;
+  syncing.value = true;
+  lastError.value = null;
+  try {
+    const [chars, bank, items] = await Promise.all([
+      api<Character[]>("/my/characters"),
+      api<BankDetails>("/my/bank").catch(() => null),
+      getAllPages<BankItem>("/my/bank/items").catch(() => [] as BankItem[]),
+    ]);
+    characters.value = Object.fromEntries(chars.map((c) => [c.name, c]));
+    if (bank) bankDetails.value = bank;
+    bankItems.value = items;
+    await syncAccount(chars[0]?.account);
+    syncedAt.value = Date.now();
+    saveState();
+  } catch (e) {
+    lastError.value = (e as Error).message;
+  } finally {
+    syncing.value = false;
+  }
+}
+
+async function syncAccount(accountName?: string): Promise<void> {
+  if (!accountName) return;
+  try {
+    account.value = await api<Account>(`/accounts/${accountName}`);
+  } catch {
+    // Account endpoint is optional / version-dependent — degrade gracefully and
+    // simply show no account panel rather than failing the whole sync.
+  }
+}
+
+/** Called by the token gate once a token has been entered. */
+export async function login(): Promise<void> {
+  authed.value = hasToken();
+  if (authed.value) await reconcile();
+}
