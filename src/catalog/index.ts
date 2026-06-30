@@ -67,12 +67,23 @@ export async function loadCatalog(): Promise<Catalog> {
   return _catalog;
 }
 
+/** The loaded catalog. Throws if called before loadCatalog() resolves. */
+export function catalog(): Catalog {
+  if (!_catalog) throw new Error("catalog not loaded yet");
+  return _catalog;
+}
+
 export const item = (code: string): Item | undefined => _catalog?.items.get(code);
 export const monster = (code: string): Monster | undefined => _catalog?.monsters.get(code);
 export const resource = (code: string): Resource | undefined => _catalog?.resources.get(code);
 export const achievement = (code: string): Achievement | undefined => _catalog?.achievements.get(code);
 export const effect = (code: string): Effect | undefined => _catalog?.effects.get(code);
+export const npc = (code: string): Npc | undefined => _catalog?.npcs.get(code);
 export const mapAt = (x: number, y: number): GameMap | undefined => _catalog?.mapsByCoord.get(`${x},${y}`);
+
+/** Exact tile at a coordinate on a given layer (overworld/underground/interior). */
+export const tileAt = (x: number, y: number, layer = "overworld"): GameMap | undefined =>
+  _catalog?.maps.find((m) => m.x === x && m.y === y && (m.layer ?? "overworld") === layer);
 
 /** Display name for an item code, falling back to the code itself. */
 export const itemName = (code: string): string => _catalog?.items.get(code)?.name ?? code;

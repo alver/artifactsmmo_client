@@ -1,25 +1,23 @@
-import { authed, catalogReady, characterList, lastError, syncedAt, syncing } from "./state/store";
+import { authed, catalogReady, lastError, syncedAt, syncing } from "./state/store";
 import { reconcile } from "./state/sync";
 import { setToken } from "./api/client";
 import { clockTime } from "./lib/util";
 import { TokenGate } from "./ui/Token";
-import { CharacterCard } from "./ui/CharacterCard";
-import { Bank } from "./ui/Bank";
-import { AccountPanel } from "./ui/Account";
-import { Log } from "./ui/Log";
+import { MapView } from "./ui/MapView";
+import { CharacterPanel } from "./ui/CharacterPanel";
+import { CatalogPanel } from "./ui/CatalogPanel";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
   if (!catalogReady.value) return <div class="loading">Loading catalog…</div>;
 
-  const chars = characterList();
   const logout = () => {
     setToken("");
     authed.value = false;
   };
 
   return (
-    <div class="app">
+    <div class="map-app">
       <header class="topbar">
         <h1>ArtifactsMMO</h1>
         <div class="status">
@@ -33,20 +31,11 @@ export function App() {
           <button onClick={logout}>Sign out</button>
         </div>
       </header>
-
-      <main class="grid">
-        <div class="cards">
-          {chars.length === 0 && <div class="muted pad">No characters found on this account.</div>}
-          {chars.map((ch) => (
-            <CharacterCard key={ch.name} ch={ch} />
-          ))}
-        </div>
-        <aside class="side">
-          <AccountPanel />
-          <Bank />
-          <Log />
-        </aside>
-      </main>
+      <div class="map-stage">
+        <CharacterPanel />
+        <MapView />
+        <CatalogPanel />
+      </div>
     </div>
   );
 }

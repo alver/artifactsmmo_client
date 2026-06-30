@@ -4,6 +4,7 @@
 
 import { signal } from "@preact/signals";
 import type { Account, BankDetails, BankItem, Character } from "../types/api";
+import type { GameMap } from "../types/catalog";
 
 export interface LogEntry {
   id: number;
@@ -31,6 +32,47 @@ export const syncedAt = signal<number | null>(null);
 export const syncing = signal(false);
 export const lastError = signal<string | null>(null);
 
+/** Name of the currently selected character (highlights its card + map marker). */
+export const selectedCharacter = signal<string | null>(null);
+/**
+ * A bump-on-click focus request the map listens to. The `seq` lets repeated
+ * clicks on the same already-selected card re-center the map.
+ */
+export const focusRequest = signal<{ name: string; seq: number } | null>(null);
+let _focusSeq = 0;
+/** Select a character and ask the map to center on it. */
+export function focusCharacter(name: string): void {
+  selectedCharacter.value = name;
+  focusRequest.value = { name, seq: ++_focusSeq };
+}
+
+/**
+ * Transient UI state: the interactive tile under the cursor, plus the cursor
+ * position and map size (so the HTML inspector can position + edge-flip itself).
+ * Only set for tiles that have content worth showing; null otherwise.
+ */
+export interface MapHover {
+  tile: GameMap;
+  px: number;
+  py: number;
+  boxW: number;
+  boxH: number;
+}
+export const mapHover = signal<MapHover | null>(null);
+
+/**
+ * The workshop/NPC tile the player clicked, driving the right-hand catalog panel.
+ * Null when nothing is selected (panel hidden).
+ */
+export interface PanelTarget {
+  type: "workshop" | "npc" | "bank";
+  code: string;
+  x: number;
+  y: number;
+  layer: string;
+}
+export const panelTarget = signal<PanelTarget | null>(null);
+
 /**
  * One global clock that ticks 4x/second. Cooldown countdowns read this so they
  * re-render without a timer per character. Purely local — never hits the API.
@@ -49,6 +91,12 @@ export function setCharacter(ch: Character): void {
   characters.value = { ...characters.value, [ch.name]: ch };
 }
 
+/**
+ * Characters in their stable account order (creation order: First, Second, …).
+ * `/my/characters` returns them in this order and we keep it: the store is keyed
+ * by name, and JS preserves string-key insertion order across our in-place
+ * updates, so we deliberately do NOT re-sort.
+ */
 export function characterList(): Character[] {
-  return Object.values(characters.value).sort((a, b) => a.name.localeCompare(b.name));
+  return Object.values(characters.value);
 }

@@ -1,11 +1,7 @@
 import { GEAR_SLOTS, slotCode } from "../types/api";
 import type { Character } from "../types/api";
 import { item } from "../catalog";
-import { IMG, slotLabel } from "../lib/util";
-
-const hideOnError = (e: Event) => {
-  (e.target as HTMLImageElement).style.visibility = "hidden";
-};
+import { asset, assetFallback, slotLabel } from "../lib/util";
 
 export function GearSlots({ ch }: { ch: Character }) {
   return (
@@ -24,7 +20,7 @@ export function GearSlots({ ch }: { ch: Character }) {
             <span class="slot-label">{slotLabel(slot)}</span>
             {code ? (
               <span class="slot-body">
-                <img src={`${IMG}/items/${code}.png`} alt="" onError={hideOnError} />
+                <img src={asset("items", code)} alt="" onError={assetFallback("items", code)} />
                 <span class="slot-item">
                   {it?.name || code}
                   {qty > 1 ? ` ×${qty}` : ""}

@@ -16,6 +16,8 @@ import {
   syncing,
 } from "./store";
 import { loadPersisted, saveState } from "./persist";
+import { resumeGather } from "./gather";
+import { resumeRefine } from "./refine";
 import { api, getAllPages, hasToken } from "../api/client";
 import { loadCatalog } from "../catalog";
 import type { Account, BankDetails, BankItem, Character } from "../types/api";
@@ -25,7 +27,11 @@ export async function boot(): Promise<void> {
   authed.value = hasToken();
   await loadCatalog(); // static data into memory (bundled files, no API budget)
   catalogReady.value = true;
-  if (authed.value) await reconcile();
+  if (authed.value) {
+    await reconcile(); // one authoritative sync before loops act on character state
+    resumeGather(); // re-launch automation orders saved from a previous session
+    resumeRefine();
+  }
 }
 
 /** One authoritative read of the per-account state. Safe to call on demand. */
@@ -65,5 +71,9 @@ async function syncAccount(accountName?: string): Promise<void> {
 /** Called by the token gate once a token has been entered. */
 export async function login(): Promise<void> {
   authed.value = hasToken();
-  if (authed.value) await reconcile();
+  if (authed.value) {
+    await reconcile();
+    resumeGather();
+    resumeRefine();
+  }
 }

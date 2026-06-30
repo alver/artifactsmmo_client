@@ -2,7 +2,7 @@ import type { Character } from "../types/api";
 import { GearSlots } from "./GearSlots";
 import { ActionBar } from "./ActionBar";
 import { item, mapAt } from "../catalog";
-import { IMG, pct } from "../lib/util";
+import { asset, assetFallback, pct } from "../lib/util";
 
 const SKILLS: [string, string][] = [
   ["mining", "Mining"],
@@ -15,10 +15,6 @@ const SKILLS: [string, string][] = [
   ["alchemy", "Alchemy"],
 ];
 
-const hideOnError = (e: Event) => {
-  (e.target as HTMLImageElement).style.visibility = "hidden";
-};
-
 export function CharacterCard({ ch }: { ch: Character }) {
   const here = mapAt(ch.x, ch.y);
   const content = here?.interactions.content;
@@ -28,7 +24,12 @@ export function CharacterCard({ ch }: { ch: Character }) {
   return (
     <div class="card">
       <div class="card-head">
-        <img class="avatar" src={`${IMG}/characters/${ch.skin || "men1"}.png`} alt="" onError={hideOnError} />
+        <img
+          class="avatar"
+          src={asset("characters", ch.skin || "men1")}
+          alt=""
+          onError={assetFallback("characters", ch.skin || "men1")}
+        />
         <div class="card-id">
           <h2>{ch.name}</h2>
           <span class="muted">
@@ -79,7 +80,7 @@ export function CharacterCard({ ch }: { ch: Character }) {
           {inv.length === 0 && <span class="muted">empty</span>}
           {inv.map((s) => (
             <div key={s.code} class="inv-item" title={item(s.code)?.name || s.code}>
-              <img src={`${IMG}/items/${s.code}.png`} alt="" onError={hideOnError} />
+              <img src={asset("items", s.code)} alt="" onError={assetFallback("items", s.code)} />
               <span>×{s.quantity}</span>
             </div>
           ))}
