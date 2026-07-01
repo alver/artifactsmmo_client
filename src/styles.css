@@ -886,6 +886,27 @@ body,
   font-size: 11px;
   color: var(--muted);
 }
+/* workshop recipe filter bar (text search + type dropdown) */
+.recipe-filters {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.recipe-search {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.recipe-filters .cp-refine-select {
+  flex: 0 0 auto;
+  max-width: 45%;
+}
 /* workshop recipes — flat list, laconic form */
 .recipe-list {
   display: flex;

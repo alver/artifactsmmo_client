@@ -1,6 +1,8 @@
 import { itemPopup } from "../state/store";
-import { effect, item } from "../catalog";
+import { effect, item, itemSources } from "../catalog";
 import { asset, assetFallback, titleCase } from "../lib/util";
+
+const SOURCE_ICON: Record<string, string> = { gather: "⛏", drop: "⚔", craft: "🛠️", npc: "🛒" };
 
 const opLabel: Record<string, string> = { gt: ">", lt: "<", ge: "≥", le: "≤", ne: "≠", eq: "" };
 
@@ -24,6 +26,7 @@ export function ItemPopup() {
   const sub = `Lv ${it.level} · ${titleCase(it.type)}${it.subtype && it.subtype !== it.type ? ` · ${titleCase(it.subtype)}` : ""}`;
   const effects = it.effects ?? [];
   const conditions = it.conditions ?? [];
+  const sources = itemSources(it.code);
 
   return (
     <div class="inspector item-popup" style={style}>
@@ -63,6 +66,25 @@ export function ItemPopup() {
               </span>
             </div>
           ))}
+        </div>
+      )}
+
+      {sources.length > 0 && (
+        <div class="insp-list">
+          <div class="insp-list-head">Where to get</div>
+          {sources.slice(0, 6).map((s, i) => (
+            <div key={i} class="ip-effect">
+              <span class="ip-name">
+                {SOURCE_ICON[s.kind] ?? "•"} {s.label}
+              </span>
+              {s.x != null && (
+                <span class="ip-val">
+                  ({s.x}, {s.y})
+                </span>
+              )}
+            </div>
+          ))}
+          {sources.length > 6 && <div class="insp-more">+{sources.length - 6} more</div>}
         </div>
       )}
     </div>

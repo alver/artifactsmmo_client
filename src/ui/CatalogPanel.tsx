@@ -123,7 +123,7 @@ function CatalogBody({ target }: { target: PanelTarget }) {
 
       <div class="cat-body">
         {isWorkshop ? (
-          <WorkshopList skill={target.code} actor={actor} ctl={ctl} />
+          <WorkshopList key={target.code} skill={target.code} actor={actor} ctl={ctl} />
         ) : isBank ? (
           <BankList actor={actor} ctl={ctl} />
         ) : isTasks ? (
@@ -226,15 +226,49 @@ function BankRow({ code, qty, actor, ctl }: { code: string; qty: number; actor?:
 
 function WorkshopList({ skill, actor, ctl }: { skill: string; actor?: Character; ctl: ActionRunner }) {
   const recipes = workshopRecipes(skill);
+  const [query, setQuery] = useState("");
+  const [type, setType] = useState("");
   if (recipes.length === 0) return <div class="cat-empty">No recipes for this workshop.</div>;
+
+  const types = [...new Set(recipes.map((r) => r.type))].sort();
+  const q = query.trim().toLowerCase();
+  const filtered = recipes.filter(
+    (it) => (!type || it.type === type) && (!q || `${it.name} ${it.code}`.toLowerCase().includes(q)),
+  );
+
   return (
     <>
-      <div class="cat-count">{recipes.length} recipes</div>
-      <div class="recipe-list">
-        {recipes.map((it) => (
-          <RecipeCard key={it.code} it={it} actor={actor} ctl={ctl} />
-        ))}
+      <div class="recipe-filters">
+        <input
+          class="recipe-search"
+          type="search"
+          placeholder="Search recipes…"
+          value={query}
+          onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
+        />
+        {types.length > 1 && (
+          <select class="cp-refine-select" value={type} onChange={(e) => setType((e.target as HTMLSelectElement).value)}>
+            <option value="">All types</option>
+            {types.map((t) => (
+              <option key={t} value={t}>
+                {titleCase(t)}
+              </option>
+            ))}
+          </select>
+        )}
       </div>
+      <div class="cat-count">
+        {filtered.length === recipes.length ? `${recipes.length} recipes` : `${filtered.length} of ${recipes.length} recipes`}
+      </div>
+      {filtered.length === 0 ? (
+        <div class="cat-empty">No recipes match.</div>
+      ) : (
+        <div class="recipe-list">
+          {filtered.map((it) => (
+            <RecipeCard key={it.code} it={it} actor={actor} ctl={ctl} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
@@ -287,7 +321,12 @@ function RecipeCard({ it, actor, ctl }: { it: Item; actor?: Character; ctl: Acti
             const have = actor ? invQty(actor, ing.code) : null;
             const short = have != null && have < need;
             return (
-              <span key={ing.code} class={`recipe-pill${short ? " short" : ""}`}>
+              <span
+                key={ing.code}
+                class={`recipe-pill info-hover${short ? " short" : ""}`}
+                onMouseMove={(e) => (itemPopup.value = { code: ing.code, x: e.clientX, y: e.clientY })}
+                onMouseLeave={hideInfo}
+              >
                 {itemName(ing.code)}: {have != null ? `${have}/${need}` : need}
               </span>
             );

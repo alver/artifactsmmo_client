@@ -14,6 +14,7 @@ import type {
   Task,
 } from "../types/catalog";
 import { loadCatalogFile } from "./load";
+import { titleCase } from "../lib/util";
 
 export interface Catalog {
   items: Map<string, Item>;
@@ -87,3 +88,57 @@ export const tileAt = (x: number, y: number, layer = "overworld"): GameMap | und
 
 /** Display name for an item code, falling back to the code itself. */
 export const itemName = (code: string): string => _catalog?.items.get(code)?.name ?? code;
+
+export interface ItemSource {
+  kind: "gather" | "drop" | "craft" | "npc";
+  label: string;
+  x?: number;
+  y?: number;
+}
+
+const _sourceCache = new Map<string, ItemSource[]>();
+
+/**
+ * How + where to obtain an item: gathered from a resource, dropped by a monster,
+ * crafted at a workshop, or bought from an NPC — each with a map tile where it's
+ * available. Derived from the static catalog and cached (catalog never changes).
+ */
+export function itemSources(code: string): ItemSource[] {
+  if (!_catalog) return [];
+  const cached = _sourceCache.get(code);
+  if (cached) return cached;
+
+  const cat = _catalog;
+  const tileFor = (type: string, c: string) =>
+    cat.maps.find((m) => m.interactions?.content?.type === type && m.interactions.content.code === c);
+  const out: ItemSource[] = [];
+
+  for (const r of cat.resources.values()) {
+    if (r.drops?.some((d) => d.code === code)) {
+      const t = tileFor("resource", r.code);
+      out.push({ kind: "gather", label: `${r.name} · ${titleCase(r.skill)} Lv ${r.level}`, x: t?.x, y: t?.y });
+    }
+  }
+  for (const m of cat.monsters.values()) {
+    if (m.drops?.some((d) => d.code === code)) {
+      const t = tileFor("monster", m.code);
+      out.push({ kind: "drop", label: `${m.name} · Lv ${m.level}`, x: t?.x, y: t?.y });
+    }
+  }
+  const it = cat.items.get(code);
+  if (it?.craft) {
+    const t = cat.maps.find(
+      (m) => m.interactions?.content?.type === "workshop" && m.interactions.content.code === it.craft!.skill,
+    );
+    out.push({ kind: "craft", label: `${titleCase(it.craft.skill)} workshop · Lv ${it.craft.level}`, x: t?.x, y: t?.y });
+  }
+  for (const n of cat.npcs.values()) {
+    if (n.items?.some((i) => i.code === code && i.buy_price != null)) {
+      const t = tileFor("npc", n.code);
+      out.push({ kind: "npc", label: n.name, x: t?.x, y: t?.y });
+    }
+  }
+
+  _sourceCache.set(code, out);
+  return out;
+}
