@@ -2,7 +2,8 @@ import type { Character } from "../types/api";
 import { focusCharacter, selectedCharacter } from "../state/store";
 import { gatherJobs, startGather, stopGather } from "../state/gather";
 import { refineJobs, stopRefine } from "../state/refine";
-import { itemName, resource, tileAt } from "../catalog";
+import { fightJobs, startFight, stopFight } from "../state/fight";
+import { itemName, monster, resource, tileAt } from "../catalog";
 import { asset, assetFallback, pct, titleCase } from "../lib/util";
 
 /**
@@ -14,12 +15,16 @@ export function CharacterMini({ ch }: { ch: Character }) {
   const selected = selectedCharacter.value === ch.name;
   const job = gatherJobs.value[ch.name];
   const rjob = refineJobs.value[ch.name];
+  const fjob = fightJobs.value[ch.name];
 
   const layer = (ch as { layer?: string }).layer ?? "overworld";
   const here = tileAt(ch.x, ch.y, layer)?.interactions.content;
   const onResource = here?.type === "resource";
+  const onMonster = here?.type === "monster";
   const resName = onResource ? (resource(here!.code)?.name ?? titleCase(here!.code)) : "";
+  const monName = onMonster ? (monster(here!.code)?.name ?? titleCase(here!.code)) : "";
   const jobName = job ? (resource(job.resource)?.name ?? titleCase(job.resource)) : "";
+  const fjobName = fjob ? (monster(fjob.monster)?.name ?? titleCase(fjob.monster)) : "";
 
   const focus = () => focusCharacter(ch.name);
 
@@ -66,7 +71,18 @@ export function CharacterMini({ ch }: { ch: Character }) {
 
       {/* Foot: gather control. stopPropagation keeps clicks here from re-centering the map. */}
       <div class="pcard-foot" onClick={(e) => e.stopPropagation()}>
-        {job ? (
+        {fjob ? (
+          <>
+            <span class={`gather-tag ${fjob.status === "fighting" ? "" : "banking"}`}>
+              <span class="spinner" />
+              {fjob.note ? fjob.note : `Fighting ${fjobName}`}
+              {fjob.fights ? ` · ${fjob.wins}/${fjob.fights}` : ""}
+            </span>
+            <button class="btn-stop" title="Stop fighting" onClick={() => stopFight(ch.name)}>
+              ⏹
+            </button>
+          </>
+        ) : job ? (
           <>
             <span class={`gather-tag ${job.status}`}>
               <span class="spinner" />
@@ -87,12 +103,16 @@ export function CharacterMini({ ch }: { ch: Character }) {
               ⏹
             </button>
           </>
+        ) : onMonster ? (
+          <button class="btn-fight" title={`Auto-fight ${monName} (rest to heal, repeat)`} onClick={() => startFight(ch.name)}>
+            ⚔ Auto-fight {monName}
+          </button>
         ) : onResource ? (
           <button class="btn-gather" onClick={() => startGather(ch.name)}>
             ⛏ Gather {resName}
           </button>
         ) : (
-          <span class="foot-hint">move onto a resource to gather</span>
+          <span class="foot-hint">move onto a resource or monster</span>
         )}
       </div>
     </div>

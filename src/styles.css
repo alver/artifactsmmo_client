@@ -237,6 +237,11 @@ button:disabled {
   gap: 6px;
   align-items: center;
 }
+.actions button.active {
+  border-color: var(--accent);
+  background: #25406b;
+  color: #dce9ff;
+}
 .cooldown {
   color: var(--gold);
   font-size: 12px;
@@ -480,6 +485,19 @@ body,
   background: #265a3b;
   border-color: #49a06f;
 }
+.pcard .btn-fight {
+  flex: 1;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: #532126;
+  border: 1px solid #7a3b3f;
+  color: #f3d2cf;
+}
+.pcard .btn-fight:hover {
+  background: #5f262c;
+  border-color: #c0504f;
+}
 .pcard .btn-stop {
   flex: 0 0 auto;
   font-size: 12px;
@@ -616,6 +634,10 @@ body,
   background: #10391f;
   cursor: grab;
 }
+/* armed click-to-move — beats the imperatively-set inline grab cursor */
+.map-canvas.moving {
+  cursor: crosshair !important;
+}
 .layer-switch {
   position: absolute;
   top: 12px;
@@ -650,6 +672,94 @@ body,
   border-radius: 6px;
   padding: 4px 8px;
   pointer-events: none;
+}
+.map-hint.armed {
+  color: #dce9ff;
+  border-color: var(--accent);
+  background: rgba(37, 64, 107, 0.92);
+}
+
+/* activity feed overlay — surfaces the action/automation log on the map */
+.activity {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  width: 300px;
+  max-width: calc(100% - 24px);
+  z-index: 4;
+  background: rgba(16, 18, 24, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.activity-toggle {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 6px 10px;
+  color: var(--text);
+  text-align: left;
+  font-size: 12px;
+}
+.activity-toggle:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.04);
+}
+.activity-peek {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-peek.bad {
+  color: var(--bad);
+}
+.activity-peek.ok {
+  color: var(--ok);
+}
+.activity-list {
+  max-height: 34vh;
+  overflow-y: auto;
+  padding: 4px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+}
+.activity-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 7px;
+  align-items: baseline;
+  font-variant-numeric: tabular-nums;
+}
+.activity-row.bad .activity-text {
+  color: var(--bad);
+}
+.activity-row.info .activity-text {
+  color: var(--accent);
+}
+.activity-time {
+  color: var(--muted);
+  font-size: 10px;
+}
+.activity-who {
+  color: var(--muted);
+  max-width: 74px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-text {
+  overflow-wrap: anywhere;
 }
 
 /* ── right-hand catalog panel (workshop recipes / NPC trades) ── */
@@ -845,10 +955,10 @@ body,
   flex-direction: column;
 }
 .bank-row {
-  display: grid;
-  grid-template-columns: 28px 1fr auto;
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   padding: 6px 2px;
   border-bottom: 1px solid var(--line);
   font-size: 13px;
@@ -863,6 +973,8 @@ body,
   object-fit: contain;
 }
 .bank-name {
+  flex: 1;
+  min-width: 70px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -904,6 +1016,168 @@ body,
   color: #f0e0c0;
 }
 .catalog-panel .cat-btn:not(:disabled):hover {
+  filter: brightness(1.13);
+}
+
+/* ── shared action controls (wired buttons across panels) ── */
+.cat-num {
+  width: 56px;
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.recipe-actions {
+  flex: 0 0 auto;
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: stretch;
+}
+/* gold transfer + expansion + task-trade row */
+.bank-gold {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 10px;
+}
+.bank-gold .muted {
+  flex: 1 0 100%;
+  font-size: 11px;
+}
+.catalog-panel .bank-gold + .cat-btn {
+  margin-bottom: 12px;
+}
+
+/* current task summary in the tasks panel */
+.task-current {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 10px;
+}
+.task-name {
+  font-size: 13px;
+}
+
+/* gear slot unequip affordance */
+.slot-body .slot-unequip {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 5px;
+  color: var(--muted);
+}
+.slot-body .slot-unequip:hover:not(:disabled) {
+  border-color: #c0504f;
+  background: #5a2a2e;
+  color: var(--text);
+}
+
+/* ── inventory rows with per-item actions (character panel) ── */
+.inv-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+}
+.inv-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.inv-row:last-child {
+  border-bottom: none;
+}
+.inv-row img {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+.inv-name {
+  flex: 1;
+  min-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inv-qty {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.inv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.inv-actions .cat-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.inv-actions .cat-btn.buy {
+  background: #1f3a52;
+  border-color: #2f5e86;
+  color: #cfe0f0;
+}
+.inv-actions .cat-btn.sell {
+  background: #4a2326;
+  border-color: #7a3236;
+  color: #f0c9cc;
+}
+.inv-actions .cat-btn:not(:disabled):hover {
+  filter: brightness(1.13);
+}
+
+/* ── give-to-character form ── */
+.give-form {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-top: 8px;
+}
+.give-mode {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.give-mode label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.give-form .cat-num {
+  width: 100%;
+}
+.give-form .cat-btn {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.give-form .cat-btn.buy {
+  background: #1f3a52;
+  border-color: #2f5e86;
+  color: #cfe0f0;
+}
+.give-form .cat-btn:not(:disabled):hover {
   filter: brightness(1.13);
 }
 
@@ -1114,6 +1388,40 @@ body,
 }
 
 /* ── hover inspector (rich tile content from local catalog) ── */
+/* item-parameter popup — like the map inspector but viewport-fixed so it can
+   float free of the scrolling side panels (see ui/ItemPopup.tsx) */
+.item-popup {
+  position: fixed;
+  z-index: 30;
+}
+.info-hover {
+  cursor: help;
+}
+.ip-effect {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.ip-effect .ip-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.ip-effect .ip-val {
+  flex: 0 0 auto;
+  color: var(--muted);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ip-effect .ip-val.pos {
+  color: var(--ok);
+}
+.ip-effect .ip-val.neg {
+  color: var(--bad);
+}
+
 .inspector {
   position: absolute;
   z-index: 3;
@@ -1282,5 +1590,145 @@ body,
 .insp-effect-desc {
   font-size: 11px;
   line-height: 1.35;
+  color: var(--muted);
+}
+
+/* ── achievements viewer (on-demand drawer) ───────────────── */
+.ach-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  justify-content: flex-end;
+}
+.ach-panel {
+  width: 440px;
+  max-width: 100%;
+  height: 100%;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  box-shadow: -8px 0 30px rgba(0, 0, 0, 0.45);
+}
+.ach-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.ach-titles {
+  flex: 1;
+  min-width: 0;
+}
+.ach-title {
+  font-weight: 700;
+  font-size: 15px;
+}
+.ach-sub {
+  font-size: 12px;
+  color: var(--muted);
+}
+.ach-btn {
+  flex: 0 0 auto;
+  font-size: 13px;
+  padding: 5px 10px;
+  border-radius: 6px;
+}
+.ach-filter {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.ach-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ach-error {
+  color: var(--bad);
+  font-size: 12px;
+}
+.ach-row {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel-2);
+}
+.ach-row.done {
+  opacity: 0.55;
+}
+.ach-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.ach-name {
+  font-weight: 600;
+  font-size: 13px;
+}
+.ach-pts {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+}
+.ach-desc {
+  font-size: 11px;
+  color: var(--muted);
+  margin: 3px 0 8px;
+  line-height: 1.35;
+}
+.ach-objs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ach-obj-line {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.ach-obj-icon {
+  flex: 0 0 auto;
+}
+.ach-obj-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ach-loc {
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.ach-obj-num {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.ach-obj .bar {
+  margin-top: 3px;
+}
+.ach-reward {
+  margin-top: 8px;
+  font-size: 11px;
   color: var(--muted);
 }

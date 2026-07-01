@@ -2,8 +2,8 @@
 // read these directly and re-render automatically when they change — no manual
 // "renderCard()" calls (the maintainability pain of the old client).
 
-import { signal } from "@preact/signals";
-import type { Account, BankDetails, BankItem, Character } from "../types/api";
+import { effect, signal } from "@preact/signals";
+import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
 import type { GameMap } from "../types/catalog";
 
 export interface LogEntry {
@@ -65,13 +65,40 @@ export const mapHover = signal<MapHover | null>(null);
  * Null when nothing is selected (panel hidden).
  */
 export interface PanelTarget {
-  type: "workshop" | "npc" | "bank";
+  type: "workshop" | "npc" | "bank" | "tasks_master";
   code: string;
   x: number;
   y: number;
   layer: string;
 }
 export const panelTarget = signal<PanelTarget | null>(null);
+
+/**
+ * An item whose parameters to show in a floating popup, with the cursor
+ * position to anchor it. Set on hover (e.g. workshop recipe rows), cleared on
+ * mouse-out. Purely transient UI — never persisted.
+ */
+export const itemPopup = signal<{ code: string; x: number; y: number } | null>(null);
+
+/**
+ * When set to a character name, the next map-tile click moves that character
+ * there instead of selecting the tile (armed by the Move button, cleared after
+ * the click or on Escape). Auto-disarms below if the selection moves elsewhere.
+ */
+export const moveMode = signal<string | null>(null);
+effect(() => {
+  if (moveMode.value && moveMode.value !== selectedCharacter.value) moveMode.value = null;
+});
+
+/**
+ * Achievements viewer state. Fetched on demand when the panel is opened (a read,
+ * so never polled) and deliberately NOT persisted — it's always requested fresh.
+ * `achievements === null` means "not loaded yet".
+ */
+export const achievementsOpen = signal(false);
+export const achievements = signal<AccountAchievement[] | null>(null);
+export const achievementsLoading = signal(false);
+export const achievementsError = signal<string | null>(null);
 
 /**
  * One global clock that ticks 4x/second. Cooldown countdowns read this so they

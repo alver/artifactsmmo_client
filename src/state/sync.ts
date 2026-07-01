@@ -6,6 +6,9 @@
 
 import {
   account,
+  achievements,
+  achievementsError,
+  achievementsLoading,
   authed,
   bankDetails,
   bankItems,
@@ -18,9 +21,10 @@ import {
 import { loadPersisted, saveState } from "./persist";
 import { resumeGather } from "./gather";
 import { resumeRefine } from "./refine";
+import { resumeFight } from "./fight";
 import { api, getAllPages, hasToken } from "../api/client";
 import { loadCatalog } from "../catalog";
-import type { Account, BankDetails, BankItem, Character } from "../types/api";
+import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
 
 export async function boot(): Promise<void> {
   loadPersisted(); // instant paint from last session
@@ -31,6 +35,7 @@ export async function boot(): Promise<void> {
     await reconcile(); // one authoritative sync before loops act on character state
     resumeGather(); // re-launch automation orders saved from a previous session
     resumeRefine();
+    resumeFight();
   }
 }
 
@@ -68,6 +73,28 @@ async function syncAccount(accountName?: string): Promise<void> {
   }
 }
 
+/**
+ * Fetch this account's achievement progress on demand (when the panel opens or
+ * its Refresh is hit). A read, so never polled; deliberately not persisted. Keeps
+ * any previously-loaded list visible while refreshing so reopening isn't jarring.
+ */
+export async function loadAchievements(): Promise<void> {
+  const acct = Object.values(characters.value)[0]?.account;
+  if (!acct) {
+    achievementsError.value = "no account found — sync first";
+    return;
+  }
+  achievementsLoading.value = true;
+  achievementsError.value = null;
+  try {
+    achievements.value = await getAllPages<AccountAchievement>(`/accounts/${acct}/achievements`);
+  } catch (e) {
+    achievementsError.value = (e as Error).message;
+  } finally {
+    achievementsLoading.value = false;
+  }
+}
+
 /** Called by the token gate once a token has been entered. */
 export async function login(): Promise<void> {
   authed.value = hasToken();
@@ -75,5 +102,6 @@ export async function login(): Promise<void> {
     await reconcile();
     resumeGather();
     resumeRefine();
+    resumeFight();
   }
 }

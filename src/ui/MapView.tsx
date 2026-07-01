@@ -2,11 +2,13 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { effect } from "@preact/signals";
 import { catalog } from "../catalog";
-import { characterList, characters, focusRequest, mapHover, panelTarget, selectedCharacter } from "../state/store";
+import { characterList, characters, focusRequest, mapHover, moveMode, panelTarget, selectedCharacter } from "../state/store";
+import * as actions from "../api/actions";
 import type { GameMap } from "../types/catalog";
 import type { Character } from "../types/api";
 import { MapInspector } from "./MapInspector";
 import { CharacterMini } from "./CharacterMini";
+import { ActivityLog } from "./ActivityLog";
 
 type Layer = "overworld" | "underground" | "interior";
 const LAYERS: Layer[] = ["overworld", "underground", "interior"];
@@ -296,8 +298,21 @@ export function MapView() {
     const handleTileClick = (sx: number, sy: number) => {
       const hx = Math.floor((cam.x + sx) / tile);
       const hy = Math.floor((cam.y + sy) / tile);
+      // Armed click-to-move: send the character here and disarm; ignore tile content.
+      const mover = moveMode.value;
+      if (mover) {
+        moveMode.value = null;
+        void actions.move(mover, hx, hy);
+        return;
+      }
       const content = index.get(`${hx},${hy}`)?.interactions?.content;
-      if (content && (content.type === "workshop" || content.type === "npc" || content.type === "bank")) {
+      if (
+        content &&
+        (content.type === "workshop" ||
+          content.type === "npc" ||
+          content.type === "bank" ||
+          content.type === "tasks_master")
+      ) {
         panelTarget.value = { type: content.type, code: content.code, x: hx, y: hy, layer: curLayer };
       } else {
         panelTarget.value = null;
@@ -361,6 +376,9 @@ export function MapView() {
       schedule();
     };
     const onResize = () => schedule();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && moveMode.value) moveMode.value = null;
+    };
 
     cv.style.cursor = "grab";
     cv.addEventListener("pointerdown", onDown);
@@ -370,6 +388,7 @@ export function MapView() {
     cv.addEventListener("pointerleave", onLeave);
     cv.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("resize", onResize);
+    window.addEventListener("keydown", onKey);
     // Redraw when the canvas itself changes size (e.g. the catalog panel docking
     // /undocking shrinks the map), which window 'resize' alone doesn't catch.
     const ro = new ResizeObserver(() => schedule());
@@ -387,12 +406,13 @@ export function MapView() {
       cv.removeEventListener("pointerleave", onLeave);
       cv.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("keydown", onKey);
     };
   }, []);
 
   return (
     <div class="map-wrap">
-      <canvas ref={canvasRef} class="map-canvas" />
+      <canvas ref={canvasRef} class={"map-canvas" + (moveMode.value ? " moving" : "")} />
       <MapInspector />
       <div class="pcards">
         {characterList().map((ch) => (
@@ -406,7 +426,12 @@ export function MapView() {
           </button>
         ))}
       </div>
-      <div class="map-hint">drag to pan · scroll to zoom · click a workshop/NPC/bank</div>
+      <div class={"map-hint" + (moveMode.value ? " armed" : "")}>
+        {moveMode.value
+          ? `Click a tile to move ${moveMode.value} · Esc to cancel`
+          : "drag to pan · scroll to zoom · click a building to interact"}
+      </div>
+      <ActivityLog />
     </div>
   );
 }

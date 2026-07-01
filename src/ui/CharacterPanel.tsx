@@ -1,12 +1,36 @@
 import { useState } from "preact/hooks";
-import { characters, now, selectedCharacter } from "../state/store";
+import { characters, characterList, now, selectedCharacter } from "../state/store";
 import { item, itemName, monster, npc, resource, tileAt } from "../catalog";
-import { asset, assetFallback, cooldownRemaining, pct, titleCase } from "../lib/util";
+import { asset, assetFallback, cooldownRemaining, pct, slotLabel, titleCase } from "../lib/util";
 import { gatherJobs } from "../state/gather";
 import { refineJobs, refineOptions, startRefine, stopRefine } from "../state/refine";
+import { fightJobs } from "../state/fight";
 import { GearSlots } from "./GearSlots";
 import { ActionBar } from "./ActionBar";
-import type { Character } from "../types/api";
+import { useActionRunner } from "./useAction";
+import type { ActionRunner } from "./useAction";
+import * as actions from "../api/actions";
+import { slotCode } from "../types/api";
+import type { Character, GearSlot, InventorySlot } from "../types/api";
+
+const invQtyOf = (c: Character, code: string): number =>
+  (c.inventory || []).reduce((s, it) => s + (it.code === code ? it.quantity : 0), 0);
+
+/** Equippable item types → the gear slot(s) they can occupy. */
+const SLOTS_FOR_TYPE: Record<string, GearSlot[]> = {
+  weapon: ["weapon"],
+  shield: ["shield"],
+  helmet: ["helmet"],
+  body_armor: ["body_armor"],
+  leg_armor: ["leg_armor"],
+  boots: ["boots"],
+  amulet: ["amulet"],
+  rune: ["rune"],
+  bag: ["bag"],
+  ring: ["ring1", "ring2"],
+  artifact: ["artifact1", "artifact2", "artifact3"],
+  utility: ["utility1", "utility2"],
+};
 
 const SKILLS: [string, string][] = [
   ["mining", "Mining"],
@@ -57,6 +81,7 @@ export function CharacterPanel() {
   const layer = layerOf(ch);
   const tile = tileAt(ch.x, ch.y, layer);
   const content = tile?.interactions.content;
+  const onBank = content?.type === "bank";
   const cd = cooldownRemaining(ch, now.value); // re-renders with the global clock
   const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
   const invQty = inv.reduce((s, it) => s + it.quantity, 0);
@@ -184,18 +209,168 @@ export function CharacterPanel() {
           <summary>
             Inventory ({inv.length} · {invQty}/{ch.inventory_max_items})
           </summary>
-          <div class="inv">
-            {inv.length === 0 && <span class="muted">empty</span>}
-            {inv.map((s) => (
-              <div key={s.code} class="inv-item" title={item(s.code)?.name || s.code}>
-                <img src={asset("items", s.code)} alt="" onError={assetFallback("items", s.code)} />
-                <span>×{s.quantity}</span>
-              </div>
-            ))}
-          </div>
+          <InventorySection ch={ch} onBank={onBank} />
         </details>
+
+        {characterList().length > 1 && (
+          <details class="section">
+            <summary>Give to another character</summary>
+            <GiveSection ch={ch} />
+          </details>
+        )}
       </div>
     </aside>
+  );
+}
+
+/**
+ * Inventory list with per-item actions: equip (to a free matching slot), use
+ * (consumables), deposit (only when standing on a bank tile) and delete. One
+ * shared busy/cooldown gate for the section so the character can't double-fire.
+ */
+function InventorySection({ ch, onBank }: { ch: Character; onBank: boolean }) {
+  const ctl = useActionRunner(ch);
+  const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
+  if (inv.length === 0) return <div class="inv-list muted">empty</div>;
+  return (
+    <div class="inv-list">
+      {inv.map((s) => (
+        <InvRow key={s.code} ch={ch} slot={s} ctl={ctl} onBank={onBank} />
+      ))}
+    </div>
+  );
+}
+
+function InvRow({ ch, slot, ctl, onBank }: { ch: Character; slot: InventorySlot; ctl: ActionRunner; onBank: boolean }) {
+  const it = item(slot.code);
+  const type = it?.type ?? "";
+  const candidates = SLOTS_FOR_TYPE[type];
+  // Prefer the first empty matching slot; otherwise the first (which replaces).
+  const equipSlot = candidates ? (candidates.find((s) => slotCode(ch, s) === "") ?? candidates[0]) : undefined;
+  const equipQty = type === "utility" ? Math.min(slot.quantity, 100) : 1;
+
+  return (
+    <div class="inv-row" title={it?.name || slot.code}>
+      <img src={asset("items", slot.code)} alt="" onError={assetFallback("items", slot.code)} />
+      <span class="inv-name">{it?.name || slot.code}</span>
+      <span class="inv-qty">×{slot.quantity}</span>
+      <div class="inv-actions">
+        {equipSlot && (
+          <button
+            class="cat-btn"
+            disabled={ctl.disabled}
+            title={`Equip to ${slotLabel(equipSlot)}`}
+            onClick={() => ctl.run(() => actions.equip(ch.name, slot.code, equipSlot, equipQty))}
+          >
+            Equip
+          </button>
+        )}
+        {type === "consumable" && (
+          <button class="cat-btn buy" disabled={ctl.disabled} title="Use one" onClick={() => ctl.run(() => actions.use(ch.name, slot.code, 1))}>
+            Use
+          </button>
+        )}
+        {onBank && (
+          <button
+            class="cat-btn"
+            disabled={ctl.disabled}
+            title="Deposit this stack to the bank"
+            onClick={() => ctl.run(() => actions.depositItems(ch.name, [{ code: slot.code, quantity: slot.quantity }]))}
+          >
+            Deposit
+          </button>
+        )}
+        <button
+          class="cat-btn sell"
+          disabled={ctl.disabled}
+          title="Delete (destroy) this stack"
+          onClick={() => {
+            if (confirm(`Delete ${slot.quantity}× ${it?.name || slot.code}? This is permanent.`)) {
+              void ctl.run(() => actions.deleteItem(ch.name, slot.code, slot.quantity));
+            }
+          }}
+        >
+          🗑
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Transfer gold or an inventory item to another of your characters. Both sides
+ *  are echoed by the API, so the recipient updates immediately too. */
+function GiveSection({ ch }: { ch: Character }) {
+  const ctl = useActionRunner(ch);
+  const others = characterList().filter((c) => c.name !== ch.name);
+  const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
+  const [to, setTo] = useState(others[0]?.name ?? "");
+  const [mode, setMode] = useState<"gold" | "item">("gold");
+  const [gold, setGold] = useState(0);
+  const [code, setCode] = useState(inv[0]?.code ?? "");
+  const [qty, setQty] = useState(1);
+
+  const recipient = others.find((c) => c.name === to) ? to : (others[0]?.name ?? "");
+  const held = invQtyOf(ch, code);
+  const canGive =
+    !!recipient && !ctl.disabled && (mode === "gold" ? gold >= 1 && gold <= ch.gold : !!code && qty >= 1 && qty <= held);
+
+  return (
+    <div class="give-form">
+      <select class="cp-refine-select" value={recipient} onChange={(e) => setTo((e.target as HTMLSelectElement).value)}>
+        {others.map((c) => (
+          <option key={c.name} value={c.name}>
+            {c.name} (Lv {c.level})
+          </option>
+        ))}
+      </select>
+      <div class="give-mode">
+        <label>
+          <input type="radio" checked={mode === "gold"} onChange={() => setMode("gold")} /> Gold
+        </label>
+        <label>
+          <input type="radio" checked={mode === "item"} onChange={() => setMode("item")} /> Item
+        </label>
+      </div>
+      {mode === "gold" ? (
+        <input
+          class="cat-num"
+          type="number"
+          min={1}
+          max={ch.gold}
+          value={gold}
+          onInput={(e) => setGold(parseInt((e.target as HTMLInputElement).value, 10) || 0)}
+        />
+      ) : (
+        <>
+          <select class="cp-refine-select" value={code} onChange={(e) => setCode((e.target as HTMLSelectElement).value)}>
+            {inv.map((s) => (
+              <option key={s.code} value={s.code}>
+                {itemName(s.code)} (×{s.quantity})
+              </option>
+            ))}
+          </select>
+          <input
+            class="cat-num"
+            type="number"
+            min={1}
+            max={held}
+            value={qty}
+            onInput={(e) => setQty(parseInt((e.target as HTMLInputElement).value, 10) || 1)}
+          />
+        </>
+      )}
+      <button
+        class="cat-btn buy"
+        disabled={!canGive}
+        onClick={() =>
+          ctl.run(() =>
+            mode === "gold" ? actions.giveGold(ch.name, recipient, gold) : actions.giveItems(ch.name, recipient, [{ code, quantity: qty }]),
+          )
+        }
+      >
+        Give
+      </button>
+    </div>
   );
 }
 
@@ -209,6 +384,7 @@ function RefineControl({ ch }: { ch: Character }) {
   const [sel, setSel] = useState("");
   const job = refineJobs.value[ch.name];
   const gathering = !!gatherJobs.value[ch.name];
+  const fighting = !!fightJobs.value[ch.name];
 
   if (job) {
     return (
@@ -226,6 +402,7 @@ function RefineControl({ ch }: { ch: Character }) {
     );
   }
   if (gathering) return <span class="foot-hint">busy gathering — stop it to refine</span>;
+  if (fighting) return <span class="foot-hint">busy fighting — stop it to refine</span>;
 
   const options = refineOptions(ch);
   if (options.length === 0) return <span class="foot-hint">No raw materials in the bank to refine.</span>;

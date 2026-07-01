@@ -1,11 +1,13 @@
-import { authed, catalogReady, lastError, syncedAt, syncing } from "./state/store";
-import { reconcile } from "./state/sync";
+import { achievementsOpen, authed, catalogReady, lastError, syncedAt, syncing } from "./state/store";
+import { loadAchievements, reconcile } from "./state/sync";
 import { setToken } from "./api/client";
 import { clockTime } from "./lib/util";
 import { TokenGate } from "./ui/Token";
 import { MapView } from "./ui/MapView";
 import { CharacterPanel } from "./ui/CharacterPanel";
 import { CatalogPanel } from "./ui/CatalogPanel";
+import { ItemPopup } from "./ui/ItemPopup";
+import { AchievementsPanel } from "./ui/AchievementsPanel";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
@@ -25,6 +27,14 @@ export function App() {
           {lastError.value && <span class="err"> · {lastError.value}</span>}
         </div>
         <div class="topbar-actions">
+          <button
+            onClick={() => {
+              achievementsOpen.value = true;
+              void loadAchievements();
+            }}
+          >
+            🏆 Achievements
+          </button>
           <button onClick={() => void reconcile()} disabled={syncing.value}>
             ↻ Refresh
           </button>
@@ -36,6 +46,8 @@ export function App() {
         <MapView />
         <CatalogPanel />
       </div>
+      <ItemPopup />
+      <AchievementsPanel />
     </div>
   );
 }

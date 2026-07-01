@@ -123,10 +123,21 @@ export interface Account {
   [k: string]: unknown;
 }
 
+export interface AchievementObjectiveProgress {
+  type: string;
+  target: string | null;
+  progress: number;
+  total: number;
+}
+
+/** One achievement with this account's live progress (GET /accounts/{a}/achievements). */
 export interface AccountAchievement {
   code: string;
-  current: number;
-  total: number;
+  name: string;
+  description: string;
+  points: number;
+  objectives: AchievementObjectiveProgress[];
+  rewards?: { gold: number; items: ItemStack[] | null };
   completed_at: string | null;
 }
 
@@ -138,13 +149,22 @@ export interface Cooldown {
   reason: string;
 }
 
-export interface FightResult {
-  result: "win" | "loss" | (string & {});
+/** Per-character spoils of a fight (xp/gold/drops live here, not on FightResult). */
+export interface FightCharacterResult {
+  character_name: string;
   xp: number;
   gold: number;
   drops?: ItemStack[];
+  final_hp?: number;
+}
+
+export interface FightResult {
+  result: "win" | "loss" | (string & {});
   turns?: number;
+  opponent?: string;
   logs?: string[];
+  /** results per participating character */
+  characters?: FightCharacterResult[];
 }
 
 export interface SkillInfo {
@@ -156,8 +176,16 @@ export interface SkillInfo {
 export interface ActionResult {
   cooldown?: Cooldown;
   character?: Character;
-  /** echoed by bank deposit/withdraw of items — adopt it for free */
-  bank?: BankItem[];
+  /** the fight action echoes "all characters involved" here (plural), NOT
+   *  `character` — so combat HP/cooldown only lands if we fold this array */
+  characters?: Character[];
+  /** give/gold + give/item echo the recipient too — adopt it so it's not stale */
+  receiver_character?: Character;
+  /**
+   * Bank item moves echo the full bank contents as an array; bank *gold* moves
+   * echo only the new bank gold total as `{ quantity }`. apply.ts handles both.
+   */
+  bank?: BankItem[] | { quantity: number };
   fight?: FightResult;
   details?: SkillInfo;
   destination?: GameMap;

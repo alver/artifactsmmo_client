@@ -67,7 +67,7 @@ function clearJob(name: string): void {
   gatherJobs.value = rest;
 }
 
-function nearestBank(x: number, y: number): GameMap | undefined {
+export function nearestBank(x: number, y: number): GameMap | undefined {
   let best: GameMap | undefined;
   let bestD = Infinity;
   for (const m of catalog().maps) {

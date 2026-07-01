@@ -2,8 +2,11 @@ import { GEAR_SLOTS, slotCode } from "../types/api";
 import type { Character } from "../types/api";
 import { item } from "../catalog";
 import { asset, assetFallback, slotLabel } from "../lib/util";
+import * as actions from "../api/actions";
+import { useActionRunner } from "./useAction";
 
 export function GearSlots({ ch }: { ch: Character }) {
+  const ctl = useActionRunner(ch);
   return (
     <div class="gear">
       {GEAR_SLOTS.map((slot) => {
@@ -25,6 +28,14 @@ export function GearSlots({ ch }: { ch: Character }) {
                   {it?.name || code}
                   {qty > 1 ? ` ×${qty}` : ""}
                 </span>
+                <button
+                  class="slot-unequip"
+                  title={`Unequip ${it?.name || code}`}
+                  disabled={ctl.disabled}
+                  onClick={() => ctl.run(() => actions.unequip(ch.name, slot, qty > 1 ? qty : 1))}
+                >
+                  ✕
+                </button>
               </span>
             ) : (
               <span class="slot-item muted">—</span>
