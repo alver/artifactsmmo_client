@@ -143,3 +143,69 @@ export function itemSources(code: string): ItemSource[] {
   _sourceCache.set(code, out);
   return out;
 }
+
+export interface ItemUseRecipe {
+  code: string; // the item this recipe produces
+  name: string;
+  skill: string;
+  level: number;
+  quantity: number; // how many of THIS item one execution consumes
+}
+export interface ItemTrade {
+  npc: string; // display name
+  buy: number | null; // price the player PAYS to buy one
+  sell: number | null; // price the player GETS for selling one
+  currency: string; // "gold" or an item code
+  x?: number;
+  y?: number;
+}
+export interface ItemUses {
+  recipes: ItemUseRecipe[]; // crafts that consume this item as an ingredient
+  trades: ItemTrade[]; // NPCs offering to sell it to / buy it from the player
+  currencyAt: { npc: string; offers: number; x?: number; y?: number }[]; // NPCs that take it as payment
+}
+
+const _usesCache = new Map<string, ItemUses>();
+
+/**
+ * Where an item is USED: recipes it's an ingredient of, NPC trade offers for
+ * it (both directions, with prices), and NPCs that accept it as a currency
+ * (e.g. tasks coins). The reverse of itemSources(); derived once and cached.
+ */
+export function itemUses(code: string): ItemUses {
+  if (!_catalog) return { recipes: [], trades: [], currencyAt: [] };
+  const cached = _usesCache.get(code);
+  if (cached) return cached;
+
+  const cat = _catalog;
+  const tileFor = (type: string, c: string) =>
+    cat.maps.find((m) => m.interactions?.content?.type === type && m.interactions.content.code === c);
+
+  const recipes: ItemUseRecipe[] = [];
+  for (const it of cat.items.values()) {
+    const ing = it.craft?.items.find((i) => i.code === code);
+    if (ing) recipes.push({ code: it.code, name: it.name, skill: it.craft!.skill, level: it.craft!.level, quantity: ing.quantity });
+  }
+  recipes.sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+
+  const trades: ItemTrade[] = [];
+  const currencyAt: ItemUses["currencyAt"] = [];
+  for (const n of cat.npcs.values()) {
+    const offers = n.items ?? [];
+    for (const o of offers) {
+      if (o.code === code && (o.buy_price != null || o.sell_price != null)) {
+        const t = tileFor("npc", n.code);
+        trades.push({ npc: n.name, buy: o.buy_price, sell: o.sell_price, currency: o.currency, x: t?.x, y: t?.y });
+      }
+    }
+    const asCurrency = offers.filter((o) => o.currency === code && o.buy_price != null).length;
+    if (asCurrency > 0) {
+      const t = tileFor("npc", n.code);
+      currencyAt.push({ npc: n.name, offers: asCurrency, x: t?.x, y: t?.y });
+    }
+  }
+
+  const out = { recipes, trades, currencyAt };
+  _usesCache.set(code, out);
+  return out;
+}

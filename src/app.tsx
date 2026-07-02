@@ -1,4 +1,4 @@
-import { achievementsOpen, authed, catalogReady, lastError, syncedAt, syncing } from "./state/store";
+import { achievementsOpen, authed, catalogReady, itemsCatalogOpen, lastError, panelTarget, syncedAt, syncing } from "./state/store";
 import { loadAchievements, reconcile } from "./state/sync";
 import { setToken } from "./api/client";
 import { clockTime } from "./lib/util";
@@ -8,6 +8,7 @@ import { CharacterPanel } from "./ui/CharacterPanel";
 import { CatalogPanel } from "./ui/CatalogPanel";
 import { ItemPopup } from "./ui/ItemPopup";
 import { AchievementsPanel } from "./ui/AchievementsPanel";
+import { ItemsCatalogPanel } from "./ui/ItemsCatalog";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
@@ -29,6 +30,15 @@ export function App() {
         <div class="topbar-actions">
           <button
             onClick={() => {
+              const open = !itemsCatalogOpen.value;
+              itemsCatalogOpen.value = open;
+              if (open) panelTarget.value = null; // one right panel at a time
+            }}
+          >
+            📦 Items
+          </button>
+          <button
+            onClick={() => {
               achievementsOpen.value = true;
               void loadAchievements();
             }}
@@ -45,6 +55,7 @@ export function App() {
         <CharacterPanel />
         <MapView />
         <CatalogPanel />
+        <ItemsCatalogPanel />
       </div>
       <ItemPopup />
       <AchievementsPanel />

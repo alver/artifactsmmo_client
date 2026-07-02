@@ -1520,6 +1520,48 @@ body,
   width: 64px;
 }
 
+/* ── items catalog panel (📦 topbar button, ui/ItemsCatalog.tsx) ── */
+.icat-list {
+  display: flex;
+  flex-direction: column;
+}
+.icat-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 2px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+.icat-row:last-of-type {
+  border-bottom: none;
+}
+.icat-row img {
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+.icat-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icat-sub {
+  color: var(--muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.icat-more {
+  margin: 8px auto 2px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+
 /* ── hover inspector (rich tile content from local catalog) ── */
 /* item-parameter popup — like the map inspector but viewport-fixed so it can
    float free of the scrolling side panels (see ui/ItemPopup.tsx) */

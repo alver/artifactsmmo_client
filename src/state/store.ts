@@ -82,6 +82,13 @@ export const panelTarget = signal<PanelTarget | null>(null);
 export const itemPopup = signal<{ code: string; x: number; y: number } | null>(null);
 
 /**
+ * Whether the full items-catalog panel (right side) is open. Mutually exclusive
+ * with panelTarget — opening one closes the other so the right slot holds a
+ * single panel.
+ */
+export const itemsCatalogOpen = signal(false);
+
+/**
  * When set to a character name, the next map-tile click moves that character
  * there instead of selecting the tile (armed by the Move button, cleared after
  * the click or on Escape). Auto-disarms below if the selection moves elsewhere.

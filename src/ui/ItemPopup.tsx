@@ -1,5 +1,5 @@
 import { itemPopup } from "../state/store";
-import { effect, item, itemSources } from "../catalog";
+import { effect, item, itemName, itemSources, itemUses } from "../catalog";
 import { asset, assetFallback, titleCase } from "../lib/util";
 
 const SOURCE_ICON: Record<string, string> = { gather: "⛏", drop: "⚔", craft: "🛠️", npc: "🛒" };
@@ -27,6 +27,14 @@ export function ItemPopup() {
   const effects = it.effects ?? [];
   const conditions = it.conditions ?? [];
   const sources = itemSources(it.code);
+  const uses = itemUses(it.code);
+  const price = (t: { buy: number | null; sell: number | null; currency: string }): string => {
+    const cur = t.currency === "gold" ? "g" : ` ${itemName(t.currency)}`;
+    const parts = [];
+    if (t.buy != null) parts.push(`buy ${t.buy}${cur}`);
+    if (t.sell != null) parts.push(`sell ${t.sell}${cur}`);
+    return parts.join(" · ");
+  };
 
   return (
     <div class="inspector item-popup" style={style}>
@@ -39,6 +47,21 @@ export function ItemPopup() {
       </div>
 
       {it.description && <p class="insp-desc">{it.description}</p>}
+
+      {it.craft && (
+        <div class="insp-list">
+          <div class="insp-list-head">
+            Recipe · {titleCase(it.craft.skill)} Lv {it.craft.level}
+            {it.craft.quantity > 1 ? ` · makes ×${it.craft.quantity}` : ""}
+          </div>
+          {it.craft.items.map((ing) => (
+            <div key={ing.code} class="ip-effect">
+              <span class="ip-name">{itemName(ing.code)}</span>
+              <span class="ip-val">×{ing.quantity}</span>
+            </div>
+          ))}
+        </div>
+      )}
 
       {effects.length > 0 && (
         <div class="insp-list">
@@ -85,6 +108,37 @@ export function ItemPopup() {
             </div>
           ))}
           {sources.length > 6 && <div class="insp-more">+{sources.length - 6} more</div>}
+        </div>
+      )}
+
+      {uses.recipes.length > 0 && (
+        <div class="insp-list">
+          <div class="insp-list-head">Used in</div>
+          {uses.recipes.slice(0, 6).map((r) => (
+            <div key={r.code} class="ip-effect">
+              <span class="ip-name">⚙ {r.name} · {titleCase(r.skill)} Lv {r.level}</span>
+              <span class="ip-val">×{r.quantity}</span>
+            </div>
+          ))}
+          {uses.recipes.length > 6 && <div class="insp-more">+{uses.recipes.length - 6} more</div>}
+        </div>
+      )}
+
+      {(uses.trades.length > 0 || uses.currencyAt.length > 0) && (
+        <div class="insp-list">
+          <div class="insp-list-head">NPC trade</div>
+          {uses.trades.slice(0, 4).map((t, i) => (
+            <div key={i} class="ip-effect">
+              <span class="ip-name">🛒 {t.npc}</span>
+              <span class="ip-val">{price(t)}</span>
+            </div>
+          ))}
+          {uses.currencyAt.map((c, i) => (
+            <div key={`c${i}`} class="ip-effect">
+              <span class="ip-name">🪙 currency at {c.npc}</span>
+              <span class="ip-val">{c.offers} offer{c.offers === 1 ? "" : "s"}</span>
+            </div>
+          ))}
         </div>
       )}
     </div>

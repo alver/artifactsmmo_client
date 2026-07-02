@@ -2,7 +2,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { effect } from "@preact/signals";
 import { catalog } from "../catalog";
-import { characterList, characters, deliverTilePick, disarmTilePick, focusRequest, mapHover, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
+import { characterList, characters, deliverTilePick, disarmTilePick, focusRequest, itemsCatalogOpen, mapHover, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
 import * as actions from "../api/actions";
 import type { GameMap } from "../types/catalog";
 import type { Character } from "../types/api";
@@ -319,6 +319,7 @@ export function MapView() {
           content.type === "tasks_master")
       ) {
         panelTarget.value = { type: content.type, code: content.code, x: hx, y: hy, layer: curLayer };
+        itemsCatalogOpen.value = false; // one right panel at a time
       } else {
         panelTarget.value = null;
       }
