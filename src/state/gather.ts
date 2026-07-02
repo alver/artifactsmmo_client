@@ -8,12 +8,11 @@
 
 import { effect, signal } from "@preact/signals";
 import * as actions from "../api/actions";
-import { catalog, tileAt } from "../catalog";
-import { ApiError } from "../api/client";
+import { tileAt } from "../catalog";
 import { characters, pushLog } from "./store";
-import { cooldownRemaining } from "../lib/util";
+import { campaignJobs } from "./campaign";
+import { isInventoryFull, layerOf, moveTo, nearestBank, step, waitCooldown } from "./loopkit";
 import type { Character } from "../types/api";
-import type { GameMap } from "../types/catalog";
 
 export type GatherStatus = "gathering" | "banking";
 
@@ -54,9 +53,6 @@ effect(() => {
   }
 });
 
-const layerOf = (ch: Character): string => (ch as { layer?: string }).layer ?? "overworld";
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
 function setJob(name: string, patch: Partial<GatherJob>): void {
   const cur = gatherJobs.value[name];
   if (!cur) return;
@@ -67,58 +63,8 @@ function clearJob(name: string): void {
   gatherJobs.value = rest;
 }
 
-export function nearestBank(x: number, y: number): GameMap | undefined {
-  let best: GameMap | undefined;
-  let bestD = Infinity;
-  for (const m of catalog().maps) {
-    if (m.interactions?.content?.type !== "bank") continue;
-    const d = Math.abs(m.x - x) + Math.abs(m.y - y);
-    if (d < bestD) {
-      bestD = d;
-      best = m;
-    }
-  }
-  return best;
-}
-
 function inventoryCount(ch: Character): number {
   return (ch.inventory || []).reduce((s, it) => s + (it.quantity || 0), 0);
-}
-
-// Interruptible cooldown wait — used between gathers so a stop request takes
-// effect within ~half a second even mid-cooldown.
-async function waitCooldown(name: string): Promise<void> {
-  for (;;) {
-    if (stopFlags.has(name)) return;
-    const ch = characters.value[name];
-    const left = ch ? cooldownRemaining(ch, Date.now()) : 0;
-    if (left <= 0) return;
-    await sleep(Math.min(500, left * 1000) + 50);
-  }
-}
-
-// Full (non-interruptible) cooldown wait — used inside a bank run so the whole
-// round-trip completes and the character ends back on its resource even if the
-// user hits stop midway.
-async function waitCooldownFull(name: string): Promise<void> {
-  for (;;) {
-    const ch = characters.value[name];
-    const left = ch ? cooldownRemaining(ch, Date.now()) : 0;
-    if (left <= 0) return;
-    await sleep(left * 1000 + 50);
-  }
-}
-
-// Run one action then wait out the cooldown it incurs (bank-run steps complete).
-async function step(name: string, fn: () => Promise<unknown>): Promise<void> {
-  await fn();
-  await waitCooldownFull(name);
-}
-
-async function moveTo(name: string, x: number, y: number): Promise<void> {
-  const ch = characters.value[name];
-  if (ch && ch.x === x && ch.y === y) return; // already there — no move (and no cooldown)
-  await step(name, () => actions.move(name, x, y));
 }
 
 // Always runs to completion (move → deposit all → move back) so the character
@@ -140,13 +86,10 @@ async function bankRun(name: string, job: GatherJob): Promise<void> {
   await moveTo(name, job.x, job.y);
 }
 
-const isInventoryFull = (e: unknown): boolean =>
-  e instanceof ApiError && (e.code === 497 || /inventor/i.test(e.message));
-
 async function runLoop(name: string): Promise<void> {
   try {
     while (!stopFlags.has(name)) {
-      await waitCooldown(name); // respect any pending cooldown before acting
+      await waitCooldown(name, () => stopFlags.has(name)); // respect any pending cooldown before acting
       if (stopFlags.has(name)) break;
 
       const job = gatherJobs.value[name];
@@ -183,6 +126,10 @@ async function runLoop(name: string): Promise<void> {
 /** Start gathering at the character's current tile (must be a resource). */
 export function startGather(name: string): void {
   if (gatherJobs.value[name]) return; // already running
+  if (campaignJobs.value[name]) {
+    pushLog({ ts: Date.now(), character: name, action: "gather", text: "stop the campaign first", kind: "bad" });
+    return;
+  }
   const ch = characters.value[name];
   if (!ch) return;
 
@@ -221,11 +168,11 @@ export function resumeGather(): void {
   const kept: Record<string, GatherJob> = {};
   let dropped = false;
   for (const [name, job] of Object.entries(gatherJobs.value)) {
-    if (characters.value[name]) {
+    if (characters.value[name] && !campaignJobs.value[name]) {
       kept[name] = job;
       stopFlags.delete(name);
     } else {
-      dropped = true; // stale order for a character that no longer exists
+      dropped = true; // stale order (character gone, or a campaign owns it)
     }
   }
   if (dropped) gatherJobs.value = kept;

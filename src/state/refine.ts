@@ -13,9 +13,10 @@ import * as actions from "../api/actions";
 import { catalog, item } from "../catalog";
 import { bankItems, characters, pushLog } from "./store";
 import { gatherJobs } from "./gather";
-import { cooldownRemaining } from "../lib/util";
+import { campaignJobs } from "./campaign";
+import { depositAll, moveTo, nearest, step, waitCooldownFull } from "./loopkit";
 import type { Character } from "../types/api";
-import type { GameMap, ItemStack } from "../types/catalog";
+import type { ItemStack } from "../types/catalog";
 
 /** Skills whose recipes turn raw gathered materials into refined goods. */
 const REFINE_SKILLS = ["mining", "woodcutting", "cooking", "alchemy"] as const;
@@ -60,7 +61,6 @@ effect(() => {
   }
 });
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
 
@@ -114,52 +114,6 @@ export function refineOptions(ch: Character): RefineOption[] {
   }
   out.sort((a, b) => a.skill.localeCompare(b.skill) || a.level - b.level || a.name.localeCompare(b.name));
   return out;
-}
-
-function nearest(type: string, code: string | null, x: number, y: number): GameMap | undefined {
-  let best: GameMap | undefined;
-  let bestD = Infinity;
-  for (const m of catalog().maps) {
-    const c = m.interactions?.content;
-    if (!c || c.type !== type || (code != null && c.code !== code)) continue;
-    const d = Math.abs(m.x - x) + Math.abs(m.y - y);
-    if (d < bestD) {
-      bestD = d;
-      best = m;
-    }
-  }
-  return best;
-}
-
-// Full (non-interruptible) cooldown wait — keeps each withdraw→craft→deposit
-// round atomic so a stop never strands materials in the inventory.
-async function waitCooldownFull(name: string): Promise<void> {
-  for (;;) {
-    const ch = characters.value[name];
-    const left = ch ? cooldownRemaining(ch, Date.now()) : 0;
-    if (left <= 0) return;
-    await sleep(left * 1000 + 50);
-  }
-}
-
-// Run one action then wait out the cooldown it incurs.
-async function step(name: string, fn: () => Promise<unknown>): Promise<void> {
-  await fn();
-  await waitCooldownFull(name);
-}
-
-async function moveTo(name: string, x: number, y: number): Promise<void> {
-  const ch = characters.value[name];
-  if (ch && ch.x === x && ch.y === y) return; // already there — no move (and no cooldown)
-  await step(name, () => actions.move(name, x, y));
-}
-
-async function depositAll(name: string): Promise<void> {
-  const ch = characters.value[name];
-  const items = (ch?.inventory || [])
-    .filter((s) => s.code && s.quantity > 0)
-    .map((s) => ({ code: s.code, quantity: s.quantity }));
-  if (items.length) await step(name, () => actions.depositItems(name, items));
 }
 
 async function runLoop(name: string): Promise<void> {
@@ -223,8 +177,8 @@ async function runLoop(name: string): Promise<void> {
 /** Start refining `product` for a character, sourcing materials from the bank. */
 export function startRefine(name: string, product: string): void {
   if (refineJobs.value[name]) return; // already running
-  if (gatherJobs.value[name]) {
-    pushLog({ ts: Date.now(), character: name, action: "refine", text: "stop gathering first", kind: "bad" });
+  if (gatherJobs.value[name] || campaignJobs.value[name]) {
+    pushLog({ ts: Date.now(), character: name, action: "refine", text: `stop ${gatherJobs.value[name] ? "gathering" : "the campaign"} first`, kind: "bad" });
     return;
   }
   const ch = characters.value[name];
@@ -273,7 +227,7 @@ export function resumeRefine(): void {
   const kept: Record<string, RefineJob> = {};
   let dropped = false;
   for (const [name, job] of Object.entries(refineJobs.value)) {
-    if (characters.value[name] && !gatherJobs.value[name]) {
+    if (characters.value[name] && !gatherJobs.value[name] && !campaignJobs.value[name]) {
       kept[name] = job;
       stopFlags.delete(name);
     } else {

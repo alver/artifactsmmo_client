@@ -7,6 +7,7 @@ import { reconcile } from "../state/sync";
 import * as actions from "../api/actions";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
+import { CooldownBadge } from "./Cooldown";
 import type { Character } from "../types/api";
 import type { Item, Npc } from "../types/catalog";
 
@@ -114,7 +115,7 @@ function CatalogBody({ target }: { target: PanelTarget }) {
             <span>
               <b>{actor.name}</b> is here{present.length > 1 ? ` (+${present.length - 1})` : ""}
             </span>
-            {ctl.cd > 0 && <span class="cooldown">⏳ {ctl.cd.toFixed(1)}s</span>}
+            <CooldownBadge ch={actor} />
           </>
         ) : (
           <span class="muted">Move a character here to {verb}.</span>

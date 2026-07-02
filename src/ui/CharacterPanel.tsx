@@ -1,36 +1,23 @@
 import { useState } from "preact/hooks";
-import { characters, characterList, now, selectedCharacter } from "../state/store";
+import { characters, characterList, selectedCharacter } from "../state/store";
 import { item, itemName, monster, npc, resource, tileAt } from "../catalog";
-import { asset, assetFallback, cooldownRemaining, pct, slotLabel, titleCase } from "../lib/util";
+import { asset, assetFallback, pct, slotLabel, titleCase } from "../lib/util";
+import { CooldownBadge } from "./Cooldown";
 import { gatherJobs } from "../state/gather";
 import { refineJobs, refineOptions, startRefine, stopRefine } from "../state/refine";
 import { fightJobs } from "../state/fight";
 import { GearSlots } from "./GearSlots";
 import { ActionBar } from "./ActionBar";
+import { CombatForecast } from "./CombatForecast";
+import { PlanControl } from "./PlanControl";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
 import * as actions from "../api/actions";
-import { slotCode } from "../types/api";
-import type { Character, GearSlot, InventorySlot } from "../types/api";
+import { slotCode, SLOTS_FOR_TYPE } from "../types/api";
+import type { Character, InventorySlot } from "../types/api";
 
 const invQtyOf = (c: Character, code: string): number =>
   (c.inventory || []).reduce((s, it) => s + (it.code === code ? it.quantity : 0), 0);
-
-/** Equippable item types → the gear slot(s) they can occupy. */
-const SLOTS_FOR_TYPE: Record<string, GearSlot[]> = {
-  weapon: ["weapon"],
-  shield: ["shield"],
-  helmet: ["helmet"],
-  body_armor: ["body_armor"],
-  leg_armor: ["leg_armor"],
-  boots: ["boots"],
-  amulet: ["amulet"],
-  rune: ["rune"],
-  bag: ["bag"],
-  ring: ["ring1", "ring2"],
-  artifact: ["artifact1", "artifact2", "artifact3"],
-  utility: ["utility1", "utility2"],
-};
 
 const SKILLS: [string, string][] = [
   ["mining", "Mining"],
@@ -82,7 +69,6 @@ export function CharacterPanel() {
   const tile = tileAt(ch.x, ch.y, layer);
   const content = tile?.interactions.content;
   const onBank = content?.type === "bank";
-  const cd = cooldownRemaining(ch, now.value); // re-renders with the global clock
   const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
   const invQty = inv.reduce((s, it) => s + it.quantity, 0);
 
@@ -96,7 +82,9 @@ export function CharacterPanel() {
           onError={assetFallback("characters", ch.skin || "men1")}
         />
         <div class="cp-titles">
-          <div class="cp-name">{ch.name}</div>
+          <div class="cp-name">
+            {ch.name} <CooldownBadge ch={ch} />
+          </div>
           <div class="cp-sub">
             Level {ch.level} · ({ch.x}, {ch.y}){tile ? ` · ${tile.name}` : ""}
           </div>
@@ -118,10 +106,11 @@ export function CharacterPanel() {
         </div>
         <div class="cp-meta">
           <span class="gold">🪙 {ch.gold.toLocaleString()}</span>
-          {cd > 0 && <span class="cooldown">⏳ {cd.toFixed(1)}s</span>}
         </div>
 
         <ActionBar ch={ch} />
+
+        {content?.type === "monster" && <CombatForecast ch={ch} monsterCode={content.code} />}
 
         <div class="cp-refine">
           <div class="cp-refine-label">Refine raw materials</div>
@@ -179,6 +168,11 @@ export function CharacterPanel() {
         <details class="section" open>
           <summary>Equipment</summary>
           <GearSlots ch={ch} />
+        </details>
+
+        <details class="section">
+          <summary>Planner</summary>
+          <PlanControl ch={ch} />
         </details>
 
         <details class="section" open>

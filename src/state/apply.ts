@@ -4,11 +4,17 @@
 // full authoritative `character` (and bank item moves echo `bank`), so we never
 // have to GET state back — we just adopt what the action already told us.
 
-import type { ActionResult } from "../types/api";
-import { bankDetails, bankItems, pushLog, setCharacter } from "./store";
+import type { ActionResult, Character } from "../types/api";
+import { bankDetails, bankItems, characters, pushLog, setCharacter } from "./store";
+import { mapAt, monster as monsterOf } from "../catalog";
+import { recordFight } from "../sim/validate";
 import { saveState } from "./persist";
 
 export function applyActionResult(name: string, action: string, data: ActionResult): void {
+  // Snapshot the PRE-fight character before we overwrite it — the sim validator
+  // needs its position (to resolve the monster) and max HP to rebuild the fighter.
+  const prevForFight: Character | undefined = data.fight ? characters.value[name] : undefined;
+
   if (data.character) setCharacter(data.character);
   // The fight action echoes the updated fighter(s) under `characters` (plural),
   // not `character`; without this, combat HP/cooldown never reach local state.
@@ -20,6 +26,18 @@ export function applyActionResult(name: string, action: string, data: ActionResu
     // gold moves echo only the new bank gold total as { quantity }
     bankDetails.value = { ...bankDetails.value, gold: data.bank.quantity };
   }
+  // Passive, zero-cost simulator validation: compare the forecast for this fight
+  // against what actually happened. Never throws into the action path.
+  if (data.fight && prevForFight) {
+    try {
+      const mcode = data.fight.opponent || mapAt(prevForFight.x, prevForFight.y)?.interactions.content?.code;
+      const m = mcode ? monsterOf(mcode) : undefined;
+      if (m) recordFight(prevForFight, m, data.fight);
+    } catch {
+      /* diagnostics only — must not disturb state folding */
+    }
+  }
+
   pushLog({ ts: Date.now(), character: name, action, text: summarize(name, action, data), kind: "ok" });
   saveState();
 }

@@ -8,13 +8,14 @@
 
 import { effect, signal } from "@preact/signals";
 import * as actions from "../api/actions";
-import { tileAt } from "../catalog";
-import { ApiError } from "../api/client";
+import { monster as monsterOf, tileAt } from "../catalog";
+import { currentFighter } from "../sim/stats";
+import { simulate } from "../sim/combat";
 import { characters, pushLog } from "./store";
-import { gatherJobs, nearestBank } from "./gather";
+import { gatherJobs } from "./gather";
 import { refineJobs } from "./refine";
-import { cooldownRemaining } from "../lib/util";
-import type { Character } from "../types/api";
+import { campaignJobs } from "./campaign";
+import { isInventoryFull, layerOf, moveTo, nearestBank, waitCooldown, waitCooldownFull } from "./loopkit";
 
 export type FightStatus = "fighting" | "resting" | "banking";
 
@@ -46,6 +47,11 @@ function loadStored(): Record<string, FightJob> {
 export const fightJobs = signal<Record<string, FightJob>>(loadStored());
 const stopFlags = new Set<string>();
 
+// Stop the loop after this many losses in a row. One loss is often crit/variance
+// on a marginal fight, so we walk back from spawn, heal to full, and retry once;
+// a second consecutive loss means it's genuinely unwinnable — stop, don't flail.
+const MAX_CONSECUTIVE_LOSSES = 2;
+
 // Mirror jobs to localStorage on every change so a reload can resume them.
 effect(() => {
   try {
@@ -54,9 +60,6 @@ effect(() => {
     /* quota / unavailable — non-fatal */
   }
 });
-
-const layerOf = (ch: Character): string => (ch as { layer?: string }).layer ?? "overworld";
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 function setJob(name: string, patch: Partial<FightJob>): void {
   const cur = fightJobs.value[name];
@@ -67,39 +70,6 @@ function clearJob(name: string): void {
   const { [name]: _gone, ...rest } = fightJobs.value;
   fightJobs.value = rest;
 }
-
-// Interruptible cooldown wait — a stop request takes effect within ~half a second
-// even mid-cooldown.
-async function waitCooldown(name: string): Promise<void> {
-  for (;;) {
-    if (stopFlags.has(name)) return;
-    const ch = characters.value[name];
-    const left = ch ? cooldownRemaining(ch, Date.now()) : 0;
-    if (left <= 0) return;
-    await sleep(Math.min(500, left * 1000) + 50);
-  }
-}
-
-// Full (non-interruptible) cooldown wait — used inside a bank run so the whole
-// round-trip completes and the character ends back on its monster tile.
-async function waitCooldownFull(name: string): Promise<void> {
-  for (;;) {
-    const ch = characters.value[name];
-    const left = ch ? cooldownRemaining(ch, Date.now()) : 0;
-    if (left <= 0) return;
-    await sleep(left * 1000 + 50);
-  }
-}
-
-async function moveTo(name: string, x: number, y: number): Promise<void> {
-  const ch = characters.value[name];
-  if (ch && ch.x === x && ch.y === y) return; // already there — no move, no cooldown
-  await actions.move(name, x, y);
-  await waitCooldownFull(name);
-}
-
-const isInventoryFull = (e: unknown): boolean =>
-  e instanceof ApiError && (e.code === 497 || /inventor/i.test(e.message));
 
 // Move → deposit everything → move back to the monster tile. Runs to completion
 // so the character is left ready to resume fighting. Throws if a step fails.
@@ -126,13 +96,28 @@ async function bankRun(name: string, job: FightJob): Promise<void> {
 
 async function runLoop(name: string): Promise<void> {
   try {
+    let consecutiveLosses = 0;
     while (!stopFlags.has(name)) {
-      await waitCooldown(name); // respect any pending cooldown before acting
+      await waitCooldown(name, () => stopFlags.has(name)); // respect any pending cooldown before acting
       if (stopFlags.has(name)) break;
 
       const job = fightJobs.value[name];
       const ch = characters.value[name];
       if (!job || !ch) break;
+
+      // Recover from a teleport: a lost fight (and some in-game events) resurrect
+      // the character at spawn (0,0). Walk back to the monster tile before acting
+      // so the run self-heals instead of stranding there.
+      if (ch.x !== job.x || ch.y !== job.y) {
+        setJob(name, { status: "banking", note: "→ monster" });
+        try {
+          await moveTo(name, job.x, job.y);
+        } catch (e) {
+          pushLog({ ts: Date.now(), character: name, action: "fight", text: `loop stopped: ${(e as Error).message}`, kind: "bad" });
+          break;
+        }
+        continue;
+      }
 
       // Heal to full before every fight. Each fight resolves an entire battle in
       // one action, so entering below full HP risks a loss — which teleports the
@@ -152,12 +137,20 @@ async function runLoop(name: string): Promise<void> {
       setJob(name, { status: "fighting", note: "" });
       try {
         const r = await actions.fight(name);
+        const won = r.fight?.result === "win";
         const cur = fightJobs.value[name];
-        if (cur) setJob(name, { fights: cur.fights + 1, wins: cur.wins + (r.fight?.result === "win" ? 1 : 0) });
-        if (r.fight?.result === "loss") {
-          // On a loss the character is teleported away — stop rather than flail.
-          pushLog({ ts: Date.now(), character: name, action: "fight", text: "loop stopped: lost a fight", kind: "bad" });
-          break;
+        if (cur) setJob(name, { fights: cur.fights + 1, wins: cur.wins + (won ? 1 : 0) });
+        if (won) {
+          consecutiveLosses = 0;
+        } else {
+          consecutiveLosses += 1;
+          if (consecutiveLosses >= MAX_CONSECUTIVE_LOSSES) {
+            pushLog({ ts: Date.now(), character: name, action: "fight", text: `loop stopped: lost ${consecutiveLosses} fights in a row`, kind: "bad" });
+            break;
+          }
+          // Recoverable loss — the next iteration walks back from spawn, heals to
+          // full, and retries once before giving up.
+          pushLog({ ts: Date.now(), character: name, action: "fight", text: "lost a fight — healing and retrying", kind: "bad" });
         }
       } catch (e) {
         // Inventory full → run to the bank, deposit, come back, keep fighting.
@@ -185,14 +178,28 @@ export function startFight(name: string): void {
   if (fightJobs.value[name]) return; // already running
   const ch = characters.value[name];
   if (!ch) return;
-  if (gatherJobs.value[name] || refineJobs.value[name]) {
-    pushLog({ ts: Date.now(), character: name, action: "fight", text: "stop gathering / refining first", kind: "bad" });
+  if (gatherJobs.value[name] || refineJobs.value[name] || campaignJobs.value[name]) {
+    pushLog({ ts: Date.now(), character: name, action: "fight", text: "stop the other loop first", kind: "bad" });
     return;
   }
   const content = tileAt(ch.x, ch.y, layerOf(ch))?.interactions.content;
   if (content?.type !== "monster") {
     pushLog({ ts: Date.now(), character: name, action: "fight", text: "not standing on a monster", kind: "bad" });
     return;
+  }
+
+  // Advisory forecast — warn on a predicted loss but don't block (the simulator
+  // is not yet validated enough to veto). The loop still stops on a real loss.
+  const m = monsterOf(content.code);
+  if (m) {
+    const f = simulate(currentFighter(ch), m);
+    if (!f.win) {
+      pushLog({
+        ts: Date.now(), character: name, action: "fight",
+        text: `⚠ forecast: likely ${f.timedOut ? "can't kill in time" : "loss"} vs ${m.name} — starting anyway`,
+        kind: "bad",
+      });
+    }
   }
 
   stopFlags.delete(name);
@@ -220,7 +227,7 @@ export function resumeFight(): void {
   const kept: Record<string, FightJob> = {};
   let dropped = false;
   for (const [name, job] of Object.entries(fightJobs.value)) {
-    if (characters.value[name] && !gatherJobs.value[name] && !refineJobs.value[name]) {
+    if (characters.value[name] && !gatherJobs.value[name] && !refineJobs.value[name] && !campaignJobs.value[name]) {
       kept[name] = job;
       stopFlags.delete(name);
     } else {

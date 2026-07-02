@@ -1,14 +1,13 @@
 import { useState } from "preact/hooks";
-import { now } from "../state/store";
-import { cooldownRemaining } from "../lib/util";
+import { onCooldown } from "../state/store";
 import type { Character } from "../types/api";
 
 export interface ActionRunner {
   /** A request is in flight. */
   busy: boolean;
-  /** Seconds left on the actor's cooldown (0 if none / no actor). */
-  cd: number;
-  /** busy || cd > 0 — the standard disabled gate for an action button. */
+  /** The actor is currently on cooldown. */
+  cooling: boolean;
+  /** busy || cooling — the standard disabled gate for an action button. */
   disabled: boolean;
   /** Run an action, holding `busy` for its duration. Errors are swallowed
    *  (api/actions.ts already logged them to the activity log). */
@@ -19,12 +18,16 @@ export interface ActionRunner {
  * Shared busy + cooldown gate for any button that fires a character action,
  * factored out of ActionBar so every new control behaves identically.
  *
- * Reading `now.value` here subscribes the calling component to the 4 Hz clock,
- * so a button re-enables on its own the instant the cooldown expires.
+ * The gate subscribes to the coarse per-character `onCooldown()` *flag* — a
+ * computed that only flips when a cooldown starts/ends — NOT the raw 4 Hz clock.
+ * That's deliberate: reading `now.value` here would re-render the whole calling
+ * component (a gear grid, an inventory list, the entire catalog panel) 4×/second.
+ * Buttons still re-enable on their own the instant the cooldown expires (the flag
+ * flips), and the live countdown is shown separately by <CooldownBadge>.
  */
 export function useActionRunner(actor?: Character | null): ActionRunner {
   const [busy, setBusy] = useState(false);
-  const cd = actor ? cooldownRemaining(actor, now.value) : 0;
+  const cooling = actor ? onCooldown(actor.name).value : false;
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -35,5 +38,5 @@ export function useActionRunner(actor?: Character | null): ActionRunner {
       setBusy(false);
     }
   };
-  return { busy, cd, disabled: busy || cd > 0, run };
+  return { busy, cooling, disabled: busy || cooling, run };
 }

@@ -2,9 +2,10 @@
 // read these directly and re-render automatically when they change — no manual
 // "renderCard()" calls (the maintainability pain of the old client).
 
-import { effect, signal } from "@preact/signals";
+import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
 import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
 import type { GameMap } from "../types/catalog";
+import { cooldownRemaining } from "../lib/util";
 
 export interface LogEntry {
   id: number;
@@ -108,6 +109,37 @@ export const now = signal<number>(Date.now());
 setInterval(() => {
   now.value = Date.now();
 }, 250);
+
+/**
+ * Per-character "is on cooldown" flag, derived from the 4 Hz `now` clock.
+ *
+ * Because this is a `computed<boolean>`, it only notifies its subscribers when the
+ * flag actually *flips* (a cooldown starts or ends) — NOT on every 250 ms tick.
+ * Action-gated UI (buttons, and whole panels via useActionRunner) subscribes to
+ * this instead of reading `now` directly, so those large subtrees re-render only
+ * ~twice per cooldown instead of 4×/second. Reading `now.value` in a component
+ * body subscribes the *entire* component to the clock; funnelling the gate through
+ * this computed is what keeps the panels from re-rendering (and re-running their
+ * heavy per-render derivations) continuously — the memory-growth culprit.
+ *
+ * The live numeric countdown that genuinely needs every tick lives in the tiny
+ * <CooldownBadge> leaf (ui/Cooldown.tsx), the only thing that reads `now` directly.
+ *
+ * Flags are memoised per name (bounded by the character count) so every consumer
+ * shares one computed.
+ */
+const _cooldownFlags = new Map<string, ReadonlySignal<boolean>>();
+export function onCooldown(name: string): ReadonlySignal<boolean> {
+  let flag = _cooldownFlags.get(name);
+  if (!flag) {
+    flag = computed(() => {
+      const ch = characters.value[name];
+      return !!ch && cooldownRemaining(ch, now.value) > 0;
+    });
+    _cooldownFlags.set(name, flag);
+  }
+  return flag;
+}
 
 let _logId = 0;
 export function pushLog(entry: Omit<LogEntry, "id">): void {

@@ -22,6 +22,7 @@ import { loadPersisted, saveState } from "./persist";
 import { resumeGather } from "./gather";
 import { resumeRefine } from "./refine";
 import { resumeFight } from "./fight";
+import { resumeCampaign } from "./campaign";
 import { api, getAllPages, hasToken } from "../api/client";
 import { loadCatalog } from "../catalog";
 import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
@@ -36,6 +37,7 @@ export async function boot(): Promise<void> {
     resumeGather(); // re-launch automation orders saved from a previous session
     resumeRefine();
     resumeFight();
+    resumeCampaign();
   }
 }
 
@@ -103,5 +105,6 @@ export async function login(): Promise<void> {
     resumeGather();
     resumeRefine();
     resumeFight();
+    resumeCampaign();
   }
 }

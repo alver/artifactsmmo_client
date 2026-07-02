@@ -101,6 +101,22 @@ export function slotCode(ch: Character, slot: GearSlot): string {
   return (ch as unknown as Record<string, string>)[`${slot}_slot`] ?? "";
 }
 
+/** Equippable item types → the gear slot(s) they can occupy. */
+export const SLOTS_FOR_TYPE: Record<string, GearSlot[]> = {
+  weapon: ["weapon"],
+  shield: ["shield"],
+  helmet: ["helmet"],
+  body_armor: ["body_armor"],
+  leg_armor: ["leg_armor"],
+  boots: ["boots"],
+  amulet: ["amulet"],
+  rune: ["rune"],
+  bag: ["bag"],
+  ring: ["ring1", "ring2"],
+  artifact: ["artifact1", "artifact2", "artifact3"],
+  utility: ["utility1", "utility2"],
+};
+
 export interface BankItem {
   code: string;
   quantity: number;
