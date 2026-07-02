@@ -1,4 +1,4 @@
-import { achievementsOpen, authed, catalogReady, itemsCatalogOpen, lastError, panelTarget, syncedAt, syncing } from "./state/store";
+import { achievementsOpen, authed, catalogReady, itemsCatalogOpen, lastError, panelTarget, routeHash, syncedAt, syncing } from "./state/store";
 import { loadAchievements, reconcile } from "./state/sync";
 import { setToken } from "./api/client";
 import { clockTime } from "./lib/util";
@@ -9,6 +9,7 @@ import { CatalogPanel } from "./ui/CatalogPanel";
 import { ItemPopup } from "./ui/ItemPopup";
 import { AchievementsPanel } from "./ui/AchievementsPanel";
 import { ItemsCatalogPanel } from "./ui/ItemsCatalog";
+import { SimPlayground } from "./ui/SimPlayground";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
@@ -18,6 +19,7 @@ export function App() {
     setToken("");
     authed.value = false;
   };
+  const onSim = routeHash.value.startsWith("#/sim");
 
   return (
     <div class="map-app">
@@ -28,6 +30,9 @@ export function App() {
           {lastError.value && <span class="err"> · {lastError.value}</span>}
         </div>
         <div class="topbar-actions">
+          <button class={onSim ? "active" : ""} title="Fight-sim playground — plan equipment setups" onClick={() => (location.hash = onSim ? "" : "#/sim")}>
+            ⚔ Sim
+          </button>
           <button
             onClick={() => {
               const open = !itemsCatalogOpen.value;
@@ -51,12 +56,16 @@ export function App() {
           <button onClick={logout}>Sign out</button>
         </div>
       </header>
-      <div class="map-stage">
-        <CharacterPanel />
-        <MapView />
-        <CatalogPanel />
-        <ItemsCatalogPanel />
-      </div>
+      {onSim ? (
+        <SimPlayground />
+      ) : (
+        <div class="map-stage">
+          <CharacterPanel />
+          <MapView />
+          <CatalogPanel />
+          <ItemsCatalogPanel />
+        </div>
+      )}
       <ItemPopup />
       <AchievementsPanel />
     </div>

@@ -89,6 +89,17 @@ export const itemPopup = signal<{ code: string; x: number; y: number } | null>(n
 export const itemsCatalogOpen = signal(false);
 
 /**
+ * The location hash, as a signal — the app's entire "router". `#/sim` renders
+ * the fight-sim playground instead of the map stage; GitHub Pages needs no
+ * server config for hash routes, and the sim page encodes its loadout in the
+ * hash query so setups are shareable.
+ */
+export const routeHash = signal(typeof location !== "undefined" ? location.hash : "");
+if (typeof window !== "undefined") {
+  window.addEventListener("hashchange", () => (routeHash.value = location.hash));
+}
+
+/**
  * When set to a character name, the next map-tile click moves that character
  * there instead of selecting the tile (armed by the Move button, cleared after
  * the click or on Escape). Auto-disarms below if the selection moves elsewhere.

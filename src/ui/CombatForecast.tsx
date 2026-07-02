@@ -75,6 +75,17 @@ export function CombatForecast({ ch, monsterCode }: { ch: Character; monsterCode
           {acc.winMispredicts} win/loss mispredicted{acc.trustworthy ? " · ✓ trustworthy" : ""}
         </div>
       )}
+      {acc.hitsChecked > 0 && (
+        <div
+          class="muted"
+          style={{ fontSize: 11, marginTop: 2, ...(acc.hitsMatched < acc.hitsChecked ? { color: "#e59a95" } : {}) }}
+          title="Every hit parsed from real fight logs, checked against the exact damage formula"
+        >
+          formula check: {acc.hitsMatched}/{acc.hitsChecked} hits exact
+          {acc.formulaExact ? " · ✓ verified" : ""}
+          {acc.lastMismatch ? ` · last: ${acc.lastMismatch}` : ""}
+        </div>
+      )}
     </div>
   );
 }

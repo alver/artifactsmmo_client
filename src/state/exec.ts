@@ -167,15 +167,30 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
     case "equip": {
       const cur = characters.value[name] ?? ch;
       const occupied = slotCode(cur, s.slot);
+      const isUtility = s.slot.startsWith("utility");
       if (occupied && occupied !== s.code) {
         // Free the slot first; the next tick sees it empty and equips the target.
-        const qty = s.slot.startsWith("utility") ? Math.max(1, slotQuantity(cur, s.slot)) : 1;
+        const qty = isUtility ? Math.max(1, slotQuantity(cur, s.slot)) : 1;
         ctx.note(`unequip ${itemName(occupied)}`);
         await step(name, () => actions.unequip(name, s.slot, qty));
         return { did: "acted" };
       }
+      if (occupied === s.code && isUtility && invQty(cur, s.code) > 0) {
+        // The API can't ADD to an equipped utility stack — pull the current
+        // stack back to inventory (it merges with the new potions), then the
+        // next tick equips the combined total in one go.
+        const qty = Math.max(1, slotQuantity(cur, s.slot));
+        ctx.note(`restack ${itemName(s.code)}`);
+        await step(name, () => actions.unequip(name, s.slot, qty));
+        return { did: "acted" };
+      }
       ctx.note(`equip ${itemName(s.code)}`);
-      const quantity = Math.max(1, Math.min(s.quantity, invQty(cur, s.code) || s.quantity));
+      const held = invQty(cur, s.code);
+      // Utilities: equip everything in hand (the restack path above merged the
+      // old stack into it), capped at the game's 100-per-slot stack limit.
+      const quantity = isUtility
+        ? Math.max(1, Math.min(100, held || s.quantity))
+        : Math.max(1, Math.min(s.quantity, held || s.quantity));
       await step(name, () => actions.equip(name, s.code, s.slot, quantity));
       return { did: "acted" };
     }

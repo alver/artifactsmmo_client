@@ -29,7 +29,7 @@ import { fightJobs } from "./fight";
 import { campaignJobs } from "./campaign";
 import { isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
 import { bankOff, fightRound, freeSpace, goToMaster, invCount, invQty, runStep } from "./exec";
-import { slotCode } from "../types/api";
+import { slotCode, slotQuantity } from "../types/api";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, Plan } from "../plan/types";
@@ -213,7 +213,14 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       return false;
     }
     case "equip": {
-      if (slotCode(ch, it.slot) === it.code) return true;
+      const equipped = slotCode(ch, it.slot) === it.code;
+      if (it.slot.startsWith("utility")) {
+        // Utility stacks top up via unequip→re-equip (see exec.ts); done only
+        // when everything in hand is stacked on (or the 100-stack is full).
+        if (equipped && (invQty(ch, it.code) === 0 || slotQuantity(ch, it.slot) >= 100)) return true;
+      } else if (equipped) {
+        return true;
+      }
       await runStep(name, ch, { kind: "equip", code: it.code, slot: it.slot, quantity: it.quantity }, ctx);
       return false;
     }

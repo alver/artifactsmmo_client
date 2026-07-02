@@ -6,13 +6,20 @@
 // right to eventually *block* fights (see fight.ts): until win/loss mispredictions
 // hit zero over a decent sample, the gate stays advisory.
 //
-// Nothing here is persisted — it's a diagnostic that rebuilds as you play.
+// On top of the outcome comparison, each fight's text log is parsed (loglab.ts)
+// and every extracted hit is checked against the EXACT per-element damage the
+// formula predicts — non-crit hits must match to the point, crits after the
+// ×1.5 rounding. This is what turns the sim from "plausible" into "verified".
+//
+// The window IS persisted (localStorage) so the sample accumulates across
+// sessions — reaching the trustworthy bar takes ~50 fights.
 
-import { signal } from "@preact/signals";
+import { effect, signal } from "@preact/signals";
 import type { Character, FightResult } from "../types/api";
 import type { Monster } from "../types/catalog";
 import { currentFighter } from "./stats";
-import { simulate } from "./combat";
+import { expectedHits, simulate } from "./combat";
+import { checkHits, parseFightLogs } from "./loglab";
 
 export interface Deviation {
   ts: number;
@@ -27,10 +34,33 @@ export interface Deviation {
   predHp: number;
   actualHp: number | null;
   hpErr: number | null;
+  // Exact formula check from the fight's text log (absent when no log came back).
+  hitsChecked?: number;
+  hitsMatched?: number;
+  mismatch?: string; // first mismatching hit, for diagnosis
+}
+
+const STORE_KEY = "ammo:v1:simdev";
+const WINDOW = 200;
+function loadStored(): Deviation[] {
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORE_KEY) || "[]") as Deviation[];
+    return Array.isArray(raw) ? raw.slice(0, WINDOW) : [];
+  } catch {
+    return [];
+  }
 }
 
 /** Rolling window of the most recent fight predictions vs reality (newest first). */
-export const simDeviations = signal<Deviation[]>([]);
+export const simDeviations = signal<Deviation[]>(loadStored());
+
+effect(() => {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(simDeviations.value));
+  } catch {
+    /* quota / unavailable — non-fatal */
+  }
+});
 
 /**
  * Compare the forecast for a just-resolved fight against the real outcome.
@@ -38,7 +68,8 @@ export const simDeviations = signal<Deviation[]>([]);
  * the fighter); `monster` is the tile monster it fought.
  */
 export function recordFight(prev: Character, monster: Monster, fight: FightResult): void {
-  const f = simulate(currentFighter(prev), monster);
+  const fighter = currentFighter(prev);
+  const f = simulate(fighter, monster);
   const mine = fight.characters?.find((c) => c.character_name === prev.name) ?? fight.characters?.[0];
   const actualWin = fight.result === "win";
   const actualTurns = fight.turns ?? null;
@@ -58,7 +89,19 @@ export function recordFight(prev: Character, monster: Monster, fight: FightResul
     actualHp,
     hpErr: actualHp == null ? null : f.hpRemaining - actualHp,
   };
-  simDeviations.value = [dev, ...simDeviations.value].slice(0, 100);
+
+  // Exact per-hit formula check against the turn-by-turn log, when present.
+  if (fight.logs?.length) {
+    const parsed = parseFightLogs(fight.logs);
+    if (parsed.hits.length > 0) {
+      const check = checkHits(parsed.hits, expectedHits(fighter, monster));
+      dev.hitsChecked = check.checked;
+      dev.hitsMatched = check.matched;
+      dev.mismatch = check.firstMismatch;
+    }
+  }
+
+  simDeviations.value = [dev, ...simDeviations.value].slice(0, WINDOW);
 }
 
 export interface SimAccuracy {
@@ -68,6 +111,12 @@ export interface SimAccuracy {
   medianHpErr: number | null;
   /** True once the sample is trustworthy enough to let the forecast block fights. */
   trustworthy: boolean;
+  // Exact per-hit formula check aggregated over the window's fight logs.
+  hitsChecked: number;
+  hitsMatched: number;
+  /** ≥30 hits checked and every single one matched the formula exactly. */
+  formulaExact: boolean;
+  lastMismatch?: string;
 }
 
 function median(xs: number[]): number | null {
@@ -84,6 +133,8 @@ export function simAccuracy(devs: Deviation[] = simDeviations.value): SimAccurac
   const turnErrs = devs.map((d) => d.turnErr).filter((x): x is number => x != null).map(Math.abs);
   const hpErrs = devs.map((d) => d.hpErr).filter((x): x is number => x != null).map(Math.abs);
   const medTurn = median(turnErrs);
+  const hitsChecked = devs.reduce((s, d) => s + (d.hitsChecked ?? 0), 0);
+  const hitsMatched = devs.reduce((s, d) => s + (d.hitsMatched ?? 0), 0);
   return {
     n,
     winMispredicts,
@@ -91,5 +142,9 @@ export function simAccuracy(devs: Deviation[] = simDeviations.value): SimAccurac
     medianHpErr: median(hpErrs),
     // Bar from the plan: ≥50 samples, zero win/loss mispredictions, median turn error ≤1.
     trustworthy: n >= 50 && winMispredicts === 0 && medTurn != null && medTurn <= 1,
+    hitsChecked,
+    hitsMatched,
+    formulaExact: hitsChecked >= 30 && hitsMatched === hitsChecked,
+    lastMismatch: devs.find((d) => d.mismatch)?.mismatch,
   };
 }
