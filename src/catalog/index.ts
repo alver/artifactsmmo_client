@@ -80,6 +80,7 @@ export const resource = (code: string): Resource | undefined => _catalog?.resour
 export const achievement = (code: string): Achievement | undefined => _catalog?.achievements.get(code);
 export const effect = (code: string): Effect | undefined => _catalog?.effects.get(code);
 export const npc = (code: string): Npc | undefined => _catalog?.npcs.get(code);
+export const task = (code: string): Task | undefined => _catalog?.tasks.get(code);
 export const mapAt = (x: number, y: number): GameMap | undefined => _catalog?.mapsByCoord.get(`${x},${y}`);
 
 /** Exact tile at a coordinate on a given layer (overworld/underground/interior). */

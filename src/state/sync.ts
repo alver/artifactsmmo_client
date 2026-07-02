@@ -23,6 +23,7 @@ import { resumeGather } from "./gather";
 import { resumeRefine } from "./refine";
 import { resumeFight } from "./fight";
 import { resumeCampaign } from "./campaign";
+import { resumeQueue } from "./queue";
 import { api, getAllPages, hasToken } from "../api/client";
 import { loadCatalog } from "../catalog";
 import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
@@ -38,6 +39,7 @@ export async function boot(): Promise<void> {
     resumeRefine();
     resumeFight();
     resumeCampaign();
+    resumeQueue();
   }
 }
 
@@ -106,5 +108,6 @@ export async function login(): Promise<void> {
     resumeRefine();
     resumeFight();
     resumeCampaign();
+    resumeQueue();
   }
 }

@@ -6,35 +6,11 @@ import { catalog, itemName, monster as monsterOf } from "../catalog";
 import { titleCase } from "../lib/util";
 import { bestInSlot } from "./bis";
 import { resolve } from "./acquire";
-import { GEAR_SLOTS } from "../types/api";
-import type { Character, GearSlot } from "../types/api";
+import { compileTaskPlan, gearTargets, ownedCodes } from "./task";
+import type { Character } from "../types/api";
 import type { AcquisitionPlan, Goal, Plan, Target } from "./types";
 
 const NO_STEPS: AcquisitionPlan = { steps: [], estActions: 0, estSeconds: 0, feasible: false, blockers: [] };
-
-/** Item codes the character can use right now: inventory ∪ bank ∪ equipped. */
-export function ownedCodes(ch: Character, bank: { code: string; quantity: number }[]): Set<string> {
-  const owned = new Set<string>();
-  for (const s of ch.inventory ?? []) if (s.code) owned.add(s.code);
-  for (const b of bank) owned.add(b.code);
-  for (const g of GEAR_SLOTS) {
-    const c = (ch as unknown as Record<string, string>)[`${g}_slot`];
-    if (c) owned.add(c);
-  }
-  return owned;
-}
-
-/** Turn a BIS recommendation's slot map into acquisition targets (with equip slots). */
-function gearTargets(slots: Record<GearSlot, string>, repeat: number): Target[] {
-  const out: Target[] = [];
-  for (const g of GEAR_SLOTS) {
-    const code = slots[g];
-    if (!code) continue;
-    const qty = g.startsWith("utility") ? Math.min(100, Math.max(1, repeat)) : 1;
-    out.push({ code, quantity: qty, slot: g });
-  }
-  return out;
-}
 
 export function compileGoal(ch: Character, bank: { code: string; quantity: number }[], goal: Goal): Plan {
   const owned = ownedCodes(ch, bank);
@@ -84,17 +60,13 @@ export function compileGoal(ch: Character, bank: { code: string; quantity: numbe
     return { ...sub, goal, summary: `Reach combat Lv ${goal.target}: grind ${itemName(best.code) || best.code} (Lv ${best.level}) — ${sub.summary}` };
   }
 
+  // Task plans (single task or the accept→run→turn-in loop) get the full
+  // preparation treatment — gear + food + potion + tool — in task.ts.
   if (goal.kind === "complete-task") {
-    if (!ch.task) {
-      return { goal, acquisition: { ...NO_STEPS, blockers: ["No active task — accept one from a Tasks Master first."] }, execution: { targets: [], repeat: 0 }, summary: "No active task." };
-    }
-    const remaining = Math.max(1, ch.task_total - ch.task_progress);
-    if (ch.task_type === "monsters") {
-      const sub = compileGoal(ch, bank, { kind: "beat-monster", monster: ch.task, repeat: remaining });
-      return { ...sub, goal, summary: `Task: defeat ${remaining}× ${titleCase(ch.task)} — ${sub.summary}` };
-    }
-    const sub = compileGoal(ch, bank, { kind: "craft-item", code: ch.task, quantity: remaining });
-    return { ...sub, goal, summary: `Task: deliver ${remaining}× ${itemName(ch.task)} — ${sub.summary}` };
+    return compileTaskPlan(ch, bank, { loop: false, goal });
+  }
+  if (goal.kind === "task-loop") {
+    return compileTaskPlan(ch, bank, { loop: true, master: goal.master, goal });
   }
 
   // skill-level: the existing gather/refine loops already do this best; the plan

@@ -11,6 +11,7 @@ import * as actions from "../api/actions";
 import { tileAt } from "../catalog";
 import { characters, pushLog } from "./store";
 import { campaignJobs } from "./campaign";
+import { queueActive } from "./queue";
 import { isInventoryFull, layerOf, moveTo, nearestBank, step, waitCooldown } from "./loopkit";
 import type { Character } from "../types/api";
 
@@ -126,8 +127,8 @@ async function runLoop(name: string): Promise<void> {
 /** Start gathering at the character's current tile (must be a resource). */
 export function startGather(name: string): void {
   if (gatherJobs.value[name]) return; // already running
-  if (campaignJobs.value[name]) {
-    pushLog({ ts: Date.now(), character: name, action: "gather", text: "stop the campaign first", kind: "bad" });
+  if (campaignJobs.value[name] || queueActive(name)) {
+    pushLog({ ts: Date.now(), character: name, action: "gather", text: `stop the ${campaignJobs.value[name] ? "campaign" : "queue"} first`, kind: "bad" });
     return;
   }
   const ch = characters.value[name];
@@ -168,7 +169,7 @@ export function resumeGather(): void {
   const kept: Record<string, GatherJob> = {};
   let dropped = false;
   for (const [name, job] of Object.entries(gatherJobs.value)) {
-    if (characters.value[name] && !campaignJobs.value[name]) {
+    if (characters.value[name] && !campaignJobs.value[name] && !queueActive(name)) {
       kept[name] = job;
       stopFlags.delete(name);
     } else {

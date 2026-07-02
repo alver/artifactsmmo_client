@@ -464,53 +464,13 @@ body,
   box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(110, 168, 254, 0.5);
 }
 
-/* ── gather control (card foot) ─────────────────────────── */
+/* ── card foot: read-only status line + cooldown timer ──── */
 .pcard-foot {
   margin-top: 8px;
   display: flex;
   align-items: center;
   gap: 8px;
   min-height: 26px;
-}
-.pcard .btn-gather {
-  flex: 1;
-  font-size: 12px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: #214d33;
-  border: 1px solid #2f6b47;
-  color: #cfeddb;
-}
-.pcard .btn-gather:hover {
-  background: #265a3b;
-  border-color: #49a06f;
-}
-.pcard .btn-fight {
-  flex: 1;
-  font-size: 12px;
-  padding: 5px 8px;
-  border-radius: 6px;
-  background: #532126;
-  border: 1px solid #7a3b3f;
-  color: #f3d2cf;
-}
-.pcard .btn-fight:hover {
-  background: #5f262c;
-  border-color: #c0504f;
-}
-.pcard .btn-stop {
-  flex: 0 0 auto;
-  font-size: 12px;
-  line-height: 1;
-  padding: 5px 9px;
-  border-radius: 6px;
-  background: #4a2326;
-  border: 1px solid #7a3b3f;
-  color: #f3c9cc;
-}
-.pcard .btn-stop:hover {
-  border-color: #c0504f;
-  background: #5a2a2e;
 }
 .gather-tag {
   flex: 1;
@@ -1163,6 +1123,16 @@ body,
 .inv-actions .cat-btn:not(:disabled):hover {
   filter: brightness(1.13);
 }
+.inv-gold {
+  border-top: 1px solid var(--line);
+}
+.inv-gold-icon {
+  width: 24px;
+  text-align: center;
+}
+.inv-gold .inv-qty {
+  color: var(--gold);
+}
 
 /* ── give-to-character form ── */
 .give-form {
@@ -1406,6 +1376,148 @@ body,
 .cp-refine-run .btn-stop:hover {
   border-color: #c0504f;
   background: #5a2a2e;
+}
+
+/* ── plan queue (user-editable action list, ui/QueuePanel.tsx) ── */
+.q-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.q-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.q-head .btn-stop {
+  flex: 0 0 auto;
+  font-size: 12px;
+  line-height: 1;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: #4a2326;
+  border: 1px solid #7a3b3f;
+  color: #f3c9cc;
+}
+.q-head .btn-stop:hover {
+  border-color: #c0504f;
+  background: #5a2a2e;
+}
+.q-head .cat-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.q-head .cat-btn.sell {
+  background: #4a2326;
+  border-color: #7a3236;
+  color: #f0c9cc;
+}
+.q-count {
+  font-size: 11px;
+  margin-left: auto;
+}
+.q-paused {
+  font-size: 11px;
+  color: #e59a95;
+}
+.q-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.q-row {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+  background: var(--panel-2);
+}
+.q-row.q-running {
+  border-color: #463174;
+}
+.q-row.q-failed {
+  border-color: #7a3b3f;
+}
+.q-row-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.q-icon {
+  flex: 0 0 auto;
+}
+.q-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.q-progress {
+  font-size: 11px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.q-actions {
+  display: flex;
+  gap: 2px;
+}
+.q-actions button {
+  font-size: 11px;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 4px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  cursor: pointer;
+}
+.q-actions button:not(:disabled):hover {
+  color: var(--text);
+  border-color: var(--muted);
+}
+.q-actions button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.q-error {
+  font-size: 11px;
+  color: #e59a95;
+  margin-top: 2px;
+}
+.q-add-form {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 6px;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  margin-top: 4px;
+}
+.q-add-form .cat-btn {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+}
+.q-add-form .cat-btn.buy {
+  background: #1f3a52;
+  border-color: #2f5e86;
+  color: #cfe0f0;
+}
+.q-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.q-field .cat-num {
+  width: 64px;
 }
 
 /* ── hover inspector (rich tile content from local catalog) ── */

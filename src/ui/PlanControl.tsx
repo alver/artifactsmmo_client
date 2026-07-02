@@ -6,17 +6,18 @@
 import { useState } from "preact/hooks";
 import { bankItems } from "../state/store";
 import { campaignJobs, startCampaign, stopCampaign } from "../state/campaign";
+import { enqueuePlan } from "../state/queue";
 import { catalog, itemName, monster as monsterOf, tileAt } from "../catalog";
-import { asset, assetFallback, slotLabel } from "../lib/util";
+import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { compileGoal } from "../plan/goal";
 import type { AcquisitionStep, Goal, Plan } from "../plan/types";
 import type { Character } from "../types/api";
 
-type Kind = "beat-monster" | "combat-level" | "complete-task";
+type Kind = "beat-monster" | "combat-level" | "complete-task" | "task-loop";
 
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
 
-function monsterList(): { code: string; name: string; level: number }[] {
+export function monsterList(): { code: string; name: string; level: number }[] {
   try {
     return [...catalog().monsters.values()]
       .filter((m) => m.type === "normal")
@@ -35,11 +36,12 @@ function stepText(s: AcquisitionStep): string {
     case "farm": return `Farm ${s.quantity}× ${itemName(s.code)} — ~${s.expectedFights} fights`;
     case "craft": return `Craft ${s.quantity}× ${itemName(s.code)}`;
     case "equip": return `Equip ${itemName(s.code)} → ${slotLabel(s.slot)}`;
+    case "train": return `Train ${titleCase(s.skill)} to Lv ${s.toLevel} by gathering`;
   }
 }
 
 const stepIcon: Record<AcquisitionStep["kind"], string> = {
-  withdraw: "🏦", buy: "🪙", gather: "⛏", farm: "⚔", craft: "⚙", equip: "🛡",
+  withdraw: "🏦", buy: "🪙", gather: "⛏", farm: "⚔", craft: "⚙", equip: "🛡", train: "🎓",
 };
 
 function human(secs: number): string {
@@ -54,6 +56,7 @@ export function PlanControl({ ch }: { ch: Character }) {
 
   const [kind, setKind] = useState<Kind>("beat-monster");
   const [mon, setMon] = useState(tileMonster || "chicken");
+  const [master, setMaster] = useState<"monsters" | "items">("monsters");
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -62,15 +65,30 @@ export function PlanControl({ ch }: { ch: Character }) {
 
   // A campaign is running for this character — show live status + stop instead.
   if (running) {
+    const isTask = running.mode === "task-loop";
+    // Task mode shows the server's authoritative task_progress/task_total; goal
+    // mode counts wins toward the compiled repeat target.
+    const progress =
+      running.phase === "fighting" ? ` · ${running.done}/${running.repeat}`
+      : (running.phase === "execute" || running.phase === "deliver") && ch.task_total > 0 ? ` · ${ch.task_progress}/${ch.task_total}`
+      : "";
     return (
-      <div class="cp-plan cp-plan-running" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-        <span class="gather-tag banking" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-          <span class="spinner" />
-          {running.note || running.phase}
-          {running.phase === "fighting" ? ` · ${running.done}/${running.repeat}` : ""}
-        </span>
-        <span class="muted" style={{ fontSize: 11, flex: 1 }}>{running.label}</span>
-        <button class="btn-stop" title="Stop the campaign" onClick={() => stopCampaign(ch.name)}>⏹</button>
+      <div class="cp-plan cp-plan-running" style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span class="gather-tag banking" style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+            <span class="spinner" />
+            {running.note || running.phase}
+            {progress}
+            {isTask ? ` · task #${(running.tasksDone ?? 0) + 1}` : ""}
+          </span>
+          <span class="muted" style={{ fontSize: 11, flex: 1 }}>{running.label}</span>
+          <button class="btn-stop" title="Stop the campaign" onClick={() => stopCampaign(ch.name)}>⏹</button>
+        </div>
+        {running.needsInBank && running.needsInBank.length > 0 && (
+          <div style={{ fontSize: 11, color: "#9a6700" }}>
+            🏦 Needs in bank for better gear: {running.needsInBank.map((c) => itemName(c)).join(", ")}
+          </div>
+        )}
       </div>
     );
   }
@@ -83,6 +101,7 @@ export function PlanControl({ ch }: { ch: Character }) {
       const goal: Goal =
         kind === "beat-monster" ? { kind, monster: mon }
         : kind === "combat-level" ? { kind, target: ch.level + 5 }
+        : kind === "task-loop" ? { kind, master }
         : { kind: "complete-task" };
       try {
         setPlan(compileGoal(ch, bankItems.value, goal));
@@ -99,7 +118,14 @@ export function PlanControl({ ch }: { ch: Character }) {
           <option value="beat-monster">Beat a monster</option>
           <option value="combat-level">Level up combat</option>
           <option value="complete-task">Complete current task</option>
+          <option value="task-loop">Task loop (accept & repeat)</option>
         </select>
+        {kind === "task-loop" && !ch.task && (
+          <select class="cp-refine-select" value={master} onChange={(e) => { setMaster((e.target as HTMLSelectElement).value as "monsters" | "items"); setPlan(null); }}>
+            <option value="monsters">Fight tasks</option>
+            <option value="items">Item tasks</option>
+          </select>
+        )}
         {kind === "beat-monster" && (
           <select class="cp-refine-select" value={mon} onChange={(e) => { setMon((e.target as HTMLSelectElement).value); setPlan(null); }}>
             {tileMonster && <option value={tileMonster}>◉ {monsterOf(tileMonster)?.name ?? tileMonster} (here)</option>}
@@ -120,15 +146,22 @@ export function PlanControl({ ch }: { ch: Character }) {
 
 function PlanView({ ch, plan }: { ch: Character; plan: Plan }) {
   const a = plan.acquisition;
-  const runnable = a.blockers.length === 0 && (plan.execution.targets.length > 0 || !!plan.execution.monster);
+  const runnable =
+    a.blockers.length === 0 &&
+    (plan.execution.targets.length > 0 || !!plan.execution.monster || plan.execution.mode === "task-loop");
   return (
     <div class="cp-plan-out" style={{ marginTop: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
         <div style={{ fontSize: 12, flex: 1 }}>{plan.summary}</div>
         {runnable && (
-          <button class="btn-refine" title="Run this plan autonomously" onClick={() => startCampaign(ch.name, plan)}>
-            ▶ Run
-          </button>
+          <>
+            <button class="btn-refine" title="Add these steps to the queue below (editable)" onClick={() => enqueuePlan(ch.name, plan)}>
+              ➕ Queue
+            </button>
+            <button class="btn-refine" title="Run self-managed (re-plans automatically as state changes)" onClick={() => startCampaign(ch.name, plan)}>
+              ▶ Auto
+            </button>
+          </>
         )}
       </div>
 
@@ -140,6 +173,25 @@ function PlanView({ ch, plan }: { ch: Character; plan: Plan }) {
               {itemName(code)}
             </span>
           ))}
+        </div>
+      )}
+
+      {plan.needsInBank && plan.needsInBank.length > 0 && (
+        <div class="cp-plan-needs" style={{ fontSize: 11, color: "#9a6700", marginBottom: 6 }}>
+          <div style={{ marginBottom: 2 }}>🏦 This character needs these items to be available in bank:</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+            {plan.needsInBank.map((code) => (
+              <span key={code} title={itemName(code)} style={{ display: "inline-flex", alignItems: "center", gap: 3, border: "1px solid #9a670044", borderRadius: 4, padding: "1px 4px" }}>
+                <img src={asset("items", code)} alt="" onError={assetFallback("items", code)} width={16} height={16} />
+                {itemName(code)}
+              </span>
+            ))}
+          </div>
+          {plan.ideal && plan.gear && (
+            <div class="muted" style={{ marginTop: 2 }}>
+              Running with the best obtainable set meanwhile — re-plan once provided.
+            </div>
+          )}
         </div>
       )}
 
@@ -167,7 +219,7 @@ function PlanView({ ch, plan }: { ch: Character; plan: Plan }) {
         </>
       )}
 
-      {a.steps.length === 0 && a.blockers.length === 0 && (
+      {a.steps.length === 0 && a.blockers.length === 0 && plan.execution.mode !== "task-loop" && (
         <div class="muted" style={{ fontSize: 12 }}>Nothing to do — you already have and wear this gear.</div>
       )}
     </div>

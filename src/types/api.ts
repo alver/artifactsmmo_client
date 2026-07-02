@@ -101,6 +101,11 @@ export function slotCode(ch: Character, slot: GearSlot): string {
   return (ch as unknown as Record<string, string>)[`${slot}_slot`] ?? "";
 }
 
+/** Stack size in a quantity-bearing gear slot (utility1/2); 0 when empty. */
+export function slotQuantity(ch: Character, slot: GearSlot): number {
+  return (ch as unknown as Record<string, number>)[`${slot}_slot_quantity`] ?? 0;
+}
+
 /** Equippable item types → the gear slot(s) they can occupy. */
 export const SLOTS_FOR_TYPE: Record<string, GearSlot[]> = {
   weapon: ["weapon"],

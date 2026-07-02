@@ -1,30 +1,25 @@
 import type { Character } from "../types/api";
 import { focusCharacter, selectedCharacter } from "../state/store";
-import { gatherJobs, startGather, stopGather } from "../state/gather";
-import { refineJobs, stopRefine } from "../state/refine";
-import { fightJobs, startFight, stopFight } from "../state/fight";
-import { itemName, monster, resource, tileAt } from "../catalog";
+import { gatherJobs } from "../state/gather";
+import { refineJobs } from "../state/refine";
+import { fightJobs } from "../state/fight";
+import { campaignJobs } from "../state/campaign";
+import { queues } from "../state/queue";
+import { queueItemText } from "../plan/queue";
+import { itemName, monster, resource } from "../catalog";
 import { asset, assetFallback, pct, titleCase } from "../lib/util";
+import { CooldownBadge } from "./Cooldown";
 
 /**
  * Compact player card (overlaid on the map). Square avatar, name + level header,
- * red HP / green XP bars, and a gather control. Clicking the card centers the
- * map on this character; the gather button starts/stops the infinite loop.
+ * red HP / green XP bars, and a read-only foot: a status line describing what the
+ * character is currently doing plus a live cooldown timer (same as the panel) so
+ * you can see at a glance that it's busy. Clicking the card centers the map on
+ * this character; per-character control lives in the panel (open by selecting).
  */
 export function CharacterMini({ ch }: { ch: Character }) {
   const selected = selectedCharacter.value === ch.name;
-  const job = gatherJobs.value[ch.name];
-  const rjob = refineJobs.value[ch.name];
-  const fjob = fightJobs.value[ch.name];
-
-  const layer = (ch as { layer?: string }).layer ?? "overworld";
-  const here = tileAt(ch.x, ch.y, layer)?.interactions.content;
-  const onResource = here?.type === "resource";
-  const onMonster = here?.type === "monster";
-  const resName = onResource ? (resource(here!.code)?.name ?? titleCase(here!.code)) : "";
-  const monName = onMonster ? (monster(here!.code)?.name ?? titleCase(here!.code)) : "";
-  const jobName = job ? (resource(job.resource)?.name ?? titleCase(job.resource)) : "";
-  const fjobName = fjob ? (monster(fjob.monster)?.name ?? titleCase(fjob.monster)) : "";
+  const status = activeStatus(ch.name);
 
   const focus = () => focusCharacter(ch.name);
 
@@ -69,52 +64,52 @@ export function CharacterMini({ ch }: { ch: Character }) {
         </div>
       </div>
 
-      {/* Foot: gather control. stopPropagation keeps clicks here from re-centering the map. */}
-      <div class="pcard-foot" onClick={(e) => e.stopPropagation()}>
-        {fjob ? (
-          <>
-            <span class={`gather-tag ${fjob.status === "fighting" ? "" : "banking"}`}>
-              <span class="spinner" />
-              {fjob.note ? fjob.note : `Fighting ${fjobName}`}
-              {fjob.fights ? ` · ${fjob.wins}/${fjob.fights}` : ""}
-            </span>
-            <button class="btn-stop" title="Stop fighting" onClick={() => stopFight(ch.name)}>
-              ⏹
-            </button>
-          </>
-        ) : job ? (
-          <>
-            <span class={`gather-tag ${job.status}`}>
-              <span class="spinner" />
-              {job.note || `Gathering ${jobName}`}
-            </span>
-            <button class="btn-stop" title="Stop gathering" onClick={() => stopGather(ch.name)}>
-              ⏹
-            </button>
-          </>
-        ) : rjob ? (
-          <>
-            <span class={`gather-tag ${rjob.status === "crafting" ? "" : "banking"}`}>
-              <span class="spinner" />
-              {rjob.note ? `${rjob.note} · ` : ""}
-              {itemName(rjob.product)}
-            </span>
-            <button class="btn-stop" title="Stop refining" onClick={() => stopRefine(ch.name)}>
-              ⏹
-            </button>
-          </>
-        ) : onMonster ? (
-          <button class="btn-fight" title={`Auto-fight ${monName} (rest to heal, repeat)`} onClick={() => startFight(ch.name)}>
-            ⚔ Auto-fight {monName}
-          </button>
-        ) : onResource ? (
-          <button class="btn-gather" onClick={() => startGather(ch.name)}>
-            ⛏ Gather {resName}
-          </button>
+      {/* Foot: read-only status line + live cooldown timer. Control moved to the panel. */}
+      <div class="pcard-foot">
+        {status ? (
+          <span class={`gather-tag ${status.cls}`} title={status.note}>
+            <span class="spinner" />
+            {status.note}
+          </span>
         ) : (
-          <span class="foot-hint">move onto a resource or monster</span>
+          <span class="foot-hint">idle</span>
         )}
+        <CooldownBadge ch={ch} />
       </div>
     </div>
   );
+}
+
+/**
+ * The live status of whatever loop is driving this character (they're mutually
+ * exclusive, so at most one is active), or null when idle. `cls` selects the tag
+ * color: default (green) for productive phases, "banking" (gold) for logistics.
+ */
+function activeStatus(name: string): { note: string; cls: string } | null {
+  const fjob = fightJobs.value[name];
+  if (fjob) {
+    const fname = monster(fjob.monster)?.name ?? titleCase(fjob.monster);
+    const tally = fjob.fights ? ` · ${fjob.wins}/${fjob.fights}` : "";
+    return { note: (fjob.note || `Fighting ${fname}`) + tally, cls: fjob.status === "fighting" ? "" : "banking" };
+  }
+  const cjob = campaignJobs.value[name];
+  if (cjob) {
+    const combat = cjob.phase === "fighting" || cjob.phase === "execute";
+    return { note: cjob.note || cjob.phase, cls: combat ? "" : "banking" };
+  }
+  const gjob = gatherJobs.value[name];
+  if (gjob) {
+    const gname = resource(gjob.resource)?.name ?? titleCase(gjob.resource);
+    return { note: gjob.note || `Gathering ${gname}`, cls: gjob.status === "banking" ? "banking" : "" };
+  }
+  const rjob = refineJobs.value[name];
+  if (rjob) {
+    return { note: `${rjob.note ? rjob.note + " · " : ""}${itemName(rjob.product)}`, cls: rjob.status === "crafting" ? "" : "banking" };
+  }
+  const q = queues.value[name];
+  if (q?.running) {
+    const head = q.items[0];
+    return { note: q.note || (head ? queueItemText(head) : "queue"), cls: head?.kind === "fight" ? "" : "banking" };
+  }
+  return null;
 }

@@ -73,11 +73,15 @@ export const nearestBank = (x: number, y: number): GameMap | undefined => neares
 export const isInventoryFull = (e: unknown): boolean =>
   e instanceof ApiError && (e.code === 497 || /inventor/i.test(e.message));
 
-/** Deposit everything the character is carrying (a no-op with empty inventory). */
-export async function depositAll(name: string): Promise<void> {
+/**
+ * Deposit everything the character is carrying (a no-op with empty inventory).
+ * `except` protects working stock — the campaign's food/potions/task items —
+ * from being banked off with the loot.
+ */
+export async function depositAll(name: string, except?: Set<string>): Promise<void> {
   const ch = characters.value[name];
   const items = (ch?.inventory || [])
-    .filter((s) => s.code && s.quantity > 0)
+    .filter((s) => s.code && s.quantity > 0 && !except?.has(s.code))
     .map((s) => ({ code: s.code, quantity: s.quantity }));
   if (items.length) await step(name, () => actions.depositItems(name, items));
 }

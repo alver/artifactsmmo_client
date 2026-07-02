@@ -15,6 +15,7 @@ import { characters, pushLog } from "./store";
 import { gatherJobs } from "./gather";
 import { refineJobs } from "./refine";
 import { campaignJobs } from "./campaign";
+import { queueActive } from "./queue";
 import { isInventoryFull, layerOf, moveTo, nearestBank, waitCooldown, waitCooldownFull } from "./loopkit";
 
 export type FightStatus = "fighting" | "resting" | "banking";
@@ -178,7 +179,7 @@ export function startFight(name: string): void {
   if (fightJobs.value[name]) return; // already running
   const ch = characters.value[name];
   if (!ch) return;
-  if (gatherJobs.value[name] || refineJobs.value[name] || campaignJobs.value[name]) {
+  if (gatherJobs.value[name] || refineJobs.value[name] || campaignJobs.value[name] || queueActive(name)) {
     pushLog({ ts: Date.now(), character: name, action: "fight", text: "stop the other loop first", kind: "bad" });
     return;
   }
@@ -227,7 +228,7 @@ export function resumeFight(): void {
   const kept: Record<string, FightJob> = {};
   let dropped = false;
   for (const [name, job] of Object.entries(fightJobs.value)) {
-    if (characters.value[name] && !gatherJobs.value[name] && !refineJobs.value[name] && !campaignJobs.value[name]) {
+    if (characters.value[name] && !gatherJobs.value[name] && !refineJobs.value[name] && !campaignJobs.value[name] && !queueActive(name)) {
       kept[name] = job;
       stopFlags.delete(name);
     } else {

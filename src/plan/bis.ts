@@ -26,6 +26,14 @@ export interface BisOptions {
   owned?: Set<string>;
   /** Also consider items craftable at the character's current skill (default true). */
   includeCraftable?: boolean;
+  /**
+   * "reachable" (default): owned + self-craftable. "all": every catalog item the
+   * character can *equip* regardless of how it would be obtained — the "ideal
+   * set" used to report gear another character must provide.
+   */
+  pool?: "reachable" | "all";
+  /** Codes force-included in their slot pools, exempt from the heuristic cap. */
+  extraCandidates?: string[];
   perSlotCap?: number; // default 12
   weaponCap?: number; // default 10
 }
@@ -69,6 +77,7 @@ function heuristic(it: Item, m: { res_fire: number; res_earth: number; res_water
       case "hp": case "boost_hp": v += e.value * 0.3; break;
       case "res_fire": case "res_earth": case "res_water": case "res_air": v += e.value * 0.5; break;
       case "boost_dmg_fire": case "boost_dmg_water": case "boost_dmg_earth": case "boost_dmg_air": v += e.value; break;
+      case "restore": v += e.value * 0.3; break; // in-combat potion healing
       default: break;
     }
   }
@@ -98,7 +107,17 @@ function buildPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlo
 
   for (const code of opts.owned ?? []) consider(code);
 
-  if (opts.includeCraftable !== false) {
+  if (opts.pool === "all") {
+    // Everything the character can wear, however it would be obtained.
+    try {
+      for (const it of catalog().items.values()) {
+        if (!SLOTS_FOR_TYPE[it.type]) continue;
+        consider(it.code);
+      }
+    } catch {
+      /* catalog not loaded — owned-only pool */
+    }
+  } else if (opts.includeCraftable !== false) {
     try {
       for (const it of catalog().items.values()) {
         if (!it.craft) continue;
@@ -111,12 +130,21 @@ function buildPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlo
     }
   }
 
-  // Cap pools so the combinatorial multi-slot search stays cheap.
+  for (const code of opts.extraCandidates ?? []) consider(code);
+
+  // Cap pools so the combinatorial multi-slot search stays cheap. Forced extras
+  // survive the cut (the heuristic scores e.g. potions near zero).
+  const pinned = new Set(opts.extraCandidates ?? []);
   const perSlotCap = opts.perSlotCap ?? 12;
   const weaponCap = opts.weaponCap ?? 10;
   const rank = (codes: string[], cap: number) => {
     if (codes.length <= cap) return codes;
-    return [...codes].sort((a, b) => heuristic(item(b)!, m) - heuristic(item(a)!, m)).slice(0, cap);
+    const keep = codes.filter((c) => pinned.has(c));
+    const rest = codes
+      .filter((c) => !pinned.has(c))
+      .sort((a, b) => heuristic(item(b)!, m) - heuristic(item(a)!, m))
+      .slice(0, Math.max(0, cap - keep.length));
+    return [...keep, ...rest];
   };
   for (const s of GEAR_SLOTS) pools[s] = rank(pools[s], s === "weapon" ? weaponCap : perSlotCap);
   return pools as Record<GearSlot, string[]>;

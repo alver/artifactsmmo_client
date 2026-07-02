@@ -92,6 +92,33 @@ effect(() => {
 });
 
 /**
+ * Armed "pick a tile" mode for FORMS (e.g. the queue's Move item): the next
+ * map-tile click hands its coordinates to the armed callback instead of doing
+ * anything. Unlike moveMode this never issues an action. The callback lives in
+ * a module variable (signals only carry JSON-ish UI state); the signal drives
+ * the map hint/cursor. Auto-disarms when the selection moves elsewhere.
+ */
+export const tilePick = signal<{ name: string; label: string } | null>(null);
+let _tilePickFn: ((x: number, y: number) => void) | null = null;
+export function armTilePick(name: string, label: string, fn: (x: number, y: number) => void): void {
+  _tilePickFn = fn;
+  tilePick.value = { name, label };
+}
+export function disarmTilePick(): void {
+  _tilePickFn = null;
+  if (tilePick.value) tilePick.value = null;
+}
+/** MapView calls this on a tile click while armed. Disarms after delivering. */
+export function deliverTilePick(x: number, y: number): void {
+  const fn = _tilePickFn;
+  disarmTilePick();
+  fn?.(x, y);
+}
+effect(() => {
+  if (tilePick.value && tilePick.value.name !== selectedCharacter.value) disarmTilePick();
+});
+
+/**
  * Achievements viewer state. Fetched on demand when the panel is opened (a read,
  * so never polled) and deliberately NOT persisted — it's always requested fresh.
  * `achievements === null` means "not loaded yet".

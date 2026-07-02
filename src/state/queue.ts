@@ -1,0 +1,394 @@
+// Automation cycle #6 — the plan queue: a per-character, user-editable list of
+// actions (move / rest / fight ×N / gather ×N / craft ×N / withdraw / …)
+// executed one item after another, top to bottom.
+//
+// Unlike the other loops, PRESENCE in the signal does NOT mean running — the
+// queue is a persistent document the user edits; a `running` flag inside the
+// entry marks execution. Every item's completion condition is checked BEFORE
+// acting, so items are skip-if-satisfied and a reload resumes mid-item (fight
+// 7/20 stays 7/20 — progress lives on the item and every increment goes
+// through the signal).
+//
+// Failure semantics: the queue PAUSES — the failed item stays at the head with
+// an error note and `running` drops to false; the user edits/removes it and
+// presses ▶ again. The "new-task" item is a dynamic expander: it accepts a
+// task at the Tasks Master, splices the compiled task's items in after itself,
+// and re-appends a fresh copy of itself at the end so the cycle continues.
+//
+// Same no-poll contract as every loop: paced purely by action-echo cooldowns.
+
+import { effect, signal } from "@preact/signals";
+import * as actions from "../api/actions";
+import { item as itemOf, itemName, monster as monsterOf } from "../catalog";
+import { compileTaskPlan } from "../plan/task";
+import { QUEUE_KINDS, newId, planToItems, queueItemText } from "../plan/queue";
+import { bankItems, characters, pushLog } from "./store";
+import { gatherJobs } from "./gather";
+import { bankQty, refineJobs } from "./refine";
+import { fightJobs } from "./fight";
+import { campaignJobs } from "./campaign";
+import { isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
+import { bankOff, fightRound, freeSpace, goToMaster, invCount, invQty, runStep } from "./exec";
+import { slotCode } from "../types/api";
+import type { StepCtx } from "./exec";
+import type { QueueItem } from "../plan/queue";
+import type { AcquisitionStep, Plan } from "../plan/types";
+import type { Character } from "../types/api";
+
+export interface QueueState {
+  items: QueueItem[];
+  running: boolean;
+  note?: string; // live status of the head item while running
+}
+
+const STORE_KEY = "ammo:v1:queue";
+function loadStored(): Record<string, QueueState> {
+  try {
+    const raw = (JSON.parse(localStorage.getItem(STORE_KEY) || "{}") as Record<string, QueueState>) || {};
+    const out: Record<string, QueueState> = {};
+    for (const [name, q] of Object.entries(raw)) {
+      if (!q || !Array.isArray(q.items)) continue; // unknown shape — drop, never crash resume
+      out[name] = { ...q, items: q.items.filter((it) => it && QUEUE_KINDS.includes(it.kind)), running: !!q.running };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Per-character queues, keyed by name. Hydrated from localStorage at load so
+ * queues (and mid-item progress) survive a reload; running ones are re-launched
+ * by resumeQueue() after the boot sync.
+ */
+export const queues = signal<Record<string, QueueState>>(loadStored());
+const stopFlags = new Set<string>();
+
+// Mirror to localStorage on every change (edits AND per-action progress).
+effect(() => {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(queues.value));
+  } catch {
+    /* quota / unavailable — non-fatal */
+  }
+});
+
+/** Is the queue currently EXECUTING for this character (⇒ other loops must not start)? */
+export const queueActive = (name: string): boolean => !!queues.value[name]?.running;
+
+function setQueue(name: string, patch: Partial<QueueState>): void {
+  const cur = queues.value[name];
+  if (!cur) return;
+  queues.value = { ...queues.value, [name]: { ...cur, ...patch } };
+}
+
+/** The runner's own item patch — no head lock (the runner must update progress). */
+function patchItem(name: string, id: string, patch: Partial<QueueItem>): void {
+  const cur = queues.value[name];
+  if (!cur) return;
+  setQueue(name, { items: cur.items.map((it) => (it.id === id ? ({ ...it, ...patch } as QueueItem) : it)) });
+}
+
+// ── User editing ops (all refuse to touch the currently-executing head) ─────
+
+const headLocked = (q: QueueState | undefined, id: string): boolean => !!q?.running && q.items[0]?.id === id;
+
+/** Append (or insert at `index`) an item; creates the character's queue lazily. */
+export function addItem(name: string, item: QueueItem, index?: number): void {
+  const cur = queues.value[name] ?? { items: [], running: false };
+  const items = [...cur.items];
+  const at = index == null ? items.length : Math.max(cur.running ? 1 : 0, Math.min(index, items.length));
+  items.splice(at, 0, item);
+  queues.value = { ...queues.value, [name]: { ...cur, items } };
+}
+
+export function removeItem(name: string, id: string): void {
+  const cur = queues.value[name];
+  if (!cur || headLocked(cur, id)) return;
+  setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
+}
+
+/** User edit — clears the item's error (an edited item gets a fresh chance). */
+export function updateItem(name: string, id: string, patch: Partial<QueueItem>): void {
+  if (headLocked(queues.value[name], id)) return;
+  patchItem(name, id, { ...patch, error: undefined });
+}
+
+export function moveItem(name: string, id: string, dir: -1 | 1): void {
+  const cur = queues.value[name];
+  if (!cur || headLocked(cur, id)) return;
+  const i = cur.items.findIndex((it) => it.id === id);
+  const j = i + dir;
+  const floor = cur.running ? 1 : 0; // nothing may move above the executing head
+  if (i < floor || j < floor || j >= cur.items.length) return;
+  const items = [...cur.items];
+  [items[i], items[j]] = [items[j], items[i]];
+  setQueue(name, { items });
+}
+
+export function clearQueue(name: string): void {
+  const cur = queues.value[name];
+  if (!cur || cur.running) return;
+  setQueue(name, { items: [], note: undefined });
+}
+
+/** Flatten a compiled plan onto the end of the queue. */
+export function enqueuePlan(name: string, plan: Plan): void {
+  for (const it of planToItems(plan)) addItem(name, it);
+}
+
+// ── The runner ───────────────────────────────────────────────────────────────
+
+const log = (name: string, text: string, kind: "ok" | "bad" | "info" = "info"): void =>
+  pushLog({ ts: Date.now(), character: name, action: "queue", text, kind });
+
+const skillLevel = (ch: Character, skill: string): number =>
+  (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
+
+const keepOf = (it: QueueItem): string[] | undefined =>
+  it.kind === "fight" || it.kind === "deliver" ? it.keep : undefined;
+
+function ctxOf(name: string, it: QueueItem): StepCtx {
+  return {
+    keep: keepOf(it),
+    food: it.kind === "fight" ? it.food : undefined,
+    note: (text) => setQueue(name, { note: text }),
+  };
+}
+
+/**
+ * Run ONE action of the head item. Returns true when the item is complete
+ * (the completion condition is always checked first, so a satisfied item is
+ * skipped and a reload never repeats finished work). Throws on failure — the
+ * loop pauses the queue with the message.
+ */
+async function runItem(name: string, ch: Character, it: QueueItem): Promise<boolean> {
+  const ctx = ctxOf(name, it);
+  switch (it.kind) {
+    case "move": {
+      if (ch.x === it.x && ch.y === it.y) return true;
+      ctx.note(`→ (${it.x}, ${it.y})`);
+      await moveTo(name, it.x, it.y);
+      return false;
+    }
+    case "rest": {
+      if (ch.hp >= ch.max_hp) return true;
+      ctx.note("resting");
+      await step(name, () => actions.rest(name));
+      return false;
+    }
+    case "withdraw": {
+      const missing = it.quantity - invQty(ch, it.code);
+      if (missing <= 0) return true;
+      const bank = it.x != null ? { x: it.x, y: it.y! } : nearestBank(ch.x, ch.y);
+      if (!bank) throw new Error("no bank found on the map");
+      await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: missing, x: bank.x, y: bank.y }, ctx);
+      return false;
+    }
+    case "buy": {
+      const tile = it.x != null ? { x: it.x, y: it.y } : it.npc ? nearest("npc", it.npc, ch.x, ch.y) : undefined;
+      if (!tile || tile.x == null) throw new Error(`no shop tile known for ${itemName(it.code)} — edit the item`);
+      const s: AcquisitionStep = { kind: "buy", code: it.code, quantity: it.quantity, npc: it.npc ?? "", cost: 0, x: tile.x, y: tile.y };
+      await runStep(name, ch, s, ctx);
+      return true; // one buy call covers the whole quantity
+    }
+    case "gather": {
+      if (it.done >= it.times) return true;
+      const tile = it.x != null ? { x: it.x, y: it.y } : nearest("resource", it.resource, ch.x, ch.y);
+      if (!tile || tile.x == null) throw new Error(`no ${it.resource} on the map`);
+      const s: AcquisitionStep = { kind: "gather", code: it.code, quantity: it.times - it.done, resource: it.resource, level: 0, x: tile.x, y: tile.y };
+      const r = await runStep(name, ch, s, ctx);
+      if (r.did === "acted") patchItem(name, it.id, { done: it.done + 1 });
+      return false;
+    }
+    case "craft": {
+      if (it.done >= it.quantity) return true;
+      if (it.done === 0 && invQty(ch, it.code) >= it.quantity) return true; // already have them
+      const skill = it.skill ?? itemOf(it.code)?.craft?.skill;
+      const tile = it.x != null ? { x: it.x, y: it.y } : skill ? nearest("workshop", skill, ch.x, ch.y) : undefined;
+      if (!tile || tile.x == null) throw new Error(`no workshop for ${itemName(it.code)}`);
+      const s: AcquisitionStep = { kind: "craft", code: it.code, quantity: it.quantity - it.done, skill: skill ?? "", level: 0, x: tile.x, y: tile.y };
+      const r = await runStep(name, ch, s, ctx);
+      if (r.did === "crafted") patchItem(name, it.id, { done: it.done + r.produced });
+      return false;
+    }
+    case "equip": {
+      if (slotCode(ch, it.slot) === it.code) return true;
+      await runStep(name, ch, { kind: "equip", code: it.code, slot: it.slot, quantity: it.quantity }, ctx);
+      return false;
+    }
+    case "train": {
+      if (skillLevel(ch, it.skill) >= it.toLevel) return true;
+      const tile = it.x != null ? { x: it.x, y: it.y } : nearest("resource", it.resource, ch.x, ch.y);
+      if (!tile || tile.x == null) throw new Error(`no ${it.resource} on the map`);
+      const s: AcquisitionStep = { kind: "train", skill: it.skill, toLevel: it.toLevel, resource: it.resource, level: 0, x: tile.x, y: tile.y };
+      await runStep(name, ch, s, ctx);
+      return false;
+    }
+    case "fight": {
+      if (it.done >= it.times) return true;
+      const m = monsterOf(it.monster);
+      const tile = m ? nearest("monster", it.monster, ch.x, ch.y) : undefined;
+      if (!m || !tile) throw new Error(`no ${it.monster} on the map`);
+      ctx.note(`fighting ${it.done + 1}/${it.times}`);
+      const out = await fightRound(name, ch, m, tile, S(name), ctx);
+      if (out === "no-win") throw new Error(`not a safe win vs ${m.name}`);
+      if (out === "gave-up") throw new Error("lost 2 fights in a row");
+      if (out === "won") patchItem(name, it.id, { done: it.done + 1 });
+      if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+      return false;
+    }
+    case "deposit-all": {
+      if (invCount(ch) === 0) return true;
+      await bankOff(name, ch.x, ch.y, undefined, ctx.note);
+      return false;
+    }
+    case "new-task": {
+      if (!ch.task) {
+        const at = await goToMaster(name, ch, it.master, ctx.note);
+        if (at === "missing") throw new Error("no tasks master on the map");
+        if (at === "there") { ctx.note("accepting a task"); await step(name, () => actions.taskNew(name)); }
+        return false; // the echo sets ch.task → next tick expands
+      }
+      // Expand: compile THIS task, splice its items in after the expander, and
+      // re-append a fresh expander so the loop continues — one signal write, so
+      // the runner never sees a popped-but-unexpanded queue.
+      const plan = compileTaskPlan(ch, bankItems.value, { master: it.master, loop: false });
+      if (plan.acquisition.blockers.length) throw new Error(plan.acquisition.blockers[0]);
+      const cur = queues.value[name];
+      if (!cur) return false;
+      setQueue(name, { items: [...planToItems(plan), ...cur.items.slice(1), { kind: "new-task", master: it.master, id: newId() }] });
+      log(name, `task accepted: ${plan.summary}`, "info");
+      return false;
+    }
+    case "deliver": {
+      const remaining = Math.max(0, ch.task_total - ch.task_progress);
+      if (ch.task_type !== "items" || remaining <= 0) return true;
+      const held = invQty(ch, ch.task);
+      if (held > 0) {
+        const at = await goToMaster(name, ch, "items", ctx.note);
+        if (at === "missing") throw new Error("no items tasks master on the map");
+        if (at === "there") {
+          ctx.note(`deliver ${itemName(ch.task)}`);
+          await step(name, () => actions.taskTrade(name, ch.task, Math.min(held, remaining)));
+        }
+        return false;
+      }
+      // Nothing in hand — pull banked stock in inventory-sized chunks.
+      const banked = bankQty(ch.task);
+      if (banked > 0 && freeSpace(ch) > 0) {
+        const bank = nearestBank(ch.x, ch.y);
+        if (!bank) throw new Error("no bank found on the map");
+        const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining), x: bank.x, y: bank.y };
+        await runStep(name, ch, s, ctx);
+        return false;
+      }
+      throw new Error(`nothing left to deliver — produce more ${itemName(ch.task)} first`);
+    }
+    case "turn-in": {
+      if (!ch.task) return true;
+      const remaining = Math.max(0, ch.task_total - ch.task_progress);
+      if (remaining > 0) throw new Error(`task not complete — ${ch.task_progress}/${ch.task_total}`);
+      const at = await goToMaster(name, ch, ch.task_type === "items" ? "items" : "monsters", ctx.note);
+      if (at === "missing") throw new Error("no tasks master on the map");
+      if (at === "there") {
+        ctx.note("turning in the task");
+        await step(name, () => actions.taskComplete(name));
+        log(name, "task turned in — rewards collected", "ok");
+      }
+      return false;
+    }
+  }
+}
+
+// Loss streaks are per-run, in-memory (matches the campaign).
+const lossState = new Map<string, { losses: number }>();
+const S = (name: string): { losses: number } => {
+  let s = lossState.get(name);
+  if (!s) { s = { losses: 0 }; lossState.set(name, s); }
+  return s;
+};
+
+async function runLoop(name: string): Promise<void> {
+  try {
+    while (!stopFlags.has(name)) {
+      // Yield to the event loop every tick: no buggy path may spin the tab.
+      await sleep(50);
+      const q = queues.value[name];
+      const ch = characters.value[name];
+      if (!q?.running || !ch) return;
+      const item = q.items[0];
+      if (!item) {
+        setQueue(name, { running: false, note: undefined });
+        log(name, "queue complete", "ok");
+        return;
+      }
+      try {
+        const done = await runItem(name, ch, item);
+        if (done) {
+          const cur = queues.value[name];
+          if (cur?.items[0]?.id === item.id) setQueue(name, { items: cur.items.slice(1), note: undefined });
+          S(name).losses = 0;
+        }
+      } catch (e) {
+        if (isInventoryFull(e)) {
+          try { await bankOff(name, ch.x, ch.y, keepOf(item), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
+        }
+        const msg = (e as Error).message;
+        patchItem(name, item.id, { error: msg });
+        setQueue(name, { running: false, note: undefined });
+        log(name, `queue paused — ${queueItemText(item)}: ${msg}`, "bad");
+        return;
+      }
+    }
+  } finally {
+    stopFlags.delete(name);
+    // Exited via the stop flag (manual ⏹) — drop the running state cleanly.
+    if (queues.value[name]?.running) setQueue(name, { running: false, note: undefined });
+  }
+}
+
+/** Start executing the queue from its head. */
+export function startQueue(name: string): void {
+  const q = queues.value[name];
+  if (!q || q.running) return;
+  if (!q.items.length) { log(name, "queue is empty", "bad"); return; }
+  if (gatherJobs.value[name] || refineJobs.value[name] || fightJobs.value[name] || campaignJobs.value[name]) {
+    log(name, "stop the other loop first", "bad");
+    return;
+  }
+  if (!characters.value[name]) return;
+  stopFlags.delete(name);
+  S(name).losses = 0;
+  const head = q.items[0];
+  const items = head?.error ? q.items.map((it) => (it.id === head.id ? { ...it, error: undefined } : it)) : q.items;
+  queues.value = { ...queues.value, [name]: { ...q, items, running: true, note: "starting…" } };
+  log(name, `queue started — ${q.items.length} item${q.items.length === 1 ? "" : "s"}`, "info");
+  void runLoop(name);
+}
+
+/** Ask the queue to pause after the current action completes. */
+export function stopQueue(name: string): void {
+  if (!queues.value[name]?.running) return;
+  stopFlags.add(name);
+  setQueue(name, { note: "stopping…" });
+}
+
+/**
+ * Re-launch queues that were running when the page unloaded. Call once after
+ * the boot sync. A queue whose character is gone or whose character another
+ * loop owns is demoted to stopped — the ITEMS are always kept (the queue is a
+ * document, not just a job).
+ */
+export function resumeQueue(): void {
+  for (const [name, q] of Object.entries(queues.value)) {
+    if (!q.running) continue;
+    if (characters.value[name] && !gatherJobs.value[name] && !refineJobs.value[name] && !fightJobs.value[name] && !campaignJobs.value[name]) {
+      stopFlags.delete(name);
+      log(name, "queue resumed after reload", "info");
+      void runLoop(name);
+    } else {
+      setQueue(name, { running: false, note: undefined });
+    }
+  }
+}

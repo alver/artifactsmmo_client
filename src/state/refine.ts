@@ -14,6 +14,7 @@ import { catalog, item } from "../catalog";
 import { bankItems, characters, pushLog } from "./store";
 import { gatherJobs } from "./gather";
 import { campaignJobs } from "./campaign";
+import { queueActive } from "./queue";
 import { depositAll, moveTo, nearest, step, waitCooldownFull } from "./loopkit";
 import type { Character } from "../types/api";
 import type { ItemStack } from "../types/catalog";
@@ -177,8 +178,8 @@ async function runLoop(name: string): Promise<void> {
 /** Start refining `product` for a character, sourcing materials from the bank. */
 export function startRefine(name: string, product: string): void {
   if (refineJobs.value[name]) return; // already running
-  if (gatherJobs.value[name] || campaignJobs.value[name]) {
-    pushLog({ ts: Date.now(), character: name, action: "refine", text: `stop ${gatherJobs.value[name] ? "gathering" : "the campaign"} first`, kind: "bad" });
+  if (gatherJobs.value[name] || campaignJobs.value[name] || queueActive(name)) {
+    pushLog({ ts: Date.now(), character: name, action: "refine", text: `stop ${gatherJobs.value[name] ? "gathering" : campaignJobs.value[name] ? "the campaign" : "the queue"} first`, kind: "bad" });
     return;
   }
   const ch = characters.value[name];
@@ -227,7 +228,7 @@ export function resumeRefine(): void {
   const kept: Record<string, RefineJob> = {};
   let dropped = false;
   for (const [name, job] of Object.entries(refineJobs.value)) {
-    if (characters.value[name] && !gatherJobs.value[name] && !campaignJobs.value[name]) {
+    if (characters.value[name] && !gatherJobs.value[name] && !campaignJobs.value[name] && !queueActive(name)) {
       kept[name] = job;
       stopFlags.delete(name);
     } else {

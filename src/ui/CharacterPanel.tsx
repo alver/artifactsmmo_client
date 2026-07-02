@@ -3,13 +3,12 @@ import { characters, characterList, selectedCharacter } from "../state/store";
 import { item, itemName, monster, npc, resource, tileAt } from "../catalog";
 import { asset, assetFallback, pct, slotLabel, titleCase } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
-import { gatherJobs } from "../state/gather";
-import { refineJobs, refineOptions, startRefine, stopRefine } from "../state/refine";
-import { fightJobs } from "../state/fight";
+import { queues } from "../state/queue";
 import { GearSlots } from "./GearSlots";
 import { ActionBar } from "./ActionBar";
 import { CombatForecast } from "./CombatForecast";
 import { PlanControl } from "./PlanControl";
+import { QueueSection } from "./QueuePanel";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
 import * as actions from "../api/actions";
@@ -100,22 +99,17 @@ export function CharacterPanel() {
       </div>
 
       <div class="cp-body">
-        <div class="bars">
-          <StatBar label="HP" cur={ch.hp} max={ch.max_hp} cls="hp" />
-          <StatBar label="XP" cur={ch.xp} max={ch.max_xp} cls="xp" />
-        </div>
-        <div class="cp-meta">
-          <span class="gold">🪙 {ch.gold.toLocaleString()}</span>
-        </div>
+        <details class="section" open>
+          <summary>Planner</summary>
+          <PlanControl ch={ch} />
+        </details>
+
+        <details class="section" open>
+          <summary>Queue{(queues.value[ch.name]?.items.length ?? 0) > 0 ? ` (${queues.value[ch.name]!.items.length})` : ""}</summary>
+          <QueueSection ch={ch} />
+        </details>
 
         <ActionBar ch={ch} />
-
-        {content?.type === "monster" && <CombatForecast ch={ch} monsterCode={content.code} />}
-
-        <div class="cp-refine">
-          <div class="cp-refine-label">Refine raw materials</div>
-          <RefineControl ch={ch} />
-        </div>
 
         {ch.task && (
           <div class="task">
@@ -170,11 +164,6 @@ export function CharacterPanel() {
           <GearSlots ch={ch} />
         </details>
 
-        <details class="section">
-          <summary>Planner</summary>
-          <PlanControl ch={ch} />
-        </details>
-
         <details class="section" open>
           <summary>Skills</summary>
           <div class="cp-skills">
@@ -212,6 +201,8 @@ export function CharacterPanel() {
             <GiveSection ch={ch} />
           </details>
         )}
+
+        {content?.type === "monster" && <CombatForecast ch={ch} monsterCode={content.code} />}
       </div>
     </aside>
   );
@@ -225,12 +216,17 @@ export function CharacterPanel() {
 function InventorySection({ ch, onBank }: { ch: Character; onBank: boolean }) {
   const ctl = useActionRunner(ch);
   const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
-  if (inv.length === 0) return <div class="inv-list muted">empty</div>;
   return (
     <div class="inv-list">
+      {inv.length === 0 && <div class="muted">empty</div>}
       {inv.map((s) => (
         <InvRow key={s.code} ch={ch} slot={s} ctl={ctl} onBank={onBank} />
       ))}
+      <div class="inv-row inv-gold" title="Gold carried">
+        <span class="inv-gold-icon">🪙</span>
+        <span class="inv-name">Gold</span>
+        <span class="inv-qty">×{ch.gold.toLocaleString()}</span>
+      </div>
     </div>
   );
 }
@@ -368,76 +364,3 @@ function GiveSection({ ch }: { ch: Character }) {
   );
 }
 
-/**
- * Pick a recipe and start the bank↔workshop refine loop, or show its live status
- * with a stop button while it runs. The dropdown lists every refining recipe the
- * bank currently has materials for, with the makeable count; recipes above this
- * character's skill level are shown but disabled.
- */
-function RefineControl({ ch }: { ch: Character }) {
-  const [sel, setSel] = useState("");
-  const job = refineJobs.value[ch.name];
-  const gathering = !!gatherJobs.value[ch.name];
-  const fighting = !!fightJobs.value[ch.name];
-
-  if (job) {
-    return (
-      <div class="cp-refine-run">
-        <span class={`gather-tag ${job.status === "crafting" ? "" : "banking"}`}>
-          <span class="spinner" />
-          {job.note ? `${job.note} · ` : ""}
-          {itemName(job.product)}
-          {job.crafted ? ` · ${job.crafted} made` : ""}
-        </span>
-        <button class="btn-stop" title="Stop refining" onClick={() => stopRefine(ch.name)}>
-          ⏹
-        </button>
-      </div>
-    );
-  }
-  if (gathering) return <span class="foot-hint">busy gathering — stop it to refine</span>;
-  if (fighting) return <span class="foot-hint">busy fighting — stop it to refine</span>;
-
-  const options = refineOptions(ch);
-  if (options.length === 0) return <span class="foot-hint">No raw materials in the bank to refine.</span>;
-
-  const chosen = options.find((o) => o.code === sel) ?? options.find((o) => o.levelOk) ?? options[0];
-  return (
-    <div class="cp-refine-pick">
-      <select
-        class="cp-refine-select"
-        value={chosen.code}
-        onChange={(e) => setSel((e.target as HTMLSelectElement).value)}
-      >
-        {options.map((o) => (
-          <option key={o.code} value={o.code} disabled={!o.levelOk}>
-            {o.name} · ×{o.maxCraft}
-            {o.levelOk ? "" : ` · needs ${titleCase(o.skill)} Lv ${o.level}`}
-          </option>
-        ))}
-      </select>
-      <button
-        class="btn-refine"
-        disabled={!chosen.levelOk}
-        title={chosen.levelOk ? `Refine ${chosen.name}` : `Requires ${titleCase(chosen.skill)} Lv ${chosen.level}`}
-        onClick={() => startRefine(ch.name, chosen.code)}
-      >
-        ⚙ Refine
-      </button>
-    </div>
-  );
-}
-
-function StatBar({ label, cur, max, cls }: { label: string; cur: number; max: number; cls: string }) {
-  return (
-    <div class="bar-row">
-      <span class="bar-label">{label}</span>
-      <div class="bar">
-        <div class={`fill ${cls}`} style={{ width: pct(cur, max) + "%" }} />
-      </div>
-      <span class="bar-val">
-        {cur}/{max}
-      </span>
-    </div>
-  );
-}
