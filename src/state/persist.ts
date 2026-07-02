@@ -5,7 +5,7 @@
 // Static catalogs are NOT persisted here — they ship as files under public/data/
 // and are loaded into memory each boot.
 
-import { account, bankDetails, bankItems, characters, log, syncedAt } from "./store";
+import { account, bankDetails, bankItems, characters, log, seedLogId, syncedAt } from "./store";
 import type { LogEntry } from "./store";
 import type { Account, BankDetails, BankItem, Character } from "../types/api";
 
@@ -32,7 +32,11 @@ export function loadPersisted(): void {
     if (s.bankItems) bankItems.value = s.bankItems;
     if (s.bankDetails) bankDetails.value = s.bankDetails;
     if (s.account) account.value = s.account;
-    if (s.log) log.value = s.log;
+    if (s.log) {
+      log.value = s.log;
+      // New ids must start past the restored ones — they're used as render keys.
+      seedLogId(s.log.reduce((m, e) => Math.max(m, e.id || 0), 0));
+    }
     if (s.syncedAt) syncedAt.value = s.syncedAt;
   } catch {
     /* corrupt cache — start clean */

@@ -187,6 +187,11 @@ export function onCooldown(name: string): ReadonlySignal<boolean> {
 }
 
 let _logId = 0;
+/** Bump the id counter past restored entries so new ids never collide with
+ *  persisted ones (they're used as render keys). Called by loadPersisted(). */
+export function seedLogId(min: number): void {
+  if (min > _logId) _logId = min;
+}
 export function pushLog(entry: Omit<LogEntry, "id">): void {
   log.value = [{ ...entry, id: ++_logId }, ...log.value].slice(0, 200);
 }
