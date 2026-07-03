@@ -2,13 +2,11 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { effect } from "@preact/signals";
 import { catalog } from "../catalog";
-import { characterList, characters, deliverTilePick, disarmTilePick, focusRequest, itemsCatalogOpen, mapHover, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
+import { characters, deliverTilePick, disarmTilePick, focusRequest, itemsCatalogOpen, mapHover, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
 import * as actions from "../api/actions";
 import type { GameMap } from "../types/catalog";
 import type { Character } from "../types/api";
 import { MapInspector } from "./MapInspector";
-import { CharacterMini } from "./CharacterMini";
-import { ActivityLog } from "./ActivityLog";
 
 type Layer = "overworld" | "underground" | "interior";
 const LAYERS: Layer[] = ["overworld", "underground", "interior"];
@@ -421,11 +419,6 @@ export function MapView() {
     <div class="map-wrap">
       <canvas ref={canvasRef} class={"map-canvas" + (moveMode.value || tilePick.value ? " moving" : "")} />
       <MapInspector />
-      <div class="pcards">
-        {characterList().map((ch) => (
-          <CharacterMini key={ch.name} ch={ch} />
-        ))}
-      </div>
       <div class="layer-switch">
         {LAYERS.map((l) => (
           <button key={l} class={layer.value === l ? "active" : ""} onClick={() => (layer.value = l)}>
@@ -440,7 +433,6 @@ export function MapView() {
             ? `Click a tile to move ${moveMode.value} · Esc to cancel`
             : "drag to pan · scroll to zoom · click a building to interact"}
       </div>
-      <ActivityLog />
     </div>
   );
 }

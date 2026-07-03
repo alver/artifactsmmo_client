@@ -10,6 +10,8 @@ import { ItemPopup } from "./ui/ItemPopup";
 import { AchievementsPanel } from "./ui/AchievementsPanel";
 import { ItemsCatalogPanel } from "./ui/ItemsCatalog";
 import { SimPlayground } from "./ui/SimPlayground";
+import { Roster } from "./ui/CharacterMini";
+import { ActivityLog } from "./ui/ActivityLog";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
@@ -59,9 +61,21 @@ export function App() {
       {onSim ? (
         <SimPlayground />
       ) : (
-        <div class="map-stage">
-          <CharacterPanel />
-          <MapView />
+        <div class="main-stage">
+          {/* Main area: character management. Roster strip on top, then a
+              multi-column workspace for the selected character. */}
+          <section class="workspace">
+            <Roster />
+            <CharacterPanel />
+          </section>
+          {/* Right sidebar: the map (small, still fully interactive) above
+              the activity feed. */}
+          <aside class="side-stack">
+            <MapView />
+            <ActivityLog />
+          </aside>
+          {/* Wide overlay drawer over the sidebar: workshop / NPC / bank /
+              tasks view (tile click) or the full items catalog (📦). */}
           <CatalogPanel />
           <ItemsCatalogPanel />
         </div>

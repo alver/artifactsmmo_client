@@ -61,6 +61,7 @@ export function QueueSection({ ch }: { ch: Character }) {
               {q.note || "running"}
             </span>
             <span class="q-count muted">{q.items.length} left</span>
+            <button class="cat-btn" title="Add an action to the end — the queue keeps running" onClick={() => setAdding(!adding)}>＋ Add</button>
             <button class="btn-stop" title="Pause the queue after the current action" onClick={() => stopQueue(ch.name)}>⏹</button>
           </>
         ) : (

@@ -1,5 +1,5 @@
 import type { Character } from "../types/api";
-import { focusCharacter, selectedCharacter } from "../state/store";
+import { characterList, focusCharacter, selectedCharacter } from "../state/store";
 import { gatherJobs } from "../state/gather";
 import { refineJobs } from "../state/refine";
 import { fightJobs } from "../state/fight";
@@ -11,11 +11,26 @@ import { asset, assetFallback, pct, titleCase } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
 
 /**
- * Compact player card (overlaid on the map). Square avatar, name + level header,
+ * The roster strip across the top of the workspace: one compact card per
+ * character. Owns the `characters` subscription so the App shell doesn't
+ * re-render on every action echo.
+ */
+export function Roster() {
+  return (
+    <div class="roster">
+      {characterList().map((ch) => (
+        <CharacterMini key={ch.name} ch={ch} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Compact player card (roster strip). Square avatar, name + level header,
  * red HP / green XP bars, and a read-only foot: a status line describing what the
  * character is currently doing plus a live cooldown timer (same as the panel) so
- * you can see at a glance that it's busy. Clicking the card centers the map on
- * this character; per-character control lives in the panel (open by selecting).
+ * you can see at a glance that it's busy. Clicking the card selects the character
+ * (opens it in the workspace) and centers the map on it.
  */
 export function CharacterMini({ ch }: { ch: Character }) {
   const selected = selectedCharacter.value === ch.name;
@@ -28,7 +43,7 @@ export function CharacterMini({ ch }: { ch: Character }) {
       class={`pcard${selected ? " selected" : ""}`}
       role="button"
       tabIndex={0}
-      title={`Center map on ${ch.name}`}
+      title={`Select ${ch.name} (centers the map too)`}
       onClick={focus}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {

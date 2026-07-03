@@ -1,5 +1,5 @@
-import { useState } from "preact/hooks";
-import { bankDetails, bankItems, characters, itemPopup, panelTarget, selectedCharacter } from "../state/store";
+import { useEffect, useState } from "preact/hooks";
+import { bankDetails, bankItems, characters, itemPopup, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
 import type { PanelTarget } from "../state/store";
 import { catalog, item, itemName, npc } from "../catalog";
 import { npcForSell } from "../plan/acquire";
@@ -67,6 +67,15 @@ export function CatalogPanel() {
 }
 
 function CatalogBody({ target }: { target: PanelTarget }) {
+  // Escape closes the drawer — unless an armed map mode wants the key first.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !moveMode.peek() && !tilePick.peek()) panelTarget.value = null;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // Character(s) standing on this exact tile — prefer the selected one as actor.
   const present = Object.values(characters.value).filter(
     (c) => c.x === target.x && c.y === target.y && layerOf(c) === target.layer,
@@ -385,9 +394,11 @@ function NpcList({ npc: n, actor, ctl }: { npc?: Npc; actor?: Character; ctl: Ac
       ) : (
         <>
           <div class="cat-count">{trades.length} offers</div>
-          {trades.map((t) => (
-            <NpcRow key={`${t.code}:${t.currency}`} trade={t} curLabel={curLabel(t.currency)} actor={actor} ctl={ctl} />
-          ))}
+          <div class="npc-list">
+            {trades.map((t) => (
+              <NpcRow key={`${t.code}:${t.currency}`} trade={t} curLabel={curLabel(t.currency)} actor={actor} ctl={ctl} />
+            ))}
+          </div>
         </>
       )}
     </>

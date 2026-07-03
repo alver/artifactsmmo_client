@@ -4,8 +4,8 @@
 // effects, recipe, where to get it (gather/drop/craft/NPC), where it's used
 // (recipes, NPC buy/sell prices, currency uses).
 
-import { useState } from "preact/hooks";
-import { itemPopup, itemsCatalogOpen } from "../state/store";
+import { useEffect, useState } from "preact/hooks";
+import { itemPopup, itemsCatalogOpen, moveMode, tilePick } from "../state/store";
 import { catalog } from "../catalog";
 import { asset, assetFallback, titleCase } from "../lib/util";
 import type { Item } from "../types/catalog";
@@ -35,6 +35,15 @@ function ItemsCatalogBody() {
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
   const [shown, setShown] = useState(PAGE);
+
+  // Escape closes the drawer — unless an armed map mode wants the key first.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !moveMode.peek() && !tilePick.peek()) itemsCatalogOpen.value = false;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   const items = allItems();
   const types = [...new Set(items.map((i) => i.type))].sort();

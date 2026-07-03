@@ -15,6 +15,7 @@ import {
   catalogReady,
   characters,
   lastError,
+  selectedCharacter,
   syncedAt,
   syncing,
 } from "./store";
@@ -30,6 +31,8 @@ import type { Account, AccountAchievement, BankDetails, BankItem, Character } fr
 
 export async function boot(): Promise<void> {
   loadPersisted(); // instant paint from last session
+  // Select a character right away so the workspace paints before the sync lands.
+  if (!selectedCharacter.value) selectedCharacter.value = Object.keys(characters.value)[0] ?? null;
   authed.value = hasToken();
   await loadCatalog(); // static data into memory (bundled files, no API budget)
   catalogReady.value = true;
@@ -55,6 +58,10 @@ export async function reconcile(): Promise<void> {
       getAllPages<BankItem>("/my/bank/items").catch(() => [] as BankItem[]),
     ]);
     characters.value = Object.fromEntries(chars.map((c) => [c.name, c]));
+    // The workspace always shows the selected character — default to the first.
+    if (!selectedCharacter.value || !characters.value[selectedCharacter.value]) {
+      selectedCharacter.value = chars[0]?.name ?? null;
+    }
     if (bank) bankDetails.value = bank;
     bankItems.value = items;
     await syncAccount(chars[0]?.account);

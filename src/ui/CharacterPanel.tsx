@@ -51,16 +51,16 @@ function contentLabel(type: string, code: string): string {
 }
 
 /**
- * Left-hand panel showing the full state of the selected character: vitals,
- * combat stats, equipment, gathering/crafting skills, current task and
- * inventory. Opens whenever a character is selected (e.g. by clicking its
- * mini-card on the map) and closes via the ✕ or by clearing the selection.
+ * The main character workspace: full state and control of the selected
+ * character laid out as a multi-column dashboard so (almost) everything is
+ * visible without scrolling. The control column (Planner + Queue) comes first
+ * and widest; equipment/combat and skills/inventory fill the other columns.
+ * Selection comes from the roster strip above (see ui/CharacterMini.tsx).
  */
 export function CharacterPanel() {
   const name = selectedCharacter.value;
-  if (!name) return null;
-  const ch = characters.value[name];
-  if (!ch) return null;
+  const ch = name ? characters.value[name] : undefined;
+  if (!ch) return <div class="ws-empty muted">Select a character above to manage it.</div>;
 
   // Most combat/skill fields are flat numeric props read by computed key.
   const stat = ch as unknown as Record<string, number>;
@@ -70,10 +70,11 @@ export function CharacterPanel() {
   const onBank = content?.type === "bank";
   const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
   const invQty = inv.reduce((s, it) => s + it.quantity, 0);
+  const queueCount = queues.value[ch.name]?.items.length ?? 0;
 
   return (
-    <aside class="char-panel">
-      <div class="cp-head">
+    <div class="ws-body">
+      <header class="ws-head">
         <img
           class="cp-avatar"
           src={asset("characters", ch.skin || "men1")}
@@ -87,115 +88,124 @@ export function CharacterPanel() {
           <div class="cp-sub">
             Level {ch.level} · ({ch.x}, {ch.y}){tile ? ` · ${tile.name}` : ""}
           </div>
-          {content && (
-            <span class="cp-tag">
-              {titleCase(content.type)}: {contentLabel(content.type, content.code)}
-            </span>
+        </div>
+        {content && (
+          <span class="cp-tag">
+            {titleCase(content.type)}: {contentLabel(content.type, content.code)}
+          </span>
+        )}
+        {ch.task && (
+          <span class="cp-tag" title="Current task">
+            📋 {titleCase(ch.task)} — {ch.task_progress}/{ch.task_total}
+          </span>
+        )}
+        <ActionBar ch={ch} />
+        <span class="ws-gold" title="Gold carried">
+          🪙 {ch.gold.toLocaleString()}
+        </span>
+      </header>
+
+      <div class="ws-grid">
+        <div class="ws-col ws-col-control">
+          <details class="ws-card" open>
+            <summary>Planner</summary>
+            <PlanControl ch={ch} />
+          </details>
+
+          <details class="ws-card" open>
+            <summary>Queue{queueCount > 0 ? ` (${queueCount})` : ""}</summary>
+            <QueueSection ch={ch} />
+          </details>
+        </div>
+
+        <div class="ws-col">
+          <details class="ws-card" open>
+            <summary>Equipment</summary>
+            <GearSlots ch={ch} />
+          </details>
+
+          <details class="ws-card" open>
+            <summary>Combat</summary>
+            <table class="cp-elements">
+              <thead>
+                <tr>
+                  <th />
+                  {ELEMENTS.map(([k, l]) => (
+                    <th key={k}>{l}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Attack</td>
+                  {ELEMENTS.map(([k]) => (
+                    <td key={k}>{stat[`attack_${k}`]}</td>
+                  ))}
+                </tr>
+                <tr>
+                  <td>Dmg %</td>
+                  {ELEMENTS.map(([k]) => (
+                    <td key={k}>{stat[`dmg_${k}`]}</td>
+                  ))}
+                </tr>
+                <tr>
+                  <td>Resist</td>
+                  {ELEMENTS.map(([k]) => (
+                    <td key={k}>{stat[`res_${k}`]}</td>
+                  ))}
+                </tr>
+              </tbody>
+            </table>
+            <div class="cp-stats">
+              <div class="kv-row"><span>Damage %</span><b>{ch.dmg}</b></div>
+              <div class="kv-row"><span>Critical</span><b>{ch.critical_strike}%</b></div>
+              <div class="kv-row"><span>Haste</span><b>{ch.haste}</b></div>
+              <div class="kv-row"><span>Wisdom</span><b>{ch.wisdom}</b></div>
+              <div class="kv-row"><span>Prospecting</span><b>{ch.prospecting}</b></div>
+              <div class="kv-row"><span>Speed</span><b>{ch.speed}</b></div>
+            </div>
+          </details>
+
+          {content?.type === "monster" && (
+            <details class="ws-card" open>
+              <summary>Forecast</summary>
+              <CombatForecast ch={ch} monsterCode={content.code} />
+            </details>
           )}
         </div>
-        <button class="cat-close" title="Close" onClick={() => (selectedCharacter.value = null)}>
-          ✕
-        </button>
-      </div>
 
-      <div class="cp-body">
-        <details class="section" open>
-          <summary>Skills</summary>
-          <div class="cp-skills">
-            {SKILLS.map(([key, label]) => (
-              <div key={key} class="cp-skill">
-                <b class="cp-skill-lv">{stat[`${key}_level`]}</b>
-                <span class="cp-skill-name">{label}</span>
-                <span class="cp-skill-xp">
-                  {stat[`${key}_xp`]}/{stat[`${key}_max_xp`]}
-                </span>
-              </div>
-            ))}
-          </div>
-        </details>
-
-        <details class="section" open>
-          <summary>Planner</summary>
-          <PlanControl ch={ch} />
-        </details>
-
-        <details class="section" open>
-          <summary>Queue{(queues.value[ch.name]?.items.length ?? 0) > 0 ? ` (${queues.value[ch.name]!.items.length})` : ""}</summary>
-          <QueueSection ch={ch} />
-        </details>
-
-        <ActionBar ch={ch} />
-
-        {ch.task && (
-          <div class="task">
-            <span class="muted">Task</span> {titleCase(ch.task)} — {ch.task_progress}/{ch.task_total}
-          </div>
-        )}
-
-        <details class="section" open>
-          <summary>Equipment</summary>
-          <GearSlots ch={ch} />
-        </details>
-
-        <details class="section" open>
-          <summary>
-            Inventory ({inv.length} · {invQty}/{ch.inventory_max_items})
-          </summary>
-          <InventorySection ch={ch} onBank={onBank} />
-        </details>
-
-        {characterList().length > 1 && (
-          <details class="section">
-            <summary>Give to another character</summary>
-            <GiveSection ch={ch} />
+        <div class="ws-col">
+          <details class="ws-card" open>
+            <summary>Skills</summary>
+            <div class="cp-skills">
+              {SKILLS.map(([key, label]) => (
+                <div key={key} class="cp-skill">
+                  <b class="cp-skill-lv">{stat[`${key}_level`]}</b>
+                  <span class="cp-skill-name">{label}</span>
+                  <span class="cp-skill-xp">
+                    {stat[`${key}_xp`]}/{stat[`${key}_max_xp`]}
+                  </span>
+                </div>
+              ))}
+            </div>
           </details>
-        )}
 
-        <details class="section" open>
-          <summary>Combat</summary>
-          <table class="cp-elements">
-            <thead>
-              <tr>
-                <th />
-                {ELEMENTS.map(([k, l]) => (
-                  <th key={k}>{l}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Attack</td>
-                {ELEMENTS.map(([k]) => (
-                  <td key={k}>{stat[`attack_${k}`]}</td>
-                ))}
-              </tr>
-              <tr>
-                <td>Dmg %</td>
-                {ELEMENTS.map(([k]) => (
-                  <td key={k}>{stat[`dmg_${k}`]}</td>
-                ))}
-              </tr>
-              <tr>
-                <td>Resist</td>
-                {ELEMENTS.map(([k]) => (
-                  <td key={k}>{stat[`res_${k}`]}</td>
-                ))}
-              </tr>
-            </tbody>
-          </table>
-          <div class="cp-stats">
-            <div class="kv-row"><span>Damage %</span><b>{ch.dmg}</b></div>
-            <div class="kv-row"><span>Critical</span><b>{ch.critical_strike}%</b></div>
-            <div class="kv-row"><span>Haste</span><b>{ch.haste}</b></div>
-            <div class="kv-row"><span>Wisdom</span><b>{ch.wisdom}</b></div>
-            <div class="kv-row"><span>Prospecting</span><b>{ch.prospecting}</b></div>
-            <div class="kv-row"><span>Speed</span><b>{ch.speed}</b></div>
-          </div>
-        </details>
+          <details class="ws-card" open>
+            <summary>
+              Inventory ({inv.length} · {invQty}/{ch.inventory_max_items})
+            </summary>
+            <InventorySection ch={ch} onBank={onBank} />
+          </details>
 
-        {content?.type === "monster" && <CombatForecast ch={ch} monsterCode={content.code} />}
+          {characterList().length > 1 && (
+            <details class="ws-card">
+              <summary>Give to another character</summary>
+              <GiveSection ch={ch} />
+            </details>
+          )}
+        </div>
       </div>
-    </aside>
+    </div>
   );
 }
 

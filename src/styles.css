@@ -416,35 +416,154 @@ body,
   flex-direction: column;
   overflow: hidden;
 }
-.map-stage {
+.main-stage {
   position: relative;
   flex: 1;
   min-height: 0;
   display: flex;
 }
-.map-wrap {
-  position: relative;
+
+/* ── main workspace: roster strip + character dashboard ─── */
+.workspace {
   flex: 1;
   min-width: 0;
   min-height: 0;
-}
-
-/* ── player cards overlaid on the map (top-left, stacked) ─ */
-.pcards {
-  position: absolute;
-  top: 12px;
-  left: 12px;
-  z-index: 4;
   display: flex;
   flex-direction: column;
+}
+.roster {
+  flex: 0 0 auto;
+  display: flex;
   gap: 8px;
-  pointer-events: none; /* let drags through the gaps; cards re-enable below */
+  padding: 10px 14px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
 }
-.pcards > .pcard {
-  pointer-events: auto;
+.ws-empty {
+  flex: 1;
+  display: grid;
+  place-items: center;
 }
+.ws-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 20px;
+}
+.ws-head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 2px 2px 12px;
+}
+.ws-head .cp-avatar {
+  width: 54px;
+  height: 54px;
+}
+.ws-head .cp-titles {
+  flex: 0 1 auto;
+  min-width: 160px;
+}
+.ws-head .cp-tag {
+  align-self: center;
+  font-size: 12px;
+  padding: 3px 10px;
+}
+.ws-gold {
+  margin-left: auto;
+  color: var(--gold);
+  font-variant-numeric: tabular-nums;
+  font-size: 14px;
+}
+.ws-grid {
+  display: grid;
+  grid-template-columns: minmax(400px, 1.35fr) minmax(300px, 1fr) minmax(300px, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+@media (max-width: 1560px) {
+  .ws-grid {
+    grid-template-columns: minmax(380px, 1.2fr) minmax(300px, 1fr);
+  }
+}
+@media (max-width: 1150px) {
+  .ws-grid {
+    grid-template-columns: 1fr;
+  }
+}
+.ws-col {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.ws-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px 12px;
+}
+.ws-card > summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.ws-card[open] > summary {
+  margin-bottom: 8px;
+}
+
+/* Bigger controls in the control column (planner + queue management). */
+.ws-col-control .cp-refine-select,
+.ws-col-control .btn-refine,
+.ws-col-control .cat-btn {
+  font-size: 13px;
+  padding: 7px 12px;
+}
+.ws-col-control .q-row {
+  font-size: 13px;
+  padding: 6px 8px;
+}
+.ws-col-control .q-actions button {
+  font-size: 12px;
+  padding: 4px 7px;
+}
+.ws-col-control .cat-num {
+  width: 72px;
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
+/* ── right sidebar: map + activity + catalog, stacked ───── */
+.side-stack {
+  flex: 0 0 420px;
+  width: 420px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--line);
+}
+@media (max-width: 1400px) {
+  .side-stack {
+    flex-basis: 350px;
+    width: 350px;
+  }
+}
+.map-wrap {
+  position: relative;
+  flex: 1 1 55%;
+  min-width: 0;
+  min-height: 180px;
+  overflow: hidden;
+}
+
+/* ── roster player cards ────────────────────────────────── */
 .pcard {
-  width: 208px;
+  width: 200px;
+  flex: 0 0 auto;
   text-align: left;
   padding: 8px 9px;
   border: 1px solid #39624a;
@@ -453,13 +572,13 @@ body,
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.45);
   cursor: pointer;
 }
-/* Scoped under .pcards so these outrank the global `button:hover { border-color:
+/* Scoped under .roster so these outrank the global `button:hover { border-color:
    accent }` rule — otherwise a hovered card looks identical to the selected one. */
-.pcards .pcard:hover {
+.roster .pcard:hover {
   border-color: #5a9476;
 }
 /* Listed after :hover so a selected card keeps the accent ring even while hovered. */
-.pcards .pcard.selected {
+.roster .pcard.selected {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent), 0 0 14px rgba(110, 168, 254, 0.5);
 }
@@ -639,17 +758,11 @@ body,
   background: rgba(37, 64, 107, 0.92);
 }
 
-/* activity feed overlay — surfaces the action/automation log on the map */
+/* activity feed — a stacked block in the right sidebar, under the map */
 .activity {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  width: 300px;
-  max-width: calc(100% - 24px);
-  z-index: 4;
-  background: rgba(16, 18, 24, 0.92);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  flex: 0 0 auto;
+  background: var(--panel);
+  border-top: 1px solid var(--line);
   overflow: hidden;
 }
 .activity-toggle {
@@ -685,7 +798,7 @@ body,
   color: var(--ok);
 }
 .activity-list {
-  max-height: 34vh;
+  max-height: 26vh;
   overflow-y: auto;
   padding: 4px 10px 8px;
   display: flex;
@@ -722,15 +835,28 @@ body,
   overflow-wrap: anywhere;
 }
 
-/* ── right-hand catalog panel (workshop recipes / NPC trades) ── */
+/* ── catalog drawer (workshop recipes / NPC trades / bank / items catalog) ──
+      A wide overlay anchored to the right edge of the stage, sliding over the
+      map sidebar. Non-modal: the workspace stays interactive next to it. */
 .catalog-panel {
-  flex: 0 0 320px;
-  width: 320px;
-  min-height: 0;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 12;
+  width: min(640px, calc(100% - 24px));
   display: flex;
   flex-direction: column;
   background: var(--panel);
   border-left: 1px solid var(--line);
+  box-shadow: -14px 0 36px rgba(0, 0, 0, 0.55);
+  animation: drawer-in 0.16s ease-out;
+}
+@keyframes drawer-in {
+  from {
+    transform: translateX(28px);
+    opacity: 0;
+  }
 }
 .cat-head {
   display: flex;
@@ -788,9 +914,15 @@ body,
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 10px 12px;
+  padding: 12px 16px 16px;
   display: flex;
   flex-direction: column;
+  gap: 8px;
+}
+/* NPC trade offers — responsive card grid */
+.npc-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 8px;
 }
 .cat-count {
@@ -867,20 +999,20 @@ body,
   flex: 0 0 auto;
   max-width: 45%;
 }
-/* workshop recipes — flat list, laconic form */
+/* workshop recipes — responsive card grid (the drawer is wide) */
 .recipe-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(285px, 1fr));
+  gap: 8px;
 }
 .recipe-row {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  padding: 10px 2px;
-  border-bottom: 1px solid var(--line);
-}
-.recipe-row:last-child {
-  border-bottom: none;
+  padding: 9px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
 }
 .recipe-icon {
   flex: 0 0 auto;
@@ -921,7 +1053,7 @@ body,
   font-size: 11px;
   padding: 2px 7px;
   border-radius: 5px;
-  background: var(--panel-2);
+  background: rgba(0, 0, 0, 0.28);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -930,22 +1062,22 @@ body,
   color: var(--bad);
 }
 
-/* bank contents — flat list of stored stacks */
+/* bank contents — responsive card grid of stored stacks */
 .bank-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 6px 8px;
 }
 .bank-row {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  padding: 6px 2px;
-  border-bottom: 1px solid var(--line);
+  padding: 6px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
   font-size: 13px;
-}
-.bank-row:last-child {
-  border-bottom: none;
 }
 .bank-row img {
   width: 28px;
@@ -1188,23 +1320,7 @@ body,
   object-fit: contain;
 }
 
-/* ── left-hand character panel (full detail of the selected character) ── */
-.char-panel {
-  flex: 0 0 320px;
-  width: 320px;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border-right: 1px solid var(--line);
-}
-.cp-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px;
-  border-bottom: 1px solid var(--line);
-}
+/* ── character workspace atoms (header, skills, stats — see ui/CharacterPanel) ── */
 .cp-avatar {
   flex: 0 0 auto;
   width: 48px;
@@ -1240,30 +1356,6 @@ body,
   border-radius: 999px;
   padding: 1px 8px;
   margin-top: 2px;
-}
-.char-panel .cat-close:hover {
-  color: var(--text);
-  background: var(--panel-2);
-  border-color: transparent;
-}
-.cp-body {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 12px;
-}
-.cp-meta {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin: 10px 0 4px;
-  font-size: 13px;
-}
-.char-panel .gold {
-  margin-left: 0;
-}
-.cp-meta .cooldown {
-  margin-left: auto;
 }
 .cp-elements {
   width: 100%;
@@ -1527,19 +1619,19 @@ body,
 
 /* ── items catalog panel (📦 topbar button, ui/ItemsCatalog.tsx) ── */
 .icat-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 4px 8px;
 }
 .icat-row {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 2px;
-  border-bottom: 1px solid var(--line);
+  padding: 4px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
   font-size: 12px;
-}
-.icat-row:last-of-type {
-  border-bottom: none;
 }
 .icat-row img {
   width: 24px;
@@ -1560,6 +1652,7 @@ body,
   white-space: nowrap;
 }
 .icat-more {
+  grid-column: 1 / -1;
   margin: 8px auto 2px;
   font-size: 11px;
   padding: 4px 10px;

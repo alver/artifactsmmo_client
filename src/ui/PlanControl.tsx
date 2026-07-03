@@ -208,7 +208,7 @@ function PlanView({ ch, plan }: { ch: Character; plan: Plan }) {
           <div class="muted" style={{ fontSize: 11, marginBottom: 2 }}>
             {a.feasible ? "Steps" : "Steps (partial — see blockers)"} · ≈{a.estActions} actions · ~{human(a.estSeconds)}
           </div>
-          <ol class="cp-plan-steps" style={{ margin: 0, paddingLeft: 18, fontSize: 12, maxHeight: 220, overflowY: "auto" }}>
+          <ol class="cp-plan-steps" style={{ margin: 0, paddingLeft: 18, fontSize: 12, maxHeight: 360, overflowY: "auto" }}>
             {a.steps.map((s, i) => (
               <li key={i} style={{ marginBottom: 1 }}>
                 <span style={{ marginRight: 4 }}>{stepIcon[s.kind]}</span>
