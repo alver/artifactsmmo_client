@@ -1801,8 +1801,10 @@ body,
 
 /* ── hover inspector (rich tile content from local catalog) ── */
 /* item-parameter popup — like the map inspector but viewport-fixed so it can
-   float free of the scrolling side panels (see ui/ItemPopup.tsx) */
-.item-popup {
+   float free of the scrolling side panels (see ui/ItemPopup.tsx). Doubled
+   selector so it outranks `.inspector`'s position/z-index (declared later,
+   same specificity otherwise) — it must paint above the catalog drawer (z 12). */
+.inspector.item-popup {
   position: fixed;
   z-index: 30;
 }
