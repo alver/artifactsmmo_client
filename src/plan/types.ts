@@ -87,7 +87,17 @@ export interface ExecutionSpec {
   /** Items task with deliverable stock already in inventory/bank — trade that
    *  to the Tasks Master BEFORE producing (production covers only the shortfall). */
   stockFirst?: boolean;
+  /** Desired job gear per slot, frozen at compile ("" = strip the slot to the
+   *  bank; absent slot = unmanaged). Executed by exec.ts gearSwapStep. */
+  gearPlan?: Partial<Record<GearSlot, string>>;
 }
+
+/** The kind of work a gear set is optimized for (see plan/jobgear.ts). */
+export type GearJob =
+  | { kind: "fight"; monster: string }
+  | { kind: "gather"; skill: string } // mining | woodcutting | fishing | alchemy
+  | { kind: "craft"; skill?: string }
+  | { kind: "none" };
 
 /** A goal the user picks; compileGoal() turns it into a full Plan. */
 export type Goal =

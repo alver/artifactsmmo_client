@@ -76,7 +76,9 @@ export const isInventoryFull = (e: unknown): boolean =>
 /**
  * Deposit everything the character is carrying (a no-op with empty inventory).
  * `except` protects working stock — the campaign's food/potions/task items —
- * from being banked off with the loot.
+ * from being banked off with the loot. Pocket gold is swept into the vault on
+ * every visit too (buy steps withdraw their cost back on demand — see
+ * exec.ts runStep "buy").
  */
 export async function depositAll(name: string, except?: Set<string>): Promise<void> {
   const ch = characters.value[name];
@@ -84,4 +86,6 @@ export async function depositAll(name: string, except?: Set<string>): Promise<vo
     .filter((s) => s.code && s.quantity > 0 && !except?.has(s.code))
     .map((s) => ({ code: s.code, quantity: s.quantity }));
   if (items.length) await step(name, () => actions.depositItems(name, items));
+  const gold = characters.value[name]?.gold ?? 0;
+  if (gold > 0) await step(name, () => actions.depositGold(name, gold));
 }

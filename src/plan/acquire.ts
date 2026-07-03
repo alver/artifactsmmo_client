@@ -24,10 +24,22 @@ const GATHERS_PER_LEVEL = 25;
 const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
 
-function tileForContent(type: string, code: string): { x: number; y: number } | undefined {
+/** The matching tile CLOSEST to (x, y) — steps must send characters to the
+ *  nearest bank/workshop/resource, not the first one in catalog order. */
+function tileForContent(type: string, code: string, x: number, y: number): { x: number; y: number } | undefined {
   try {
-    const t = catalog().maps.find((m) => m.interactions?.content?.type === type && m.interactions.content.code === code);
-    return t ? { x: t.x, y: t.y } : undefined;
+    let best: { x: number; y: number } | undefined;
+    let bestD = Infinity;
+    for (const m of catalog().maps) {
+      const c = m.interactions?.content;
+      if (!c || c.type !== type || c.code !== code) continue;
+      const d = Math.abs(m.x - x) + Math.abs(m.y - y);
+      if (d < bestD) {
+        bestD = d;
+        best = { x: m.x, y: m.y };
+      }
+    }
+    return best;
   } catch {
     return undefined;
   }
@@ -269,17 +281,17 @@ export function resolve(
     gather.has(code) || farm.has(code) || buy.has(code) || crafts.some((c) => c.code === code);
 
   const steps: AcquisitionStep[] = [];
-  for (const [code, qty] of withdraw) steps.push({ kind: "withdraw", code, quantity: qty, ...tileForContent("bank", "bank") });
+  for (const [code, qty] of withdraw) steps.push({ kind: "withdraw", code, quantity: qty, ...tileForContent("bank", "bank", ch.x, ch.y) });
   for (const e of equips) if (e.kind === "equip" && !produced(e.code)) steps.push(e);
-  for (const [code, b] of buy) steps.push({ kind: "buy", code, quantity: b.qty, npc: b.npc, cost: b.qty * b.price, ...tileForContent("npc", b.npc) });
-  for (const [code, g] of gather) steps.push({ kind: "gather", code, quantity: g.qty, resource: g.resource, level: g.level, ...tileForContent("resource", g.resource) });
+  for (const [code, b] of buy) steps.push({ kind: "buy", code, quantity: b.qty, npc: b.npc, cost: b.qty * b.price, ...tileForContent("npc", b.npc, ch.x, ch.y) });
+  for (const [code, g] of gather) steps.push({ kind: "gather", code, quantity: g.qty, resource: g.resource, level: g.level, ...tileForContent("resource", g.resource, ch.x, ch.y) });
   for (const [code, fm] of farm) {
     const p = 1 / Math.max(1, fm.rate);
     const expectedFights = Math.ceil(fm.qty / (p * Math.max(1, fm.avgQty)));
-    steps.push({ kind: "farm", code, quantity: fm.qty, monster: fm.monster, expectedFights, ...tileForContent("monster", fm.monster) });
+    steps.push({ kind: "farm", code, quantity: fm.qty, monster: fm.monster, expectedFights, ...tileForContent("monster", fm.monster, ch.x, ch.y) });
   }
-  for (const [skill, tr] of trains) steps.push({ kind: "train", skill, toLevel: tr.toLevel, resource: tr.resource, level: tr.level, ...tileForContent("resource", tr.resource) });
-  for (const c of crafts) steps.push({ kind: "craft", code: c.code, quantity: c.qty, skill: c.skill, level: c.level, ...tileForContent("workshop", c.skill) });
+  for (const [skill, tr] of trains) steps.push({ kind: "train", skill, toLevel: tr.toLevel, resource: tr.resource, level: tr.level, ...tileForContent("resource", tr.resource, ch.x, ch.y) });
+  for (const c of crafts) steps.push({ kind: "craft", code: c.code, quantity: c.qty, skill: c.skill, level: c.level, ...tileForContent("workshop", c.skill, ch.x, ch.y) });
   for (const e of equips) if (e.kind === "equip" && produced(e.code)) steps.push(e);
 
   // Cost estimate (a floor — ignores bank round-trips when the inventory fills

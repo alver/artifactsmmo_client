@@ -31,6 +31,7 @@ const ADDABLE: { kind: string; label: string }[] = [
   { kind: "withdraw", label: "🏦 Withdraw from bank" },
   { kind: "sell", label: "💰 Sell bank stock ×N" },
   { kind: "deposit-all", label: "📦 Deposit everything" },
+  { kind: "gear", label: "🧰 Equip for a job" },
   { kind: "new-task", label: "🔁 New task (loops)" },
   { kind: "deliver", label: "🤝 Deliver task items" },
   { kind: "turn-in", label: "✅ Turn in the task" },
@@ -210,6 +211,7 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
   const [times, setTimes] = useState(10);
   const [code, setCode] = useState("");
   const [master, setMaster] = useState<"monsters" | "items">("monsters");
+  const [gearJob, setGearJob] = useState("fight");
 
   const stats = ch as unknown as Record<string, number>;
   const monsters = monsterList();
@@ -259,6 +261,14 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
         return b ? { kind: "sell", code: b.code, quantity: Math.max(1, times), done: 0, npc: npcForSell(b.code)?.code } : null;
       }
       case "deposit-all": return { kind: "deposit-all" };
+      case "gear": {
+        if (gearJob === "fight") {
+          const monster = code || monsters[0]?.code;
+          return monster ? { kind: "gear", job: { kind: "fight", monster } } : null;
+        }
+        if (gearJob === "craft") return { kind: "gear", job: { kind: "craft" } };
+        return { kind: "gear", job: { kind: "gather", skill: gearJob } };
+      }
       case "new-task": return { kind: "new-task", master };
       case "deliver": return { kind: "deliver" };
       case "turn-in": return { kind: "turn-in" };
@@ -339,6 +349,26 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
         <label class="q-field">
           ×<input class="cat-num" type="number" min={1} value={times} onInput={(e) => setTimes(num(e))} />
         </label>
+      )}
+
+      {kind === "gear" && (
+        <>
+          <select class="cp-refine-select" value={gearJob} onChange={(e) => setGearJob(sel(e))}>
+            <option value="fight">Fight a monster</option>
+            <option value="mining">Mining</option>
+            <option value="woodcutting">Woodcutting</option>
+            <option value="fishing">Fishing</option>
+            <option value="alchemy">Alchemy (gathering)</option>
+            <option value="craft">Crafting (wisdom)</option>
+          </select>
+          {gearJob === "fight" && (
+            <select class="cp-refine-select" value={code || monsters[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
+              {monsters.map((m) => (
+                <option key={m.code} value={m.code}>{m.name} · Lv {m.level}</option>
+              ))}
+            </select>
+          )}
+        </>
       )}
 
       {kind === "new-task" && (

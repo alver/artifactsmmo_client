@@ -29,7 +29,7 @@ import { bankQty, refineJobs } from "./refine";
 import { fightJobs } from "./fight";
 import { campaignJobs } from "./campaign";
 import { isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
-import { bankOff, craftableTimes, fightRound, freeSpace, goToMaster, invCount, invQty, runStep } from "./exec";
+import { bankOff, craftableTimes, desiredForJob, fightRound, freeSpace, gearSwapStep, goToMaster, invCount, invQty, runStep } from "./exec";
 import { slotCode, slotQuantity } from "../types/api";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
@@ -147,7 +147,7 @@ const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
 
 const keepOf = (it: QueueItem): string[] | undefined =>
-  it.kind === "fight" || it.kind === "deliver" ? it.keep
+  it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
   // A withdrawal/sale protects its own item — otherwise an overflow bank-off
   // would deposit exactly what was just withdrawn and the item would spin forever.
   : it.kind === "withdraw" || it.kind === "sell" ? [it.code]
@@ -298,9 +298,14 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       return false;
     }
     case "deposit-all": {
-      if (invCount(ch) === 0) return true;
+      if (invCount(ch) === 0 && ch.gold === 0) return true; // bag empty AND pockets empty
       await bankOff(name, ch.x, ch.y, undefined, ctx.note);
       return false;
+    }
+    case "gear": {
+      const desired = it.desired ?? (it.job ? desiredForJob(name, ch, it.job) : undefined);
+      if (!desired) return true; // no set for this job (e.g. no winnable fight gear) — keep current
+      return (await gearSwapStep(name, ch, desired, ctx)) === "done";
     }
     case "new-task": {
       if (!ch.task) {

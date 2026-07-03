@@ -34,7 +34,7 @@ import { bankQty, refineJobs } from "./refine";
 import { fightJobs } from "./fight";
 import { queueActive } from "./queue";
 import { isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
-import { bankOff, craftableTimes, fightRound, freeSpace, goToMaster, invQty, runStep } from "./exec";
+import { bankOff, craftableTimes, fightRound, freeSpace, gearSwapStep, goToMaster, invQty, runStep } from "./exec";
 import { slotCode, slotQuantity } from "../types/api";
 import type { StepCtx } from "./exec";
 import type { AcquisitionStep, FoodSpec, Plan, Target } from "../plan/types";
@@ -63,6 +63,7 @@ export interface CampaignJob {
   tasksDone?: number;
   planKey?: string; // the ch.task the frozen targets were compiled for
   restock?: boolean; // a consumable top-up round is in progress (see liveTargets)
+  gearPlan?: Partial<Record<GearSlot, string>>; // desired job gear ("" = strip to bank)
 }
 
 const UTILITY_SLOTS: GearSlot[] = ["utility1", "utility2"];
@@ -225,6 +226,7 @@ function recompile(name: string, ch: Character, job: CampaignJob): boolean {
     food: plan.execution.food,
     keep: plan.execution.keep,
     needsInBank: plan.needsInBank,
+    gearPlan: plan.execution.gearPlan,
     planKey: ch.task,
     label: plan.summary,
     phase: "prep",
@@ -316,6 +318,13 @@ async function prepPhase(name: string, ch: Character, job: CampaignJob): Promise
   if (job.food && !job.restock && invQty(ch, job.food.code) === 0) {
     setJob(name, { restock: true });
     job = campaignJobs.value[name] ?? job;
+  }
+
+  // Swap to the job's gear set first (bank pieces worn, replaced gear stowed) —
+  // resolve() below then skips the already-worn targets and only plans the
+  // craft/farm remainder. Converged swaps cost nothing per tick.
+  if (job.gearPlan) {
+    if ((await gearSwapStep(name, ch, job.gearPlan, ctxOf(name, job))) === "acted") return false;
   }
 
   const acq = resolve(ch, bankItems.value, liveTargets(ch, job), { train: true, topUp: true });
@@ -500,6 +509,7 @@ export function startCampaign(name: string, plan: Plan): void {
         food: plan.execution.food,
         keep: plan.execution.keep,
         needsInBank: plan.needsInBank,
+        gearPlan: plan.execution.gearPlan,
         tasksDone: 0,
         planKey: ch.task || undefined,
         restock: true, // initial stocking round

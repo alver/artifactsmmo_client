@@ -30,6 +30,11 @@ export const equip = (name: string, code: string, slot: string, quantity = 1) =>
   act(name, "equip", [{ code, slot, quantity }]);
 export const unequip = (name: string, slot: string, quantity = 1) =>
   act(name, "unequip", [{ slot, quantity }]);
+// Season-8 batch forms: one request swaps many slots (cooldown 3s × items).
+export const equipMany = (name: string, items: { code: string; slot: string; quantity?: number }[]) =>
+  act(name, "equip", items.map((i) => ({ code: i.code, slot: i.slot, quantity: i.quantity ?? 1 })));
+export const unequipMany = (name: string, slots: { slot: string; quantity?: number }[]) =>
+  act(name, "unequip", slots.map((s) => ({ slot: s.slot, quantity: s.quantity ?? 1 })));
 export const depositItems = (name: string, items: ItemStack[]) => act(name, "bank/deposit/item", items);
 export const withdrawItems = (name: string, items: ItemStack[]) => act(name, "bank/withdraw/item", items);
 

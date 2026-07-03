@@ -18,6 +18,7 @@ import { simulate } from "../sim/combat";
 import { equippedCodes, fighterForGear } from "../sim/stats";
 import { bestInSlot } from "./bis";
 import { resolve } from "./acquire";
+import { jobGear, jobSetFromRecommendation } from "./jobgear";
 import { bestFood, bestTool, foodPerFight, foodQuantity, potionCandidate } from "./consumables";
 import { GEAR_SLOTS, slotCode } from "../types/api";
 import type { BankItem, Character, GearSlot } from "../types/api";
@@ -209,7 +210,11 @@ export function compileTaskPlan(
       ideal: prep.ideal,
       needsInBank: prep.needsInBank.length ? prep.needsInBank : undefined,
       acquisition,
-      execution: { targets: prep.targets, monster: ch.task, repeat: remaining, mode: "task-loop", loop, food: prep.food, keep: prep.keep, master: "monsters" },
+      execution: {
+        targets: prep.targets, monster: ch.task, repeat: remaining, mode: "task-loop", loop,
+        food: prep.food, keep: prep.keep, master: "monsters",
+        gearPlan: prep.gear ? jobSetFromRecommendation(ch, bank, prep.gear) : undefined,
+      },
       summary,
     };
   }
@@ -241,21 +246,28 @@ export function compileTaskPlan(
       ideal: prep.ideal,
       needsInBank: prep.needsInBank.length ? prep.needsInBank : undefined,
       acquisition,
-      execution: { targets, repeat: 0, mode: "task-loop", loop, food: prep.food, keep: [...prep.keep, ch.task], master: "items", stockFirst: stock > 0 },
+      execution: {
+        targets, repeat: 0, mode: "task-loop", loop, food: prep.food, keep: [...prep.keep, ch.task],
+        master: "items", stockFirst: stock > 0,
+        gearPlan: prep.gear ? jobSetFromRecommendation(ch, bank, prep.gear) : undefined,
+      },
       summary: `Task: deliver ${remaining}× ${itemName(ch.task)}${stockNote} — farm ${monsterOf(farmStep.monster)?.name ?? farmStep.monster} (~${farmStep.expectedFights} fights).`,
     };
   }
 
-  // Gather/craft path: equip the best tool for the dominant gathering skill —
-  // but only when the plan actually gathers (training counts). A task fully
-  // covered by existing stock is a bank→master shuttle and needs no tool.
+  // Gather/craft path: swap to the job set (best tool + prospecting/wisdom
+  // gear from the bank) — but only when the plan actually gathers (training
+  // counts); a craft-only plan gets the wisdom set; a task fully covered by
+  // existing stock is a bank→master shuttle and needs no gear at all.
   let tool: string | undefined;
+  let gearPlan: Partial<Record<GearSlot, string>> | undefined;
   if (probe.steps.some((s) => s.kind === "gather" || s.kind === "train")) {
     const owned = ownedCodes(ch, bank);
     const skills: string[] = [];
     const taskSkill = taskOf(ch.task)?.skill;
     if (taskSkill) skills.push(taskSkill);
     for (const s of probe.steps) {
+      if (s.kind === "train" && !skills.includes(s.skill)) skills.push(s.skill);
       if (s.kind !== "gather") continue;
       const r = resourceOf(s.resource);
       if (r && !skills.includes(r.skill)) skills.push(r.skill);
@@ -264,6 +276,12 @@ export function compileTaskPlan(
       tool = bestTool(ch, sk, bank, owned);
       if (tool) break;
     }
+    gearPlan = jobGear(ch, bank, { kind: "gather", skill: skills[0] ?? "mining" });
+    // The compiled tool may still need crafting — the swap's availability
+    // guard simply leaves the weapon slot alone until the craft lands.
+    if (gearPlan && tool) gearPlan.weapon = tool;
+  } else if (probe.steps.some((s) => s.kind === "craft")) {
+    gearPlan = jobGear(ch, bank, { kind: "craft", skill: taskOf(ch.task)?.skill ?? undefined });
   }
 
   const targets: Target[] = [];
@@ -274,7 +292,7 @@ export function compileTaskPlan(
     goal,
     needsInBank: acquisition.blockers.length ? [ch.task] : undefined,
     acquisition,
-    execution: { targets, repeat: 0, mode: "task-loop", loop, keep: [ch.task], master: "items", stockFirst: stock > 0 },
+    execution: { targets, repeat: 0, mode: "task-loop", loop, keep: [ch.task], master: "items", stockFirst: stock > 0, gearPlan },
     summary: `Task: deliver ${remaining}× ${itemName(ch.task)}${stockNote}${tool ? ` — gathering with ${itemName(tool)}` : ""}.`,
   };
 }

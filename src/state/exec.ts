@@ -11,14 +11,16 @@
 // `note` callback instead of writing to their own job record directly.
 
 import * as actions from "../api/actions";
-import { item, itemName, monster as monsterOf } from "../catalog";
+import { ApiError } from "../api/client";
+import { item, itemName, monster as monsterOf, npc as npcOf } from "../catalog";
 import { currentFighter } from "../sim/stats";
 import { simulate } from "../sim/combat";
-import { characters } from "./store";
+import { jobGear, nextGearAction } from "../plan/jobgear";
+import { bankDetails, bankItems, characters } from "./store";
 import { depositAll, moveTo, nearest, nearestBank, step, waitCooldownFull } from "./loopkit";
 import { slotCode, slotQuantity } from "../types/api";
-import type { AcquisitionStep, FoodSpec } from "../plan/types";
-import type { Character } from "../types/api";
+import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
+import type { Character, GearSlot } from "../types/api";
 import type { Monster } from "../types/catalog";
 
 export const invCount = (ch: Character): number => (ch.inventory || []).reduce((s, it) => s + (it.quantity || 0), 0);
@@ -85,6 +87,91 @@ export async function goToMaster(name: string, ch: Character, type: "monsters" |
   return "moving";
 }
 
+// ── Bank-centric gear swapping (see plan/jobgear.ts for the planning side) ───
+
+/**
+ * One step of the gear-swap ceremony toward `desired`: unequip mismatches →
+ * equip from hand → withdraw from bank → stow replaced/junk gear → bag last.
+ * Batched season-8 equip/unequip calls keep a full swap at ~5 requests.
+ * Returns "done" (converged — no action, no cooldown) or "acted".
+ */
+export async function gearSwapStep(
+  name: string,
+  ch: Character,
+  desired: Partial<Record<GearSlot, string>>,
+  ctx: StepCtx,
+  opts?: { junk?: boolean },
+): Promise<"done" | "acted"> {
+  const act = nextGearAction(ch, bankItems.value, desired, { keep: ctx.keep, junk: opts?.junk });
+  if (!act) return "done";
+
+  const toBank = async (): Promise<boolean> => {
+    const bank = nearestBank(ch.x, ch.y);
+    if (!bank) throw new Error("no bank found on the map");
+    if (ch.x === bank.x && ch.y === bank.y) return false;
+    ctx.note("→ bank (gear)");
+    await moveTo(name, bank.x, bank.y);
+    return true;
+  };
+
+  switch (act.kind) {
+    case "goto-bank":
+      await toBank();
+      return "acted";
+    case "unequip":
+      ctx.note("swap gear");
+      await step(name, () => actions.unequipMany(name, act.slots));
+      return "acted";
+    case "equip":
+      ctx.note("equip gear");
+      await step(name, () => actions.equipMany(name, act.items));
+      return "acted";
+    case "withdraw": {
+      if (await toBank()) return "acted";
+      ctx.note("withdraw gear");
+      try {
+        await step(name, () => actions.withdrawItems(name, act.items));
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 478) {
+          // Another character raced this bank stock away. Drop the raced codes
+          // locally (the next bank echo restores authority) so the next tick
+          // re-plans with the next-best set instead of hammering the same call.
+          const raced = new Set(act.items.map((i) => i.code));
+          bankItems.value = bankItems.value.filter((b) => !raced.has(b.code));
+          ctx.note("bank changed — replanning");
+          return "acted";
+        }
+        throw e;
+      }
+      return "acted";
+    }
+    case "deposit": {
+      if (await toBank()) return "acted";
+      ctx.note("stow gear");
+      await step(name, () => actions.depositItems(name, act.items));
+      return "acted";
+    }
+  }
+}
+
+/**
+ * jobGear for the live-job callers (standalone loops, hand-added queue items).
+ * Fight sets run the BIS solver (thousands of simulate calls), so they are
+ * memoized per character until the bank contents (by reference — replaced
+ * wholesale on every bank echo), level, or job change; gather/craft sets are a
+ * cheap scan and computed fresh.
+ */
+const fightSetMemo = new Map<string, { bank: unknown; level: number; key: string; desired?: Partial<Record<GearSlot, string>> }>();
+export function desiredForJob(name: string, ch: Character, job: GearJob): Partial<Record<GearSlot, string>> | undefined {
+  if (job.kind !== "fight") return jobGear(ch, bankItems.value, job);
+  const key = job.monster;
+  const m = fightSetMemo.get(name);
+  if (m && m.bank === bankItems.value && m.level === ch.level && m.key === key) return m.desired;
+  const desired = jobGear(ch, bankItems.value, job);
+  fightSetMemo.set(name, { bank: bankItems.value, level: ch.level, key, desired });
+  return desired;
+}
+
 /**
  * What one runStep call actually did. The campaign ignores it (it re-derives
  * from live state every tick); the queue counts it toward the item's progress.
@@ -118,6 +205,21 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
     }
     case "buy": {
       const t = needTile();
+      // Pocket gold is swept into the bank on every deposit (see depositAll),
+      // so a buy self-funds: withdraw the shortfall from the vault first.
+      const unit = npcOf(s.npc)?.items?.find((i) => i.code === s.code && i.currency === "gold")?.buy_price;
+      const cost = unit != null ? unit * s.quantity : s.cost;
+      const cur0 = characters.value[name] ?? ch;
+      if (cost > 0 && cur0.gold < cost) {
+        const missing = cost - cur0.gold;
+        if ((bankDetails.value?.gold ?? 0) < missing) throw new Error(`not enough gold for ${s.quantity}× ${itemName(s.code)} (need ${cost.toLocaleString()}g)`);
+        const bank = nearestBank(cur0.x, cur0.y);
+        if (!bank) throw new Error("no bank found on the map");
+        ctx.note("withdraw gold");
+        await moveTo(name, bank.x, bank.y);
+        await step(name, () => actions.withdrawGold(name, missing));
+        return { did: "acted" };
+      }
       ctx.note(`buy ${itemName(s.code)}`);
       await moveTo(name, t.x, t.y);
       await step(name, () => actions.npcBuy(name, s.code, s.quantity));

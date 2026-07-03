@@ -8,11 +8,12 @@
 
 import { effect, signal } from "@preact/signals";
 import * as actions from "../api/actions";
-import { tileAt } from "../catalog";
+import { resource as resourceOf, tileAt } from "../catalog";
 import { characters, pushLog } from "./store";
 import { campaignJobs } from "./campaign";
 import { queueActive } from "./queue";
-import { isInventoryFull, layerOf, moveTo, nearestBank, step, waitCooldown } from "./loopkit";
+import { desiredForJob, gearSwapStep } from "./exec";
+import { depositAll, isInventoryFull, layerOf, moveTo, nearestBank, waitCooldown } from "./loopkit";
 import type { Character } from "../types/api";
 
 export type GatherStatus = "gathering" | "banking";
@@ -22,6 +23,7 @@ export interface GatherJob {
   x: number;
   y: number;
   resource: string; // resource code at the gather tile
+  skill?: string; // the resource's gathering skill — drives the bank gear swap
   bankX: number;
   bankY: number;
   status: GatherStatus;
@@ -74,14 +76,8 @@ async function bankRun(name: string, job: GatherJob): Promise<void> {
   setJob(name, { status: "banking", note: "→ bank" });
   await moveTo(name, job.bankX, job.bankY);
 
-  const ch = characters.value[name];
-  const items = (ch?.inventory || [])
-    .filter((s) => s.code && s.quantity > 0)
-    .map((s) => ({ code: s.code, quantity: s.quantity }));
-  if (items.length) {
-    setJob(name, { note: "depositing" });
-    await step(name, () => actions.depositItems(name, items));
-  }
+  setJob(name, { note: "depositing" });
+  await depositAll(name); // items + pocket gold
 
   setJob(name, { status: "gathering", note: "→ resource" });
   await moveTo(name, job.x, job.y);
@@ -96,6 +92,21 @@ async function runLoop(name: string): Promise<void> {
       const job = gatherJobs.value[name];
       const ch = characters.value[name];
       if (!job || !ch) break;
+
+      // Wear the best gathering set the bank offers (tool + drop/XP gear) —
+      // converged checks are free, and any better gear banked mid-run is
+      // picked up on the next iteration after the bank echo.
+      if (job.skill) {
+        const desired = desiredForJob(name, ch, { kind: "gather", skill: job.skill });
+        if (desired) {
+          try {
+            if ((await gearSwapStep(name, ch, desired, { note: (t) => setJob(name, { note: t }) })) === "acted") continue;
+          } catch (e) {
+            pushLog({ ts: Date.now(), character: name, action: "gather", text: `loop stopped: ${(e as Error).message}`, kind: "bad" });
+            break;
+          }
+        }
+      }
 
       if (inventoryCount(ch) >= ch.inventory_max_items) {
         await bankRun(name, job);
@@ -148,7 +159,10 @@ export function startGather(name: string): void {
   stopFlags.delete(name);
   gatherJobs.value = {
     ...gatherJobs.value,
-    [name]: { x: ch.x, y: ch.y, resource: content.code, bankX: bank.x, bankY: bank.y, status: "gathering", note: "" },
+    [name]: {
+      x: ch.x, y: ch.y, resource: content.code, skill: resourceOf(content.code)?.skill,
+      bankX: bank.x, bankY: bank.y, status: "gathering", note: "",
+    },
   };
   pushLog({ ts: Date.now(), character: name, action: "gather", text: `gathering ${content.code} at (${ch.x}, ${ch.y})`, kind: "info" });
   void runLoop(name);

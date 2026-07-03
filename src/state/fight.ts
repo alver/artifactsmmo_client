@@ -16,7 +16,8 @@ import { gatherJobs } from "./gather";
 import { refineJobs } from "./refine";
 import { campaignJobs } from "./campaign";
 import { queueActive } from "./queue";
-import { isInventoryFull, layerOf, moveTo, nearestBank, waitCooldown, waitCooldownFull } from "./loopkit";
+import { desiredForJob, gearSwapStep } from "./exec";
+import { depositAll, isInventoryFull, layerOf, moveTo, nearestBank, waitCooldown } from "./loopkit";
 
 export type FightStatus = "fighting" | "resting" | "banking";
 
@@ -81,15 +82,8 @@ async function bankRun(name: string, job: FightJob): Promise<void> {
   setJob(name, { status: "banking", note: "→ bank" });
   await moveTo(name, bank.x, bank.y);
 
-  const ch = characters.value[name];
-  const items = (ch?.inventory || [])
-    .filter((s) => s.code && s.quantity > 0)
-    .map((s) => ({ code: s.code, quantity: s.quantity }));
-  if (items.length) {
-    setJob(name, { note: "depositing" });
-    await actions.depositItems(name, items);
-    await waitCooldownFull(name);
-  }
+  setJob(name, { note: "depositing" });
+  await depositAll(name); // items + pocket gold
 
   setJob(name, { status: "banking", note: "→ monster" });
   await moveTo(name, job.x, job.y);
@@ -105,6 +99,19 @@ async function runLoop(name: string): Promise<void> {
       const job = fightJobs.value[name];
       const ch = characters.value[name];
       if (!job || !ch) break;
+
+      // Wear the best combat set the bank offers vs this monster. Runs before
+      // the position recovery so the swap's bank trip doesn't ping-pong against
+      // the walk back; BIS re-runs only when the bank contents change.
+      const desired = desiredForJob(name, ch, { kind: "fight", monster: job.monster });
+      if (desired) {
+        try {
+          if ((await gearSwapStep(name, ch, desired, { note: (t) => setJob(name, { note: t }) })) === "acted") continue;
+        } catch (e) {
+          pushLog({ ts: Date.now(), character: name, action: "fight", text: `loop stopped: ${(e as Error).message}`, kind: "bad" });
+          break;
+        }
+      }
 
       // Recover from a teleport: a lost fight (and some in-game events) resurrect
       // the character at spawn (0,0). Walk back to the monster tile before acting

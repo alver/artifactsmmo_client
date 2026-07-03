@@ -6,7 +6,7 @@
 
 import { itemName, monster as monsterOf } from "../catalog";
 import { slotLabel, titleCase } from "../lib/util";
-import type { FoodSpec, Plan } from "./types";
+import type { FoodSpec, GearJob, Plan } from "./types";
 import type { GearSlot } from "../types/api";
 
 export type QueueItem = { id: string; error?: string } & (
@@ -23,6 +23,11 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "sell"; code: string; quantity: number; done: number; npc?: string; x?: number; y?: number }
   | { kind: "equip"; code: string; slot: GearSlot; quantity: number }
   | { kind: "train"; skill: string; toLevel: number; resource: string; x?: number; y?: number }
+  // Swap to the best job gear from the bank (see plan/jobgear.ts): `desired` =
+  // slot map frozen at compile (task expansions); `job` = live spec recomputed
+  // from the bank at run time (hand-added). Completes when the worn gear
+  // matches desired ∩ available.
+  | { kind: "gear"; desired?: Partial<Record<GearSlot, string>>; job?: GearJob; keep?: string[] }
   | { kind: "new-task"; master: "monsters" | "items" } // dynamic expander: accept → insert the task's items → re-append itself
   // taskTrade the current ch.task (code read live), inventory + bank stock in
   // bag-sized pieces. `partial` ⇒ complete when the stock runs out (production
@@ -35,7 +40,7 @@ export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "move", "rest", "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "equip", "train", "new-task", "deliver", "turn-in",
+  "buy", "sell", "equip", "train", "gear", "new-task", "deliver", "turn-in",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -65,17 +70,45 @@ export function planToItems(plan: Plan): QueueItem[] {
     const deliverCode =
       ex.mode === "task-loop" && ex.stockFirst ? ex.targets.find((t) => t.role === "deliver")?.code : undefined;
     if (deliverCode) items.push(withId({ kind: "deliver", partial: true, keep: ex.keep }));
+
+    // Job gear: one dynamic swap item wears the compiled set from the bank, so
+    // the pure withdraw+equip pairs it covers are dropped from the static
+    // flattening — a frozen withdraw would otherwise re-demand gear the swap
+    // already WEARS (invQty 0): a duplicate, or a queue pause on an empty bank.
+    const gearDemand = new Map<string, number>(); // code → equips the swap covers
+    if (ex.mode === "task-loop" && ex.gearPlan) {
+      items.push(withId({ kind: "gear", desired: ex.gearPlan, keep: ex.keep }));
+      const produced = new Set(
+        plan.acquisition.steps
+          .filter((s) => s.kind === "gather" || s.kind === "farm" || s.kind === "buy" || s.kind === "craft")
+          .map((s) => (s as { code: string }).code),
+      );
+      const gearCodes = new Set(Object.values(ex.gearPlan).filter(Boolean));
+      for (const s of plan.acquisition.steps) {
+        if (s.kind !== "equip" || s.slot.startsWith("utility") || produced.has(s.code) || !gearCodes.has(s.code)) continue;
+        gearDemand.set(s.code, (gearDemand.get(s.code) ?? 0) + 1);
+      }
+    }
+    const swapCovers = new Set(gearDemand.keys());
+
     for (const s of plan.acquisition.steps) {
       switch (s.kind) {
-        case "withdraw":
+        case "withdraw": {
           if (s.code === deliverCode) break;
-          items.push(withId({ kind: "withdraw", code: s.code, quantity: s.quantity, x: s.x, y: s.y }));
+          const covered = Math.min(gearDemand.get(s.code) ?? 0, s.quantity);
+          if (covered > 0) gearDemand.set(s.code, gearDemand.get(s.code)! - covered);
+          if (s.quantity - covered <= 0) break;
+          items.push(withId({ kind: "withdraw", code: s.code, quantity: s.quantity - covered, x: s.x, y: s.y }));
           break;
+        }
         case "buy": items.push(withId({ kind: "buy", code: s.code, quantity: s.quantity, npc: s.npc, x: s.x, y: s.y })); break;
         case "gather": items.push(withId({ kind: "gather", code: s.code, resource: s.resource, times: s.quantity, done: 0, x: s.x, y: s.y })); break;
         case "farm": items.push(withId({ kind: "fight", monster: s.monster, times: s.expectedFights, done: 0, food: ex.food, keep: ex.keep })); break;
         case "craft": items.push(withId({ kind: "craft", code: s.code, quantity: s.quantity, done: 0, skill: s.skill, x: s.x, y: s.y })); break;
-        case "equip": items.push(withId({ kind: "equip", code: s.code, slot: s.slot, quantity: s.quantity })); break;
+        case "equip":
+          if (!s.slot.startsWith("utility") && swapCovers.has(s.code)) break; // the gear item wears it
+          items.push(withId({ kind: "equip", code: s.code, slot: s.slot, quantity: s.quantity }));
+          break;
         case "train": items.push(withId({ kind: "train", skill: s.skill, toLevel: s.toLevel, resource: s.resource, x: s.x, y: s.y })); break;
       }
     }
@@ -115,6 +148,16 @@ export function queueItemText(it: QueueItem): string {
     case "sell": return `Sell ${it.quantity}× ${itemName(it.code)}`;
     case "equip": return `Equip ${itemName(it.code)} → ${slotLabel(it.slot)}`;
     case "train": return `Train ${titleCase(it.skill)} to Lv ${it.toLevel}`;
+    case "gear":
+      return it.job
+        ? it.job.kind === "fight"
+          ? `Equip to fight ${monsterOf(it.job.monster)?.name ?? titleCase(it.job.monster)}`
+          : it.job.kind === "gather"
+            ? `Equip for ${titleCase(it.job.skill)}`
+            : it.job.kind === "craft"
+              ? "Equip for crafting"
+              : "Equip job gear"
+        : "Equip job gear";
     case "new-task": return `New ${it.master === "items" ? "item" : "fight"} task`;
     case "deliver": return it.partial ? "Deliver task items from stock" : "Deliver task items";
     case "turn-in": return "Turn in the task";
@@ -124,5 +167,5 @@ export function queueItemText(it: QueueItem): string {
 export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "equip": "🛡",
-  "train": "🎓", "new-task": "🔁", "deliver": "🤝", "turn-in": "✅",
+  "train": "🎓", "gear": "🧰", "new-task": "🔁", "deliver": "🤝", "turn-in": "✅",
 };
