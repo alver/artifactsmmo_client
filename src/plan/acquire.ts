@@ -231,14 +231,32 @@ export function resolve(
     // Top-up utility targets were normalized to their shortfall above — always
     // source them (the code matching the slot means "top the stack up").
     if (opts.topUp && t.slot?.startsWith("utility")) { need(t.code, t.quantity, []); continue; }
-    if (equipped.has(t.code) && (t.slot ? slotCode(ch, t.slot) === t.code : true)) continue; // already equipped
+    // Being equipped satisfies a GEAR target, never a DELIVERABLE: handing an
+    // item to the Tasks Master needs it in the bag, and an equipped stack (e.g.
+    // the belt potions a potion-delivery task collides with) is protected
+    // working stock — the deliverable is produced fresh instead.
+    if (t.role !== "deliver" && equipped.has(t.code) && (t.slot ? slotCode(ch, t.slot) === t.code : true)) continue;
     need(t.code, t.quantity, []);
   }
 
   // Emit steps in a valid execution order: raw acquisition, then skill
   // training (before the crafts it gates), then crafts (leaf→root), then equips.
+  // Equips whose item needs no production (already in hand, or a bare withdraw)
+  // come right after the withdraws instead — so a gathering tool is worn FOR
+  // the gathering that follows, not after it.
+  const equips: AcquisitionStep[] = [];
+  for (const t of targets) {
+    if (!t.slot) continue;
+    const topUpUtility = opts.topUp && t.slot.startsWith("utility");
+    if (!topUpUtility && slotCode(ch, t.slot) === t.code) continue; // already in the right slot
+    equips.push({ kind: "equip", code: t.code, slot: t.slot, quantity: t.quantity });
+  }
+  const produced = (code: string): boolean =>
+    gather.has(code) || farm.has(code) || buy.has(code) || crafts.some((c) => c.code === code);
+
   const steps: AcquisitionStep[] = [];
   for (const [code, qty] of withdraw) steps.push({ kind: "withdraw", code, quantity: qty, ...tileForContent("bank", "bank") });
+  for (const e of equips) if (e.kind === "equip" && !produced(e.code)) steps.push(e);
   for (const [code, b] of buy) steps.push({ kind: "buy", code, quantity: b.qty, npc: b.npc, cost: b.qty * b.price, ...tileForContent("npc", b.npc) });
   for (const [code, g] of gather) steps.push({ kind: "gather", code, quantity: g.qty, resource: g.resource, level: g.level, ...tileForContent("resource", g.resource) });
   for (const [code, fm] of farm) {
@@ -248,12 +266,7 @@ export function resolve(
   }
   for (const [skill, tr] of trains) steps.push({ kind: "train", skill, toLevel: tr.toLevel, resource: tr.resource, level: tr.level, ...tileForContent("resource", tr.resource) });
   for (const c of crafts) steps.push({ kind: "craft", code: c.code, quantity: c.qty, skill: c.skill, level: c.level, ...tileForContent("workshop", c.skill) });
-  for (const t of targets) {
-    if (!t.slot) continue;
-    const topUpUtility = opts.topUp && t.slot.startsWith("utility");
-    if (!topUpUtility && slotCode(ch, t.slot) === t.code) continue; // already in the right slot
-    steps.push({ kind: "equip", code: t.code, slot: t.slot, quantity: t.quantity });
-  }
+  for (const e of equips) if (e.kind === "equip" && produced(e.code)) steps.push(e);
 
   // Cost estimate (a floor — ignores bank round-trips when the inventory fills
   // and any pathing beyond straight-line tile hops).

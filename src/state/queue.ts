@@ -28,7 +28,7 @@ import { bankQty, refineJobs } from "./refine";
 import { fightJobs } from "./fight";
 import { campaignJobs } from "./campaign";
 import { isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
-import { bankOff, fightRound, freeSpace, goToMaster, invCount, invQty, runStep } from "./exec";
+import { bankOff, craftableTimes, fightRound, freeSpace, goToMaster, invCount, invQty, runStep } from "./exec";
 import { slotCode, slotQuantity } from "../types/api";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
@@ -146,7 +146,11 @@ const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
 
 const keepOf = (it: QueueItem): string[] | undefined =>
-  it.kind === "fight" || it.kind === "deliver" ? it.keep : undefined;
+  it.kind === "fight" || it.kind === "deliver" ? it.keep
+  // A withdrawal protects its own item — otherwise an overflow bank-off would
+  // deposit exactly what was just withdrawn and the item would spin forever.
+  : it.kind === "withdraw" ? [it.code]
+  : undefined;
 
 function ctxOf(name: string, it: QueueItem): StepCtx {
   return {
@@ -180,6 +184,11 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     case "withdraw": {
       const missing = it.quantity - invQty(ch, it.code);
       if (missing <= 0) return true;
+      // The bag is a hard limit: a full inventory holding nothing BUT this item
+      // can't take more — that is as done as the withdrawal can get. (A bag full
+      // of other stuff instead falls through to runStep, whose bank-off clears
+      // it while `keep` protects what was already withdrawn.)
+      if (freeSpace(ch) === 0 && !(ch.inventory ?? []).some((sl) => sl.code && sl.quantity > 0 && sl.code !== it.code)) return true;
       const bank = it.x != null ? { x: it.x, y: it.y! } : nearestBank(ch.x, ch.y);
       if (!bank) throw new Error("no bank found on the map");
       await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: missing, x: bank.x, y: bank.y }, ctx);
@@ -204,6 +213,22 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     case "craft": {
       if (it.done >= it.quantity) return true;
       if (it.done === 0 && invQty(ch, it.code) >= it.quantity) return true; // already have them
+      const left = it.quantity - it.done;
+      // Materials ran out mid-chain (batches bigger than the bag bank their raws
+      // and output off along the way): pull more ingredients from the bank, one
+      // bag-sized piece per tick, instead of failing on the empty hand.
+      if (craftableTimes(ch, it.code, left) <= 0) {
+        const recipe = itemOf(it.code)?.craft;
+        const times = recipe ? Math.ceil(left / Math.max(1, recipe.quantity)) : 0;
+        const ing = recipe?.items.find((g) => g.quantity * times > invQty(ch, g.code) && bankQty(g.code) > 0);
+        if (ing) {
+          const bank = nearestBank(ch.x, ch.y);
+          if (!bank) throw new Error("no bank found on the map");
+          const qty = Math.min(ing.quantity * times - invQty(ch, ing.code), bankQty(ing.code));
+          await runStep(name, ch, { kind: "withdraw", code: ing.code, quantity: qty, x: bank.x, y: bank.y }, ctx);
+          return false;
+        }
+      }
       const skill = it.skill ?? itemOf(it.code)?.craft?.skill;
       const tile = it.x != null ? { x: it.x, y: it.y } : skill ? nearest("workshop", skill, ch.x, ch.y) : undefined;
       if (!tile || tile.x == null) throw new Error(`no workshop for ${itemName(it.code)}`);
@@ -281,15 +306,18 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         }
         return false;
       }
-      // Nothing in hand — pull banked stock in inventory-sized chunks.
+      // Nothing in hand — pull banked stock one bag-sized piece at a time (each
+      // piece is traded before the next withdrawal, so the bag is the pace).
       const banked = bankQty(ch.task);
-      if (banked > 0 && freeSpace(ch) > 0) {
+      if (banked > 0) {
+        if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, it.keep, ctx.note); return false; } // bag full of other stuff
         const bank = nearestBank(ch.x, ch.y);
         if (!bank) throw new Error("no bank found on the map");
-        const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining), x: bank.x, y: bank.y };
+        const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining, freeSpace(ch)), x: bank.x, y: bank.y };
         await runStep(name, ch, s, ctx);
         return false;
       }
+      if (it.partial) return true; // stock exhausted — the production items that follow cover the rest
       throw new Error(`nothing left to deliver — produce more ${itemName(ch.task)} first`);
     }
     case "turn-in": {

@@ -21,7 +21,10 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "equip"; code: string; slot: GearSlot; quantity: number }
   | { kind: "train"; skill: string; toLevel: number; resource: string; x?: number; y?: number }
   | { kind: "new-task"; master: "monsters" | "items" } // dynamic expander: accept → insert the task's items → re-append itself
-  | { kind: "deliver"; keep?: string[] } // taskTrade the current ch.task (code read live)
+  // taskTrade the current ch.task (code read live), inventory + bank stock in
+  // bag-sized pieces. `partial` ⇒ complete when the stock runs out (production
+  // items follow); without it, running out with the task unfinished is an error.
+  | { kind: "deliver"; keep?: string[]; partial?: boolean }
   | { kind: "turn-in" }
 );
 
@@ -52,9 +55,19 @@ export function planToItems(plan: Plan): QueueItem[] {
   const items: QueueItem[] = [];
 
   if (!(ex.mode === "task-loop" && ex.loop !== false)) {
+    // Items task with stock on hand: trade it to the Tasks Master BEFORE
+    // producing anything — the partial deliver drains inventory AND bank in
+    // bag-sized pieces, so it REPLACES the deliverable's withdraw step (which
+    // could demand more than the bag holds).
+    const deliverCode =
+      ex.mode === "task-loop" && ex.stockFirst ? ex.targets.find((t) => t.role === "deliver")?.code : undefined;
+    if (deliverCode) items.push(withId({ kind: "deliver", partial: true, keep: ex.keep }));
     for (const s of plan.acquisition.steps) {
       switch (s.kind) {
-        case "withdraw": items.push(withId({ kind: "withdraw", code: s.code, quantity: s.quantity, x: s.x, y: s.y })); break;
+        case "withdraw":
+          if (s.code === deliverCode) break;
+          items.push(withId({ kind: "withdraw", code: s.code, quantity: s.quantity, x: s.x, y: s.y }));
+          break;
         case "buy": items.push(withId({ kind: "buy", code: s.code, quantity: s.quantity, npc: s.npc, x: s.x, y: s.y })); break;
         case "gather": items.push(withId({ kind: "gather", code: s.code, resource: s.resource, times: s.quantity, done: 0, x: s.x, y: s.y })); break;
         case "farm": items.push(withId({ kind: "fight", monster: s.monster, times: s.expectedFights, done: 0, food: ex.food, keep: ex.keep })); break;
@@ -95,7 +108,7 @@ export function queueItemText(it: QueueItem): string {
     case "equip": return `Equip ${itemName(it.code)} → ${slotLabel(it.slot)}`;
     case "train": return `Train ${titleCase(it.skill)} to Lv ${it.toLevel}`;
     case "new-task": return `New ${it.master === "items" ? "item" : "fight"} task`;
-    case "deliver": return "Deliver task items";
+    case "deliver": return it.partial ? "Deliver task items from stock" : "Deliver task items";
     case "turn-in": return "Turn in the task";
   }
 }

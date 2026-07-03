@@ -215,6 +215,15 @@ export function compileTaskPlan(
   }
 
   // ── Items task ────────────────────────────────────────────────────────────
+  // Stock already owned (inventory + bank) is traded to the Tasks Master FIRST
+  // — the runners' deliver step drains it piece by piece, sized to the bag — so
+  // production below only ever covers the shortfall (resolve() deducts the
+  // stock from the target on its own).
+  const held = (ch.inventory ?? []).reduce((s, it) => s + (it.code === ch.task ? it.quantity : 0), 0);
+  const banked = bank.reduce((s, b) => s + (b.code === ch.task ? b.quantity : 0), 0);
+  const stock = Math.min(remaining, held + banked);
+  const stockNote = stock > 0 ? ` — ${stock} already in stock` : "";
+
   const itemTarget: Target = { code: ch.task, quantity: remaining, role: "deliver" };
   const probe = resolve(ch, bank, [itemTarget], { train: true });
   const farmStep = probe.steps.find((s) => s.kind === "farm");
@@ -232,8 +241,8 @@ export function compileTaskPlan(
       ideal: prep.ideal,
       needsInBank: prep.needsInBank.length ? prep.needsInBank : undefined,
       acquisition,
-      execution: { targets, repeat: 0, mode: "task-loop", loop, food: prep.food, keep: [...prep.keep, ch.task], master: "items" },
-      summary: `Task: deliver ${remaining}× ${itemName(ch.task)} — farm ${monsterOf(farmStep.monster)?.name ?? farmStep.monster} (~${farmStep.expectedFights} fights).`,
+      execution: { targets, repeat: 0, mode: "task-loop", loop, food: prep.food, keep: [...prep.keep, ch.task], master: "items", stockFirst: stock > 0 },
+      summary: `Task: deliver ${remaining}× ${itemName(ch.task)}${stockNote} — farm ${monsterOf(farmStep.monster)?.name ?? farmStep.monster} (~${farmStep.expectedFights} fights).`,
     };
   }
 
@@ -261,7 +270,7 @@ export function compileTaskPlan(
     goal,
     needsInBank: acquisition.blockers.length ? [ch.task] : undefined,
     acquisition,
-    execution: { targets, repeat: 0, mode: "task-loop", loop, keep: [ch.task], master: "items" },
-    summary: `Task: deliver ${remaining}× ${itemName(ch.task)}${tool ? ` — gathering with ${itemName(tool)}` : ""}.`,
+    execution: { targets, repeat: 0, mode: "task-loop", loop, keep: [ch.task], master: "items", stockFirst: stock > 0 },
+    summary: `Task: deliver ${remaining}× ${itemName(ch.task)}${stockNote}${tool ? ` — gathering with ${itemName(tool)}` : ""}.`,
   };
 }

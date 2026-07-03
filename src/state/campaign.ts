@@ -304,8 +304,11 @@ async function prepPhase(name: string, ch: Character, job: CampaignJob): Promise
   if (isItems) {
     if (remaining <= 0) { setJob(name, { phase: "turn-in", restock: false, note: "task complete → turn in" }); return false; }
     const held = invQty(ch, ch.task);
-    // Deliver early: enough in hand to finish, or the inventory is choking.
-    if (held >= remaining || (held > 0 && freeSpace(ch) === 0)) { setJob(name, { phase: "deliver", note: "delivering" }); return false; }
+    // Deliver early: enough in hand to finish, the inventory is choking, or the
+    // bank already stocks the deliverable — existing stock is traded to the
+    // master (bag-sized piece by piece) BEFORE producing anything new.
+    if (held >= remaining || (held > 0 && freeSpace(ch) === 0) || (bankQty(ch.task) > 0 && (held > 0 || freeSpace(ch) > 0)))
+      { setJob(name, { phase: "deliver", note: "delivering" }); return false; }
   }
 
   // A consumed food stack starts a top-up round here too — farm-path items

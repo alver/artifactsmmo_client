@@ -84,6 +84,9 @@ export interface ExecutionSpec {
   food?: FoodSpec; // heal with this food before resting
   keep?: string[]; // item codes never auto-deposited when banking off overflow
   master?: "monsters" | "items"; // which Tasks Master to accept from when idle
+  /** Items task with deliverable stock already in inventory/bank — trade that
+   *  to the Tasks Master BEFORE producing (production covers only the shortfall). */
+  stockFirst?: boolean;
 }
 
 /** A goal the user picks; compileGoal() turns it into a full Plan. */
