@@ -5,6 +5,7 @@ import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
 import { queues } from "../state/queue";
 import { GearSlots } from "./GearSlots";
+import { JobGearPreview } from "./JobGearPreview";
 import { ActionBar } from "./ActionBar";
 import { CombatForecast } from "./CombatForecast";
 import { PlanControl } from "./PlanControl";
@@ -68,6 +69,7 @@ export function CharacterPanel() {
   const tile = tileAt(ch.x, ch.y, layer);
   const content = tile?.interactions.content;
   const onBank = content?.type === "bank";
+  const onWorkshop = content?.type === "workshop" ? content.code : undefined;
   const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
   const invQty = inv.reduce((s, it) => s + it.quantity, 0);
   const queueCount = queues.value[ch.name]?.items.length ?? 0;
@@ -122,6 +124,11 @@ export function CharacterPanel() {
           <details class="ws-card" open>
             <summary>Equipment</summary>
             <GearSlots ch={ch} />
+          </details>
+
+          <details class="ws-card" open>
+            <summary>Job gear</summary>
+            <JobGearPreview ch={ch} />
           </details>
 
           <details class="ws-card" open>
@@ -194,7 +201,7 @@ export function CharacterPanel() {
             <summary>
               Inventory ({inv.length} · {invQty}/{ch.inventory_max_items})
             </summary>
-            <InventorySection ch={ch} onBank={onBank} />
+            <InventorySection ch={ch} onBank={onBank} onWorkshop={onWorkshop} />
           </details>
 
           {characterList().length > 1 && (
@@ -211,17 +218,18 @@ export function CharacterPanel() {
 
 /**
  * Inventory list with per-item actions: equip (to a free matching slot), use
- * (consumables), deposit (only when standing on a bank tile) and delete. One
- * shared busy/cooldown gate for the section so the character can't double-fire.
+ * (consumables), deposit (only when standing on a bank tile), recycle (only
+ * when standing on the workshop that crafts the item) and delete. One shared
+ * busy/cooldown gate for the section so the character can't double-fire.
  */
-function InventorySection({ ch, onBank }: { ch: Character; onBank: boolean }) {
+function InventorySection({ ch, onBank, onWorkshop }: { ch: Character; onBank: boolean; onWorkshop?: string }) {
   const ctl = useActionRunner(ch);
   const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
   return (
     <div class="inv-list">
       {inv.length === 0 && <div class="muted">empty</div>}
       {inv.map((s) => (
-        <InvRow key={s.code} ch={ch} slot={s} ctl={ctl} onBank={onBank} />
+        <InvRow key={s.code} ch={ch} slot={s} ctl={ctl} onBank={onBank} onWorkshop={onWorkshop} />
       ))}
       <div class="inv-row inv-gold" title="Gold carried">
         <span class="inv-gold-icon">🪙</span>
@@ -232,13 +240,16 @@ function InventorySection({ ch, onBank }: { ch: Character; onBank: boolean }) {
   );
 }
 
-function InvRow({ ch, slot, ctl, onBank }: { ch: Character; slot: InventorySlot; ctl: ActionRunner; onBank: boolean }) {
+function InvRow({ ch, slot, ctl, onBank, onWorkshop }: { ch: Character; slot: InventorySlot; ctl: ActionRunner; onBank: boolean; onWorkshop?: string }) {
   const it = item(slot.code);
   const type = it?.type ?? "";
   const candidates = SLOTS_FOR_TYPE[type];
   // Prefer the first empty matching slot; otherwise the first (which replaces).
   const equipSlot = candidates ? (candidates.find((s) => slotCode(ch, s) === "") ?? candidates[0]) : undefined;
   const equipQty = type === "utility" ? Math.min(slot.quantity, 100) : 1;
+  // Recyclable at the workshop the character is standing on (same gate as the
+  // workshop panel's Recycle: crafted here + the item type allows it).
+  const canRecycle = !!onWorkshop && it?.craft?.skill === onWorkshop && it.recyclable !== false;
 
   return (
     <div class="inv-row" title={it?.name || slot.code}>
@@ -269,6 +280,16 @@ function InvRow({ ch, slot, ctl, onBank }: { ch: Character; slot: InventorySlot;
             onClick={() => ctl.run(() => actions.depositItems(ch.name, [{ code: slot.code, quantity: slot.quantity }]))}
           >
             Deposit
+          </button>
+        )}
+        {canRecycle && (
+          <button
+            class="cat-btn"
+            disabled={ctl.disabled}
+            title={`Recycle this stack here — returns a share of the materials`}
+            onClick={() => ctl.run(() => actions.recycle(ch.name, slot.code, slot.quantity))}
+          >
+            ♻ Recycle
           </button>
         )}
         <button

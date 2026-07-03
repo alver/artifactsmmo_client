@@ -10,10 +10,11 @@ import { enqueuePlan } from "../state/queue";
 import { catalog, itemName, monster as monsterOf, tileAt } from "../catalog";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { compileGoal } from "../plan/goal";
+import { CRAFT_TRAIN_SKILLS } from "../plan/traincraft";
 import type { AcquisitionStep, Goal, Plan } from "../plan/types";
 import type { Character } from "../types/api";
 
-type Kind = "beat-monster" | "combat-level" | "complete-task" | "task-loop";
+type Kind = "beat-monster" | "combat-level" | "complete-task" | "task-loop" | "train-craft";
 
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
 
@@ -57,8 +58,25 @@ export function PlanControl({ ch }: { ch: Character }) {
   const [kind, setKind] = useState<Kind>("beat-monster");
   const [mon, setMon] = useState(tileMonster || "chicken");
   const [master, setMaster] = useState<"monsters" | "items">("monsters");
+  const [craftSkill, setCraftSkill] = useState(CRAFT_TRAIN_SKILLS[0][0]);
+  const [craftTarget, setCraftTarget] = useState(0); // 0 = auto (current + 5)
+  const [craftRecipe, setCraftRecipe] = useState(""); // "" = auto (best in window)
   const [plan, setPlan] = useState<Plan | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const stats = ch as unknown as Record<string, number>;
+  const craftLevel = stats[`${craftSkill}_level`] ?? 1;
+  const craftGoalLevel = craftTarget > craftLevel ? craftTarget : craftLevel + 5;
+  const craftRecipes = (() => {
+    if (kind !== "train-craft") return [];
+    try {
+      return [...catalog().items.values()]
+        .filter((i) => i.craft?.skill === craftSkill)
+        .sort((a, b) => a.craft!.level - b.craft!.level || a.name.localeCompare(b.name));
+    } catch {
+      return [];
+    }
+  })();
 
   const monsters = monsterList();
   const running = campaignJobs.value[ch.name];
@@ -102,6 +120,7 @@ export function PlanControl({ ch }: { ch: Character }) {
         kind === "beat-monster" ? { kind, monster: mon }
         : kind === "combat-level" ? { kind, target: ch.level + 5 }
         : kind === "task-loop" ? { kind, master }
+        : kind === "train-craft" ? { kind, skill: craftSkill, target: craftGoalLevel, recipe: craftRecipe || undefined }
         : { kind: "complete-task" };
       try {
         setPlan(compileGoal(ch, bankItems.value, goal));
@@ -117,9 +136,47 @@ export function PlanControl({ ch }: { ch: Character }) {
         <select class="cp-refine-select" value={kind} onChange={(e) => { setKind((e.target as HTMLSelectElement).value as Kind); setPlan(null); }}>
           <option value="beat-monster">Beat a monster</option>
           <option value="combat-level">Level up combat</option>
+          <option value="train-craft">Train a craft skill</option>
           <option value="complete-task">Complete current task</option>
           <option value="task-loop">Task loop (accept & repeat)</option>
         </select>
+        {kind === "train-craft" && (
+          <>
+            <select class="cp-refine-select" value={craftSkill} onChange={(e) => { setCraftSkill((e.target as HTMLSelectElement).value); setCraftTarget(0); setCraftRecipe(""); setPlan(null); }}>
+              {CRAFT_TRAIN_SKILLS.map(([key, label]) => (
+                <option key={key} value={key}>{label} · Lv {stats[`${key}_level`] ?? 1}</option>
+              ))}
+            </select>
+            <select
+              class="cp-refine-select"
+              title="Which recipe to craft & recycle — Auto re-picks the best one as you level"
+              value={craftRecipe}
+              onChange={(e) => { setCraftRecipe((e.target as HTMLSelectElement).value); setPlan(null); }}
+            >
+              <option value="">Auto — best in XP window</option>
+              {craftRecipes.map((r) => {
+                const rl = r.craft!.level;
+                const tag = rl > craftLevel ? " · locked" : rl <= craftLevel - 10 ? " · no XP" : "";
+                return (
+                  <option key={r.code} value={r.code} disabled={!!tag}>
+                    {r.name} · Lv {rl}{tag}
+                  </option>
+                );
+              })}
+            </select>
+            <label class="q-field" title="Stop at this skill level">
+              to Lv
+              <input
+                class="cat-num"
+                type="number"
+                min={craftLevel + 1}
+                max={50}
+                value={craftGoalLevel}
+                onInput={(e) => { setCraftTarget(parseInt((e.target as HTMLInputElement).value, 10) || 0); setPlan(null); }}
+              />
+            </label>
+          </>
+        )}
         {kind === "task-loop" && !ch.task && (
           <select class="cp-refine-select" value={master} onChange={(e) => { setMaster((e.target as HTMLSelectElement).value as "monsters" | "items"); setPlan(null); }}>
             <option value="monsters">Fight tasks</option>
@@ -148,7 +205,7 @@ function PlanView({ ch, plan }: { ch: Character; plan: Plan }) {
   const a = plan.acquisition;
   const runnable =
     a.blockers.length === 0 &&
-    (plan.execution.targets.length > 0 || !!plan.execution.monster || plan.execution.mode === "task-loop");
+    (plan.execution.targets.length > 0 || !!plan.execution.monster || plan.execution.mode === "task-loop" || plan.execution.mode === "train-craft");
   return (
     <div class="cp-plan-out" style={{ marginTop: 6 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>

@@ -28,6 +28,8 @@ import { currentFighter } from "../sim/stats";
 import { simulate } from "../sim/combat";
 import { resolve } from "../plan/acquire";
 import { NEEDS_IN_BANK_MSG, compileTaskPlan, utilityStackSize } from "../plan/task";
+import { forcedTrainPick, trainingRecipe } from "../plan/traincraft";
+import { titleCase } from "../lib/util";
 import { bankItems, characters, pushLog } from "./store";
 import { gatherJobs } from "./gather";
 import { bankQty, refineJobs } from "./refine";
@@ -47,13 +49,18 @@ export type CampaignPhase =
 
 export interface CampaignJob {
   label: string; // human summary of the goal
-  mode: "goal" | "task-loop";
+  mode: "goal" | "task-loop" | "train-craft";
   targets: Target[]; // frozen gear/item targets to obtain + equip
   monster?: string; // combat target, if the goal ends in fighting
   repeat: number; // fights to perform
   done: number; // fights performed (goal mode; task mode reads task_progress)
   phase: CampaignPhase;
   note: string; // short human status shown on the card
+  // train-craft extras — without `recipe` the pick is re-derived every tick so
+  // it upgrades as the level rises; `recipe` = user-pinned recipe code.
+  skill?: string;
+  skillTarget?: number;
+  recipe?: string;
   // task-loop extras
   loop?: boolean; // accept the next task after turn-in
   master?: "monsters" | "items"; // which Tasks Master to accept from when idle
@@ -78,7 +85,8 @@ function loadStored(): Record<string, CampaignJob> {
     for (const [name, job] of Object.entries(raw)) {
       if (!job || typeof job !== "object") continue;
       const mode = job.mode ?? "goal"; // jobs saved before task-loop existed
-      if (!(mode === "goal" ? GOAL_PHASES : TASK_PHASES).includes(job.phase)) continue; // unknown shape — drop, never crash resume
+      // train-craft reuses the "acquiring" phase label (its phase machine is the note).
+      if (!(mode === "task-loop" ? TASK_PHASES : GOAL_PHASES).includes(job.phase)) continue; // unknown shape — drop, never crash resume
       out[name] = { ...job, mode };
     }
     return out;
@@ -202,6 +210,80 @@ async function goalTick(name: string, ch: Character, job: CampaignJob, S: { loss
     finish(name, `campaign stopped — ${(e as Error).message}`, "bad"); return true;
   }
   return false;
+}
+
+// ── Train-craft mode ────────────────────────────────────────────────────────
+
+const skillLevelOf = (ch: Character, skill: string): number =>
+  (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
+
+/**
+ * One tick of the craft-skill trainer: produce a batch of the best in-window
+ * recipe (gather → withdraw → craft via the shared resolver), recycle the
+ * output back into materials at the workshop, repeat until the target level.
+ * Everything is re-derived from live state — the recipe upgrades itself as the
+ * level rises, and a reload resumes mid-batch. Non-recyclable output (cooked
+ * food) is banked as fleet stock instead of recycled.
+ */
+async function trainTick(name: string, ch: Character, job: CampaignJob, _S: { losses: number }): Promise<boolean> {
+  const skill = job.skill!;
+  const target = job.skillTarget ?? 0;
+  const lvl = skillLevelOf(ch, skill);
+  if (lvl >= target) { finish(name, `campaign complete — ${titleCase(skill)} Lv ${lvl}`, "ok"); return true; }
+
+  try {
+    const choice = job.recipe
+      ? forcedTrainPick(ch, bankItems.value, skill, job.recipe)
+      : { pick: trainingRecipe(ch, bankItems.value, skill) };
+    const pick = choice.pick;
+    if (!pick) {
+      finish(name, `campaign stopped — ${choice.blocker ?? `no craftable ${titleCase(skill)} recipe within the XP window (stock materials or level the gathering skill)`}`, "bad");
+      return true;
+    }
+    const code = pick.recipe.code;
+    const ingredients = pick.recipe.craft!.items.map((i) => i.code);
+    // Materials and output survive overflow bank-offs; junk (loot) gets stowed.
+    const keep = [...ingredients, code];
+    if ((job.keep ?? []).join() !== keep.join()) setJob(name, { keep });
+
+    // 1. Recycle held training output back into materials. Any same-skill
+    //    recyclable craft in the bag counts (leftovers from a lower tier too) —
+    //    EXCEPT codes the current recipe consumes as ingredients (e.g. the
+    //    skeleton_armor inside royal_skeleton_armor).
+    const recycleCode = (ch.inventory ?? []).find((s) => {
+      if (!s.code || s.quantity <= 0 || ingredients.includes(s.code)) return false;
+      const it = item(s.code);
+      return it?.craft?.skill === skill && it.recyclable !== false;
+    })?.code;
+    if (recycleCode) {
+      const tile = nearest("workshop", skill, ch.x, ch.y);
+      if (!tile) { finish(name, `campaign stopped — no ${skill} workshop on the map`, "bad"); return true; }
+      if (ch.x !== tile.x || ch.y !== tile.y) { setJob(name, { note: "→ workshop to recycle" }); await moveTo(name, tile.x, tile.y); return false; }
+      const qty = invQty(ch, recycleCode);
+      setJob(name, { note: `Lv ${lvl}/${target} · recycle ${qty}× ${itemName(recycleCode)}` });
+      await step(name, () => actions.recycle(name, recycleCode, qty));
+      return false;
+    }
+
+    // 2. Non-recyclable output (cooking): bank the finished batch as fleet stock.
+    if (pick.recipe.recyclable === false && invQty(ch, code) >= pick.batch) {
+      await bankOff(name, ch.x, ch.y, ingredients, (t) => setJob(name, { note: t }));
+      return false;
+    }
+
+    // 3. Produce the next batch — one resolver step per tick.
+    if (pick.acq.steps.length === 0) return false; // transient (echo lag) — re-derive next tick
+    setJob(name, { note: `Lv ${lvl}/${target} · ${itemName(code)} ×${pick.batch}` });
+    await runStep(name, ch, pickStep(ch, pick.acq.steps), ctxOf(name, job));
+    return false;
+  } catch (e) {
+    if (isInventoryFull(e)) {
+      try { await bankOff(name, ch.x, ch.y, job.keep, ctxOf(name, job).note); } catch { /* next tick */ }
+      return false;
+    }
+    finish(name, `campaign stopped — ${(e as Error).message}`, "bad");
+    return true;
+  }
 }
 
 // ── Task-loop mode ──────────────────────────────────────────────────────────
@@ -457,7 +539,10 @@ async function runLoop(name: string): Promise<void> {
       const job = campaignJobs.value[name];
       const ch = characters.value[name];
       if (!job || !ch) break;
-      const stopped = job.mode === "task-loop" ? await taskTick(name, ch, job, S) : await goalTick(name, ch, job, S);
+      const stopped =
+        job.mode === "task-loop" ? await taskTick(name, ch, job, S)
+        : job.mode === "train-craft" ? await trainTick(name, ch, job, S)
+        : await goalTick(name, ch, job, S);
       if (stopped) break;
     }
   } finally {
@@ -486,7 +571,8 @@ export function startCampaign(name: string, plan: Plan): void {
     return;
   }
   const isTask = plan.execution.mode === "task-loop";
-  if (!isTask && plan.execution.targets.length === 0 && !plan.execution.monster) {
+  const isTrain = plan.execution.mode === "train-craft";
+  if (!isTask && !isTrain && plan.execution.targets.length === 0 && !plan.execution.monster) {
     pushLog({ ts: Date.now(), character: name, action: "campaign", text: "nothing to do for this goal", kind: "bad" });
     return;
   }
@@ -496,13 +582,14 @@ export function startCampaign(name: string, plan: Plan): void {
     ...campaignJobs.value,
     [name]: {
       label: plan.summary,
-      mode: isTask ? "task-loop" : "goal",
+      mode: isTask ? "task-loop" : isTrain ? "train-craft" : "goal",
       targets: plan.execution.targets,
       monster: plan.execution.monster,
       repeat: plan.execution.repeat,
       done: isTask ? ch.task_progress : 0,
       phase: isTask ? (ch.task ? "prep" : "accept") : "acquiring",
       note: "starting…",
+      ...(isTrain && { skill: plan.execution.skill, skillTarget: plan.execution.skillTarget, recipe: plan.execution.recipe }),
       ...(isTask && {
         loop: plan.execution.loop ?? true,
         master: plan.execution.master,

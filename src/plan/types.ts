@@ -79,7 +79,13 @@ export interface ExecutionSpec {
   monster?: string; // combat target, if the goal ends in fighting
   repeat: number; // how many fights to do
   // Task-loop extras — absent on plain goal plans.
-  mode?: "goal" | "task-loop"; // "task-loop" drives the accept→prep→execute→deliver→turn-in phases
+  mode?: "goal" | "task-loop" | "train-craft"; // non-goal modes drive their own phase machines
+  /** train-craft: the skill to level and the level to stop at. The recipe is
+   *  NOT frozen — the runner re-picks the best one as the level rises —
+   *  unless the user pinned one via `recipe`. */
+  skill?: string;
+  skillTarget?: number;
+  recipe?: string;
   loop?: boolean; // after turn-in: accept the next task (true) or finish (false)
   food?: FoodSpec; // heal with this food before resting
   keep?: string[]; // item codes never auto-deposited when banking off overflow
@@ -104,6 +110,7 @@ export type Goal =
   | { kind: "beat-monster"; monster: string; repeat?: number }
   | { kind: "combat-level"; target: number }
   | { kind: "skill-level"; skill: string; target: number }
+  | { kind: "train-craft"; skill: string; target: number; recipe?: string } // level a crafting skill by craft→recycle batches (recipe: user-pinned, else auto)
   | { kind: "craft-item"; code: string; quantity: number }
   | { kind: "complete-task" }
   | { kind: "task-loop"; master?: "monsters" | "items" };

@@ -26,7 +26,7 @@ export const MANAGED_SLOTS: GearSlot[] = GEAR_SLOTS.filter((s) => !s.startsWith(
 
 const layerOf = (ch: Character): string => (ch as { layer?: string }).layer ?? "overworld";
 
-const effectValue = (it: Item, code: string): number => {
+export const effectValue = (it: Item, code: string): number => {
   let v = 0;
   for (const e of it.effects ?? []) if (e.code === code) v += e.value;
   return v;

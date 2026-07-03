@@ -7,6 +7,7 @@ import { titleCase } from "../lib/util";
 import { bestInSlot } from "./bis";
 import { resolve } from "./acquire";
 import { compileTaskPlan, gearTargets, ownedCodes } from "./task";
+import { compileTrainCraft } from "./traincraft";
 import type { Character } from "../types/api";
 import type { AcquisitionPlan, Goal, Plan, Target } from "./types";
 
@@ -58,6 +59,12 @@ export function compileGoal(ch: Character, bank: { code: string; quantity: numbe
     }
     const sub = compileGoal(ch, bank, { kind: "beat-monster", monster: best.code, repeat: 20 });
     return { ...sub, goal, summary: `Reach combat Lv ${goal.target}: grind ${itemName(best.code) || best.code} (Lv ${best.level}) — ${sub.summary}` };
+  }
+
+  // Craft-skill training: craft → recycle batches until the target level,
+  // re-picking the best in-window recipe as the level rises (traincraft.ts).
+  if (goal.kind === "train-craft") {
+    return compileTrainCraft(ch, bank, goal);
   }
 
   // Task plans (single task or the accept→run→turn-in loop) get the full

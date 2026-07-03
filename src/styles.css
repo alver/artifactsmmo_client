@@ -1416,6 +1416,88 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
+/* ── job gear preview (best owned set per job, ui/JobGearPreview.tsx) ── */
+.jg-panel {
+  margin-top: 4px;
+}
+.jg-controls {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.jg-controls .cp-refine-select {
+  flex: 1;
+}
+.jg-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+}
+.jg-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.jg-chip b {
+  color: var(--text);
+}
+.jg-chip b.jg-up {
+  color: var(--ok);
+}
+.jg-chip b.jg-down {
+  color: var(--bad);
+}
+.jg-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.jg-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  min-width: 0;
+}
+.jg-row img {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  image-rendering: pixelated;
+  object-fit: contain;
+}
+.jg-slot {
+  flex: 0 0 76px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  text-align: right;
+}
+.jg-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.jg-arrow {
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.jg-none {
+  color: var(--muted);
+}
+.jg-ok {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--ok);
+}
+
 /* ── refine control (bank ↔ workshop automation) ── */
 .cp-refine {
   margin-top: 12px;
