@@ -78,6 +78,10 @@ export function planToItems(plan: Plan): QueueItem[] {
     }
   }
 
+  // A production goal ends in the bank: crafted output is fleet stock, not
+  // personal inventory. (Task deliverables instead end at the Tasks Master.)
+  if (plan.goal.kind === "craft-item") items.push(withId({ kind: "deposit-all" }));
+
   if (ex.mode === "task-loop") {
     if (ex.loop !== false) {
       // Looping task plan — the expander recompiles per task at run time.

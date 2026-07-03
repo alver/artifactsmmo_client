@@ -1300,20 +1300,25 @@ body,
   margin-top: 8px;
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 9px 12px;
+  gap: 4px 14px;
 }
+/* One line per skill: fixed-width level, name, then xp/next in grey. The level
+   column is right-aligned so 1- and 2-digit levels never shift the names. */
 .cp-skill {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: baseline;
+  gap: 7px;
   font-size: 12px;
 }
-.cp-skill-top {
-  display: flex;
-  justify-content: space-between;
+.cp-skill-lv {
+  min-width: 16px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.cp-skill-name {
+  flex: 1;
 }
 .cp-skill-xp {
-  align-self: flex-end;
   font-size: 10px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;

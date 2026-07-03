@@ -1,7 +1,7 @@
 import { useState } from "preact/hooks";
 import { characters, characterList, selectedCharacter } from "../state/store";
 import { item, itemName, monster, npc, resource, tileAt } from "../catalog";
-import { asset, assetFallback, pct, slotLabel, titleCase } from "../lib/util";
+import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
 import { queues } from "../state/queue";
 import { GearSlots } from "./GearSlots";
@@ -100,6 +100,21 @@ export function CharacterPanel() {
 
       <div class="cp-body">
         <details class="section" open>
+          <summary>Skills</summary>
+          <div class="cp-skills">
+            {SKILLS.map(([key, label]) => (
+              <div key={key} class="cp-skill">
+                <b class="cp-skill-lv">{stat[`${key}_level`]}</b>
+                <span class="cp-skill-name">{label}</span>
+                <span class="cp-skill-xp">
+                  {stat[`${key}_xp`]}/{stat[`${key}_max_xp`]}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+
+        <details class="section" open>
           <summary>Planner</summary>
           <PlanControl ch={ch} />
         </details>
@@ -115,6 +130,25 @@ export function CharacterPanel() {
           <div class="task">
             <span class="muted">Task</span> {titleCase(ch.task)} — {ch.task_progress}/{ch.task_total}
           </div>
+        )}
+
+        <details class="section" open>
+          <summary>Equipment</summary>
+          <GearSlots ch={ch} />
+        </details>
+
+        <details class="section" open>
+          <summary>
+            Inventory ({inv.length} · {invQty}/{ch.inventory_max_items})
+          </summary>
+          <InventorySection ch={ch} onBank={onBank} />
+        </details>
+
+        {characterList().length > 1 && (
+          <details class="section">
+            <summary>Give to another character</summary>
+            <GiveSection ch={ch} />
+          </details>
         )}
 
         <details class="section" open>
@@ -158,49 +192,6 @@ export function CharacterPanel() {
             <div class="kv-row"><span>Speed</span><b>{ch.speed}</b></div>
           </div>
         </details>
-
-        <details class="section" open>
-          <summary>Equipment</summary>
-          <GearSlots ch={ch} />
-        </details>
-
-        <details class="section" open>
-          <summary>Skills</summary>
-          <div class="cp-skills">
-            {SKILLS.map(([key, label]) => {
-              const xp = stat[`${key}_xp`];
-              const max = stat[`${key}_max_xp`];
-              return (
-                <div key={key} class="cp-skill">
-                  <div class="cp-skill-top">
-                    <span>{label}</span>
-                    <b>Lv {stat[`${key}_level`]}</b>
-                  </div>
-                  <div class="bar">
-                    <div class="fill xp" style={{ width: pct(xp, max) + "%" }} />
-                  </div>
-                  <span class="cp-skill-xp">
-                    {xp}/{max}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </details>
-
-        <details class="section" open>
-          <summary>
-            Inventory ({inv.length} · {invQty}/{ch.inventory_max_items})
-          </summary>
-          <InventorySection ch={ch} onBank={onBank} />
-        </details>
-
-        {characterList().length > 1 && (
-          <details class="section">
-            <summary>Give to another character</summary>
-            <GiveSection ch={ch} />
-          </details>
-        )}
 
         {content?.type === "monster" && <CombatForecast ch={ch} monsterCode={content.code} />}
       </div>

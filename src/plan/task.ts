@@ -246,20 +246,24 @@ export function compileTaskPlan(
     };
   }
 
-  // Gather/craft path: equip the best tool for the dominant gathering skill.
-  const owned = ownedCodes(ch, bank);
-  const skills: string[] = [];
-  const taskSkill = taskOf(ch.task)?.skill;
-  if (taskSkill) skills.push(taskSkill);
-  for (const s of probe.steps) {
-    if (s.kind !== "gather") continue;
-    const r = resourceOf(s.resource);
-    if (r && !skills.includes(r.skill)) skills.push(r.skill);
-  }
+  // Gather/craft path: equip the best tool for the dominant gathering skill —
+  // but only when the plan actually gathers (training counts). A task fully
+  // covered by existing stock is a bank→master shuttle and needs no tool.
   let tool: string | undefined;
-  for (const sk of skills) {
-    tool = bestTool(ch, sk, bank, owned);
-    if (tool) break;
+  if (probe.steps.some((s) => s.kind === "gather" || s.kind === "train")) {
+    const owned = ownedCodes(ch, bank);
+    const skills: string[] = [];
+    const taskSkill = taskOf(ch.task)?.skill;
+    if (taskSkill) skills.push(taskSkill);
+    for (const s of probe.steps) {
+      if (s.kind !== "gather") continue;
+      const r = resourceOf(s.resource);
+      if (r && !skills.includes(r.skill)) skills.push(r.skill);
+    }
+    for (const sk of skills) {
+      tool = bestTool(ch, sk, bank, owned);
+      if (tool) break;
+    }
   }
 
   const targets: Target[] = [];
