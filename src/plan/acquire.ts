@@ -80,6 +80,20 @@ function monsterForDrop(code: string): { code: string; rate: number; avgQty: num
   }
 }
 
+/** The NPC that buys `code` for gold (best price first), with that price. */
+export function npcForSell(code: string): { code: string; price: number } | undefined {
+  try {
+    let best: { code: string; price: number } | undefined;
+    for (const n of catalog().npcs.values()) {
+      const s = n.items?.find((i) => i.code === code && i.currency === "gold" && i.sell_price != null);
+      if (s && (!best || (s.sell_price as number) > best.price)) best = { code: n.code, price: s.sell_price as number };
+    }
+    return best;
+  } catch {
+    return undefined;
+  }
+}
+
 function npcForBuy(code: string): { code: string; price: number } | undefined {
   try {
     for (const n of catalog().npcs.values()) {

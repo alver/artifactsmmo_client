@@ -18,6 +18,9 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number }
   | { kind: "deposit-all" }
   | { kind: "buy"; code: string; quantity: number; npc?: string; x?: number; y?: number }
+  // Sell to the NPC that buys the item; pulls stock from the BANK bag-sized
+  // piece by piece when the hand is empty (the bank-cleanup action).
+  | { kind: "sell"; code: string; quantity: number; done: number; npc?: string; x?: number; y?: number }
   | { kind: "equip"; code: string; slot: GearSlot; quantity: number }
   | { kind: "train"; skill: string; toLevel: number; resource: string; x?: number; y?: number }
   | { kind: "new-task"; master: "monsters" | "items" } // dynamic expander: accept → insert the task's items → re-append itself
@@ -32,7 +35,7 @@ export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "move", "rest", "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "equip", "train", "new-task", "deliver", "turn-in",
+  "buy", "sell", "equip", "train", "new-task", "deliver", "turn-in",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -109,6 +112,7 @@ export function queueItemText(it: QueueItem): string {
     case "withdraw": return `Withdraw ${it.quantity}× ${itemName(it.code)}`;
     case "deposit-all": return "Deposit everything";
     case "buy": return `Buy ${it.quantity}× ${itemName(it.code)}`;
+    case "sell": return `Sell ${it.quantity}× ${itemName(it.code)}`;
     case "equip": return `Equip ${itemName(it.code)} → ${slotLabel(it.slot)}`;
     case "train": return `Train ${titleCase(it.skill)} to Lv ${it.toLevel}`;
     case "new-task": return `New ${it.master === "items" ? "item" : "fight"} task`;
@@ -119,6 +123,6 @@ export function queueItemText(it: QueueItem): string {
 
 export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
-  "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "equip": "🛡",
+  "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "equip": "🛡",
   "train": "🎓", "new-task": "🔁", "deliver": "🤝", "turn-in": "✅",
 };

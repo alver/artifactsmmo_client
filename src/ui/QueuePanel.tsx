@@ -7,6 +7,7 @@
 
 import { useState } from "preact/hooks";
 import { armTilePick, bankItems, tilePick } from "../state/store";
+import { npcForSell } from "../plan/acquire";
 import { catalog, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
@@ -28,6 +29,7 @@ const ADDABLE: { kind: string; label: string }[] = [
   { kind: "gather", label: "⛏ Gather a resource ×N" },
   { kind: "craft", label: "⚙ Craft / refine ×N" },
   { kind: "withdraw", label: "🏦 Withdraw from bank" },
+  { kind: "sell", label: "💰 Sell bank stock ×N" },
   { kind: "deposit-all", label: "📦 Deposit everything" },
   { kind: "new-task", label: "🔁 New task (loops)" },
   { kind: "deliver", label: "🤝 Deliver task items" },
@@ -104,7 +106,7 @@ export function QueueSection({ ch }: { ch: Character }) {
 
 function progressOf(it: QueueItem): string {
   if (it.kind === "fight" || it.kind === "gather") return it.done > 0 ? `${it.done}/${it.times}` : "";
-  if (it.kind === "craft") return it.done > 0 ? `${it.done}/${it.quantity}` : "";
+  if (it.kind === "craft" || it.kind === "sell") return it.done > 0 ? `${it.done}/${it.quantity}` : "";
   return "";
 }
 
@@ -174,7 +176,7 @@ function EditForm({ ch, it, onDone }: { ch: Character; it: QueueItem; onDone: ()
         {field("done", "done", it.done)}
       </>
     );
-  } else if (it.kind === "craft") {
+  } else if (it.kind === "craft" || it.kind === "sell") {
     fields = (
       <>
         {field("quantity", "quantity", it.quantity, 1)}
@@ -228,6 +230,7 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
     }
   })();
   const bank = bankItems.value;
+  const sellable = bank.filter((b) => npcForSell(b.code));
 
   const build = (): QueueItemInput | null => {
     switch (kind) {
@@ -250,6 +253,10 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
       case "withdraw": {
         const b = bank.find((o) => o.code === code) ?? bank[0];
         return b ? { kind: "withdraw", code: b.code, quantity: Math.max(1, times) } : null;
+      }
+      case "sell": {
+        const b = sellable.find((o) => o.code === code) ?? sellable[0];
+        return b ? { kind: "sell", code: b.code, quantity: Math.max(1, times), done: 0, npc: npcForSell(b.code)?.code } : null;
       }
       case "deposit-all": return { kind: "deposit-all" };
       case "new-task": return { kind: "new-task", master };
@@ -318,7 +325,17 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
         </select>
       )}
 
-      {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw") && (
+      {kind === "sell" && (
+        <select class="cp-refine-select" value={code || sellable[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
+          {sellable.map((b) => (
+            <option key={b.code} value={b.code}>
+              {itemName(b.code)} (×{b.quantity}) · {npcForSell(b.code)!.price}g
+            </option>
+          ))}
+        </select>
+      )}
+
+      {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell") && (
         <label class="q-field">
           ×<input class="cat-num" type="number" min={1} value={times} onInput={(e) => setTimes(num(e))} />
         </label>
