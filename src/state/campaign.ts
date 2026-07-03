@@ -23,7 +23,7 @@
 
 import { effect, signal } from "@preact/signals";
 import * as actions from "../api/actions";
-import { item, itemName, monster as monsterOf } from "../catalog";
+import { item, itemName, monster as monsterOf, resource } from "../catalog";
 import { currentFighter } from "../sim/stats";
 import { simulate } from "../sim/combat";
 import { resolve } from "../plan/acquire";
@@ -36,7 +36,7 @@ import { bankQty, refineJobs } from "./refine";
 import { fightJobs } from "./fight";
 import { queueActive } from "./queue";
 import { isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
-import { bankOff, craftableTimes, fightRound, freeSpace, gearSwapStep, goToMaster, invQty, runStep } from "./exec";
+import { bankOff, craftableTimes, desiredForJob, fightRound, freeSpace, gearSwapStep, goToMaster, invQty, runStep } from "./exec";
 import { slotCode, slotQuantity } from "../types/api";
 import type { StepCtx } from "./exec";
 import type { AcquisitionStep, FoodSpec, Plan, Target } from "../plan/types";
@@ -274,7 +274,20 @@ async function trainTick(name: string, ch: Character, job: CampaignJob, _S: { lo
     // 3. Produce the next batch — one resolver step per tick.
     if (pick.acq.steps.length === 0) return false; // transient (echo lag) — re-derive next tick
     setJob(name, { note: `Lv ${lvl}/${target} · ${itemName(code)} ×${pick.batch}` });
-    await runStep(name, ch, pickStep(ch, pick.acq.steps), ctxOf(name, job));
+    const next = pickStep(ch, pick.acq.steps);
+
+    // Wear the gathering set (tool cooldown + prospecting) before a gather leg.
+    // Converged swaps cost nothing per tick and the gear persists across
+    // batches, so this is ~one swap per material type for the whole run. Craft
+    // and bank legs keep whatever is on — a wisdom swap around the single craft
+    // action per batch would cost more requests than it earns.
+    if (next.kind === "gather" || next.kind === "train") {
+      const gatherSkill = next.kind === "train" ? next.skill : resource(next.resource)?.skill;
+      const desired = gatherSkill ? desiredForJob(name, ch, { kind: "gather", skill: gatherSkill }) : undefined;
+      if (desired && (await gearSwapStep(name, ch, desired, ctxOf(name, job))) === "acted") return false;
+    }
+
+    await runStep(name, ch, next, ctxOf(name, job));
     return false;
   } catch (e) {
     if (isInventoryFull(e)) {
