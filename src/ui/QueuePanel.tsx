@@ -39,7 +39,6 @@ function otherLoop(name: string): string | null {
 }
 
 export function QueueSection({ ch }: { ch: Character }) {
-  const [adding, setAdding] = useState(false);
   const q = queues.value[ch.name] ?? { items: [], running: false };
   const busy = otherLoop(ch.name);
   const pausedError = !q.running ? q.items[0]?.error : undefined;
@@ -54,7 +53,6 @@ export function QueueSection({ ch }: { ch: Character }) {
               {q.note || "running"}
             </span>
             <span class="q-count muted">{q.items.length} left</span>
-            <button class="cat-btn" title="Add an action to the end — the queue keeps running" onClick={() => setAdding(!adding)}>＋ Add</button>
             <button class="btn-stop" title="Pause the queue after the current action" onClick={() => stopQueue(ch.name)}>⏹</button>
           </>
         ) : (
@@ -69,7 +67,6 @@ export function QueueSection({ ch }: { ch: Character }) {
             </button>
             {pausedError && <span class="q-paused">⏸ paused</span>}
             <span class="q-count muted">{q.items.length} item{q.items.length === 1 ? "" : "s"}</span>
-            <button class="cat-btn" title="Add an action" onClick={() => setAdding(!adding)}>＋ Add</button>
             {q.items.length > 0 && (
               <button
                 class="cat-btn sell"
@@ -84,10 +81,10 @@ export function QueueSection({ ch }: { ch: Character }) {
       </div>
       {busy && !q.running && <div class="foot-hint">busy {busy} — stop it to run the queue</div>}
 
-      {adding && <AddForm ch={ch} onDone={() => setAdding(false)} />}
+      <AddForm ch={ch} />
 
-      {q.items.length === 0 && !adding && (
-        <div class="muted" style={{ fontSize: 12 }}>Empty — add actions with ＋ or from a plan above.</div>
+      {q.items.length === 0 && (
+        <div class="muted" style={{ fontSize: 12 }}>Empty — add a step above or use the planner.</div>
       )}
 
       <div class="q-list">
@@ -197,12 +194,12 @@ function EditForm({ ch, it, onDone }: { ch: Character; it: QueueItem; onDone: ()
   );
 }
 
-/** The ＋ Add form: pick a kind, fill its couple of fields, append to the queue. */
-function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
+/** The always-visible add form: pick a kind, fill its couple of fields, append to the queue. */
+function AddForm({ ch }: { ch: Character }) {
   const [kind, setKind] = useState("move");
   const [x, setX] = useState(ch.x);
   const [y, setY] = useState(ch.y);
-  const [times, setTimes] = useState(10);
+  const [times, setTimes] = useState(0);
   const [code, setCode] = useState("");
   const [gearJob, setGearJob] = useState("fight");
   const [gearReset, setGearReset] = useState(false);
@@ -274,7 +271,7 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
 
   return (
     <div class="q-add-form">
-      <select class="cp-refine-select" value={kind} onChange={(e) => { const k = sel(e); setKind(k); setCode(""); setTimes(k === "fight" ? 0 : 10); }}>
+      <select class="cp-refine-select" value={kind} onChange={(e) => { const k = sel(e); setKind(k); setCode(""); setTimes(0); }}>
         {ADDABLE.map((o) => (
           <option key={o.kind} value={o.kind}>{o.label}</option>
         ))}
@@ -341,8 +338,8 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
       )}
 
       {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell") && (
-        <label class="q-field" title={kind === "fight" || kind === "gather" ? "0 = repeat forever (until stopped)" : undefined}>
-          ×<input class="cat-num" type="number" min={kind === "fight" || kind === "gather" ? 0 : 1} value={times} onInput={(e) => setTimes(num(e))} />
+        <label class="q-field" title={kind === "fight" || kind === "gather" ? "0 = repeat forever (until stopped)" : "0 = once"}>
+          ×<input class="cat-num" type="number" min={0} value={times} onInput={(e) => setTimes(num(e))} />
         </label>
       )}
 
@@ -370,10 +367,9 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
         </>
       )}
 
-      <button class="cat-btn buy" disabled={!draft} onClick={() => { if (draft) { addItem(ch.name, withId(draft)); onDone(); } }}>
+      <button class="cat-btn buy" disabled={!draft} onClick={() => { if (draft) addItem(ch.name, withId(draft)); }}>
         Add
       </button>
-      <button class="cat-btn" onClick={onDone}>Cancel</button>
     </div>
   );
 }
