@@ -17,6 +17,8 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "fight"; monster: string; times: number; done: number; food?: FoodSpec; keep?: string[]; gear?: boolean }
   // times 0 = infinite. `gear` ⇒ keep the bank gathering set for the resource's skill on.
   | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; gear?: boolean }
+  // quantity 0 = infinite: withdraw a bagful of materials from the bank, craft,
+  // deposit, repeat — completes when the bank can no longer feed the recipe.
   | { kind: "craft"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number }
   | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number }
   | { kind: "deposit-all" }
@@ -79,7 +81,7 @@ export function queueItemText(it: QueueItem): string {
     case "rest": return "Rest to full HP";
     case "fight": return `Fight ${it.times > 0 ? `${it.times}× ` : "(∞) "}${monsterOf(it.monster)?.name ?? titleCase(it.monster)}`;
     case "gather": return `Gather ${it.times > 0 ? `${it.times}× ` : "(∞) "}${itemName(it.code)}`;
-    case "craft": return `Craft ${it.quantity}× ${itemName(it.code)}`;
+    case "craft": return `Craft ${it.quantity > 0 ? `${it.quantity}× ` : "(∞) "}${itemName(it.code)}`;
     case "withdraw": return `Withdraw ${it.quantity}× ${itemName(it.code)}`;
     case "deposit-all": return "Deposit everything";
     case "buy": return `Buy ${it.quantity}× ${itemName(it.code)}`;

@@ -1544,6 +1544,10 @@ body,
   border: 1px solid var(--line);
   color: var(--text);
 }
+/* gray section headers inside long <select> lists (e.g. craft skills) */
+.cp-refine-select option.q-opt-sep {
+  color: var(--muted);
+}
 .btn-refine {
   flex: 0 0 auto;
   font-size: 12px;

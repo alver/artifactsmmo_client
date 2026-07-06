@@ -240,28 +240,50 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       return false;
     }
     case "craft": {
-      if (it.done >= it.quantity) return true;
-      if (it.done === 0 && invQty(ch, it.code) >= it.quantity) return true; // already have them
-      const left = it.quantity - it.done;
-      // Materials ran out mid-chain (batches bigger than the bag bank their raws
-      // and output off along the way): pull more ingredients from the bank, one
-      // bag-sized piece per tick, instead of failing on the empty hand.
-      if (craftableTimes(ch, it.code, left) <= 0) {
-        const recipe = itemOf(it.code)?.craft;
-        const times = recipe ? Math.ceil(left / Math.max(1, recipe.quantity)) : 0;
-        const ing = recipe?.items.find((g) => g.quantity * times > invQty(ch, g.code) && bankQty(g.code) > 0);
+      const infinite = it.quantity === 0; // 0 = ∞: craft while the bank can feed the recipe
+      if (!infinite && it.done >= it.quantity) return true;
+      if (!infinite && it.done === 0 && invQty(ch, it.code) >= it.quantity) return true; // already have them
+      const recipe = itemOf(it.code)?.craft;
+      if (infinite && !recipe) throw new Error(`${itemName(it.code)} has no recipe`);
+      const per = Math.max(1, recipe?.quantity ?? 1);
+      // The working batch, in recipe runs: finite = whatever is left; ∞ = a
+      // bagful of materials (the withdraw → craft → deposit cycle per bagful).
+      const matsPerRun = Math.max(1, (recipe?.items ?? []).reduce((sum, g) => sum + g.quantity, 0));
+      const bagTimes = Math.max(1, Math.floor(ch.inventory_max_items / matsPerRun));
+      const wantTimes = infinite ? bagTimes : Math.ceil((it.quantity - it.done) / per);
+      const left = wantTimes * per;
+      // Materials ran out mid-chain: pull the next batch from the bank, clamped
+      // to what hand + bank can still supply. In ∞ mode an empty bank is the
+      // finish line — deposit the produce, then the item completes.
+      if (recipe && craftableTimes(ch, it.code, left) <= 0) {
+        const supplyTimes = Math.min(wantTimes, ...recipe.items.map((g) => Math.floor((invQty(ch, g.code) + bankQty(g.code)) / g.quantity)));
+        if (infinite && supplyTimes <= 0) {
+          if (it.done <= 0) throw new Error(`no materials for ${itemName(it.code)} in the bank`);
+          if (invCount(ch) > 0) { await bankOff(name, ch.x, ch.y, undefined, ctx.note); return false; }
+          return true;
+        }
+        const batch = Math.max(1, Math.min(supplyTimes, bagTimes));
+        const ing = recipe.items.find((g) => g.quantity * batch > invQty(ch, g.code) && bankQty(g.code) > 0);
         if (ing) {
+          // The whole batch (every ingredient) must fit in the bag — deposit
+          // the produce and leftovers first, then withdraw fresh.
+          const needTotal = recipe.items.reduce((sum, g) => sum + Math.max(0, g.quantity * batch - invQty(ch, g.code)), 0);
+          if (needTotal > freeSpace(ch)) {
+            if (invCount(ch) === 0) throw new Error(`one ${itemName(it.code)} batch doesn't fit the bag`);
+            await bankOff(name, ch.x, ch.y, undefined, ctx.note);
+            return false;
+          }
           const bank = nearestBank(ch.x, ch.y);
           if (!bank) throw new Error("no bank found on the map");
-          const qty = Math.min(ing.quantity * times - invQty(ch, ing.code), bankQty(ing.code));
+          const qty = Math.min(ing.quantity * batch - invQty(ch, ing.code), bankQty(ing.code));
           await runStep(name, ch, { kind: "withdraw", code: ing.code, quantity: qty, x: bank.x, y: bank.y }, ctx);
           return false;
         }
       }
-      const skill = it.skill ?? itemOf(it.code)?.craft?.skill;
+      const skill = it.skill ?? recipe?.skill;
       const tile = it.x != null ? { x: it.x, y: it.y } : skill ? nearest("workshop", skill, ch.x, ch.y) : undefined;
       if (!tile || tile.x == null) throw new Error(`no workshop for ${itemName(it.code)}`);
-      const s: AcquisitionStep = { kind: "craft", code: it.code, quantity: it.quantity - it.done, skill: skill ?? "", level: 0, x: tile.x, y: tile.y };
+      const s: AcquisitionStep = { kind: "craft", code: it.code, quantity: left, skill: skill ?? "", level: 0, x: tile.x, y: tile.y };
       const r = await runStep(name, ch, s, ctx);
       if (r.did === "crafted") patchItem(name, it.id, { done: it.done + r.produced });
       return false;

@@ -24,7 +24,7 @@ const ADDABLE: { kind: string; label: string }[] = [
   { kind: "rest", label: "💤 Rest to full HP" },
   { kind: "fight", label: "⚔ Fight a monster ×N (0 = ∞)" },
   { kind: "gather", label: "⛏ Gather a resource ×N (0 = ∞)" },
-  { kind: "craft", label: "⚙ Craft / refine ×N" },
+  { kind: "craft", label: "⚙ Craft / refine ×N (0 = ∞)" },
   { kind: "withdraw", label: "🏦 Withdraw from bank" },
   { kind: "sell", label: "💰 Sell bank stock ×N" },
   { kind: "deposit-all", label: "📦 Deposit everything" },
@@ -98,7 +98,7 @@ export function QueueSection({ ch }: { ch: Character }) {
 
 function progressOf(it: QueueItem): string {
   if (it.kind === "fight" || it.kind === "gather") return it.done > 0 ? (it.times > 0 ? `${it.done}/${it.times}` : `${it.done}`) : "";
-  if (it.kind === "craft" || it.kind === "sell") return it.done > 0 ? `${it.done}/${it.quantity}` : "";
+  if (it.kind === "craft" || it.kind === "sell") return it.done > 0 ? (it.quantity > 0 ? `${it.done}/${it.quantity}` : `${it.done}`) : "";
   return "";
 }
 
@@ -171,7 +171,7 @@ function EditForm({ ch, it, onDone }: { ch: Character; it: QueueItem; onDone: ()
   } else if (it.kind === "craft" || it.kind === "sell") {
     fields = (
       <>
-        {field("quantity", "quantity", it.quantity, 1)}
+        {field(it.kind === "craft" ? "quantity (0 = ∞)" : "quantity", "quantity", it.quantity, it.kind === "craft" ? 0 : 1)}
         {field("done", "done", it.done)}
       </>
     );
@@ -213,10 +213,11 @@ function AddForm({ ch }: { ch: Character }) {
       return [];
     }
   })();
+  // Only recipes this character's skill levels can actually craft right now.
   const recipes = (() => {
     try {
       return [...catalog().items.values()]
-        .filter((i) => i.craft)
+        .filter((i) => i.craft && (stats[`${i.craft.skill}_level`] ?? 0) >= (i.craft.level ?? 0))
         .sort((a, b) => (a.craft!.skill || "").localeCompare(b.craft!.skill || "") || (a.craft!.level ?? 0) - (b.craft!.level ?? 0));
     } catch {
       return [];
@@ -242,7 +243,9 @@ function AddForm({ ch }: { ch: Character }) {
       }
       case "craft": {
         const rec = recipes.find((o) => o.code === code) ?? recipes[0];
-        return rec ? { kind: "craft", code: rec.code, quantity: Math.max(1, times), done: 0, skill: rec.craft!.skill } : null;
+        // quantity 0 = craft forever: bank-withdraw → craft → deposit cycles
+        // until the bank can't feed the recipe.
+        return rec ? { kind: "craft", code: rec.code, quantity: Math.max(0, times), done: 0, skill: rec.craft!.skill } : null;
       }
       case "withdraw": {
         const b = bank.find((o) => o.code === code) ?? bank[0];
@@ -311,11 +314,23 @@ function AddForm({ ch }: { ch: Character }) {
 
       {kind === "craft" && (
         <select class="cp-refine-select" value={code || recipes[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
-          {recipes.map((r) => (
-            <option key={r.code} value={r.code} disabled={(stats[`${r.craft!.skill}_level`] ?? 0) < (r.craft!.level ?? 0)}>
-              {r.name} · {titleCase(r.craft!.skill || "")} Lv {r.craft!.level ?? 0}
-            </option>
-          ))}
+          {recipes.flatMap((r, i) => {
+            const skill = r.craft!.skill || "";
+            const opts: JSX.Element[] = [];
+            if (i === 0 || skill !== (recipes[i - 1].craft!.skill || "")) {
+              opts.push(
+                <option key={`sep-${skill}`} disabled class="q-opt-sep">
+                  {`------ ${titleCase(skill)} ------`}
+                </option>,
+              );
+            }
+            opts.push(
+              <option key={r.code} value={r.code}>
+                {r.name} (lv.{r.craft!.level ?? 0})
+              </option>,
+            );
+            return opts;
+          })}
         </select>
       )}
 
@@ -338,7 +353,14 @@ function AddForm({ ch }: { ch: Character }) {
       )}
 
       {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell") && (
-        <label class="q-field" title={kind === "fight" || kind === "gather" ? "0 = repeat forever (until stopped)" : "0 = once"}>
+        <label
+          class="q-field"
+          title={
+            kind === "fight" || kind === "gather" ? "0 = repeat forever (until stopped)"
+            : kind === "craft" ? "0 = craft until the bank runs out of materials"
+            : "0 = once"
+          }
+        >
           ×<input class="cat-num" type="number" min={0} value={times} onInput={(e) => setTimes(num(e))} />
         </label>
       )}
