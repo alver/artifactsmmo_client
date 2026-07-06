@@ -217,8 +217,9 @@ setInterval(() => {
  * this computed is what keeps the panels from re-rendering (and re-running their
  * heavy per-render derivations) continuously — the memory-growth culprit.
  *
- * The live numeric countdown that genuinely needs every tick lives in the tiny
- * <CooldownBadge> leaf (ui/Cooldown.tsx), the only thing that reads `now` directly.
+ * The live cooldown ring that genuinely needs every tick lives in the tiny
+ * <CooldownRing> leaf (ui/Cooldown.tsx), the only thing that reads `now` directly
+ * (and even it only while its character is actually cooling).
  *
  * Flags are memoised per name (bounded by the character count) so every consumer
  * shares one computed.

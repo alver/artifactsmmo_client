@@ -1,20 +1,32 @@
-import { now } from "../state/store";
+import { now, onCooldown } from "../state/store";
 import { cooldownRemaining } from "../lib/util";
+import type { ComponentChildren } from "preact";
 import type { Character } from "../types/api";
 
 /**
- * The one component that subscribes to the 4 Hz `now` clock: a tiny leaf that
- * renders the live "⏳ 2.3s" cooldown countdown for a character and nothing else.
+ * The cooldown throbber: a ring wrapped around a character's avatar. Ready =
+ * full green ring; on cooldown = a gold arc showing the REMAINING share,
+ * draining to nothing as the cooldown runs out (hover shows the seconds).
  *
- * Isolating the tick here is the whole point — selecting a character or opening a
- * workshop/bank panel no longer re-renders its entire subtree (and re-runs the
- * heavy planner/refine/combat derivations) 4×/second. Everything else reads the
- * coarse `onCooldown()` flag instead (see state/store), which only flips when a
- * cooldown starts/ends. Returns null when the character is off cooldown, so it
- * costs nothing while idle.
+ * This is the one component family that touches the 4 Hz `now` clock, and even
+ * here it's gated: the coarse `onCooldown` flag (flips only when a cooldown
+ * starts/ends) is read first, and `now` is subscribed ONLY while cooling — an
+ * idle card re-renders zero times per second. Everything else must keep using
+ * the flag (see state/store).
  */
-export function CooldownBadge({ ch }: { ch?: Character | null }) {
-  const cd = ch ? cooldownRemaining(ch, now.value) : 0;
-  if (cd <= 0) return null;
-  return <span class="cooldown">⏳ {cd.toFixed(1)}s</span>;
+export function CooldownRing({ ch, children }: { ch: Character; children: ComponentChildren }) {
+  if (!onCooldown(ch.name).value) {
+    return <span class="cd-ring ready" style="--ring: var(--ok)">{children}</span>;
+  }
+  const left = cooldownRemaining(ch, now.value);
+  const deg = Math.round(Math.max(0, Math.min(1, ch.cooldown > 0 ? left / ch.cooldown : 0)) * 360);
+  return (
+    <span
+      class="cd-ring cooling"
+      title={`cooldown · ${left.toFixed(1)}s left`}
+      style={`--ring: conic-gradient(var(--gold) ${deg}deg, rgba(255,255,255,0.09) ${deg}deg)`}
+    >
+      {children}
+    </span>
+  );
 }

@@ -4,7 +4,8 @@ import { queues } from "../state/queue";
 import { queueItemText } from "../plan/queue";
 import { liveTileAt } from "../state/events";
 import { asset, assetFallback, pct } from "../lib/util";
-import { CooldownBadge } from "./Cooldown";
+import { CooldownRing } from "./Cooldown";
+import { itemHover } from "./ItemPopup";
 import { contentLabel } from "./CharacterPanel";
 import type { GameMap } from "../types/catalog";
 
@@ -81,12 +82,14 @@ export function CharacterMini({ ch }: { ch: Character }) {
         <span class="pcard-lvl">Lvl {ch.level}</span>
       </div>
       <div class="pcard-body">
-        <img
-          class="pcard-avatar"
-          src={asset("characters", ch.skin || "men1")}
-          alt=""
-          onError={assetFallback("characters", ch.skin || "men1")}
-        />
+        <CooldownRing ch={ch}>
+          <img
+            class="pcard-avatar"
+            src={asset("characters", ch.skin || "men1")}
+            alt=""
+            onError={assetFallback("characters", ch.skin || "men1")}
+          />
+        </CooldownRing>
         <div class="pcard-bars">
           <div class="pbar hp">
             <div class="pbar-fill" style={{ width: pct(ch.hp, ch.max_hp) + "%" }} />
@@ -110,7 +113,7 @@ export function CharacterMini({ ch }: { ch: Character }) {
         {where.icon} {where.label} · ({ch.x}, {ch.y})
       </div>
 
-      {/* Foot: read-only status line + live cooldown timer. Control moved to the panel. */}
+      {/* Foot: read-only status line (the cooldown lives on the avatar ring). */}
       <div class="pcard-foot">
         {status ? (
           <span class={`gather-tag ${status.cls}`} title={status.note}>
@@ -120,7 +123,23 @@ export function CharacterMini({ ch }: { ch: Character }) {
         ) : (
           <span class="foot-hint">idle</span>
         )}
-        <CooldownBadge ch={ch} />
+      </div>
+
+      {/* Current Tasks-Master task (item popup on hover for item tasks). */}
+      <div class="pcard-task" title="Current task">
+        📋{" "}
+        {ch.task ? (
+          <>
+            <span class="pcard-task-name info-hover" {...itemHover(ch.task)}>
+              {contentLabel(ch.task_type === "monsters" ? "monster" : "item", ch.task)}
+            </span>
+            <span class="pcard-task-num">
+              {ch.task_progress}/{ch.task_total}
+            </span>
+          </>
+        ) : (
+          "Task: none"
+        )}
       </div>
     </div>
   );

@@ -84,9 +84,11 @@ export function jobSetFromRecommendation(ch: Character, bank: BankItem[], rec: G
 /**
  * The best gear set for a job from what is owned right now (bank ∪ inventory ∪
  * equipped — nothing is crafted here). Absent slots in the result are
- * unmanaged; "" means "strip this slot to the bank". `undefined` = no set
- * (unknown monster / no winnable fight set / job "none") — callers keep the
- * current gear.
+ * unmanaged; "" means "strip this slot to the bank". Fights always get a set —
+ * the solver falls back to the best-effort (longest-surviving) set when
+ * nothing owned can win; whether to fight is the runner's forecast gate's
+ * call. `undefined` = no set at all (unknown monster / job "none") — callers
+ * keep the current gear.
  */
 export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<Record<GearSlot, string>> | undefined {
   if (job.kind === "none") return undefined;

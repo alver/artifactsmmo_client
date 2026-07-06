@@ -351,15 +351,16 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     case "gear": {
       const desired = it.desired ?? (it.job ? desiredForJob(name, ch, it.job) : undefined);
       if (it.reset) {
-        // Full bank reset. A fight job with no winnable bank set throws BEFORE
-        // stripping — never leave the character naked for a hopeless fight.
+        // Full bank reset. Fight jobs always get a set (best-effort when no
+        // winnable one exists) — desired is only missing for an UNKNOWN
+        // monster, and stripping naked for that would be pointless.
         if (!desired && it.job?.kind === "fight") {
-          throw new Error(`no winnable gear set vs ${monsterOf(it.job.monster)?.name ?? it.job.monster} in the bank`);
+          throw new Error(`can't plan gear vs ${monsterOf(it.job.monster)?.name ?? it.job.monster} — unknown monster`);
         }
         const total = { ...(desired ?? stripAllMap()), ...RESET_UTILITY_STRIP };
         return (await gearSwapStep(name, ch, total, ctx, { reset: true })) === "done";
       }
-      if (!desired) return true; // no set for this job (e.g. no winnable fight gear) — keep current
+      if (!desired) return true; // no set for this job (unknown monster / job "none") — keep current
       return (await gearSwapStep(name, ch, desired, ctx)) === "done";
     }
     case "accept-task": {

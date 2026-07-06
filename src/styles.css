@@ -242,10 +242,32 @@ button:disabled {
   background: #25406b;
   color: #dce9ff;
 }
-.cooldown {
-  color: var(--gold);
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
+/* ── cooldown throbber (ui/Cooldown.tsx) — ring around an avatar ──
+   `--ring` (set inline) paints a ::before layer masked to a ring: a solid
+   green for "ready", a draining gold conic arc while on cooldown. */
+.cd-ring {
+  --ring-w: 3px;
+  position: relative;
+  flex: 0 0 auto;
+  display: inline-flex;
+  padding: calc(var(--ring-w) + 2px);
+  border-radius: 50%;
+}
+.cd-ring::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--ring);
+  -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w) - 0.5px), #000 calc(100% - var(--ring-w) + 0.5px));
+  mask: radial-gradient(farthest-side, transparent calc(100% - var(--ring-w) - 0.5px), #000 calc(100% - var(--ring-w) + 0.5px));
+}
+.cd-ring.ready::before {
+  opacity: 0.75;
+}
+/* Inside a ring the avatar drops its own backdrop — the ring is the frame. */
+.cd-ring .pcard-avatar {
+  background: transparent;
 }
 
 .task {
@@ -450,31 +472,9 @@ body,
   overflow-y: auto;
   padding: 12px 14px 20px;
 }
-.ws-head {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  padding: 2px 2px 12px;
-}
-.ws-head .cp-avatar {
-  width: 54px;
-  height: 54px;
-}
-.ws-head .cp-titles {
-  flex: 0 1 auto;
-  min-width: 160px;
-}
-.ws-head .cp-tag {
-  align-self: center;
-  font-size: 12px;
-  padding: 3px 10px;
-}
-.ws-gold {
-  margin-left: auto;
-  color: var(--gold);
-  font-variant-numeric: tabular-nums;
-  font-size: 14px;
+/* the situational Enter/transition bar, rendered directly above the grid */
+.ws-body > .actions {
+  margin-bottom: 10px;
 }
 .ws-grid {
   display: grid;
@@ -663,6 +663,27 @@ body,
   align-items: center;
   gap: 8px;
   min-height: 26px;
+}
+/* current Tasks-Master task, bottom line of the card */
+.pcard-task {
+  margin-top: 2px;
+  padding: 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+}
+.pcard-task-name {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pcard-task-num {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
 }
 .gather-tag {
   flex: 1;
@@ -1404,43 +1425,7 @@ body,
   object-fit: contain;
 }
 
-/* ── character workspace atoms (header, skills, stats — see ui/CharacterPanel) ── */
-.cp-avatar {
-  flex: 0 0 auto;
-  width: 48px;
-  height: 48px;
-  border-radius: 8px;
-  image-rendering: pixelated;
-  object-fit: contain;
-  background: var(--panel-2);
-}
-.cp-titles {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.cp-name {
-  font-weight: 700;
-  font-size: 16px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.cp-sub {
-  font-size: 12px;
-  color: var(--muted);
-}
-.cp-tag {
-  align-self: flex-start;
-  font-size: 11px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  padding: 1px 8px;
-  margin-top: 2px;
-}
+/* ── character workspace atoms (skills, stats — see ui/CharacterPanel) ── */
 .cp-elements {
   width: 100%;
   border-collapse: collapse;

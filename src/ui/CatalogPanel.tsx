@@ -11,7 +11,7 @@ import { reconcile } from "../state/sync";
 import * as actions from "../api/actions";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
-import { CooldownBadge } from "./Cooldown";
+import { CooldownRing } from "./Cooldown";
 import type { Character } from "../types/api";
 import type { Item, Npc } from "../types/catalog";
 
@@ -124,11 +124,12 @@ function CatalogBody({ target }: { target: PanelTarget }) {
       <div class="cat-actor">
         {actor ? (
           <>
-            <img src={asset("characters", actor.skin || "men1")} alt="" onError={assetFallback("characters", actor.skin || "men1")} />
+            <CooldownRing ch={actor}>
+              <img src={asset("characters", actor.skin || "men1")} alt="" onError={assetFallback("characters", actor.skin || "men1")} />
+            </CooldownRing>
             <span>
               <b>{actor.name}</b> is here{present.length > 1 ? ` (+${present.length - 1})` : ""}
             </span>
-            <CooldownBadge ch={actor} />
           </>
         ) : (
           <span class="muted">Move a character here to {verb}.</span>

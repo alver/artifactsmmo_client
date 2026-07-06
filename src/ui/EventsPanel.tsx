@@ -4,7 +4,7 @@
 // layer when needed). Renders nothing while no event is active.
 //
 // The countdown rows are the only 4 Hz subscribers here and they're tiny
-// leaves, matching the cooldown-clock rule (see <CooldownBadge>).
+// leaves, matching the cooldown-clock rule (see <CooldownRing>).
 
 import { focusTile, now } from "../state/store";
 import { liveEvents } from "../state/events";

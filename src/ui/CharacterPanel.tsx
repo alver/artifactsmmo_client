@@ -4,7 +4,6 @@ import { saveState } from "../state/persist";
 import { item, itemName, monster, npc, resource } from "../catalog";
 import { liveTileAt } from "../state/events";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
-import { CooldownBadge } from "./Cooldown";
 import { queues } from "../state/queue";
 import { GearSlots } from "./GearSlots";
 import { JobGearPreview } from "./JobGearPreview";
@@ -119,36 +118,10 @@ export function CharacterPanel() {
 
   return (
     <div class="ws-body">
-      <header class="ws-head">
-        <img
-          class="cp-avatar"
-          src={asset("characters", ch.skin || "men1")}
-          alt=""
-          onError={assetFallback("characters", ch.skin || "men1")}
-        />
-        <div class="cp-titles">
-          <div class="cp-name">
-            {ch.name} <CooldownBadge ch={ch} />
-          </div>
-          <div class="cp-sub">
-            Level {ch.level} · ({ch.x}, {ch.y}){tile ? ` · ${tile.name}` : ""}
-          </div>
-        </div>
-        {content && (
-          <span class="cp-tag">
-            {titleCase(content.type)}: {contentLabel(content.type, content.code)}
-          </span>
-        )}
-        {ch.task && (
-          <span class="cp-tag info-hover" title="Current task" {...itemHover(ch.task)}>
-            📋 {titleCase(ch.task)} — {ch.task_progress}/{ch.task_total}
-          </span>
-        )}
-        <ActionBar ch={ch} />
-        <span class="ws-gold" title="Gold carried">
-          🪙 {ch.gold.toLocaleString()}
-        </span>
-      </header>
+      {/* No header — the roster card above already shows everything (avatar,
+          level, location, task, cooldown ring). Only the situational Enter
+          button survives; it renders null unless the tile has a transition. */}
+      <ActionBar ch={ch} />
 
       <div class="ws-grid">
         <div class="ws-col ws-col-control">

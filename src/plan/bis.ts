@@ -6,11 +6,15 @@
 // runs in a few thousand simulate() calls — sub-second, synchronous.
 //
 // Objective (lexicographic, encoded as one scalar):
-//   1. feasible: EV win AND not a 100-turn timeout            (else -Infinity)
+//   1. feasible: EV win AND not a 100-turn timeout            (else the -1e12 tier)
 //   2. safe: the pessimistic pass also wins                   (+1e9)
 //   3. maximize expected HP remaining (rest time dominates grind speed)
 //   4. tie-break: fewer turns
 // So any safe win beats any risky win; within a tier, survivability then speed.
+// Sets that can't win at all still rank (on a tier no win loses to, by turns
+// survived) — when NOTHING owned beats the monster, the solver still returns
+// the best-effort set, so "equip for a fight" always dresses the character.
+// Whether to actually fight is the runner's live forecast gate's call.
 
 import { catalog, item, monster as monsterOf } from "../catalog";
 import { applyGear, baseStats } from "../sim/stats";
@@ -175,9 +179,6 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
     for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
     const fighter = applyGear(base, codes);
     const f = simulate(fighter, monster);
-    if (!f.win || f.timedOut) return { score: -Infinity, f, worst: f, safe: false };
-    const worst = simulate(fighter, monster, { pessimistic: true });
-    const safe = worst.win;
     // Combat-equal sets are broken deterministically: prefer MORE gear (a
     // stat-neutral ring beats an empty slot — the fleet's spares get worn),
     // then prefer what is ALREADY worn (an equal alternative in the bank must
@@ -191,7 +192,16 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
       filled++;
       if (slots[s] === worn[s]) keep++;
     }
-    return { score: (safe ? 1e9 : 0) + f.hpRemaining * 1000 - f.turns + filled * 1e-3 + keep * 1e-4, f, worst, safe };
+    const tiebreak = filled * 1e-3 + keep * 1e-4;
+    if (!f.win || f.timedOut) {
+      // Can't win with this set. Still rank it — survive the longest — on a
+      // tier every winning set beats, so the solver can recommend the best
+      // AVAILABLE set even when nothing owned can beat the monster.
+      return { score: -1e12 + f.turns * 1000 + f.hpRemaining + tiebreak, f, worst: f, safe: false };
+    }
+    const worst = simulate(fighter, monster, { pessimistic: true });
+    const safe = worst.win;
+    return { score: (safe ? 1e9 : 0) + f.hpRemaining * 1000 - f.turns + tiebreak, f, worst, safe };
   };
 }
 

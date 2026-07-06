@@ -11,7 +11,7 @@ import type { Character } from "../types/api";
 export function ActionBar({ ch }: { ch: Character }) {
   const [busy, setBusy] = useState(false);
   // Subscribe to the coarse cooldown flag (flips on start/end), not the 4 Hz
-  // clock — the live countdown is rendered by <CooldownBadge>.
+  // clock — the live cooldown is rendered by the avatar's <CooldownRing>.
   const cooling = onCooldown(ch.name).value;
   const layer = (ch as { layer?: string }).layer ?? "overworld";
   const canTransition = liveTileAt(ch.x, ch.y, layer)?.interactions.transition != null;

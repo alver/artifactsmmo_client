@@ -23,7 +23,7 @@ export interface ActionRunner {
  * That's deliberate: reading `now.value` here would re-render the whole calling
  * component (a gear grid, an inventory list, the entire catalog panel) 4×/second.
  * Buttons still re-enable on their own the instant the cooldown expires (the flag
- * flips), and the live countdown is shown separately by <CooldownBadge>.
+ * flips), and the live cooldown is shown separately by <CooldownRing>.
  */
 export function useActionRunner(actor?: Character | null): ActionRunner {
   const [busy, setBusy] = useState(false);
