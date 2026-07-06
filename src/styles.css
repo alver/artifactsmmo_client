@@ -560,6 +560,69 @@ body,
   overflow: hidden;
 }
 
+/* ── active map events (ui/EventsPanel.tsx, between the map and the log) ── */
+.events-panel {
+  flex: 0 0 auto;
+  max-height: 220px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+  padding: 6px 8px;
+}
+.events-head {
+  font-size: 12px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+.event-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.event-row:hover {
+  background: var(--panel-2);
+}
+.event-icon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  flex: 0 0 auto;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.event-emoji {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+.event-titles {
+  flex: 1;
+  min-width: 0;
+}
+.event-name {
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.event-sub {
+  font-size: 11px;
+}
+.event-timer {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ok);
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── roster player cards ────────────────────────────────── */
 .pcard {
   width: 200px;

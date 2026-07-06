@@ -8,6 +8,7 @@ import { useEffect, useState } from "preact/hooks";
 import { itemPopup, itemsCatalogOpen, moveMode, tilePick } from "../state/store";
 import { catalog } from "../catalog";
 import { asset, assetFallback, titleCase } from "../lib/util";
+import { itemHover } from "./ItemPopup";
 import type { Item } from "../types/catalog";
 
 const PAGE = 120; // keep the DOM light — the full list is ~1000 rows
@@ -120,12 +121,8 @@ function ItemsCatalogBody() {
 }
 
 function ItemRow({ it }: { it: Item }) {
-  // Same hover contract as the workshop recipe rows: follow the cursor, hide on leave.
-  const showInfo = (e: MouseEvent) => (itemPopup.value = { code: it.code, x: e.clientX, y: e.clientY });
-  const hideInfo = () => (itemPopup.value = null);
-
   return (
-    <div class="icat-row info-hover" onMouseMove={showInfo} onMouseLeave={hideInfo}>
+    <div class="icat-row info-hover" {...itemHover(it.code)}>
       <img src={asset("items", it.code)} alt="" onError={assetFallback("items", it.code)} />
       <span class="icat-name">{it.name}</span>
       <span class="icat-sub">

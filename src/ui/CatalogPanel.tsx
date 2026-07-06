@@ -1,5 +1,6 @@
 import { useEffect, useState } from "preact/hooks";
-import { bankDetails, bankItems, characters, itemPopup, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
+import { bankDetails, bankItems, characters, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
+import { itemHover } from "./ItemPopup";
 import type { PanelTarget } from "../state/store";
 import { catalog, item, itemName, npc } from "../catalog";
 import { npcForSell } from "../plan/acquire";
@@ -218,8 +219,8 @@ function BankRow({ code, qty, actor, ctl }: { code: string; qty: number; actor?:
   const buyer = npcForSell(code); // which merchant buys this (bank-cleanup selling)
   return (
     <div class="bank-row" title={itemName(code)}>
-      <img src={asset("items", code)} alt="" onError={assetFallback("items", code)} />
-      <span class="bank-name">{itemName(code)}</span>
+      <img class="info-hover" src={asset("items", code)} alt="" onError={assetFallback("items", code)} {...itemHover(code)} />
+      <span class="bank-name info-hover" {...itemHover(code)}>{itemName(code)}</span>
       <span class="bank-qty">×{qty.toLocaleString()}</span>
       {actor && (
         <>
@@ -319,10 +320,6 @@ function RecipeCard({ it, actor, ctl }: { it: Item; actor?: Character; ctl: Acti
         ? "Not enough materials"
         : `Craft with ${actor.name}`;
 
-  // Hover the item's icon or name to show its parameters in a floating popup.
-  const showInfo = (e: MouseEvent) => (itemPopup.value = { code: it.code, x: e.clientX, y: e.clientY });
-  const hideInfo = () => (itemPopup.value = null);
-
   return (
     <div class="recipe-row">
       <img
@@ -330,11 +327,10 @@ function RecipeCard({ it, actor, ctl }: { it: Item; actor?: Character; ctl: Acti
         src={asset("items", it.code)}
         alt=""
         onError={assetFallback("items", it.code)}
-        onMouseMove={showInfo}
-        onMouseLeave={hideInfo}
+        {...itemHover(it.code)}
       />
       <div class="recipe-main">
-        <div class="recipe-name info-hover" onMouseMove={showInfo} onMouseLeave={hideInfo}>
+        <div class="recipe-name info-hover" {...itemHover(it.code)}>
           {it.name}
         </div>
         <div class={`recipe-level${actor && !levelOk ? " short" : ""}`}>
@@ -348,12 +344,7 @@ function RecipeCard({ it, actor, ctl }: { it: Item; actor?: Character; ctl: Acti
             const have = actor ? invQty(actor, ing.code) : null;
             const short = have != null && have < need;
             return (
-              <span
-                key={ing.code}
-                class={`recipe-pill info-hover${short ? " short" : ""}`}
-                onMouseMove={(e) => (itemPopup.value = { code: ing.code, x: e.clientX, y: e.clientY })}
-                onMouseLeave={hideInfo}
-              >
+              <span key={ing.code} class={`recipe-pill info-hover${short ? " short" : ""}`} {...itemHover(ing.code)}>
                 {itemName(ing.code)}: {have != null ? `${have}/${need}` : need}
               </span>
             );
@@ -418,7 +409,7 @@ function NpcRow({ trade: t, curLabel, actor, ctl }: { trade: NpcTrade; curLabel:
 
   return (
     <div class="cat-item">
-      <div class="cat-item-head">
+      <div class="cat-item-head info-hover" {...itemHover(t.code)}>
         <img src={asset("items", t.code)} alt="" onError={assetFallback("items", t.code)} />
         <div class="cat-item-id">
           <span class="cat-item-name">{name}</span>
@@ -516,7 +507,7 @@ function TasksPanel({ actor, ctl }: { actor?: Character; ctl: ActionRunner }) {
 
       {hasTask && !done && isItemTask && (
         <div class="bank-gold">
-          <span class="muted">Trade {itemName(actor.task)} ({held} held)</span>
+          <span class="muted info-hover" {...itemHover(actor.task)}>Trade {itemName(actor.task)} ({held} held)</span>
           <NumInput value={qty} min={1} max={Math.max(1, held)} onChange={setQty} />
           <button
             class="cat-btn"

@@ -5,7 +5,7 @@
 import { useState } from "preact/hooks";
 import * as actions from "../api/actions";
 import { onCooldown } from "../state/store";
-import { tileAt } from "../catalog";
+import { liveTileAt } from "../state/events";
 import type { Character } from "../types/api";
 
 export function ActionBar({ ch }: { ch: Character }) {
@@ -14,7 +14,7 @@ export function ActionBar({ ch }: { ch: Character }) {
   // clock — the live countdown is rendered by <CooldownBadge>.
   const cooling = onCooldown(ch.name).value;
   const layer = (ch as { layer?: string }).layer ?? "overworld";
-  const canTransition = tileAt(ch.x, ch.y, layer)?.interactions.transition != null;
+  const canTransition = liveTileAt(ch.x, ch.y, layer)?.interactions.transition != null;
   if (!canTransition) return null;
 
   const run = async (fn: () => Promise<unknown>) => {

@@ -3,6 +3,7 @@ import { achievements, achievementsError, achievementsLoading, achievementsOpen 
 import { loadAchievements } from "../state/sync";
 import { catalog, itemName, monster } from "../catalog";
 import { pct, titleCase } from "../lib/util";
+import { itemHover } from "./ItemPopup";
 import type { AccountAchievement, AchievementObjectiveProgress } from "../types/api";
 
 const ICON: Record<string, string> = {
@@ -179,7 +180,11 @@ function AchievementRow({ a }: { a: AccountAchievement }) {
       {hasReward && (
         <div class="ach-reward">
           Reward:{(a.rewards?.gold ?? 0) > 0 ? ` 🪙 ${a.rewards!.gold.toLocaleString()}` : ""}
-          {rewardItems.map((it) => ` · ${it.quantity}× ${itemName(it.code)}`)}
+          {rewardItems.map((it) => (
+            <span key={it.code} class="info-hover" {...itemHover(it.code)}>
+              {` · ${it.quantity}× ${itemName(it.code)}`}
+            </span>
+          ))}
         </div>
       )}
     </div>

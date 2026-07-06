@@ -9,7 +9,8 @@
 // a setup can be bookmarked/shared. Pure catalog+sim computation — no API.
 
 import { useMemo, useState } from "preact/hooks";
-import { characterList, itemPopup, selectedCharacter } from "../state/store";
+import { characterList, selectedCharacter } from "../state/store";
+import { itemHover } from "./ItemPopup";
 import { catalog, monster as monsterOf } from "../catalog";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../types/api";
@@ -237,13 +238,11 @@ export function SimPlayground() {
 
 function SlotPicker({ slot, ch, code, onPick }: { slot: GearSlot; ch: Character; code: string; onPick: (code: string) => void }) {
   const options = itemsForSlot(slot);
-  const showInfo = (e: MouseEvent) => code && (itemPopup.value = { code, x: e.clientX, y: e.clientY });
-  const hideInfo = () => (itemPopup.value = null);
   return (
     <div class="sim-slot">
       <span class="sim-slot-label">{slotLabel(slot)}</span>
       {code ? (
-        <img class="sim-slot-icon info-hover" src={asset("items", code)} alt="" onError={assetFallback("items", code)} onMouseMove={showInfo} onMouseLeave={hideInfo} />
+        <img class="sim-slot-icon info-hover" src={asset("items", code)} alt="" onError={assetFallback("items", code)} {...itemHover(code)} />
       ) : (
         <span class="sim-slot-icon empty" />
       )}

@@ -10,6 +10,7 @@ import * as actions from "../api/actions";
 import { catalog } from "../catalog";
 import { ApiError } from "../api/client";
 import { bankItems, characters } from "./store";
+import { liveEvents } from "./events";
 import { cooldownRemaining } from "../lib/util";
 import type { Character } from "../types/api";
 import type { GameMap } from "../types/catalog";
@@ -52,19 +53,25 @@ export async function moveTo(name: string, x: number, y: number): Promise<void> 
   await step(name, () => actions.move(name, x, y));
 }
 
-/** Nearest map tile whose content matches `type` (and `code`, if given), by Manhattan distance. */
+/**
+ * Nearest map tile whose content matches `type` (and `code`, if given), by
+ * Manhattan distance. Active event tiles count too — a queued fight/gather can
+ * target an event monster/resource while its event runs.
+ */
 export function nearest(type: string, code: string | null, x: number, y: number): GameMap | undefined {
   let best: GameMap | undefined;
   let bestD = Infinity;
-  for (const m of catalog().maps) {
+  const consider = (m: GameMap) => {
     const c = m.interactions?.content;
-    if (!c || c.type !== type || (code != null && c.code !== code)) continue;
+    if (!c || c.type !== type || (code != null && c.code !== code)) return;
     const d = Math.abs(m.x - x) + Math.abs(m.y - y);
     if (d < bestD) {
       bestD = d;
       best = m;
     }
-  }
+  };
+  for (const m of catalog().maps) consider(m);
+  for (const e of liveEvents()) consider(e.map);
   return best;
 }
 

@@ -5,9 +5,9 @@
 // Static catalogs are NOT persisted here — they ship as files under public/data/
 // and are loaded into memory each boot.
 
-import { account, bankDetails, bankItems, characters, craftSkillPins, log, seedLogId, syncedAt } from "./store";
+import { account, activeEvents, bankDetails, bankItems, characters, craftSkillPins, log, seedLogId, syncedAt } from "./store";
 import type { LogEntry } from "./store";
-import type { Account, BankDetails, BankItem, Character } from "../types/api";
+import type { Account, ActiveEvent, BankDetails, BankItem, Character } from "../types/api";
 
 const KEY = "ammo:v1:state";
 const SCHEMA = 1;
@@ -21,6 +21,7 @@ interface PersistShape {
   log: LogEntry[];
   syncedAt: number | null;
   craftPins?: Record<string, string>; // additive — older caches simply lack it
+  events?: ActiveEvent[]; // additive — active map events (expired ones dropped at load)
 }
 
 export function loadPersisted(): void {
@@ -40,6 +41,7 @@ export function loadPersisted(): void {
     }
     if (s.syncedAt) syncedAt.value = s.syncedAt;
     if (s.craftPins) craftSkillPins.value = s.craftPins;
+    if (s.events) activeEvents.value = s.events.filter((e) => Date.parse(e.expiration) > Date.now());
   } catch {
     /* corrupt cache — start clean */
   }
@@ -61,6 +63,7 @@ export function saveState(): void {
       log: log.value,
       syncedAt: syncedAt.value,
       craftPins: craftSkillPins.value,
+      events: activeEvents.value,
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(s));

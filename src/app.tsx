@@ -12,6 +12,7 @@ import { ItemsCatalogPanel } from "./ui/ItemsCatalog";
 import { SimPlayground } from "./ui/SimPlayground";
 import { Roster } from "./ui/CharacterMini";
 import { ActivityLog } from "./ui/ActivityLog";
+import { EventsPanel } from "./ui/EventsPanel";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
@@ -68,10 +69,11 @@ export function App() {
             <Roster />
             <CharacterPanel />
           </section>
-          {/* Right sidebar: the map (small, still fully interactive) above
-              the activity feed. */}
+          {/* Right sidebar: the map (small, still fully interactive), the
+              active time-limited events, then the activity feed. */}
           <aside class="side-stack">
             <MapView />
+            <EventsPanel />
             <ActivityLog />
           </aside>
           {/* Wide overlay drawer over the sidebar: workshop / NPC / bank /

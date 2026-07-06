@@ -2,7 +2,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { effect } from "@preact/signals";
 import { catalog } from "../catalog";
-import { characters, deliverTilePick, disarmTilePick, focusRequest, itemsCatalogOpen, mapHover, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
+import { activeEvents, characters, deliverTilePick, disarmTilePick, focusRequest, itemsCatalogOpen, mapHover, moveMode, panelTarget, selectedCharacter, tileFocus, tilePick } from "../state/store";
 import * as actions from "../api/actions";
 import type { GameMap } from "../types/catalog";
 import type { Character } from "../types/api";
@@ -18,14 +18,20 @@ const BASE = import.meta.env.BASE_URL || "/";
 const ASSET = (skin: string) => `${BASE}assets/maps/${skin}.png`;
 
 // Shared across mounts — tile art is static. Each Image loads once and triggers
-// a redraw when it arrives.
+// a redraw when it arrives. Skins missing from the bundle (event tiles aren't
+// snapshotted) fall back to the CDN once.
 const imgCache = new Map<string, HTMLImageElement>();
 function tileImg(skin: string, onReady: () => void): HTMLImageElement {
   let im = imgCache.get(skin);
   if (!im) {
     im = new Image();
     im.onload = onReady;
-    im.onerror = () => {};
+    im.onerror = () => {
+      if (!im!.dataset.fellBack) {
+        im!.dataset.fellBack = "1";
+        im!.src = `https://artifactsmmo.com/images/maps/${skin}.png`;
+      }
+    };
     im.src = ASSET(skin);
     imgCache.set(skin, im);
   }
@@ -82,13 +88,26 @@ export function MapView() {
 
     let curLayer: Layer = layer.peek();
     let index = new Map<string, GameMap>();
+    let eventKeys = new Set<string>(); // event-overridden tiles (drawn with a badge)
     let chars = characters.peek();
+    let evts = activeEvents.peek();
     let selName = selectedCharacter.peek();
     let lastFocusSeq = focusRequest.peek()?.seq ?? 0;
+    let lastTileFocusSeq = tileFocus.peek()?.seq ?? 0;
 
     const rebuild = (lyr: Layer) => {
       index = new Map();
       for (const t of catalog().maps) if (t.layer === lyr) index.set(`${t.x},${t.y}`, t);
+      // Active events override their tile — content, skin and inspector detail
+      // all follow automatically since the index holds the event's map object.
+      eventKeys = new Set();
+      const t = Date.now();
+      for (const e of evts) {
+        if ((e.map.layer ?? "overworld") !== lyr || Date.parse(e.expiration) <= t) continue;
+        const key = `${e.map.x},${e.map.y}`;
+        index.set(key, e.map);
+        eventKeys.add(key);
+      }
     };
 
     const centerOn = (wx: number, wy: number) => {
@@ -132,7 +151,8 @@ export function MapView() {
 
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
-          const t = index.get(`${x},${y}`);
+          const key = `${x},${y}`;
+          const t = index.get(key);
           if (!t) continue;
           const sx = x * T - cam.x;
           const sy = y * T - cam.y;
@@ -141,6 +161,16 @@ export function MapView() {
           else {
             ctx.fillStyle = "#1a3d26";
             ctx.fillRect(sx, sy, T - 1, T - 1);
+          }
+          if (eventKeys.has(key)) {
+            // Event tile: amber frame + corner dot so it stands out at a glance.
+            ctx.strokeStyle = "rgba(246,196,83,0.85)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(sx + 1, sy + 1, T - 2, T - 2);
+            ctx.fillStyle = "#f6c453";
+            ctx.beginPath();
+            ctx.arc(sx + T - 9, sy + 9, 4.5, 0, Math.PI * 2);
+            ctx.fill();
           }
         }
       }
@@ -255,11 +285,28 @@ export function MapView() {
       chars = characters.value;
       selName = selectedCharacter.value;
       const fr = focusRequest.value;
+      const tf = tileFocus.value;
+      // Events changed (sync or an expiry prune) — refresh the tile overlay.
+      if (activeEvents.value !== evts) {
+        evts = activeEvents.value;
+        rebuild(curLayer);
+      }
       if (lyr !== curLayer) {
         curLayer = lyr;
         rebuild(lyr);
         inited = false; // allow recenter on the new layer
         mapHover.value = null; // stale tile from the old layer
+      }
+      // A tile-focus request (e.g. an event row click) — jump there, hopping
+      // layers first when needed.
+      if (tf && tf.seq !== lastTileFocusSeq) {
+        lastTileFocusSeq = tf.seq;
+        if (tf.layer !== curLayer && LAYERS.includes(tf.layer as Layer)) {
+          layer.value = tf.layer as Layer; // re-runs this effect, which rebuilds
+        }
+        centerOn(tf.x, tf.y);
+        userMoved = true; // hold this center; don't let auto-center override it
+        inited = true;
       }
       // A card click bumps focusRequest.seq — center on that character, hopping
       // to its layer first if it lives on a different one.

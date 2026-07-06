@@ -134,6 +134,21 @@ export interface BankDetails {
   gold: number;
 }
 
+/**
+ * A time-limited event from GET /events/active: a monster / resource / NPC
+ * temporarily placed on the map. `map` is a full map tile (same shape as the
+ * static catalog's), so it can overlay the static tile everywhere.
+ */
+export interface ActiveEvent {
+  name: string;
+  code: string;
+  map: GameMap;
+  previous_map: GameMap | null;
+  duration: number; // minutes
+  expiration: string; // ISO datetime
+  created_at: string;
+}
+
 /** Account-level data; exact shape varies by server version, so kept permissive. */
 export interface Account {
   username?: string;

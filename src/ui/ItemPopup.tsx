@@ -2,6 +2,33 @@ import { itemPopup } from "../state/store";
 import { effect, item, itemName, itemSources, itemUses } from "../catalog";
 import { asset, assetFallback, titleCase } from "../lib/util";
 
+/**
+ * THE hover contract for anything that represents an item, anywhere in the UI:
+ * spread `{...itemHover(code)}` on the element (usually together with the
+ * `info-hover` class for the cursor hint) and the shared floating item card
+ * follows the cursor and hides on leave. A code that isn't a real item (or no
+ * code at all) attaches nothing, so it's safe on mixed content like task tags.
+ */
+export function itemHover(code: string | null | undefined): {
+  onMouseMove?: (e: MouseEvent) => void;
+  onMouseLeave?: () => void;
+} {
+  if (!code || !item(code)) return {};
+  return {
+    onMouseMove: (e: MouseEvent) => (itemPopup.value = { code, x: e.clientX, y: e.clientY }),
+    onMouseLeave: () => (itemPopup.value = null),
+  };
+}
+
+// A hovered row can unmount out from under the cursor (e.g. withdrawing a bank
+// stack's last unit) and its mouseleave never fires — hide the popup on any
+// press so it can't linger. The card itself is pointer-transparent.
+if (typeof window !== "undefined") {
+  window.addEventListener("mousedown", () => {
+    if (itemPopup.value) itemPopup.value = null;
+  });
+}
+
 const SOURCE_ICON: Record<string, string> = { gather: "⛏", drop: "⚔", craft: "🛠️", npc: "🛒" };
 
 const opLabel: Record<string, string> = { gt: ">", lt: "<", ge: "≥", le: "≤", ne: "≠", eq: "" };

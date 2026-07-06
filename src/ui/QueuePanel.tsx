@@ -12,6 +12,7 @@ import { catalog, item as itemOf, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
 import { addItem, clearQueue, moveItem, queues, removeItem, startQueue, stopQueue, updateItem } from "../state/queue";
+import { availableMonsters, availableResources } from "../state/events";
 import type { JSX } from "preact";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
 import type { Character } from "../types/api";
@@ -211,14 +212,10 @@ function AddForm({ ch }: { ch: Character }) {
   const [taskMaster, setTaskMaster] = useState<"monsters" | "items">("monsters");
 
   const stats = ch as unknown as Record<string, number>;
-  const monsters = monsterList();
-  const resources = (() => {
-    try {
-      return [...catalog().resources.values()].sort((a, b) => a.skill.localeCompare(b.skill) || a.level - b.level);
-    } catch {
-      return [];
-    }
-  })();
+  // Only what's reachable RIGHT NOW: static tiles plus active-event spawns
+  // (tagged ⚡). Event-only content disappears when its event ends.
+  const monsters = availableMonsters();
+  const resources = availableResources();
   // Only recipes this character's skill levels can actually craft right now.
   const recipes = (() => {
     try {
@@ -252,7 +249,7 @@ function AddForm({ ch }: { ch: Character }) {
         return monster ? { kind: "fight", monster, times: Math.max(0, times), done: 0, gear: true } : null;
       }
       case "gather": {
-        const r = resources.find((o) => o.code === code) ?? resources[0];
+        const r = (resources.find((o) => o.res.code === code) ?? resources[0])?.res;
         if (!r) return null;
         const drop = r.drops.find((d) => d.rate === 1) ?? r.drops[0];
         return { kind: "gather", code: drop?.code ?? r.code, resource: r.code, times: Math.max(0, times), done: 0, gear: true };
@@ -318,16 +315,16 @@ function AddForm({ ch }: { ch: Character }) {
       {kind === "fight" && (
         <select class="cp-refine-select" value={code || monsters[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
           {monsters.map((m) => (
-            <option key={m.code} value={m.code}>{m.name} · Lv {m.level}</option>
+            <option key={m.code} value={m.code}>{m.name} · Lv {m.level}{m.event ? " · ⚡ event" : ""}</option>
           ))}
         </select>
       )}
 
       {kind === "gather" && (
-        <select class="cp-refine-select" value={code || resources[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
-          {resources.map((r) => (
+        <select class="cp-refine-select" value={code || resources[0]?.res.code || ""} onChange={(e) => setCode(sel(e))}>
+          {resources.map(({ res: r, event }) => (
             <option key={r.code} value={r.code} disabled={(stats[`${r.skill}_level`] ?? 0) < r.level}>
-              {r.name} · {titleCase(r.skill)} Lv {r.level}
+              {r.name} · {titleCase(r.skill)} Lv {r.level}{event ? " · ⚡ event" : ""}
             </option>
           ))}
         </select>
@@ -419,7 +416,7 @@ function AddForm({ ch }: { ch: Character }) {
           {gearJob === "fight" && (
             <select class="cp-refine-select" value={code || monsters[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
               {monsters.map((m) => (
-                <option key={m.code} value={m.code}>{m.name} · Lv {m.level}</option>
+                <option key={m.code} value={m.code}>{m.name} · Lv {m.level}{m.event ? " · ⚡ event" : ""}</option>
               ))}
             </select>
           )}

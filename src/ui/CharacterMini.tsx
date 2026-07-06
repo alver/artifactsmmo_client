@@ -2,7 +2,7 @@ import type { Character } from "../types/api";
 import { CRAFT_TRAIN_SKILLS, characterList, craftSkillPins, focusCharacter, selectedCharacter } from "../state/store";
 import { queues } from "../state/queue";
 import { queueItemText } from "../plan/queue";
-import { tileAt } from "../catalog";
+import { liveTileAt } from "../state/events";
 import { asset, assetFallback, pct } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
 import { contentLabel } from "./CharacterPanel";
@@ -52,7 +52,7 @@ export function CharacterMini({ ch }: { ch: Character }) {
   // the user pinned one; the auto-highest highlight stays panel-only.
   const pin = craftSkillPins.value[ch.name];
   const pinLabel = pin ? CRAFT_TRAIN_SKILLS.find(([k]) => k === pin)?.[1] : undefined;
-  const tile = tileAt(ch.x, ch.y, layerOf(ch));
+  const tile = liveTileAt(ch.x, ch.y, layerOf(ch));
   const where = whereLabel(tile);
 
   const focus = () => focusCharacter(ch.name);

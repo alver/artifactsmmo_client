@@ -9,6 +9,7 @@ import {
   achievements,
   achievementsError,
   achievementsLoading,
+  activeEvents,
   authed,
   bankDetails,
   bankItems,
@@ -23,7 +24,7 @@ import { loadPersisted, saveState } from "./persist";
 import { resumeQueue } from "./queue";
 import { api, getAllPages, hasToken } from "../api/client";
 import { loadCatalog } from "../catalog";
-import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
+import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character } from "../types/api";
 
 export async function boot(): Promise<void> {
   loadPersisted(); // instant paint from last session
@@ -44,12 +45,16 @@ export async function reconcile(): Promise<void> {
   syncing.value = true;
   lastError.value = null;
   try {
-    const [chars, bank, items] = await Promise.all([
+    const [chars, bank, items, events] = await Promise.all([
       api<Character[]>("/my/characters"),
       api<BankDetails>("/my/bank").catch(() => null),
       getAllPages<BankItem>("/my/bank/items").catch(() => [] as BankItem[]),
+      // Time-limited map events: fetched only here (no polling — expiry is
+      // handled locally by the clock in store.ts).
+      getAllPages<ActiveEvent>("/events/active").catch(() => activeEvents.value),
     ]);
     characters.value = Object.fromEntries(chars.map((c) => [c.name, c]));
+    activeEvents.value = events;
     // The workspace always shows the selected character — default to the first.
     if (!selectedCharacter.value || !characters.value[selectedCharacter.value]) {
       selectedCharacter.value = chars[0]?.name ?? null;

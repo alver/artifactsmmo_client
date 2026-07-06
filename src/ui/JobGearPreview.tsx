@@ -15,6 +15,7 @@ import { addItem, startQueue } from "../state/queue";
 import { withId } from "../plan/queue";
 import { item, itemName } from "../catalog";
 import { asset, assetFallback, slotLabel } from "../lib/util";
+import { itemHover } from "./ItemPopup";
 import { slotCode } from "../types/api";
 import type { GearJob } from "../plan/types";
 import type { Character, GearSlot } from "../types/api";
@@ -70,8 +71,8 @@ function SlotIcon({ code }: { code: string }) {
   if (!code) return <span class="jg-none">—</span>;
   return (
     <>
-      <img src={asset("items", code)} alt="" onError={assetFallback("items", code)} />
-      <span class="jg-name">{itemName(code)}</span>
+      <img class="info-hover" src={asset("items", code)} alt="" onError={assetFallback("items", code)} {...itemHover(code)} />
+      <span class="jg-name info-hover" {...itemHover(code)}>{itemName(code)}</span>
     </>
   );
 }

@@ -3,7 +3,7 @@
 // "renderCard()" calls (the maintainability pain of the old client).
 
 import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
-import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
+import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
 
@@ -30,6 +30,14 @@ export const bankItems = signal<BankItem[]>([]);
 export const bankDetails = signal<BankDetails | null>(null);
 export const account = signal<Account | null>(null);
 export const log = signal<LogEntry[]>([]);
+
+/**
+ * Time-limited map events (GET /events/active). Refreshed only by reconcile()
+ * — the no-polling rule holds — and pruned locally by the 4 Hz clock below as
+ * each expiration passes, so the map/pickers forget an event on time without
+ * any API call. See state/events.ts for the derived lookups.
+ */
+export const activeEvents = signal<ActiveEvent[]>([]);
 
 /** Whether the static catalog has finished loading into memory. */
 export const catalogReady = signal(false);
@@ -74,6 +82,13 @@ let _focusSeq = 0;
 export function focusCharacter(name: string): void {
   selectedCharacter.value = name;
   focusRequest.value = { name, seq: ++_focusSeq };
+}
+
+/** Ask the map to jump to a tile (switching layer if needed) — e.g. an event row click. */
+export const tileFocus = signal<{ x: number; y: number; layer: string; seq: number } | null>(null);
+let _tileFocusSeq = 0;
+export function focusTile(x: number, y: number, layer = "overworld"): void {
+  tileFocus.value = { x, y, layer, seq: ++_tileFocusSeq };
 }
 
 /**
@@ -182,6 +197,12 @@ export const achievementsError = signal<string | null>(null);
 export const now = signal<number>(Date.now());
 setInterval(() => {
   now.value = Date.now();
+  // Drop events whose expiration just passed (guarded write — the signal only
+  // changes when something actually expired).
+  const evs = activeEvents.value;
+  if (evs.length && evs.some((e) => Date.parse(e.expiration) <= now.value)) {
+    activeEvents.value = evs.filter((e) => Date.parse(e.expiration) > now.value);
+  }
 }, 250);
 
 /**

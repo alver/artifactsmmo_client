@@ -1,7 +1,8 @@
 import { useState } from "preact/hooks";
 import { CRAFT_TRAIN_SKILLS, characters, characterList, craftFocus, craftSkillPins, selectedCharacter, toggleCraftPin } from "../state/store";
 import { saveState } from "../state/persist";
-import { item, itemName, monster, npc, resource, tileAt } from "../catalog";
+import { item, itemName, monster, npc, resource } from "../catalog";
+import { liveTileAt } from "../state/events";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
 import { queues } from "../state/queue";
@@ -10,6 +11,7 @@ import { JobGearPreview } from "./JobGearPreview";
 import { ActionBar } from "./ActionBar";
 import { CombatForecast } from "./CombatForecast";
 import { QueueSection } from "./QueuePanel";
+import { itemHover } from "./ItemPopup";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
 import * as actions from "../api/actions";
@@ -107,7 +109,7 @@ export function CharacterPanel() {
   // Most combat/skill fields are flat numeric props read by computed key.
   const stat = ch as unknown as Record<string, number>;
   const layer = layerOf(ch);
-  const tile = tileAt(ch.x, ch.y, layer);
+  const tile = liveTileAt(ch.x, ch.y, layer); // event override first — event tiles enable actions too
   const content = tile?.interactions.content;
   const onBank = content?.type === "bank";
   const onWorkshop = content?.type === "workshop" ? content.code : undefined;
@@ -138,7 +140,7 @@ export function CharacterPanel() {
           </span>
         )}
         {ch.task && (
-          <span class="cp-tag" title="Current task">
+          <span class="cp-tag info-hover" title="Current task" {...itemHover(ch.task)}>
             📋 {titleCase(ch.task)} — {ch.task_progress}/{ch.task_total}
           </span>
         )}
@@ -279,8 +281,8 @@ function InvRow({ ch, slot, ctl, onBank, onWorkshop }: { ch: Character; slot: In
 
   return (
     <div class="inv-row" title={it?.name || slot.code}>
-      <img src={asset("items", slot.code)} alt="" onError={assetFallback("items", slot.code)} />
-      <span class="inv-name">{it?.name || slot.code}</span>
+      <img class="info-hover" src={asset("items", slot.code)} alt="" onError={assetFallback("items", slot.code)} {...itemHover(slot.code)} />
+      <span class="inv-name info-hover" {...itemHover(slot.code)}>{it?.name || slot.code}</span>
       <span class="inv-qty">×{slot.quantity}</span>
       <div class="inv-actions">
         {equipSlot && (

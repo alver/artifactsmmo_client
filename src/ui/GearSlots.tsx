@@ -4,6 +4,7 @@ import { item } from "../catalog";
 import { asset, assetFallback, slotLabel } from "../lib/util";
 import * as actions from "../api/actions";
 import { useActionRunner } from "./useAction";
+import { itemHover } from "./ItemPopup";
 
 export function GearSlots({ ch }: { ch: Character }) {
   const ctl = useActionRunner(ch);
@@ -23,8 +24,8 @@ export function GearSlots({ ch }: { ch: Character }) {
             <span class="slot-label">{slotLabel(slot)}</span>
             {code ? (
               <span class="slot-body">
-                <img src={asset("items", code)} alt="" onError={assetFallback("items", code)} />
-                <span class="slot-item">
+                <img class="info-hover" src={asset("items", code)} alt="" onError={assetFallback("items", code)} {...itemHover(code)} />
+                <span class="slot-item info-hover" {...itemHover(code)}>
                   {it?.name || code}
                   {qty > 1 ? ` ×${qty}` : ""}
                 </span>

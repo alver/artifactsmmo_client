@@ -129,6 +129,16 @@ export function clearQueue(name: string): void {
 const log = (name: string, text: string, kind: "ok" | "bad" | "info" = "info"): void =>
   pushLog({ ts: Date.now(), character: name, action: "queue", text, kind });
 
+/**
+ * Complete an item WITHOUT acting because its map target doesn't exist right
+ * now — time-limited event tiles come and go, so a vanished target skips the
+ * item (visible in the log) instead of pausing the whole queue.
+ */
+function skipItem(name: string, it: QueueItem, why: string): true {
+  log(name, `skipped: ${queueItemText(it)} — ${why}`, "info");
+  return true;
+}
+
 const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
 
@@ -178,13 +188,13 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // it while `keep` protects what was already withdrawn.)
       if (freeSpace(ch) === 0 && !(ch.inventory ?? []).some((sl) => sl.code && sl.quantity > 0 && sl.code !== it.code)) return true;
       const bank = it.x != null ? { x: it.x, y: it.y! } : nearestBank(ch.x, ch.y);
-      if (!bank) throw new Error("no bank found on the map");
+      if (!bank) return skipItem(name, it, "no bank on the map");
       await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: missing, x: bank.x, y: bank.y }, ctx);
       return false;
     }
     case "buy": {
       const tile = it.x != null ? { x: it.x, y: it.y } : it.npc ? nearest("npc", it.npc, ch.x, ch.y) : undefined;
-      if (!tile || tile.x == null) throw new Error(`no shop tile known for ${itemName(it.code)} — edit the item`);
+      if (!tile || tile.x == null) return skipItem(name, it, "no shop on the map (event over?)");
       const s: AcquisitionStep = { kind: "buy", code: it.code, quantity: it.quantity, npc: it.npc ?? "", cost: 0, x: tile.x, y: tile.y };
       await runStep(name, ch, s, ctx);
       return true; // one buy call covers the whole quantity
@@ -196,7 +206,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (held > 0) {
         const seller = it.npc ?? npcForSell(it.code)?.code;
         const tile = it.x != null ? { x: it.x, y: it.y! } : seller ? nearest("npc", seller, ch.x, ch.y) : undefined;
-        if (!tile || tile.x == null) throw new Error(`no merchant buys ${itemName(it.code)}`);
+        if (!tile || tile.x == null) return skipItem(name, it, `no merchant buys ${itemName(it.code)} (event over?)`);
         if (ch.x !== tile.x || ch.y !== tile.y) { ctx.note("→ merchant"); await moveTo(name, tile.x, tile.y); return false; }
         const qty = Math.min(held, left);
         ctx.note(`sell ${itemName(it.code)}`);
@@ -209,7 +219,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (banked > 0) {
         if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, [it.code], ctx.note); return false; } // bag full of other stuff
         const bank = nearestBank(ch.x, ch.y);
-        if (!bank) throw new Error("no bank found on the map");
+        if (!bank) return skipItem(name, it, "no bank on the map");
         await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(banked, left, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
         return false;
       }
@@ -222,7 +232,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (held > 0) {
         const skill = it.skill ?? itemOf(it.code)?.craft?.skill;
         const tile = it.x != null ? { x: it.x, y: it.y! } : skill ? nearest("workshop", skill, ch.x, ch.y) : undefined;
-        if (!tile || tile.x == null) throw new Error(`no workshop recycles ${itemName(it.code)}`);
+        if (!tile || tile.x == null) return skipItem(name, it, `no workshop recycles ${itemName(it.code)}`);
         if (ch.x !== tile.x || ch.y !== tile.y) { ctx.note("→ workshop"); await moveTo(name, tile.x, tile.y); return false; }
         const qty = Math.min(held, left);
         ctx.note(`recycle ${itemName(it.code)}`);
@@ -235,7 +245,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (banked > 0) {
         if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, [it.code], ctx.note); return false; } // bag full of other stuff
         const bank = nearestBank(ch.x, ch.y);
-        if (!bank) throw new Error("no bank found on the map");
+        if (!bank) return skipItem(name, it, "no bank on the map");
         await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(banked, left, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
         return false;
       }
@@ -244,7 +254,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     case "gather": {
       if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
       const tile = it.x != null ? { x: it.x, y: it.y } : nearest("resource", it.resource, ch.x, ch.y);
-      if (!tile || tile.x == null) throw new Error(`no ${it.resource} on the map`);
+      if (!tile || tile.x == null) return skipItem(name, it, `no ${it.resource} on the map (event over?)`);
       // Bank-gear self-heal: keep the best gathering set the bank holds on
       // (memoized per bank reference — free when nothing changed).
       if (it.gear) {
@@ -292,7 +302,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
             return false;
           }
           const bank = nearestBank(ch.x, ch.y);
-          if (!bank) throw new Error("no bank found on the map");
+          if (!bank) return skipItem(name, it, "no bank on the map");
           const qty = Math.min(ing.quantity * batch - invQty(ch, ing.code), bankQty(ing.code));
           await runStep(name, ch, { kind: "withdraw", code: ing.code, quantity: qty, x: bank.x, y: bank.y }, ctx);
           return false;
@@ -300,7 +310,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       }
       const skill = it.skill ?? recipe?.skill;
       const tile = it.x != null ? { x: it.x, y: it.y } : skill ? nearest("workshop", skill, ch.x, ch.y) : undefined;
-      if (!tile || tile.x == null) throw new Error(`no workshop for ${itemName(it.code)}`);
+      if (!tile || tile.x == null) return skipItem(name, it, `no workshop for ${itemName(it.code)}`);
       const s: AcquisitionStep = { kind: "craft", code: it.code, quantity: left, skill: skill ?? "", level: 0, x: tile.x, y: tile.y };
       const r = await runStep(name, ch, s, ctx);
       if (r.did === "crafted") patchItem(name, it.id, { done: it.done + r.produced });
@@ -309,7 +319,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     case "train": {
       if (skillLevel(ch, it.skill) >= it.toLevel) return true;
       const tile = it.x != null ? { x: it.x, y: it.y } : nearest("resource", it.resource, ch.x, ch.y);
-      if (!tile || tile.x == null) throw new Error(`no ${it.resource} on the map`);
+      if (!tile || tile.x == null) return skipItem(name, it, `no ${it.resource} on the map (event over?)`);
       const s: AcquisitionStep = { kind: "train", skill: it.skill, toLevel: it.toLevel, resource: it.resource, level: 0, x: tile.x, y: tile.y };
       await runStep(name, ch, s, ctx);
       return false;
@@ -318,7 +328,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
       const m = monsterOf(it.monster);
       const tile = m ? nearest("monster", it.monster, ch.x, ch.y) : undefined;
-      if (!m || !tile) throw new Error(`no ${it.monster} on the map`);
+      if (!m || !tile) return skipItem(name, it, `no ${it.monster} on the map (event over?)`);
       // Bank-gear self-heal: when something better landed in the bank, detour
       // and swap (memoized per bank reference — free when nothing changed).
       if (it.gear) {
@@ -355,7 +365,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     case "accept-task": {
       if (ch.task) return true; // already carrying a task (either type)
       const at = await goToMaster(name, ch, it.master, ctx.note);
-      if (at === "missing") throw new Error(`no ${it.master} tasks master on the map`);
+      if (at === "missing") return skipItem(name, it, `no ${it.master} tasks master on the map`);
       if (at === "there") {
         ctx.note("accepting a task");
         await step(name, () => actions.taskNew(name));
@@ -368,7 +378,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       const held = invQty(ch, ch.task);
       if (held > 0) {
         const at = await goToMaster(name, ch, "items", ctx.note);
-        if (at === "missing") throw new Error("no items tasks master on the map");
+        if (at === "missing") return skipItem(name, it, "no items tasks master on the map");
         if (at === "there") {
           ctx.note(`deliver ${itemName(ch.task)}`);
           await step(name, () => actions.taskTrade(name, ch.task, Math.min(held, remaining)));
@@ -381,7 +391,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (banked > 0) {
         if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, it.keep, ctx.note); return false; } // bag full of other stuff
         const bank = nearestBank(ch.x, ch.y);
-        if (!bank) throw new Error("no bank found on the map");
+        if (!bank) return skipItem(name, it, "no bank on the map");
         const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining, freeSpace(ch)), x: bank.x, y: bank.y };
         await runStep(name, ch, s, ctx);
         return false;
@@ -394,7 +404,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       const remaining = Math.max(0, ch.task_total - ch.task_progress);
       if (remaining > 0) throw new Error(`task not complete — ${ch.task_progress}/${ch.task_total}`);
       const at = await goToMaster(name, ch, ch.task_type === "items" ? "items" : "monsters", ctx.note);
-      if (at === "missing") throw new Error("no tasks master on the map");
+      if (at === "missing") return skipItem(name, it, "no tasks master on the map");
       if (at === "there") {
         ctx.note("turning in the task");
         await step(name, () => actions.taskComplete(name));
