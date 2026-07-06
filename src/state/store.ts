@@ -6,6 +6,7 @@ import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
 import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
+import { CRAFT_TRAIN_SKILLS } from "../plan/traincraft";
 
 export interface LogEntry {
   id: number;
@@ -35,6 +36,27 @@ export const lastError = signal<string | null>(null);
 
 /** Name of the currently selected character (highlights its card + map marker). */
 export const selectedCharacter = signal<string | null>(null);
+
+/**
+ * Per-character crafting-specialization pin (character name → craft skill key).
+ * Unpinned characters auto-highlight their highest crafting skill instead.
+ * Persisted via persist.ts; the UI toggles it by clicking a craft skill row.
+ */
+export const craftSkillPins = signal<Record<string, string>>({});
+export function toggleCraftPin(name: string, skill: string): void {
+  const cur = { ...craftSkillPins.value };
+  if (cur[name] === skill) delete cur[name];
+  else cur[name] = skill;
+  craftSkillPins.value = cur;
+}
+/** The character's crafting specialization: the pinned skill, else the highest. */
+export function craftFocus(ch: Character): string {
+  const keys = CRAFT_TRAIN_SKILLS.map(([k]) => k);
+  const pin = craftSkillPins.value[ch.name];
+  if (pin && keys.includes(pin)) return pin;
+  const stat = ch as unknown as Record<string, number>;
+  return keys.reduce((best, k) => ((stat[`${k}_level`] ?? 0) > (stat[`${best}_level`] ?? 0) ? k : best), keys[0]);
+}
 /**
  * A bump-on-click focus request the map listens to. The `seq` lets repeated
  * clicks on the same already-selected card re-center the map.

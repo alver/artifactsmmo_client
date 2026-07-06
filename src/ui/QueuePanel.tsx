@@ -12,9 +12,6 @@ import { catalog, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
 import { addItem, clearQueue, moveItem, queues, removeItem, startQueue, stopQueue, updateItem } from "../state/queue";
-import { gatherJobs } from "../state/gather";
-import { refineJobs } from "../state/refine";
-import { fightJobs } from "../state/fight";
 import { campaignJobs } from "../state/campaign";
 import { monsterList } from "./PlanControl";
 import type { JSX } from "preact";
@@ -25,22 +22,18 @@ import type { Character } from "../types/api";
 const ADDABLE: { kind: string; label: string }[] = [
   { kind: "move", label: "🚶 Move to a tile" },
   { kind: "rest", label: "💤 Rest to full HP" },
-  { kind: "fight", label: "⚔ Fight a monster ×N" },
-  { kind: "gather", label: "⛏ Gather a resource ×N" },
+  { kind: "fight", label: "⚔ Fight a monster ×N (0 = ∞)" },
+  { kind: "gather", label: "⛏ Gather a resource ×N (0 = ∞)" },
   { kind: "craft", label: "⚙ Craft / refine ×N" },
   { kind: "withdraw", label: "🏦 Withdraw from bank" },
   { kind: "sell", label: "💰 Sell bank stock ×N" },
   { kind: "deposit-all", label: "📦 Deposit everything" },
   { kind: "gear", label: "🧰 Equip for a job" },
-  { kind: "new-task", label: "🔁 New task (loops)" },
   { kind: "deliver", label: "🤝 Deliver task items" },
   { kind: "turn-in", label: "✅ Turn in the task" },
 ];
 
 function otherLoop(name: string): string | null {
-  if (gatherJobs.value[name]) return "gathering";
-  if (refineJobs.value[name]) return "refining";
-  if (fightJobs.value[name]) return "auto-fighting";
   if (campaignJobs.value[name]) return "running a campaign";
   return null;
 }
@@ -107,7 +100,7 @@ export function QueueSection({ ch }: { ch: Character }) {
 }
 
 function progressOf(it: QueueItem): string {
-  if (it.kind === "fight" || it.kind === "gather") return it.done > 0 ? `${it.done}/${it.times}` : "";
+  if (it.kind === "fight" || it.kind === "gather") return it.done > 0 ? (it.times > 0 ? `${it.done}/${it.times}` : `${it.done}`) : "";
   if (it.kind === "craft" || it.kind === "sell") return it.done > 0 ? `${it.done}/${it.quantity}` : "";
   return "";
 }
@@ -174,7 +167,7 @@ function EditForm({ ch, it, onDone }: { ch: Character; it: QueueItem; onDone: ()
   } else if (it.kind === "fight" || it.kind === "gather") {
     fields = (
       <>
-        {field("times", "times", it.times, 1)}
+        {field("times (0 = ∞)", "times", it.times, 0)}
         {field("done", "done", it.done)}
       </>
     );
@@ -185,7 +178,7 @@ function EditForm({ ch, it, onDone }: { ch: Character; it: QueueItem; onDone: ()
         {field("done", "done", it.done)}
       </>
     );
-  } else if (it.kind === "withdraw" || it.kind === "buy" || it.kind === "equip") {
+  } else if (it.kind === "withdraw" || it.kind === "buy") {
     fields = field("quantity", "quantity", it.quantity, 1);
   } else if (it.kind === "train") {
     fields = field("to level", "toLevel", it.toLevel, 1);
@@ -211,8 +204,8 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
   const [y, setY] = useState(ch.y);
   const [times, setTimes] = useState(10);
   const [code, setCode] = useState("");
-  const [master, setMaster] = useState<"monsters" | "items">("monsters");
   const [gearJob, setGearJob] = useState("fight");
+  const [gearReset, setGearReset] = useState(false);
 
   const stats = ch as unknown as Record<string, number>;
   const monsters = monsterList();
@@ -232,7 +225,7 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
       return [];
     }
   })();
-  const bank = bankItems.value;
+  const bank = [...bankItems.value].sort((a, b) => itemName(a.code).localeCompare(itemName(b.code)));
   const sellable = bank.filter((b) => npcForSell(b.code));
 
   const build = (): QueueItemInput | null => {
@@ -241,13 +234,14 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
       case "rest": return { kind: "rest" };
       case "fight": {
         const monster = code || monsters[0]?.code;
-        return monster ? { kind: "fight", monster, times: Math.max(1, times), done: 0 } : null;
+        // times 0 = fight forever; gear keeps the best bank set on either way.
+        return monster ? { kind: "fight", monster, times: Math.max(0, times), done: 0, gear: true } : null;
       }
       case "gather": {
         const r = resources.find((o) => o.code === code) ?? resources[0];
         if (!r) return null;
         const drop = r.drops.find((d) => d.rate === 1) ?? r.drops[0];
-        return { kind: "gather", code: drop?.code ?? r.code, resource: r.code, times: Math.max(1, times), done: 0 };
+        return { kind: "gather", code: drop?.code ?? r.code, resource: r.code, times: Math.max(0, times), done: 0, gear: true };
       }
       case "craft": {
         const rec = recipes.find((o) => o.code === code) ?? recipes[0];
@@ -263,14 +257,14 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
       }
       case "deposit-all": return { kind: "deposit-all" };
       case "gear": {
+        const reset = gearReset || undefined;
         if (gearJob === "fight") {
           const monster = code || monsters[0]?.code;
-          return monster ? { kind: "gear", job: { kind: "fight", monster } } : null;
+          return monster ? { kind: "gear", job: { kind: "fight", monster }, reset } : null;
         }
-        if (gearJob === "craft") return { kind: "gear", job: { kind: "craft" } };
-        return { kind: "gear", job: { kind: "gather", skill: gearJob } };
+        if (gearJob === "craft") return { kind: "gear", job: { kind: "craft" }, reset };
+        return { kind: "gear", job: { kind: "gather", skill: gearJob }, reset };
       }
-      case "new-task": return { kind: "new-task", master };
       case "deliver": return { kind: "deliver" };
       case "turn-in": return { kind: "turn-in" };
       default: return null;
@@ -347,8 +341,8 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
       )}
 
       {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell") && (
-        <label class="q-field">
-          ×<input class="cat-num" type="number" min={1} value={times} onInput={(e) => setTimes(num(e))} />
+        <label class="q-field" title={kind === "fight" || kind === "gather" ? "0 = repeat forever (until stopped)" : undefined}>
+          ×<input class="cat-num" type="number" min={kind === "fight" || kind === "gather" ? 0 : 1} value={times} onInput={(e) => setTimes(num(e))} />
         </label>
       )}
 
@@ -369,14 +363,11 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
               ))}
             </select>
           )}
+          <label class="q-field" title="Deposit EVERYTHING first (inventory, gold, all worn gear), then wear the job set from the bank">
+            <input type="checkbox" checked={gearReset} onChange={(e) => setGearReset((e.target as HTMLInputElement).checked)} />
+            bank reset
+          </label>
         </>
-      )}
-
-      {kind === "new-task" && (
-        <select class="cp-refine-select" value={master} onChange={(e) => setMaster(sel(e) as "monsters" | "items")}>
-          <option value="monsters">Fight tasks</option>
-          <option value="items">Item tasks</option>
-        </select>
       )}
 
       <button class="cat-btn buy" disabled={!draft} onClick={() => { if (draft) { addItem(ch.name, withId(draft)); onDone(); } }}>

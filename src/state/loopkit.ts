@@ -1,15 +1,15 @@
-// Shared mechanics for the automation loops (gather / refine / fight / campaign).
+// Shared mechanics for the automation runners (queue / campaign).
 //
-// These are the cooldown-paced primitives every loop copy-pasted: wait out a
+// These are the cooldown-paced primitives every runner copy-pasted: wait out a
 // cooldown (interruptible or full), move-if-not-there, find the nearest tile of a
 // kind, deposit the whole inventory, detect an inventory-full error. They are
-// job-type independent — each loop keeps its own job signal, stopFlags and
+// job-type independent — each runner keeps its own job signal, stopFlags and
 // control flow; only these building blocks are shared.
 
 import * as actions from "../api/actions";
 import { catalog } from "../catalog";
 import { ApiError } from "../api/client";
-import { characters } from "./store";
+import { bankItems, characters } from "./store";
 import { cooldownRemaining } from "../lib/util";
 import type { Character } from "../types/api";
 import type { GameMap } from "../types/catalog";
@@ -72,6 +72,11 @@ export const nearestBank = (x: number, y: number): GameMap | undefined => neares
 
 export const isInventoryFull = (e: unknown): boolean =>
   e instanceof ApiError && (e.code === 497 || /inventor/i.test(e.message));
+
+/** Total quantity of `code` in the bank (live signal read). */
+export function bankQty(code: string): number {
+  return bankItems.value.filter((b) => b.code === code).reduce((s, b) => s + b.quantity, 0);
+}
 
 /**
  * Deposit everything the character is carrying (a no-op with empty inventory).

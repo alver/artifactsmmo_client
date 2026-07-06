@@ -1,5 +1,7 @@
 import { useState } from "preact/hooks";
-import { characters, characterList, selectedCharacter } from "../state/store";
+import { characters, characterList, craftFocus, craftSkillPins, selectedCharacter, toggleCraftPin } from "../state/store";
+import { saveState } from "../state/persist";
+import { CRAFT_TRAIN_SKILLS } from "../plan/traincraft";
 import { item, itemName, monster, npc, resource, tileAt } from "../catalog";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
@@ -38,6 +40,46 @@ const ELEMENTS: [string, string][] = [
 ];
 
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
+
+/**
+ * The Skills grid. The character's crafting specialization (weapon/gear/
+ * jewelry crafting or cooking) is highlighted: the highest of the four by
+ * default, or whichever the user pinned by clicking a craft row (📌, click
+ * again to unpin). The pin persists across reloads.
+ */
+function SkillsSection({ ch, stat }: { ch: Character; stat: Record<string, number> }) {
+  const craftKeys = CRAFT_TRAIN_SKILLS.map(([k]) => k);
+  const pinned = craftSkillPins.value[ch.name];
+  const focus = craftFocus(ch);
+  return (
+    <div class="cp-skills">
+      {SKILLS.map(([key, label]) => {
+        const craft = craftKeys.includes(key);
+        const isFocus = craft && key === focus;
+        return (
+          <div
+            key={key}
+            class={"cp-skill" + (craft ? " cp-skill-pinnable" : "") + (isFocus ? " cp-skill-focus" : "")}
+            title={
+              craft
+                ? pinned === key
+                  ? "Unpin — back to auto-highlighting the highest craft skill"
+                  : "Pin as this character's crafting specialization"
+                : undefined
+            }
+            onClick={craft ? () => { toggleCraftPin(ch.name, key); saveState(); } : undefined}
+          >
+            <b class="cp-skill-lv">{stat[`${key}_level`]}</b>
+            <span class="cp-skill-name">{label}{isFocus && pinned === key ? " 📌" : ""}</span>
+            <span class="cp-skill-xp">
+              {stat[`${key}_xp`]}/{stat[`${key}_max_xp`]}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function contentLabel(type: string, code: string): string {
   const name =
@@ -184,17 +226,7 @@ export function CharacterPanel() {
         <div class="ws-col">
           <details class="ws-card" open>
             <summary>Skills</summary>
-            <div class="cp-skills">
-              {SKILLS.map(([key, label]) => (
-                <div key={key} class="cp-skill">
-                  <b class="cp-skill-lv">{stat[`${key}_level`]}</b>
-                  <span class="cp-skill-name">{label}</span>
-                  <span class="cp-skill-xp">
-                    {stat[`${key}_xp`]}/{stat[`${key}_max_xp`]}
-                  </span>
-                </div>
-              ))}
-            </div>
+            <SkillsSection ch={ch} stat={stat} />
           </details>
 
           <details class="ws-card" open>

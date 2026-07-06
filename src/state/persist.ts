@@ -5,7 +5,7 @@
 // Static catalogs are NOT persisted here — they ship as files under public/data/
 // and are loaded into memory each boot.
 
-import { account, bankDetails, bankItems, characters, log, seedLogId, syncedAt } from "./store";
+import { account, bankDetails, bankItems, characters, craftSkillPins, log, seedLogId, syncedAt } from "./store";
 import type { LogEntry } from "./store";
 import type { Account, BankDetails, BankItem, Character } from "../types/api";
 
@@ -20,6 +20,7 @@ interface PersistShape {
   account: Account | null;
   log: LogEntry[];
   syncedAt: number | null;
+  craftPins?: Record<string, string>; // additive — older caches simply lack it
 }
 
 export function loadPersisted(): void {
@@ -38,6 +39,7 @@ export function loadPersisted(): void {
       seedLogId(s.log.reduce((m, e) => Math.max(m, e.id || 0), 0));
     }
     if (s.syncedAt) syncedAt.value = s.syncedAt;
+    if (s.craftPins) craftSkillPins.value = s.craftPins;
   } catch {
     /* corrupt cache — start clean */
   }
@@ -58,6 +60,7 @@ export function saveState(): void {
       account: account.value,
       log: log.value,
       syncedAt: syncedAt.value,
+      craftPins: craftSkillPins.value,
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(s));

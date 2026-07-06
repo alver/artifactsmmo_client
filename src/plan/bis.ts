@@ -34,6 +34,12 @@ export interface BisOptions {
   pool?: "reachable" | "all";
   /** Codes force-included in their slot pools, exempt from the heuristic cap. */
   extraCandidates?: string[];
+  /**
+   * Leave the utility slots out of the search. The bank-only gear swap never
+   * manages potion stacks, so a set meant for it must not let the forecast
+   * count potions that will never be equipped.
+   */
+  noUtilities?: boolean;
   perSlotCap?: number; // default 12
   weaponCap?: number; // default 10
 }
@@ -207,7 +213,7 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
       // like slots, so one pool each; picked as distinct combinations).
       chooseGroup(slots, RING_SLOTS, pools.ring1, evaluate);
       chooseGroup(slots, ARTIFACT_SLOTS, pools.artifact1, evaluate);
-      chooseGroup(slots, UTILITY_SLOTS, pools.utility1, evaluate);
+      if (!opts.noUtilities) chooseGroup(slots, UTILITY_SLOTS, pools.utility1, evaluate);
     }
 
     const e = evaluate(slots);

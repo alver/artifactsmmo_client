@@ -1,6 +1,6 @@
-// Acquisition resolver — turn a target gear set into an ordered, quantity-aware
-// list of steps to obtain and equip it, given what the character already has.
-// Pure and offline (extends the catalog scans behind itemSources()).
+// Acquisition resolver — turn a set of needed items (task deliverables, food,
+// craft materials — NEVER gear) into an ordered, quantity-aware list of steps,
+// given what the character already has. Pure and offline.
 //
 // Algorithm: a demand-map DFS. For each needed item, satisfy from inventory first
 // (free), then bank (a withdraw step), else PRODUCE it — craft (recursing into
@@ -10,14 +10,11 @@
 
 import { catalog, item, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
-import { equippedCodes } from "../sim/stats";
 import { bankSeconds, craftSeconds, gatherSeconds } from "../sim/cost";
-import { slotCode, slotQuantity } from "../types/api";
-import type { Character, GearSlot } from "../types/api";
+import type { Character } from "../types/api";
 import type { AcquisitionPlan, AcquisitionStep, ResolveOptions, Target } from "./types";
 
 const MAX_DEPTH = 12;
-const UTILITY_SLOTS: GearSlot[] = ["utility1", "utility2"];
 /** Rough gathers per missing skill level (XP curves aren't in the catalog). */
 const GATHERS_PER_LEVEL = 25;
 
@@ -46,7 +43,7 @@ function tileForContent(type: string, code: string, x: number, y: number): { x: 
 }
 
 /** A resource whose drop table yields `code` (prefer a guaranteed rate-1 drop). */
-export function resourceForDrop(code: string): { code: string; skill: string; level: number } | undefined {
+function resourceForDrop(code: string): { code: string; skill: string; level: number } | undefined {
   try {
     let best: { code: string; skill: string; level: number; rate: number } | undefined;
     for (const r of catalog().resources.values()) {
@@ -65,7 +62,7 @@ export function resourceForDrop(code: string): { code: string; skill: string; le
  * Nodes 10+ levels below yield no XP at all — gathering them would train
  * forever — so they never qualify.
  */
-export function trainingResource(skill: string, atLevel: number): { code: string; level: number } | undefined {
+function trainingResource(skill: string, atLevel: number): { code: string; level: number } | undefined {
   try {
     let best: { code: string; level: number } | undefined;
     for (const r of catalog().resources.values()) {
@@ -119,9 +116,10 @@ function npcForBuy(code: string): { code: string; price: number } | undefined {
 }
 
 /**
- * Resolve how to obtain (and equip) a set of target items given current state.
- * `bank` is the bank contents; the character's inventory and equipped gear are
- * read off `ch`.
+ * Resolve how to obtain a set of target items given current state. `bank` is
+ * the bank contents; the character's inventory is read off `ch`. Equipped gear
+ * never satisfies a target — deliverables must reach the bag, and gear is not
+ * a resolver concern anymore.
  */
 export function resolve(
   ch: Character,
@@ -133,31 +131,6 @@ export function resolve(
   for (const s of ch.inventory ?? []) if (s.code) inv.set(s.code, (inv.get(s.code) ?? 0) + s.quantity);
   const bankHave = new Map<string, number>();
   for (const b of bank) bankHave.set(b.code, (bankHave.get(b.code) ?? 0) + b.quantity);
-  const equipped = new Set(equippedCodes(ch));
-
-  // Utility targets top up a stack rather than replace it (opts.topUp — task
-  // plans): re-point the target to whichever slot already holds the code and
-  // demand only the shortfall (the equip action adds to an existing stack). If
-  // the code isn't equipped and its compiled slot is occupied by something
-  // else, prefer a free unclaimed utility slot over evicting a foreign stack.
-  // Goal plans keep the legacy behavior below (equipped ⇒ satisfied).
-  if (opts.topUp) {
-    const claimed = new Set(targets.map((t) => t.slot).filter((s) => s?.startsWith("utility")));
-    targets = targets
-      .map((t) => {
-        if (!t.slot || !t.slot.startsWith("utility")) return t;
-        const inSlot = UTILITY_SLOTS.find((s) => slotCode(ch, s) === t.code);
-        if (!inSlot) {
-          if (slotCode(ch, t.slot)) {
-            const free = UTILITY_SLOTS.find((s) => !slotCode(ch, s) && !claimed.has(s));
-            if (free) return { ...t, slot: free };
-          }
-          return t;
-        }
-        return { ...t, slot: inSlot, quantity: t.quantity - slotQuantity(ch, inSlot) };
-      })
-      .filter((t) => t.quantity > 0);
-  }
 
   const withdraw = new Map<string, number>();
   const gather = new Map<string, { qty: number; resource: string; level: number }>();
@@ -253,36 +226,12 @@ export function resolve(
     blockers.push(`${itemName(code)}: no known way to obtain (need ${qty})`);
   };
 
-  for (const t of targets) {
-    // Top-up utility targets were normalized to their shortfall above — always
-    // source them (the code matching the slot means "top the stack up").
-    if (opts.topUp && t.slot?.startsWith("utility")) { need(t.code, t.quantity, []); continue; }
-    // Being equipped satisfies a GEAR target, never a DELIVERABLE: handing an
-    // item to the Tasks Master needs it in the bag, and an equipped stack (e.g.
-    // the belt potions a potion-delivery task collides with) is protected
-    // working stock — the deliverable is produced fresh instead.
-    if (t.role !== "deliver" && equipped.has(t.code) && (t.slot ? slotCode(ch, t.slot) === t.code : true)) continue;
-    need(t.code, t.quantity, []);
-  }
+  for (const t of targets) need(t.code, t.quantity, []);
 
   // Emit steps in a valid execution order: raw acquisition, then skill
-  // training (before the crafts it gates), then crafts (leaf→root), then equips.
-  // Equips whose item needs no production (already in hand, or a bare withdraw)
-  // come right after the withdraws instead — so a gathering tool is worn FOR
-  // the gathering that follows, not after it.
-  const equips: AcquisitionStep[] = [];
-  for (const t of targets) {
-    if (!t.slot) continue;
-    const topUpUtility = opts.topUp && t.slot.startsWith("utility");
-    if (!topUpUtility && slotCode(ch, t.slot) === t.code) continue; // already in the right slot
-    equips.push({ kind: "equip", code: t.code, slot: t.slot, quantity: t.quantity });
-  }
-  const produced = (code: string): boolean =>
-    gather.has(code) || farm.has(code) || buy.has(code) || crafts.some((c) => c.code === code);
-
+  // training (before the crafts it gates), then crafts (leaf→root).
   const steps: AcquisitionStep[] = [];
   for (const [code, qty] of withdraw) steps.push({ kind: "withdraw", code, quantity: qty, ...tileForContent("bank", "bank", ch.x, ch.y) });
-  for (const e of equips) if (e.kind === "equip" && !produced(e.code)) steps.push(e);
   for (const [code, b] of buy) steps.push({ kind: "buy", code, quantity: b.qty, npc: b.npc, cost: b.qty * b.price, ...tileForContent("npc", b.npc, ch.x, ch.y) });
   for (const [code, g] of gather) steps.push({ kind: "gather", code, quantity: g.qty, resource: g.resource, level: g.level, ...tileForContent("resource", g.resource, ch.x, ch.y) });
   for (const [code, fm] of farm) {
@@ -292,7 +241,6 @@ export function resolve(
   }
   for (const [skill, tr] of trains) steps.push({ kind: "train", skill, toLevel: tr.toLevel, resource: tr.resource, level: tr.level, ...tileForContent("resource", tr.resource, ch.x, ch.y) });
   for (const c of crafts) steps.push({ kind: "craft", code: c.code, quantity: c.qty, skill: c.skill, level: c.level, ...tileForContent("workshop", c.skill, ch.x, ch.y) });
-  for (const e of equips) if (e.kind === "equip" && produced(e.code)) steps.push(e);
 
   // Cost estimate (a floor — ignores bank round-trips when the inventory fills
   // and any pathing beyond straight-line tile hops).
@@ -307,7 +255,6 @@ export function resolve(
     else if (s.kind === "craft") { estActions += s.quantity; estSeconds += craftSeconds(s.quantity); }
     else if (s.kind === "farm") { estActions += s.expectedFights; estSeconds += s.expectedFights * 25; }
     else if (s.kind === "withdraw" || s.kind === "buy") { estActions += 1; estSeconds += bankSeconds(1); }
-    else if (s.kind === "equip") { estActions += 1; estSeconds += 3; }
   }
 
   return { steps, estActions, estSeconds: Math.round(estSeconds), feasible: blockers.length === 0, blockers };

@@ -14,14 +14,14 @@ export interface GearRecommendation {
   score: number; // objective value used to rank sets
 }
 
-/** One step in an acquisition plan (obtain + equip a target gear set). */
+/** One step in an acquisition plan (produce the task deliverable / batch materials).
+ *  Gear is NEVER acquired — the bank swap (jobgear.ts) equips what the bank holds. */
 export type AcquisitionStep =
   | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number }
   | { kind: "buy"; code: string; quantity: number; npc: string; x?: number; y?: number; cost: number }
   | { kind: "gather"; code: string; quantity: number; resource: string; level: number; x?: number; y?: number }
   | { kind: "farm"; code: string; quantity: number; monster: string; expectedFights: number; x?: number; y?: number }
   | { kind: "craft"; code: string; quantity: number; skill: string; level: number; x?: number; y?: number }
-  | { kind: "equip"; code: string; slot: GearSlot; quantity: number }
   | { kind: "train"; skill: string; toLevel: number; resource: string; level: number; x?: number; y?: number };
 
 /** Options for the acquisition resolver. */
@@ -34,14 +34,6 @@ export interface ResolveOptions {
    */
   train?: boolean;
   maxTrainGap?: number; // default 5
-  /**
-   * Treat utility targets as stack TOP-UPS: re-point them to whichever slot
-   * already holds the code and demand only the shortfall (task-loop plans).
-   * Without it, an equipped utility satisfies its target outright — the legacy
-   * goal-plan behavior, where re-demanding consumed potions every tick would
-   * thrash or block mid-grind.
-   */
-  topUp?: boolean;
 }
 
 export interface AcquisitionPlan {
@@ -52,41 +44,38 @@ export interface AcquisitionPlan {
   blockers: string[]; // human-readable reasons the plan can't fully run
 }
 
-/** An item to obtain (and equip, if a slot is given) — the resolver's input. */
+/** An item to obtain — the resolver's input. Gear never appears here. */
 export interface Target {
   code: string;
   quantity: number;
-  slot?: GearSlot;
   /** What the item is FOR — set at compile time so the runner never has to
-   *  guess a target's purpose from code/slot matching (codes can collide,
+   *  guess a target's purpose from code matching (codes can collide,
    *  e.g. a deliverable that is also an edible food). */
-  role?: "gear" | "food" | "deliver";
+  role?: "food" | "deliver";
 }
 
-/** Between-fight healing food the runner should eat via the `use` action. */
+/** Between-fight healing food the runner should eat via the `use` action.
+ *  Always bank-limited: eat what the bank holds, then heal by rest. */
 export interface FoodSpec {
   code: string;
   heal: number; // HP restored per unit
   perFight: number; // expected units consumed per fight (for live re-stocking)
-  /** Character can cook more himself. False ⇒ eat existing stock, then rest —
-   *  the runner must never demand more than exists or the plan blocks. */
-  producible?: boolean;
 }
 
-/** The frozen spec the campaign runner executes (gear is fixed; steps re-derive). */
+/** The frozen spec the campaign runner executes (steps re-derive live). */
 export interface ExecutionSpec {
-  targets: Target[]; // gear/items to obtain + equip
+  targets: Target[]; // consumables/deliverables to obtain (never gear)
   monster?: string; // combat target, if the goal ends in fighting
-  repeat: number; // how many fights to do
-  // Task-loop extras — absent on plain goal plans.
-  mode?: "goal" | "task-loop" | "train-craft"; // non-goal modes drive their own phase machines
+  repeat: number; // fights to do (0 = infinite, queue-run beat-monster)
+  /** Which runner executes the plan: absent ⇒ the queue (beat-monster);
+   *  "task" / "train-craft" drive the campaign's phase machines. */
+  mode?: "task" | "train-craft";
   /** train-craft: the skill to level and the level to stop at. The recipe is
    *  NOT frozen — the runner re-picks the best one as the level rises —
    *  unless the user pinned one via `recipe`. */
   skill?: string;
   skillTarget?: number;
   recipe?: string;
-  loop?: boolean; // after turn-in: accept the next task (true) or finish (false)
   food?: FoodSpec; // heal with this food before resting
   keep?: string[]; // item codes never auto-deposited when banking off overflow
   master?: "monsters" | "items"; // which Tasks Master to accept from when idle
@@ -107,25 +96,15 @@ export type GearJob =
 
 /** A goal the user picks; compileGoal() turns it into a full Plan. */
 export type Goal =
-  | { kind: "beat-monster"; monster: string; repeat?: number }
-  | { kind: "combat-level"; target: number }
-  | { kind: "skill-level"; skill: string; target: number }
+  | { kind: "beat-monster"; monster: string } // fight until stopped (queue-run, ∞)
   | { kind: "train-craft"; skill: string; target: number; recipe?: string } // level a crafting skill by craft→recycle batches (recipe: user-pinned, else auto)
-  | { kind: "craft-item"; code: string; quantity: number }
-  | { kind: "complete-task" }
-  | { kind: "task-loop"; master?: "monsters" | "items" };
+  | { kind: "complete-task"; master?: "monsters" | "items" }; // one task, one-shot; master used only when none is active
 
-/** The compiled result of a goal: what to equip, how to get it, what to do. */
+/** The compiled result of a goal: what to wear (bank-only), what to do. */
 export interface Plan {
   goal: Goal;
   gear?: GearRecommendation;
-  /** The unrestricted best set (any equippable item, ignoring obtainability) —
-   *  report-only, shown when it beats the executable `gear`. */
-  ideal?: GearRecommendation;
-  /** Ideal-set items this character cannot obtain alone — another character
-   *  must put them in the bank ("This character needs these items…"). */
-  needsInBank?: string[];
   acquisition: AcquisitionPlan;
-  execution: ExecutionSpec; // what the campaign runner executes
+  execution: ExecutionSpec;
   summary: string;
 }

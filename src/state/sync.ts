@@ -20,9 +20,6 @@ import {
   syncing,
 } from "./store";
 import { loadPersisted, saveState } from "./persist";
-import { resumeGather } from "./gather";
-import { resumeRefine } from "./refine";
-import { resumeFight } from "./fight";
 import { resumeCampaign } from "./campaign";
 import { resumeQueue } from "./queue";
 import { api, getAllPages, hasToken } from "../api/client";
@@ -37,11 +34,8 @@ export async function boot(): Promise<void> {
   await loadCatalog(); // static data into memory (bundled files, no API budget)
   catalogReady.value = true;
   if (authed.value) {
-    await reconcile(); // one authoritative sync before loops act on character state
-    resumeGather(); // re-launch automation orders saved from a previous session
-    resumeRefine();
-    resumeFight();
-    resumeCampaign();
+    await reconcile(); // one authoritative sync before runners act on character state
+    resumeCampaign(); // re-launch automation orders saved from a previous session
     resumeQueue();
   }
 }
@@ -111,9 +105,6 @@ export async function login(): Promise<void> {
   authed.value = hasToken();
   if (authed.value) {
     await reconcile();
-    resumeGather();
-    resumeRefine();
-    resumeFight();
     resumeCampaign();
     resumeQueue();
   }

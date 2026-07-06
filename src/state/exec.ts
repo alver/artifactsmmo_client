@@ -18,7 +18,6 @@ import { simulate } from "../sim/combat";
 import { jobGear, nextGearAction } from "../plan/jobgear";
 import { bankDetails, bankItems, characters } from "./store";
 import { depositAll, moveTo, nearest, nearestBank, step, waitCooldownFull } from "./loopkit";
-import { slotCode, slotQuantity } from "../types/api";
 import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
 import type { Character, GearSlot } from "../types/api";
 import type { Monster } from "../types/catalog";
@@ -100,9 +99,9 @@ export async function gearSwapStep(
   ch: Character,
   desired: Partial<Record<GearSlot, string>>,
   ctx: StepCtx,
-  opts?: { junk?: boolean },
+  opts?: { junk?: boolean; reset?: boolean },
 ): Promise<"done" | "acted"> {
-  const act = nextGearAction(ch, bankItems.value, desired, { keep: ctx.keep, junk: opts?.junk });
+  const act = nextGearAction(ch, bankItems.value, desired, { keep: ctx.keep, junk: opts?.junk, reset: opts?.reset });
   if (!act) return "done";
 
   const toBank = async (): Promise<boolean> => {
@@ -151,6 +150,12 @@ export async function gearSwapStep(
       await step(name, () => actions.depositItems(name, act.items));
       return "acted";
     }
+    case "deposit-gold": {
+      if (await toBank()) return "acted";
+      ctx.note("deposit gold");
+      await step(name, () => actions.depositGold(name, act.quantity));
+      return "acted";
+    }
   }
 }
 
@@ -177,7 +182,7 @@ export function desiredForJob(name: string, ch: Character, job: GearJob): Partia
  * from live state every tick); the queue counts it toward the item's progress.
  */
 export type StepResult =
-  | { did: "acted" } // moved / withdrew / bought / gathered / equipped / unequipped
+  | { did: "acted" } // moved / withdrew / bought / gathered
   | { did: "banked" } // a bank-off ran instead of the action
   | { did: "healed" } // farm path healed instead of fighting
   | { did: "crafted"; produced: number } // items produced this call (times × recipe.quantity)
@@ -187,7 +192,6 @@ export type StepResult =
 export async function runStep(name: string, ch: Character, s: AcquisitionStep, ctx: StepCtx): Promise<StepResult> {
   const keep = ctx.keep;
   const needTile = (): { x: number; y: number } => {
-    if (s.kind === "equip") return { x: ch.x, y: ch.y };
     if ((s as { x?: number }).x == null) throw new Error(`no map tile for ${s.kind} ${(s as { code?: string }).code ?? ""}`);
     return { x: (s as { x: number }).x, y: (s as { y: number }).y };
   };
@@ -256,8 +260,8 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       const recipe = item(s.code)?.craft;
       if (recipe) {
         // The step's quantity counts items PRODUCED; the API's counts recipe
-        // executions (see refine.ts). Convert, and chunk by the materials
-        // actually in hand — the caller sources the remainder.
+        // executions. Convert, and chunk by the materials actually in hand —
+        // the caller sources the remainder.
         const times = craftableTimes(characters.value[name] ?? ch, s.code, s.quantity);
         if (times <= 0) throw new Error(`missing materials to craft ${itemName(s.code)}`);
         await step(name, () => actions.craft(name, s.code, times));
@@ -265,36 +269,6 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       }
       await step(name, () => actions.craft(name, s.code, s.quantity));
       return { did: "crafted", produced: s.quantity };
-    }
-    case "equip": {
-      const cur = characters.value[name] ?? ch;
-      const occupied = slotCode(cur, s.slot);
-      const isUtility = s.slot.startsWith("utility");
-      if (occupied && occupied !== s.code) {
-        // Free the slot first; the next tick sees it empty and equips the target.
-        const qty = isUtility ? Math.max(1, slotQuantity(cur, s.slot)) : 1;
-        ctx.note(`unequip ${itemName(occupied)}`);
-        await step(name, () => actions.unequip(name, s.slot, qty));
-        return { did: "acted" };
-      }
-      if (occupied === s.code && isUtility && invQty(cur, s.code) > 0) {
-        // The API can't ADD to an equipped utility stack — pull the current
-        // stack back to inventory (it merges with the new potions), then the
-        // next tick equips the combined total in one go.
-        const qty = Math.max(1, slotQuantity(cur, s.slot));
-        ctx.note(`restack ${itemName(s.code)}`);
-        await step(name, () => actions.unequip(name, s.slot, qty));
-        return { did: "acted" };
-      }
-      ctx.note(`equip ${itemName(s.code)}`);
-      const held = invQty(cur, s.code);
-      // Utilities: equip everything in hand (the restack path above merged the
-      // old stack into it), capped at the game's 100-per-slot stack limit.
-      const quantity = isUtility
-        ? Math.max(1, Math.min(100, held || s.quantity))
-        : Math.max(1, Math.min(s.quantity, held || s.quantity));
-      await step(name, () => actions.equip(name, s.code, s.slot, quantity));
-      return { did: "acted" };
     }
   }
 }

@@ -1,13 +1,9 @@
 import type { Character } from "../types/api";
 import { characterList, focusCharacter, selectedCharacter } from "../state/store";
-import { gatherJobs } from "../state/gather";
-import { refineJobs } from "../state/refine";
-import { fightJobs } from "../state/fight";
 import { campaignJobs } from "../state/campaign";
 import { queues } from "../state/queue";
 import { queueItemText } from "../plan/queue";
-import { itemName, monster, resource } from "../catalog";
-import { asset, assetFallback, pct, titleCase } from "../lib/util";
+import { asset, assetFallback, pct } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
 
 /**
@@ -96,30 +92,15 @@ export function CharacterMini({ ch }: { ch: Character }) {
 }
 
 /**
- * The live status of whatever loop is driving this character (they're mutually
+ * The live status of whatever runner is driving this character (they're mutually
  * exclusive, so at most one is active), or null when idle. `cls` selects the tag
  * color: default (green) for productive phases, "banking" (gold) for logistics.
  */
 function activeStatus(name: string): { note: string; cls: string } | null {
-  const fjob = fightJobs.value[name];
-  if (fjob) {
-    const fname = monster(fjob.monster)?.name ?? titleCase(fjob.monster);
-    const tally = fjob.fights ? ` · ${fjob.wins}/${fjob.fights}` : "";
-    return { note: (fjob.note || `Fighting ${fname}`) + tally, cls: fjob.status === "fighting" ? "" : "banking" };
-  }
   const cjob = campaignJobs.value[name];
   if (cjob) {
-    const combat = cjob.phase === "fighting" || cjob.phase === "execute";
+    const combat = cjob.phase === "execute";
     return { note: cjob.note || cjob.phase, cls: combat ? "" : "banking" };
-  }
-  const gjob = gatherJobs.value[name];
-  if (gjob) {
-    const gname = resource(gjob.resource)?.name ?? titleCase(gjob.resource);
-    return { note: gjob.note || `Gathering ${gname}`, cls: gjob.status === "banking" ? "banking" : "" };
-  }
-  const rjob = refineJobs.value[name];
-  if (rjob) {
-    return { note: `${rjob.note ? rjob.note + " · " : ""}${itemName(rjob.product)}`, cls: rjob.status === "crafting" ? "" : "banking" };
   }
   const q = queues.value[name];
   if (q?.running) {

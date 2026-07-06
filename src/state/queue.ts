@@ -1,8 +1,9 @@
-// Automation cycle #6 — the plan queue: a per-character, user-editable list of
-// actions (move / rest / fight ×N / gather ×N / craft ×N / withdraw / …)
-// executed one item after another, top to bottom.
+// The plan queue: a per-character, user-editable list of actions (move / rest /
+// fight ×N / gather ×N / craft ×N / withdraw / …) executed one item after
+// another, top to bottom. Fight and gather items with times 0 run FOREVER —
+// this is how "beat a monster" grinds until stopped.
 //
-// Unlike the other loops, PRESENCE in the signal does NOT mean running — the
+// Unlike the campaign, PRESENCE in the signal does NOT mean running — the
 // queue is a persistent document the user edits; a `running` flag inside the
 // entry marks execution. Every item's completion condition is checked BEFORE
 // acting, so items are skip-if-satisfied and a reload resumes mid-item (fight
@@ -11,26 +12,20 @@
 //
 // Failure semantics: the queue PAUSES — the failed item stays at the head with
 // an error note and `running` drops to false; the user edits/removes it and
-// presses ▶ again. The "new-task" item is a dynamic expander: it accepts a
-// task at the Tasks Master, splices the compiled task's items in after itself,
-// and re-appends a fresh copy of itself at the end so the cycle continues.
+// presses ▶ again.
 //
-// Same no-poll contract as every loop: paced purely by action-echo cooldowns.
+// Same no-poll contract as every runner: paced purely by action-echo cooldowns.
 
 import { effect, signal } from "@preact/signals";
 import * as actions from "../api/actions";
-import { item as itemOf, itemName, monster as monsterOf } from "../catalog";
+import { item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
 import { npcForSell } from "../plan/acquire";
-import { compileTaskPlan } from "../plan/task";
-import { QUEUE_KINDS, newId, planToItems, queueItemText } from "../plan/queue";
-import { bankItems, characters, pushLog } from "./store";
-import { gatherJobs } from "./gather";
-import { bankQty, refineJobs } from "./refine";
-import { fightJobs } from "./fight";
+import { RESET_UTILITY_STRIP, stripAllMap } from "../plan/jobgear";
+import { QUEUE_KINDS, planToItems, queueItemText } from "../plan/queue";
+import { characters, pushLog } from "./store";
 import { campaignJobs } from "./campaign";
-import { isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
+import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, freeSpace, gearSwapStep, goToMaster, invCount, invQty, runStep } from "./exec";
-import { slotCode, slotQuantity } from "../types/api";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, Plan } from "../plan/types";
@@ -229,10 +224,17 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       throw new Error(`nothing left to sell — no ${itemName(it.code)} in hand or bank`);
     }
     case "gather": {
-      if (it.done >= it.times) return true;
+      if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
       const tile = it.x != null ? { x: it.x, y: it.y } : nearest("resource", it.resource, ch.x, ch.y);
       if (!tile || tile.x == null) throw new Error(`no ${it.resource} on the map`);
-      const s: AcquisitionStep = { kind: "gather", code: it.code, quantity: it.times - it.done, resource: it.resource, level: 0, x: tile.x, y: tile.y };
+      // Bank-gear self-heal: keep the best gathering set the bank holds on
+      // (memoized per bank reference — free when nothing changed).
+      if (it.gear) {
+        const skill = resourceOf(it.resource)?.skill;
+        const desired = skill ? desiredForJob(name, ch, { kind: "gather", skill }) : undefined;
+        if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return false;
+      }
+      const s: AcquisitionStep = { kind: "gather", code: it.code, quantity: Math.max(1, it.times - it.done), resource: it.resource, level: 0, x: tile.x, y: tile.y };
       const r = await runStep(name, ch, s, ctx);
       if (r.did === "acted") patchItem(name, it.id, { done: it.done + 1 });
       return false;
@@ -264,18 +266,6 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (r.did === "crafted") patchItem(name, it.id, { done: it.done + r.produced });
       return false;
     }
-    case "equip": {
-      const equipped = slotCode(ch, it.slot) === it.code;
-      if (it.slot.startsWith("utility")) {
-        // Utility stacks top up via unequip→re-equip (see exec.ts); done only
-        // when everything in hand is stacked on (or the 100-stack is full).
-        if (equipped && (invQty(ch, it.code) === 0 || slotQuantity(ch, it.slot) >= 100)) return true;
-      } else if (equipped) {
-        return true;
-      }
-      await runStep(name, ch, { kind: "equip", code: it.code, slot: it.slot, quantity: it.quantity }, ctx);
-      return false;
-    }
     case "train": {
       if (skillLevel(ch, it.skill) >= it.toLevel) return true;
       const tile = it.x != null ? { x: it.x, y: it.y } : nearest("resource", it.resource, ch.x, ch.y);
@@ -285,11 +275,17 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       return false;
     }
     case "fight": {
-      if (it.done >= it.times) return true;
+      if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
       const m = monsterOf(it.monster);
       const tile = m ? nearest("monster", it.monster, ch.x, ch.y) : undefined;
       if (!m || !tile) throw new Error(`no ${it.monster} on the map`);
-      ctx.note(`fighting ${it.done + 1}/${it.times}`);
+      // Bank-gear self-heal: when something better landed in the bank, detour
+      // and swap (memoized per bank reference — free when nothing changed).
+      if (it.gear) {
+        const desired = desiredForJob(name, ch, { kind: "fight", monster: it.monster });
+        if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return false;
+      }
+      ctx.note(`fighting ${it.done + 1}${it.times > 0 ? `/${it.times}` : ""}`);
       const out = await fightRound(name, ch, m, tile, S(name), ctx);
       if (out === "no-win") throw new Error(`not a safe win vs ${m.name}`);
       if (out === "gave-up") throw new Error("lost 2 fights in a row");
@@ -304,26 +300,17 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     }
     case "gear": {
       const desired = it.desired ?? (it.job ? desiredForJob(name, ch, it.job) : undefined);
+      if (it.reset) {
+        // Full bank reset. A fight job with no winnable bank set throws BEFORE
+        // stripping — never leave the character naked for a hopeless fight.
+        if (!desired && it.job?.kind === "fight") {
+          throw new Error(`no winnable gear set vs ${monsterOf(it.job.monster)?.name ?? it.job.monster} in the bank`);
+        }
+        const total = { ...(desired ?? stripAllMap()), ...RESET_UTILITY_STRIP };
+        return (await gearSwapStep(name, ch, total, ctx, { reset: true })) === "done";
+      }
       if (!desired) return true; // no set for this job (e.g. no winnable fight gear) — keep current
       return (await gearSwapStep(name, ch, desired, ctx)) === "done";
-    }
-    case "new-task": {
-      if (!ch.task) {
-        const at = await goToMaster(name, ch, it.master, ctx.note);
-        if (at === "missing") throw new Error("no tasks master on the map");
-        if (at === "there") { ctx.note("accepting a task"); await step(name, () => actions.taskNew(name)); }
-        return false; // the echo sets ch.task → next tick expands
-      }
-      // Expand: compile THIS task, splice its items in after the expander, and
-      // re-append a fresh expander so the loop continues — one signal write, so
-      // the runner never sees a popped-but-unexpanded queue.
-      const plan = compileTaskPlan(ch, bankItems.value, { master: it.master, loop: false });
-      if (plan.acquisition.blockers.length) throw new Error(plan.acquisition.blockers[0]);
-      const cur = queues.value[name];
-      if (!cur) return false;
-      setQueue(name, { items: [...planToItems(plan), ...cur.items.slice(1), { kind: "new-task", master: it.master, id: newId() }] });
-      log(name, `task accepted: ${plan.summary}`, "info");
-      return false;
     }
     case "deliver": {
       const remaining = Math.max(0, ch.task_total - ch.task_progress);
@@ -420,8 +407,8 @@ export function startQueue(name: string): void {
   const q = queues.value[name];
   if (!q || q.running) return;
   if (!q.items.length) { log(name, "queue is empty", "bad"); return; }
-  if (gatherJobs.value[name] || refineJobs.value[name] || fightJobs.value[name] || campaignJobs.value[name]) {
-    log(name, "stop the other loop first", "bad");
+  if (campaignJobs.value[name]) {
+    log(name, "stop the campaign first", "bad");
     return;
   }
   if (!characters.value[name]) return;
@@ -450,7 +437,7 @@ export function stopQueue(name: string): void {
 export function resumeQueue(): void {
   for (const [name, q] of Object.entries(queues.value)) {
     if (!q.running) continue;
-    if (characters.value[name] && !gatherJobs.value[name] && !refineJobs.value[name] && !fightJobs.value[name] && !campaignJobs.value[name]) {
+    if (characters.value[name] && !campaignJobs.value[name]) {
       stopFlags.delete(name);
       log(name, "queue resumed after reload", "info");
       void runLoop(name);

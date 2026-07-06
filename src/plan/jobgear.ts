@@ -16,13 +16,23 @@
 
 import { item, tileAt } from "../catalog";
 import { bestInSlot, canEquip } from "./bis";
-import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../types/api";
+import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode, slotQuantity } from "../types/api";
 import type { BankItem, Character, GearSlot } from "../types/api";
 import type { Item } from "../types/catalog";
 import type { GearJob, GearRecommendation } from "./types";
 
 /** The slots the swap manages — everything but the utility potion stacks. */
 export const MANAGED_SLOTS: GearSlot[] = GEAR_SLOTS.filter((s) => !s.startsWith("utility"));
+
+/** Every gear slot mapped to "" — the desired map for a full strip. */
+export function stripAllMap(): Partial<Record<GearSlot, string>> {
+  const out: Partial<Record<GearSlot, string>> = {};
+  for (const g of GEAR_SLOTS) out[g] = "";
+  return out;
+}
+
+/** Overlay that adds the (normally unmanaged) utility slots to a reset strip. */
+export const RESET_UTILITY_STRIP: Partial<Record<GearSlot, string>> = { utility1: "", utility2: "" };
 
 const layerOf = (ch: Character): string => (ch as { layer?: string }).layer ?? "overworld";
 
@@ -83,7 +93,10 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
   const qty = ownedQty(ch, bank);
 
   if (job.kind === "fight") {
-    const rec = bestInSlot(ch, job.monster, { owned: new Set(qty.keys()), includeCraftable: false })[0];
+    // noUtilities: this set feeds the bank swap, which never equips potion
+    // stacks — a forecast counting them would let fightRound's live gate
+    // refuse fights the solver called winnable.
+    const rec = bestInSlot(ch, job.monster, { owned: new Set(qty.keys()), includeCraftable: false, noUtilities: true })[0];
     return rec ? jobSetFromRecommendation(ch, bank, rec) : undefined;
   }
 
@@ -162,6 +175,13 @@ export interface GearActionOpts {
   keep?: string[];
   /** false ⇒ skip the junk-deposit leg entirely. */
   junk?: boolean;
+  /**
+   * Full bank reset (job start): everything happens at the bank — the WHOLE
+   * inventory (not just gear) plus all pocket gold is deposited first, and the
+   * strip extends to the utility slots. Combine with a total desired map
+   * (stripAllMap() / RESET_UTILITY_STRIP) so every unneeded slot is emptied.
+   */
+  reset?: boolean;
 }
 
 export type GearAction =
@@ -169,7 +189,8 @@ export type GearAction =
   | { kind: "unequip"; slots: { slot: GearSlot; quantity: number }[] }
   | { kind: "equip"; items: { code: string; slot: GearSlot; quantity: number }[] }
   | { kind: "withdraw"; items: { code: string; quantity: number }[] }
-  | { kind: "deposit"; items: { code: string; quantity: number }[] };
+  | { kind: "deposit"; items: { code: string; quantity: number }[] }
+  | { kind: "deposit-gold"; quantity: number };
 
 const onBankTile = (ch: Character): boolean => {
   try {
@@ -219,9 +240,31 @@ export function nextGearAction(
   }
   const free = Math.max(0, ch.inventory_max_items - load);
 
+  // Reset legs (job start, always at the bank): stash the whole load except
+  // protected stock and what the desired set itself needs, then sweep the
+  // pocket gold. Runs before the strip so unequipped gear (next ticks) always
+  // finds a near-empty bag, and the depositItems echo refreshes the bank
+  // signal before the withdraw leg computes.
+  if (opts.reset) {
+    if (!onBankTile(ch)) return { kind: "goto-bank" };
+    const keep = new Set(opts.keep ?? []);
+    const wantCount = new Map<string, number>();
+    for (const c of Object.values(desired)) if (c) wantCount.set(c, (wantCount.get(c) ?? 0) + 1);
+    const stash: { code: string; quantity: number }[] = [];
+    for (const [code, n] of inv) {
+      if (n <= 0 || keep.has(code)) continue;
+      const excess = n - (wantCount.get(code) ?? 0);
+      if (excess > 0) stash.push({ code, quantity: excess });
+    }
+    if (stash.length) return { kind: "deposit", items: stash };
+    if (ch.gold > 0) return { kind: "deposit-gold", quantity: ch.gold };
+  }
+
   // Which desired slots actually need work, and is their item obtainable?
   // Supply counts inventory + bank + gear that this same swap will free up.
-  const slots = MANAGED_SLOTS.filter((g) => g !== "bag" && desired[g] !== undefined);
+  // A reset also manages the utility slots (strip-only — nothing re-equips them).
+  const scope = opts.reset ? GEAR_SLOTS : MANAGED_SLOTS;
+  const slots = scope.filter((g) => g !== "bag" && desired[g] !== undefined);
   const supply = new Map<string, number>();
   const addSupply = (code: string, n: number) => supply.set(code, (supply.get(code) ?? 0) + n);
   for (const [c, n] of inv) addSupply(c, n);
@@ -250,14 +293,25 @@ export function nextGearAction(
 
   const junkItems = junkOf(inv, desired, opts);
 
-  // 1. Free the mismatched slots (one batched request).
+  // 1. Free the mismatched slots (one batched request). Utility stacks cost
+  //    their whole quantity in inventory room, so the batch is capped by
+  //    QUANTITY, not slot count — a too-big stack unequips partially and the
+  //    next ticks (reset deposits between them) drain the rest.
   if (strip.length) {
     if (free === 0) {
       // No room for the unequipped gear — stow junk first; with nothing
       // depositable, yield and let the caller's normal bank-off make room.
       return junkItems.length ? { kind: "deposit", items: junkItems } : null;
     }
-    return { kind: "unequip", slots: strip.slice(0, free).map((g) => ({ slot: g, quantity: 1 })) };
+    const batch: { slot: GearSlot; quantity: number }[] = [];
+    let room = free;
+    for (const g of strip) {
+      if (room <= 0) break;
+      const qty = g.startsWith("utility") ? Math.min(Math.max(1, slotQuantity(ch, g)), room) : 1;
+      batch.push({ slot: g, quantity: qty });
+      room -= qty;
+    }
+    return { kind: "unequip", slots: batch };
   }
 
   // 2. Equip whatever is already in hand into the (now empty) slots.
