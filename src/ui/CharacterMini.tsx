@@ -113,7 +113,9 @@ export function CharacterMini({ ch }: { ch: Character }) {
         {where.icon} {where.label} · ({ch.x}, {ch.y})
       </div>
 
-      {/* Foot: read-only status line (the cooldown lives on the avatar ring). */}
+      {/* Foot: read-only status line; the LIVE cooldown is the avatar ring —
+          the number here is the last action's full cooldown (static, from the
+          last echo), so you can tell how expensive each action is. */}
       <div class="pcard-foot">
         {status ? (
           <span class={`gather-tag ${status.cls}`} title={status.note}>
@@ -122,6 +124,11 @@ export function CharacterMini({ ch }: { ch: Character }) {
           </span>
         ) : (
           <span class="foot-hint">idle</span>
+        )}
+        {ch.cooldown > 0 && (
+          <span class="pcard-cd" title="Duration of the last action's cooldown">
+            ⏳ {ch.cooldown}s
+          </span>
         )}
       </div>
 

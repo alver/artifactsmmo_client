@@ -246,7 +246,7 @@ button:disabled {
    `--ring` (set inline) paints a ::before layer masked to a ring: a solid
    green for "ready", a draining gold conic arc while on cooldown. */
 .cd-ring {
-  --ring-w: 3px;
+  --ring-w: 4px;
   position: relative;
   flex: 0 0 auto;
   display: inline-flex;
@@ -663,6 +663,13 @@ body,
   align-items: center;
   gap: 8px;
   min-height: 26px;
+}
+/* last action's full cooldown, right side of the card foot */
+.pcard-cd {
+  flex: 0 0 auto;
+  color: var(--gold);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
 }
 /* current Tasks-Master task, bottom line of the card */
 .pcard-task {
