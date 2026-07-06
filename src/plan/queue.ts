@@ -41,6 +41,14 @@ export type QueueItem = { id: string; error?: string } & (
   // Accept a new task from the given Tasks Master. Skip-if-satisfied: already
   // carrying ANY task (either type) counts as done.
   | { kind: "accept-task"; master: "monsters" | "items" }
+  // Work the CURRENT task in the field, whatever it turns out to be (the item
+  // is only known once accept-task runs). Monsters task ⇒ fight the task
+  // monster; items task ⇒ acquire ch.task where it lives (gather it, or gather
+  // the recipe's materials and craft it) and hand bagfuls straight to the items
+  // master — stock NEVER moves through the bank. `gear` ⇒ full bank reset into
+  // the phase's job set when the task starts (`geared` remembers which task so
+  // a reload doesn't repeat it), then per-round self-heal swaps.
+  | { kind: "work-task"; gear?: boolean; geared?: string }
   // taskTrade the current ch.task (code read live), inventory + bank stock in
   // bag-sized pieces. `partial` ⇒ complete when the stock runs out (production
   // items follow); without it, running out with the task unfinished is an error.
@@ -52,7 +60,7 @@ export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "move", "rest", "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "recycle", "train", "gear", "accept-task", "deliver", "turn-in",
+  "buy", "sell", "recycle", "train", "gear", "accept-task", "work-task", "deliver", "turn-in",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -89,6 +97,7 @@ export function queueItemText(it: QueueItem): string {
       return it.reset ? `Bank reset + ${what}` : what.charAt(0).toUpperCase() + what.slice(1);
     }
     case "accept-task": return `Get a task (${it.master})`;
+    case "work-task": return "Work the task (acquire & deliver)";
     case "deliver": return it.partial ? "Deliver task items from stock" : "Deliver task items";
     case "turn-in": return "Turn in the task";
   }
@@ -97,5 +106,5 @@ export function queueItemText(it: QueueItem): string {
 export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
-  "train": "🎓", "gear": "🧰", "accept-task": "📜", "deliver": "🤝", "turn-in": "✅",
+  "train": "🎓", "gear": "🧰", "accept-task": "📜", "work-task": "⚒", "deliver": "🤝", "turn-in": "✅",
 };

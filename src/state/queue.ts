@@ -18,7 +18,7 @@
 
 import { effect, signal } from "@preact/signals";
 import * as actions from "../api/actions";
-import { item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
+import { catalog, item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
 import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, stripAllMap } from "../plan/jobgear";
 import { QUEUE_KINDS, queueItemText } from "../plan/queue";
@@ -27,8 +27,9 @@ import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } f
 import { bankOff, craftableTimes, desiredForJob, fightRound, freeSpace, gearSwapStep, goToMaster, invCount, invQty, runStep } from "./exec";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
-import type { AcquisitionStep } from "../plan/types";
+import type { AcquisitionStep, GearJob } from "../plan/types";
 import type { Character } from "../types/api";
+import type { CraftRecipe, DropRate, Monster, Resource } from "../types/catalog";
 
 export interface QueueState {
   items: QueueItem[];
@@ -142,17 +143,20 @@ function skipItem(name: string, it: QueueItem, why: string): true {
 const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
 
-const keepOf = (it: QueueItem): string[] | undefined =>
+const keepOf = (it: QueueItem, ch: Character): string[] | undefined =>
   it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
+  // The task deliverable and its recipe materials are working stock — neither
+  // an overflow bank-off nor the job-start gear reset may stash them.
+  : it.kind === "work-task" ? (ch.task ? [ch.task, ...(itemOf(ch.task)?.craft?.items.map((g) => g.code) ?? [])] : undefined)
   // A withdrawal/sale/recycle protects its own item — otherwise an overflow
   // bank-off would deposit exactly what was just withdrawn and the item would
   // spin forever.
   : it.kind === "withdraw" || it.kind === "sell" || it.kind === "recycle" ? [it.code]
   : undefined;
 
-function ctxOf(name: string, it: QueueItem): StepCtx {
+function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
   return {
-    keep: keepOf(it),
+    keep: keepOf(it, ch),
     food: it.kind === "fight" ? it.food : undefined,
     note: (text) => setQueue(name, { note: text }),
   };
@@ -165,7 +169,7 @@ function ctxOf(name: string, it: QueueItem): StepCtx {
  * loop pauses the queue with the message.
  */
 async function runItem(name: string, ch: Character, it: QueueItem): Promise<boolean> {
-  const ctx = ctxOf(name, it);
+  const ctx = ctxOf(name, ch, it);
   switch (it.kind) {
     case "move": {
       if (ch.x === it.x && ch.y === it.y) return true;
@@ -363,6 +367,8 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (!desired) return true; // no set for this job (unknown monster / job "none") — keep current
       return (await gearSwapStep(name, ch, desired, ctx)) === "done";
     }
+    case "work-task":
+      return runWorkTask(name, ch, it, ctx);
     case "accept-task": {
       if (ch.task) return true; // already carrying a task (either type)
       const at = await goToMaster(name, ch, it.master, ctx.note);
@@ -416,6 +422,167 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
   }
 }
 
+// ── work-task: work the current task in the field, no bank stock ─────────────
+
+/**
+ * How to obtain an item IN THE FIELD (no bank, no shops) with the character's
+ * current skills: gather it directly, craft it from gatherable materials, or
+ * fight the monster that drops it. Deterministic sources win — gather first
+ * (surest drop, then lowest resource level), then craft, then the easiest
+ * monster. All current item tasks resolve to gather or a one-level craft whose
+ * ingredients are gathered; fight is the forward-compatible fallback.
+ */
+type FieldSource =
+  | { how: "gather"; res: Resource }
+  | { how: "craft"; recipe: CraftRecipe }
+  | { how: "fight"; mon: Monster };
+
+function fieldSource(ch: Character, code: string): FieldSource | undefined {
+  const rateOf = (drops: DropRate[]): number => drops.find((d) => d.code === code)?.rate ?? Infinity;
+  const res = [...catalog().resources.values()]
+    .filter((r) => r.drops.some((d) => d.code === code) && skillLevel(ch, r.skill) >= r.level)
+    .sort((a, b) => rateOf(a.drops) - rateOf(b.drops) || a.level - b.level)[0];
+  if (res) return { how: "gather", res };
+  const recipe = itemOf(code)?.craft;
+  if (recipe && skillLevel(ch, recipe.skill) >= recipe.level) return { how: "craft", recipe };
+  const mon = [...catalog().monsters.values()]
+    .filter((m) => m.drops.some((d) => d.code === code))
+    .sort((a, b) => rateOf(a.drops) - rateOf(b.drops) || a.level - b.level)[0];
+  if (mon) return { how: "fight", mon };
+  return undefined;
+}
+
+/**
+ * Gear leg of a work-task tick. The FIRST time a given task is worked, wear
+ * the phase's job set via a full bank reset (the standard job start — deposit
+ * everything incl. gold, strip utilities; ctx.keep protects the deliverable
+ * and its materials, and `geared` remembers the task so a reload doesn't
+ * repeat it). Afterwards the usual per-round self-heal swap keeps the set
+ * current. True ⇒ the tick was spent on gear.
+ */
+async function taskGear(
+  name: string,
+  ch: Character,
+  it: Extract<QueueItem, { kind: "work-task" }>,
+  job: GearJob,
+  ctx: StepCtx,
+): Promise<boolean> {
+  if (!it.gear) return false;
+  const desired = desiredForJob(name, ch, job);
+  if (it.geared !== ch.task) {
+    const total = { ...(desired ?? stripAllMap()), ...RESET_UTILITY_STRIP };
+    if ((await gearSwapStep(name, ch, total, ctx, { reset: true })) === "acted") return true;
+    patchItem(name, it.id, { geared: ch.task });
+    return true; // converged — acquiring starts next tick
+  }
+  return !!desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted";
+}
+
+/**
+ * One action of a work-task item. Monsters task ⇒ fight the task monster
+ * (fight-item rules). Items task ⇒ acquire ch.task in the field and hand
+ * bagfuls straight to the items master — stock never moves through the bank;
+ * the bank only hosts the gear reset/self-heal and the junk-overflow valve.
+ */
+async function runWorkTask(
+  name: string,
+  ch: Character,
+  it: Extract<QueueItem, { kind: "work-task" }>,
+  ctx: StepCtx,
+): Promise<boolean> {
+  if (!ch.task) return true; // nothing to work — accept-task comes first
+  const remaining = Math.max(0, ch.task_total - ch.task_progress);
+  if (remaining <= 0) return true; // done — a turn-in item collects the reward
+
+  if (ch.task_type === "monsters") {
+    const m = monsterOf(ch.task);
+    const tile = m ? nearest("monster", ch.task, ch.x, ch.y) : undefined;
+    if (!m || !tile) throw new Error(`no ${m?.name ?? ch.task} on the map (event over?)`);
+    if (await taskGear(name, ch, it, { kind: "fight", monster: ch.task }, ctx)) return false;
+    ctx.note(`task ${ch.task_progress + 1}/${ch.task_total}: fight ${m.name}`);
+    const out = await fightRound(name, ch, m, tile, S(name), ctx);
+    if (out === "no-win") throw new Error(`not a safe win vs ${m.name}`);
+    if (out === "gave-up") throw new Error("lost 2 fights in a row");
+    if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+    return false;
+  }
+  if (ch.task_type !== "items") return true; // unknown task type — leave it be
+
+  const held = invQty(ch, ch.task);
+  const deliver = async (): Promise<boolean> => {
+    const at = await goToMaster(name, ch, "items", ctx.note);
+    if (at === "missing") return skipItem(name, it, "no items tasks master on the map");
+    if (at === "there") {
+      ctx.note(`deliver ${itemName(ch.task)}`);
+      await step(name, () => actions.taskTrade(name, ch.task, Math.min(held, remaining)));
+    }
+    return false;
+  };
+  if (held >= remaining) return deliver(); // enough in hand — hand it over
+
+  const src = fieldSource(ch, ch.task);
+  if (!src) throw new Error(`no way to acquire ${itemName(ch.task)} in the field (skill too low?)`);
+
+  if (src.how === "gather" || src.how === "fight") {
+    // A full bag first hands over what it holds, then (all junk) banks off.
+    if (freeSpace(ch) === 0) {
+      if (held > 0) return deliver();
+      await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note);
+      return false;
+    }
+    if (src.how === "gather") {
+      const tile = nearest("resource", src.res.code, ch.x, ch.y);
+      if (!tile) throw new Error(`no ${src.res.name} on the map (event over?)`);
+      if (await taskGear(name, ch, it, { kind: "gather", skill: src.res.skill }, ctx)) return false;
+      ctx.note(`task ${held + ch.task_progress}/${ch.task_total}: gather ${itemName(ch.task)}`);
+      await runStep(name, ch, { kind: "gather", code: ch.task, quantity: remaining - held, resource: src.res.code, level: 0, x: tile.x, y: tile.y }, ctx);
+      return false;
+    }
+    const tile = nearest("monster", src.mon.code, ch.x, ch.y);
+    if (!tile) throw new Error(`no ${src.mon.name} on the map (event over?)`);
+    if (await taskGear(name, ch, it, { kind: "fight", monster: src.mon.code }, ctx)) return false;
+    ctx.note(`task ${held + ch.task_progress}/${ch.task_total}: hunt ${src.mon.name}`);
+    const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
+    if (out === "no-win") throw new Error(`not a safe win vs ${src.mon.name}`);
+    if (out === "gave-up") throw new Error("lost 2 fights in a row");
+    if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+    return false;
+  }
+
+  // Craft: gather a bag-sized batch of materials, craft it, repeat; the
+  // produce goes to the master, never the bank. Gear stays on the gathering
+  // set — the craft call itself doesn't warrant two swap trips per batch.
+  const { recipe } = src;
+  const per = Math.max(1, recipe.quantity);
+  const matsPerRun = Math.max(1, recipe.items.reduce((s, g) => s + g.quantity, 0));
+  const runsNeeded = Math.ceil((remaining - held) / per);
+  // Materials already in hand that count toward the goal (capped at the goal).
+  const matsHeld = recipe.items.reduce((s, g) => s + Math.min(invQty(ch, g.code), g.quantity * runsNeeded), 0);
+  const batch = Math.max(1, Math.min(runsNeeded, Math.floor((freeSpace(ch) + matsHeld) / matsPerRun)));
+  const missing = recipe.items.find((g) => invQty(ch, g.code) < g.quantity * batch);
+  if (missing && freeSpace(ch) > 0) {
+    const mat = fieldSource(ch, missing.code);
+    if (mat?.how !== "gather") throw new Error(`no way to gather ${itemName(missing.code)} (skill too low?)`);
+    const tile = nearest("resource", mat.res.code, ch.x, ch.y);
+    if (!tile) throw new Error(`no ${mat.res.name} on the map (event over?)`);
+    if (await taskGear(name, ch, it, { kind: "gather", skill: mat.res.skill }, ctx)) return false;
+    ctx.note(`task: gather ${itemName(missing.code)} ${invQty(ch, missing.code)}/${missing.quantity * batch}`);
+    await runStep(name, ch, { kind: "gather", code: missing.code, quantity: 1, resource: mat.res.code, level: 0, x: tile.x, y: tile.y }, ctx);
+    return false;
+  }
+  if (craftableTimes(ch, ch.task, remaining - held) > 0) {
+    const tile = nearest("workshop", recipe.skill, ch.x, ch.y);
+    if (!tile) throw new Error(`no ${recipe.skill} workshop on the map`);
+    ctx.note(`task: craft ${itemName(ch.task)}`);
+    await runStep(name, ch, { kind: "craft", code: ch.task, quantity: remaining - held, skill: recipe.skill, level: 0, x: tile.x, y: tile.y }, ctx);
+    return false;
+  }
+  // Bag jammed with nothing craftable — deliver what's done, or dump the junk.
+  if (held > 0) return deliver();
+  await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note);
+  return false;
+}
+
 // Loss streaks are per-run, in-memory.
 const lossState = new Map<string, { losses: number }>();
 const S = (name: string): { losses: number } => {
@@ -447,7 +614,7 @@ async function runLoop(name: string): Promise<void> {
         }
       } catch (e) {
         if (isInventoryFull(e)) {
-          try { await bankOff(name, ch.x, ch.y, keepOf(item), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
+          try { await bankOff(name, ch.x, ch.y, keepOf(item, ch), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
         }
         const msg = (e as Error).message;
         patchItem(name, item.id, { error: msg });

@@ -42,7 +42,8 @@ const ADDABLE: { kind: string; label: string }[] = [
   { kind: "deposit-all", label: "📦 Deposit everything" },
   { kind: "gear", label: "🧰 Equip for a job" },
   { kind: "accept-task", label: "📜 Get a task" },
-  { kind: "deliver", label: "🤝 Deliver task items" },
+  { kind: "work-task", label: "⚒ Work the task (acquire & deliver)" },
+  { kind: "deliver", label: "🤝 Deliver task items (bank stock)" },
   { kind: "turn-in", label: "✅ Turn in the task" },
 ];
 
@@ -283,6 +284,9 @@ function AddForm({ ch }: { ch: Character }) {
         return { kind: "gear", job: { kind: "gather", skill: gearJob }, reset };
       }
       case "accept-task": return { kind: "accept-task", master: taskMaster };
+      // Equip via a bank reset once the task is known, acquire in the field,
+      // deliver bagfuls to the master — never banks the stock.
+      case "work-task": return { kind: "work-task", gear: true };
       case "deliver": return { kind: "deliver" };
       case "turn-in": return { kind: "turn-in" };
       default: return null;
