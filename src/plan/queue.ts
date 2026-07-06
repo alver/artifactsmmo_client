@@ -28,6 +28,9 @@ export type QueueItem = { id: string; error?: string } & (
   // Sell to the NPC that buys the item; pulls stock from the BANK bag-sized
   // piece by piece when the hand is empty (the bank-cleanup action).
   | { kind: "sell"; code: string; quantity: number; done: number; npc?: string; x?: number; y?: number }
+  // Recycle at the workshop that crafts the item (returns a share of the
+  // materials); like sell, pulls bank stock when the hand is empty.
+  | { kind: "recycle"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number }
   | { kind: "train"; skill: string; toLevel: number; resource: string; x?: number; y?: number }
   // Swap to the best job gear from the bank (see plan/jobgear.ts): `desired` =
   // slot map frozen at compile; `job` = live spec recomputed from the bank at
@@ -49,7 +52,7 @@ export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "move", "rest", "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "train", "gear", "accept-task", "deliver", "turn-in",
+  "buy", "sell", "recycle", "train", "gear", "accept-task", "deliver", "turn-in",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -71,6 +74,7 @@ export function queueItemText(it: QueueItem): string {
     case "deposit-all": return "Deposit everything";
     case "buy": return `Buy ${it.quantity}× ${itemName(it.code)}`;
     case "sell": return `Sell ${it.quantity}× ${itemName(it.code)}`;
+    case "recycle": return `Recycle ${it.quantity}× ${itemName(it.code)}`;
     case "train": return `Train ${titleCase(it.skill)} to Lv ${it.toLevel}`;
     case "gear": {
       const what = it.job
@@ -92,6 +96,6 @@ export function queueItemText(it: QueueItem): string {
 
 export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
-  "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰",
+  "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
   "train": "🎓", "gear": "🧰", "accept-task": "📜", "deliver": "🤝", "turn-in": "✅",
 };

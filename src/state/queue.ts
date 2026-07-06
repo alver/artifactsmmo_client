@@ -134,9 +134,10 @@ const skillLevel = (ch: Character, skill: string): number =>
 
 const keepOf = (it: QueueItem): string[] | undefined =>
   it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
-  // A withdrawal/sale protects its own item — otherwise an overflow bank-off
-  // would deposit exactly what was just withdrawn and the item would spin forever.
-  : it.kind === "withdraw" || it.kind === "sell" ? [it.code]
+  // A withdrawal/sale/recycle protects its own item — otherwise an overflow
+  // bank-off would deposit exactly what was just withdrawn and the item would
+  // spin forever.
+  : it.kind === "withdraw" || it.kind === "sell" || it.kind === "recycle" ? [it.code]
   : undefined;
 
 function ctxOf(name: string, it: QueueItem): StepCtx {
@@ -213,6 +214,32 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         return false;
       }
       throw new Error(`nothing left to sell — no ${itemName(it.code)} in hand or bank`);
+    }
+    case "recycle": {
+      const left = it.quantity - it.done;
+      if (left <= 0) return true;
+      const held = invQty(ch, it.code);
+      if (held > 0) {
+        const skill = it.skill ?? itemOf(it.code)?.craft?.skill;
+        const tile = it.x != null ? { x: it.x, y: it.y! } : skill ? nearest("workshop", skill, ch.x, ch.y) : undefined;
+        if (!tile || tile.x == null) throw new Error(`no workshop recycles ${itemName(it.code)}`);
+        if (ch.x !== tile.x || ch.y !== tile.y) { ctx.note("→ workshop"); await moveTo(name, tile.x, tile.y); return false; }
+        const qty = Math.min(held, left);
+        ctx.note(`recycle ${itemName(it.code)}`);
+        await step(name, () => actions.recycle(name, it.code, qty));
+        patchItem(name, it.id, { done: it.done + qty });
+        return false;
+      }
+      // Hand empty — pull more stock from the bank, one bag-sized piece at a time.
+      const banked = bankQty(it.code);
+      if (banked > 0) {
+        if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, [it.code], ctx.note); return false; } // bag full of other stuff
+        const bank = nearestBank(ch.x, ch.y);
+        if (!bank) throw new Error("no bank found on the map");
+        await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(banked, left, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
+        return false;
+      }
+      throw new Error(`nothing left to recycle — no ${itemName(it.code)} in hand or bank`);
     }
     case "gather": {
       if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever

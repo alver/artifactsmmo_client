@@ -8,7 +8,7 @@
 import { useState } from "preact/hooks";
 import { armTilePick, bankItems, tilePick } from "../state/store";
 import { npcForSell } from "../plan/acquire";
-import { catalog, itemName } from "../catalog";
+import { catalog, item as itemOf, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
 import { addItem, clearQueue, moveItem, queues, removeItem, startQueue, stopQueue, updateItem } from "../state/queue";
@@ -37,6 +37,7 @@ const ADDABLE: { kind: string; label: string }[] = [
   { kind: "craft", label: "⚙ Craft / refine ×N (0 = ∞)" },
   { kind: "withdraw", label: "🏦 Withdraw from bank" },
   { kind: "sell", label: "💰 Sell bank stock ×N" },
+  { kind: "recycle", label: "♻ Recycle gear ×N" },
   { kind: "deposit-all", label: "📦 Deposit everything" },
   { kind: "gear", label: "🧰 Equip for a job" },
   { kind: "accept-task", label: "📜 Get a task" },
@@ -102,7 +103,7 @@ export function QueueSection({ ch }: { ch: Character }) {
 
 function progressOf(it: QueueItem): string {
   if (it.kind === "fight" || it.kind === "gather") return it.done > 0 ? (it.times > 0 ? `${it.done}/${it.times}` : `${it.done}`) : "";
-  if (it.kind === "craft" || it.kind === "sell") return it.done > 0 ? (it.quantity > 0 ? `${it.done}/${it.quantity}` : `${it.done}`) : "";
+  if (it.kind === "craft" || it.kind === "sell" || it.kind === "recycle") return it.done > 0 ? (it.quantity > 0 ? `${it.done}/${it.quantity}` : `${it.done}`) : "";
   return "";
 }
 
@@ -172,7 +173,7 @@ function EditForm({ ch, it, onDone }: { ch: Character; it: QueueItem; onDone: ()
         {field("done", "done", it.done)}
       </>
     );
-  } else if (it.kind === "craft" || it.kind === "sell") {
+  } else if (it.kind === "craft" || it.kind === "sell" || it.kind === "recycle") {
     fields = (
       <>
         {field(it.kind === "craft" ? "quantity (0 = ∞)" : "quantity", "quantity", it.quantity, it.kind === "craft" ? 0 : 1)}
@@ -230,6 +231,16 @@ function AddForm({ ch }: { ch: Character }) {
   })();
   const bank = [...bankItems.value].sort((a, b) => itemName(a.code).localeCompare(itemName(b.code)));
   const sellable = bank.filter((b) => npcForSell(b.code));
+  // Recyclable stock (crafted + the item type allows it), inventory ∪ bank.
+  const recyclable = (() => {
+    const counts = new Map<string, number>();
+    for (const s of ch.inventory ?? []) if (s.code && s.quantity > 0) counts.set(s.code, (counts.get(s.code) ?? 0) + s.quantity);
+    for (const b of bankItems.value) counts.set(b.code, (counts.get(b.code) ?? 0) + b.quantity);
+    return [...counts.entries()]
+      .filter(([code]) => { const i = itemOf(code); return !!i?.craft && i.recyclable !== false; })
+      .map(([code, quantity]) => ({ code, quantity }))
+      .sort((a, b) => itemName(a.code).localeCompare(itemName(b.code)));
+  })();
 
   const build = (): QueueItemInput | null => {
     switch (kind) {
@@ -259,6 +270,10 @@ function AddForm({ ch }: { ch: Character }) {
       case "sell": {
         const b = sellable.find((o) => o.code === code) ?? sellable[0];
         return b ? { kind: "sell", code: b.code, quantity: Math.max(1, times), done: 0, npc: npcForSell(b.code)?.code } : null;
+      }
+      case "recycle": {
+        const r = recyclable.find((o) => o.code === code) ?? recyclable[0];
+        return r ? { kind: "recycle", code: r.code, quantity: Math.max(1, times), done: 0, skill: itemOf(r.code)?.craft?.skill } : null;
       }
       case "deposit-all": return { kind: "deposit-all" };
       case "gear": {
@@ -358,7 +373,15 @@ function AddForm({ ch }: { ch: Character }) {
         </select>
       )}
 
-      {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell") && (
+      {kind === "recycle" && (
+        <select class="cp-refine-select" value={code || recyclable[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
+          {recyclable.map((r) => (
+            <option key={r.code} value={r.code}>{itemName(r.code)} (×{r.quantity})</option>
+          ))}
+        </select>
+      )}
+
+      {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell" || kind === "recycle") && (
         <label
           class="q-field"
           title={
