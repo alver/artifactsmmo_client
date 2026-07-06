@@ -8,6 +8,8 @@ polling — so it stays well inside the API rate limits.
 Built with **Vite + TypeScript + Preact** (signals for reactive state). Deploys as
 static files to GitHub Pages; no backend.
 
+![The workspace: roster cards with cooldown rings and tasks, the action queue, equipment, skills, inventory, and the live map with a tile inspector and active events](docs/workspace.png)
+
 ## Run
 
 ```bash
@@ -28,14 +30,32 @@ app and the token prompt is skipped. `.env` is gitignored.
 
 - **Canvas world map** — pan/zoom across the overworld/underground/interior layers,
   with your characters drawn as markers and a hover inspector for tiles.
-- **Character panel** — click a character for full detail: vitals, combat stats,
-  equipment, all skills, task, and inventory.
-- **Workshop / NPC / bank panels** — click a tile to see craftable recipes (with
-  skill + level requirements), NPC trades, or bank contents.
-- **Automation loops** — give a character an infinite **gather** order (gather →
-  bank when full → resume) or a **refine** order (withdraw raw materials → craft at
-  the workshop → bank the products). Loops are paced by action cooldowns and
-  **survive a page reload** (they persist and resume).
+- **Live map events** — time-limited monsters, resources and traveling merchants
+  overlay the map with countdowns; they join the fight/gather pickers while active.
+- **Character workspace** — roster cards (HP/XP, cooldown throbber, location, task)
+  above a dashboard of the selected character: equipment, job-gear preview, combat
+  stats, skills, and inventory.
+- **The action queue** — the automation engine: a per-character, editable list of
+  simple actions (move, fight ×N, gather ×N, craft ×N, bank moves, gear swaps, task
+  steps…). A count of 0 means *forever* — infinite crafting cycles
+  withdraw-a-bagful → craft → deposit until the bank runs dry. Paced by action
+  cooldowns, **survives a page reload**, and skips steps whose map target vanished
+  (an event that ended) instead of stalling.
+- **Bank-centric gear** — the bank is the single source of truth for equipment: a
+  gear step dresses the character in the best set available in the bank at that
+  moment (fight sets come from a combat-sim solver; fights re-check the bank every
+  round and upgrade mid-grind).
+- **Workshop / NPC / bank / tasks panels** — click a tile to craft, trade, manage
+  the bank, or handle tasks; hovering any item anywhere shows one unified detail
+  popup (stats, recipe, where to get it, prices).
+- **Fight-sim playground** (`#/sim`) — plan equipment setups against any monster
+  with the deterministic combat simulator.
+
+<p align="center">
+  <img src="docs/queue-actions.png" width="330" alt="The queue's action vocabulary">
+  &nbsp;&nbsp;
+  <img src="docs/workshop.png" width="430" alt="Workshop drawer with the unified item hover popup">
+</p>
 
 > Automation runs **in the open browser tab** — the page sends the commands, so a
 > tab must stay open somewhere for characters to keep working. Run automation in
@@ -66,7 +86,7 @@ src/
   api/        client (fetch + retry + pagination), typed action calls
   catalog/    load *.json into typed Maps; lookups (item, monster, mapAt, …)
   state/      signals store, persistence, the apply chokepoint, boot sync,
-              gather/refine automation loops
+              the queue runner + shared execution mechanics
   ui/         Preact components (MapView, CharacterPanel, CatalogPanel, …)
   types/      api.ts (dynamic) + catalog.ts (static) domain models
 ```
