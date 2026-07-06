@@ -19,7 +19,7 @@ import { monteCarlo } from "../sim/monte";
 import { unmodeledEffects } from "../sim/effects";
 import { simAccuracy, simDeviations } from "../sim/validate";
 import { bestInSlot } from "../plan/bis";
-import { monsterList } from "./PlanControl";
+import { monsterList } from "./QueuePanel";
 import type { TurnEvent } from "../sim/combat";
 import type { Character, GearSlot } from "../types/api";
 import type { Item } from "../types/catalog";

@@ -1,9 +1,7 @@
 import type { Character } from "../types/api";
-import { characterList, craftSkillPins, focusCharacter, selectedCharacter } from "../state/store";
-import { campaignJobs } from "../state/campaign";
+import { CRAFT_TRAIN_SKILLS, characterList, craftSkillPins, focusCharacter, selectedCharacter } from "../state/store";
 import { queues } from "../state/queue";
 import { queueItemText } from "../plan/queue";
-import { CRAFT_TRAIN_SKILLS } from "../plan/traincraft";
 import { tileAt } from "../catalog";
 import { asset, assetFallback, pct } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
@@ -129,16 +127,11 @@ export function CharacterMini({ ch }: { ch: Character }) {
 }
 
 /**
- * The live status of whatever runner is driving this character (they're mutually
- * exclusive, so at most one is active), or null when idle. `cls` selects the tag
- * color: default (green) for productive phases, "banking" (gold) for logistics.
+ * The live status of the queue driving this character, or null when idle.
+ * `cls` selects the tag color: default (green) for combat, "banking" (gold)
+ * for logistics.
  */
 function activeStatus(name: string): { note: string; cls: string } | null {
-  const cjob = campaignJobs.value[name];
-  if (cjob) {
-    const combat = cjob.phase === "execute";
-    return { note: cjob.note || cjob.phase, cls: combat ? "" : "banking" };
-  }
   const q = queues.value[name];
   if (q?.running) {
     const head = q.items[0];

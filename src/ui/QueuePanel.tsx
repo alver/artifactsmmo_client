@@ -12,13 +12,23 @@ import { catalog, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
 import { addItem, clearQueue, moveItem, queues, removeItem, startQueue, stopQueue, updateItem } from "../state/queue";
-import { campaignJobs } from "../state/campaign";
-import { monsterList } from "./PlanControl";
 import type { JSX } from "preact";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
 import type { Character } from "../types/api";
 
-/** The item kinds the user can create by hand (the rest arrive via the planner). */
+/** All normal monsters, easiest first (shared with the sim playground). */
+export function monsterList(): { code: string; name: string; level: number }[] {
+  try {
+    return [...catalog().monsters.values()]
+      .filter((m) => m.type === "normal")
+      .map((m) => ({ code: m.code, name: m.name, level: m.level }))
+      .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
+/** The item kinds the add form offers ("train" exists only for legacy saved queues). */
 const ADDABLE: { kind: string; label: string }[] = [
   { kind: "move", label: "🚶 Move to a tile" },
   { kind: "rest", label: "💤 Rest to full HP" },
@@ -29,18 +39,13 @@ const ADDABLE: { kind: string; label: string }[] = [
   { kind: "sell", label: "💰 Sell bank stock ×N" },
   { kind: "deposit-all", label: "📦 Deposit everything" },
   { kind: "gear", label: "🧰 Equip for a job" },
+  { kind: "accept-task", label: "📜 Get a task" },
   { kind: "deliver", label: "🤝 Deliver task items" },
   { kind: "turn-in", label: "✅ Turn in the task" },
 ];
 
-function otherLoop(name: string): string | null {
-  if (campaignJobs.value[name]) return "running a campaign";
-  return null;
-}
-
 export function QueueSection({ ch }: { ch: Character }) {
   const q = queues.value[ch.name] ?? { items: [], running: false };
-  const busy = otherLoop(ch.name);
   const pausedError = !q.running ? q.items[0]?.error : undefined;
 
   return (
@@ -59,8 +64,8 @@ export function QueueSection({ ch }: { ch: Character }) {
           <>
             <button
               class="btn-refine"
-              disabled={q.items.length === 0 || !!busy}
-              title={busy ? `busy ${busy} — stop it first` : "Run the queue from the top"}
+              disabled={q.items.length === 0}
+              title="Run the queue from the top"
               onClick={() => startQueue(ch.name)}
             >
               ▶ Run
@@ -79,12 +84,11 @@ export function QueueSection({ ch }: { ch: Character }) {
           </>
         )}
       </div>
-      {busy && !q.running && <div class="foot-hint">busy {busy} — stop it to run the queue</div>}
 
       <AddForm ch={ch} />
 
       {q.items.length === 0 && (
-        <div class="muted" style={{ fontSize: 12 }}>Empty — add a step above or use the planner.</div>
+        <div class="muted" style={{ fontSize: 12 }}>Empty — add a step above.</div>
       )}
 
       <div class="q-list">
@@ -203,6 +207,7 @@ function AddForm({ ch }: { ch: Character }) {
   const [code, setCode] = useState("");
   const [gearJob, setGearJob] = useState("fight");
   const [gearReset, setGearReset] = useState(false);
+  const [taskMaster, setTaskMaster] = useState<"monsters" | "items">("monsters");
 
   const stats = ch as unknown as Record<string, number>;
   const monsters = monsterList();
@@ -265,6 +270,7 @@ function AddForm({ ch }: { ch: Character }) {
         if (gearJob === "craft") return { kind: "gear", job: { kind: "craft" }, reset };
         return { kind: "gear", job: { kind: "gather", skill: gearJob }, reset };
       }
+      case "accept-task": return { kind: "accept-task", master: taskMaster };
       case "deliver": return { kind: "deliver" };
       case "turn-in": return { kind: "turn-in" };
       default: return null;
@@ -363,6 +369,18 @@ function AddForm({ ch }: { ch: Character }) {
         >
           ×<input class="cat-num" type="number" min={0} value={times} onInput={(e) => setTimes(num(e))} />
         </label>
+      )}
+
+      {kind === "accept-task" && (
+        <select
+          class="cp-refine-select"
+          value={taskMaster}
+          title="Which Tasks Master to take the task from"
+          onChange={(e) => setTaskMaster(sel(e) as "monsters" | "items")}
+        >
+          <option value="monsters">Monsters task (fight)</option>
+          <option value="items">Items task (deliver)</option>
+        </select>
       )}
 
       {kind === "gear" && (

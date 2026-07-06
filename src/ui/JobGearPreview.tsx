@@ -1,9 +1,9 @@
 // Job gear preview — the best owned (bank ∪ inventory ∪ equipped) set for a
-// non-combat job, computed by plan/jobgear.ts — the exact planner the
-// automation loops re-equip with. Shows the effect totals (tool speed /
-// prospecting / wisdom) of the worn vs recommended set and the per-slot swaps,
-// with one action: queue a "gear" item that performs the swap. Combat sets are
-// not previewed here — the Planner and #/sim cover those.
+// non-combat job, computed by plan/jobgear.ts — the exact picker the queue
+// re-equips with. Shows the effect totals (tool speed / prospecting / wisdom)
+// of the worn vs recommended set and the per-slot swaps, with one action:
+// queue a "gear" item that performs the swap. Combat sets are not previewed
+// here — #/sim covers those.
 //
 // Cheap by construction: gather/craft jobs are per-slot argmaxes (no fight
 // solver), so computing on every render is fine.

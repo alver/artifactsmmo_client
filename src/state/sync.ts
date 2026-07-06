@@ -20,7 +20,6 @@ import {
   syncing,
 } from "./store";
 import { loadPersisted, saveState } from "./persist";
-import { resumeCampaign } from "./campaign";
 import { resumeQueue } from "./queue";
 import { api, getAllPages, hasToken } from "../api/client";
 import { loadCatalog } from "../catalog";
@@ -35,8 +34,7 @@ export async function boot(): Promise<void> {
   catalogReady.value = true;
   if (authed.value) {
     await reconcile(); // one authoritative sync before runners act on character state
-    resumeCampaign(); // re-launch automation orders saved from a previous session
-    resumeQueue();
+    resumeQueue(); // re-launch queues saved from a previous session
   }
 }
 
@@ -105,7 +103,6 @@ export async function login(): Promise<void> {
   authed.value = hasToken();
   if (authed.value) {
     await reconcile();
-    resumeCampaign();
     resumeQueue();
   }
 }

@@ -1,10 +1,10 @@
-// Shared mechanics for the automation runners (queue / campaign).
+// Shared mechanics for the queue runner (and any future runner).
 //
-// These are the cooldown-paced primitives every runner copy-pasted: wait out a
-// cooldown (interruptible or full), move-if-not-there, find the nearest tile of a
-// kind, deposit the whole inventory, detect an inventory-full error. They are
-// job-type independent — each runner keeps its own job signal, stopFlags and
-// control flow; only these building blocks are shared.
+// These are the cooldown-paced primitives: wait out a cooldown (interruptible
+// or full), move-if-not-there, find the nearest tile of a kind, deposit the
+// whole inventory, detect an inventory-full error. They are job-type
+// independent — a runner keeps its own job signal, stopFlags and control flow;
+// only these building blocks are shared.
 
 import * as actions from "../api/actions";
 import { catalog } from "../catalog";
@@ -80,8 +80,8 @@ export function bankQty(code: string): number {
 
 /**
  * Deposit everything the character is carrying (a no-op with empty inventory).
- * `except` protects working stock — the campaign's food/potions/task items —
- * from being banked off with the loot. Pocket gold is swept into the vault on
+ * `except` protects working stock — food/potions/task items — from being
+ * banked off with the loot. Pocket gold is swept into the vault on
  * every visit too (buy steps withdraw their cost back on demand — see
  * exec.ts runStep "buy").
  */

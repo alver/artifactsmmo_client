@@ -516,7 +516,7 @@ body,
   margin-bottom: 8px;
 }
 
-/* Bigger controls in the control column (planner + queue management). */
+/* Bigger controls in the control column (queue management). */
 .ws-col-control .cp-refine-select,
 .ws-col-control .btn-refine,
 .ws-col-control .cat-btn {
@@ -1533,7 +1533,7 @@ body,
 }
 
 /* ── shared select / action-button controls (named for their refine-era origin;
-      used across the planner, queue, catalogs and sim playground) ── */
+      used across the queue, catalogs and sim playground) ── */
 .cp-refine-select {
   flex: 1;
   min-width: 0;
@@ -1559,20 +1559,6 @@ body,
 }
 .btn-refine:not(:disabled):hover {
   filter: brightness(1.15);
-}
-.cp-plan-running .btn-stop {
-  flex: 0 0 auto;
-  font-size: 12px;
-  line-height: 1;
-  padding: 5px 9px;
-  border-radius: 6px;
-  background: #4a2326;
-  border: 1px solid #7a3b3f;
-  color: #f3c9cc;
-}
-.cp-plan-running .btn-stop:hover {
-  border-color: #c0504f;
-  background: #5a2a2e;
 }
 
 /* ── plan queue (user-editable action list, ui/QueuePanel.tsx) ── */

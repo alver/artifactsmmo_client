@@ -3,9 +3,9 @@
 // another, top to bottom. Fight and gather items with times 0 run FOREVER —
 // this is how "beat a monster" grinds until stopped.
 //
-// Unlike the campaign, PRESENCE in the signal does NOT mean running — the
-// queue is a persistent document the user edits; a `running` flag inside the
-// entry marks execution. Every item's completion condition is checked BEFORE
+// PRESENCE in the signal does NOT mean running — the queue is a persistent
+// document the user edits; a `running` flag inside the entry marks execution.
+// Every item's completion condition is checked BEFORE
 // acting, so items are skip-if-satisfied and a reload resumes mid-item (fight
 // 7/20 stays 7/20 — progress lives on the item and every increment goes
 // through the signal).
@@ -21,14 +21,13 @@ import * as actions from "../api/actions";
 import { item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
 import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, stripAllMap } from "../plan/jobgear";
-import { QUEUE_KINDS, planToItems, queueItemText } from "../plan/queue";
+import { QUEUE_KINDS, queueItemText } from "../plan/queue";
 import { characters, pushLog } from "./store";
-import { campaignJobs } from "./campaign";
 import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, freeSpace, gearSwapStep, goToMaster, invCount, invQty, runStep } from "./exec";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
-import type { AcquisitionStep, Plan } from "../plan/types";
+import type { AcquisitionStep } from "../plan/types";
 import type { Character } from "../types/api";
 
 export interface QueueState {
@@ -68,9 +67,6 @@ effect(() => {
     /* quota / unavailable — non-fatal */
   }
 });
-
-/** Is the queue currently EXECUTING for this character (⇒ other loops must not start)? */
-export const queueActive = (name: string): boolean => !!queues.value[name]?.running;
 
 function setQueue(name: string, patch: Partial<QueueState>): void {
   const cur = queues.value[name];
@@ -126,11 +122,6 @@ export function clearQueue(name: string): void {
   const cur = queues.value[name];
   if (!cur || cur.running) return;
   setQueue(name, { items: [], note: undefined });
-}
-
-/** Flatten a compiled plan onto the end of the queue. */
-export function enqueuePlan(name: string, plan: Plan): void {
-  for (const it of planToItems(plan)) addItem(name, it);
 }
 
 // ── The runner ───────────────────────────────────────────────────────────────
@@ -334,6 +325,16 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (!desired) return true; // no set for this job (e.g. no winnable fight gear) — keep current
       return (await gearSwapStep(name, ch, desired, ctx)) === "done";
     }
+    case "accept-task": {
+      if (ch.task) return true; // already carrying a task (either type)
+      const at = await goToMaster(name, ch, it.master, ctx.note);
+      if (at === "missing") throw new Error(`no ${it.master} tasks master on the map`);
+      if (at === "there") {
+        ctx.note("accepting a task");
+        await step(name, () => actions.taskNew(name));
+      }
+      return false; // the echo sets ch.task → the next tick completes the item
+    }
     case "deliver": {
       const remaining = Math.max(0, ch.task_total - ch.task_progress);
       if (ch.task_type !== "items" || remaining <= 0) return true;
@@ -377,7 +378,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
   }
 }
 
-// Loss streaks are per-run, in-memory (matches the campaign).
+// Loss streaks are per-run, in-memory.
 const lossState = new Map<string, { losses: number }>();
 const S = (name: string): { losses: number } => {
   let s = lossState.get(name);
@@ -429,10 +430,6 @@ export function startQueue(name: string): void {
   const q = queues.value[name];
   if (!q || q.running) return;
   if (!q.items.length) { log(name, "queue is empty", "bad"); return; }
-  if (campaignJobs.value[name]) {
-    log(name, "stop the campaign first", "bad");
-    return;
-  }
   if (!characters.value[name]) return;
   stopFlags.delete(name);
   S(name).losses = 0;
@@ -452,14 +449,13 @@ export function stopQueue(name: string): void {
 
 /**
  * Re-launch queues that were running when the page unloaded. Call once after
- * the boot sync. A queue whose character is gone or whose character another
- * loop owns is demoted to stopped — the ITEMS are always kept (the queue is a
- * document, not just a job).
+ * the boot sync. A queue whose character is gone is demoted to stopped — the
+ * ITEMS are always kept (the queue is a document, not just a job).
  */
 export function resumeQueue(): void {
   for (const [name, q] of Object.entries(queues.value)) {
     if (!q.running) continue;
-    if (characters.value[name] && !campaignJobs.value[name]) {
+    if (characters.value[name]) {
       stopFlags.delete(name);
       log(name, "queue resumed after reload", "info");
       void runLoop(name);

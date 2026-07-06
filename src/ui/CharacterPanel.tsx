@@ -1,7 +1,6 @@
 import { useState } from "preact/hooks";
-import { characters, characterList, craftFocus, craftSkillPins, selectedCharacter, toggleCraftPin } from "../state/store";
+import { CRAFT_TRAIN_SKILLS, characters, characterList, craftFocus, craftSkillPins, selectedCharacter, toggleCraftPin } from "../state/store";
 import { saveState } from "../state/persist";
-import { CRAFT_TRAIN_SKILLS } from "../plan/traincraft";
 import { item, itemName, monster, npc, resource, tileAt } from "../catalog";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
@@ -10,7 +9,6 @@ import { GearSlots } from "./GearSlots";
 import { JobGearPreview } from "./JobGearPreview";
 import { ActionBar } from "./ActionBar";
 import { CombatForecast } from "./CombatForecast";
-import { PlanControl } from "./PlanControl";
 import { QueueSection } from "./QueuePanel";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
@@ -97,7 +95,7 @@ export function contentLabel(type: string, code: string): string {
 /**
  * The main character workspace: full state and control of the selected
  * character laid out as a multi-column dashboard so (almost) everything is
- * visible without scrolling. The control column (Planner + Queue) comes first
+ * visible without scrolling. The control column (the Queue) comes first
  * and widest; equipment/combat and skills/inventory fill the other columns.
  * Selection comes from the roster strip above (see ui/CharacterMini.tsx).
  */
@@ -152,11 +150,6 @@ export function CharacterPanel() {
 
       <div class="ws-grid">
         <div class="ws-col ws-col-control">
-          <details class="ws-card" open>
-            <summary>Planner</summary>
-            <PlanControl ch={ch} />
-          </details>
-
           <details class="ws-card" open>
             <summary>Queue{queueCount > 0 ? ` (${queueCount})` : ""}</summary>
             <QueueSection ch={ch} />

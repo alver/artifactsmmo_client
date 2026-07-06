@@ -1,9 +1,7 @@
-// Shared execution primitives for the plan-driven runners (campaign + queue).
-//
-// Extracted from campaign.ts so both the self-healing campaign loop and the
-// static user-edited queue execute steps through the SAME code — the risky
-// mechanics (bank-off, food-first healing, forecast gating, craft chunking,
-// unequip-then-equip) live once here and can't drift between runners.
+// Shared execution primitives for the queue runner — the risky mechanics
+// (bank-off, food-first healing, forecast gating, craft chunking,
+// unequip-then-equip) live once here, so any future runner built on top
+// executes steps through the SAME code and the rules can't drift.
 //
 // This module is deliberately signal-free with respect to loop jobs: it may
 // import actions/catalog/sim/store/loopkit but never a loop's job signal, so
@@ -12,12 +10,12 @@
 
 import * as actions from "../api/actions";
 import { ApiError } from "../api/client";
-import { item, itemName, monster as monsterOf, npc as npcOf } from "../catalog";
+import { item, itemName, npc as npcOf } from "../catalog";
 import { currentFighter } from "../sim/stats";
 import { simulate } from "../sim/combat";
 import { jobGear, nextGearAction } from "../plan/jobgear";
 import { bankDetails, bankItems, characters } from "./store";
-import { depositAll, moveTo, nearest, nearestBank, step, waitCooldownFull } from "./loopkit";
+import { depositAll, moveTo, nearest, nearestBank, step } from "./loopkit";
 import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
 import type { Character, GearSlot } from "../types/api";
 import type { Monster } from "../types/catalog";
@@ -177,16 +175,11 @@ export function desiredForJob(name: string, ch: Character, job: GearJob): Partia
   return desired;
 }
 
-/**
- * What one runStep call actually did. The campaign ignores it (it re-derives
- * from live state every tick); the queue counts it toward the item's progress.
- */
+/** What one runStep call actually did — the queue counts it toward the item's progress. */
 export type StepResult =
   | { did: "acted" } // moved / withdrew / bought / gathered
   | { did: "banked" } // a bank-off ran instead of the action
-  | { did: "healed" } // farm path healed instead of fighting
-  | { did: "crafted"; produced: number } // items produced this call (times × recipe.quantity)
-  | { did: "fought"; won: boolean }; // farm path fought once
+  | { did: "crafted"; produced: number }; // items produced this call (times × recipe.quantity)
 
 /** Execute one acquisition step (one cooldown action). Throws on failure (caller decides). */
 export async function runStep(name: string, ch: Character, s: AcquisitionStep, ctx: StepCtx): Promise<StepResult> {
@@ -240,19 +233,6 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       await step(name, () => actions.gather(name));
       return { did: "acted" };
     }
-    case "farm": {
-      const t = needTile();
-      ctx.note(`farm ${itemName(s.code)}`);
-      await moveTo(name, t.x, t.y);
-      const cur = characters.value[name] ?? ch;
-      const m = monsterOf(s.monster);
-      if (m && !simulate(currentFighter(cur), m).win) throw new Error(`can't farm ${m.name} — not a safe win`);
-      if (cur.hp < cur.max_hp) { await healOnce(name, cur, ctx.food, ctx.note); return { did: "healed" }; }
-      if (invCount(cur) >= cur.inventory_max_items) { await bankOff(name, t.x, t.y, keep, ctx.note); return { did: "banked" }; }
-      const r = await actions.fight(name);
-      await waitCooldownFull(name);
-      return { did: "fought", won: r.fight?.result === "win" };
-    }
     case "craft": {
       const t = needTile();
       ctx.note(`craft ${itemName(s.code)}`);
@@ -276,7 +256,7 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
 /**
  * A fight round's outcome. "acted" ⇒ an intermediate action (move/heal/bank)
  * ran; "won"/"lost" ⇒ a fight happened; the terminal outcomes are RETURNED
- * for the caller to decide (the campaign finishes, the queue pauses):
+ * for the caller to decide (the queue pauses):
  *   "no-win"  — the fresh forecast refuses the fight
  *   "gave-up" — 2 losses in a row
  */
@@ -284,8 +264,8 @@ export type FightOutcome = "acted" | "won" | "lost" | "no-win" | "gave-up";
 
 /**
  * One combat-phase action: walk to the tile, heal (food first), re-gate on a
- * fresh forecast, bank off overflow, then fight once. Shared by the campaign
- * and the queue so the combat safety rules can't drift between them.
+ * fresh forecast, bank off overflow, then fight once. All the combat safety
+ * rules in one place.
  */
 export async function fightRound(
   name: string,

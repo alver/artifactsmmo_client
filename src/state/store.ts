@@ -6,7 +6,14 @@ import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
 import type { Account, AccountAchievement, BankDetails, BankItem, Character } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
-import { CRAFT_TRAIN_SKILLS } from "../plan/traincraft";
+
+/** The workshop skills a character can specialize in (the 📌 pin vocabulary). */
+export const CRAFT_TRAIN_SKILLS: [string, string][] = [
+  ["weaponcrafting", "Weaponcrafting"],
+  ["gearcrafting", "Gearcrafting"],
+  ["jewelrycrafting", "Jewelrycrafting"],
+  ["cooking", "Cooking"],
+];
 
 export interface LogEntry {
   id: number;

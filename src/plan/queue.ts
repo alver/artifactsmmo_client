@@ -1,12 +1,14 @@
 // The queue item vocabulary — the user-editable "planned list of actions" a
 // character works through one item at a time (src/state/queue.ts runs it).
+// These simple items are the ONLY execution vocabulary; any future planner
+// compiles down to them instead of running its own machinery.
 //
-// Pure module: item types, the Plan → items flattener, and the row text/icon
-// helpers the UI renders with. No signals, no API.
+// Pure module: item types and the row text/icon helpers the UI renders with.
+// No signals, no API.
 
 import { itemName, monster as monsterOf } from "../catalog";
 import { titleCase } from "../lib/util";
-import type { FoodSpec, GearJob, Plan } from "./types";
+import type { FoodSpec, GearJob } from "./types";
 import type { GearSlot } from "../types/api";
 
 export type QueueItem = { id: string; error?: string } & (
@@ -33,6 +35,9 @@ export type QueueItem = { id: string; error?: string } & (
   // (inventory + gold), strip every slot incl. utilities, then wear the job
   // set from the bank. Completes when the worn gear matches desired ∩ available.
   | { kind: "gear"; desired?: Partial<Record<GearSlot, string>>; job?: GearJob; keep?: string[]; reset?: boolean }
+  // Accept a new task from the given Tasks Master. Skip-if-satisfied: already
+  // carrying ANY task (either type) counts as done.
+  | { kind: "accept-task"; master: "monsters" | "items" }
   // taskTrade the current ch.task (code read live), inventory + bank stock in
   // bag-sized pieces. `partial` ⇒ complete when the stock runs out (production
   // items follow); without it, running out with the task unfinished is an error.
@@ -44,7 +49,7 @@ export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "move", "rest", "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "train", "gear", "deliver", "turn-in",
+  "buy", "sell", "train", "gear", "accept-task", "deliver", "turn-in",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -54,26 +59,6 @@ export type QueueItemInput = QueueItem extends infer T ? (T extends { id: string
 
 /** A new item with a fresh id (spread-friendly helper for the UI and the flattener). */
 export const withId = (it: QueueItemInput): QueueItem => ({ ...it, id: newId() }) as QueueItem;
-
-/**
- * Flatten a compiled Plan into editable queue rows. Only queue-run plans
- * (beat-monster: no execution mode) flatten — campaign plans (task /
- * train-craft) run via startCampaign and return no rows.
- *
- * Beat-monster = the whole simple model in two rows: a full bank reset that
- * wears the best fight set the bank holds, then fight until stopped (the fight
- * row re-checks the bank each round and upgrades when something better lands).
- */
-export function planToItems(plan: Plan): QueueItem[] {
-  const ex = plan.execution;
-  if (!ex.mode && ex.monster) {
-    return [
-      withId({ kind: "gear", job: { kind: "fight", monster: ex.monster }, reset: true, keep: ex.keep }),
-      withId({ kind: "fight", monster: ex.monster, times: ex.repeat, done: 0, gear: true, food: ex.food, keep: ex.keep }),
-    ];
-  }
-  return [];
-}
 
 export function queueItemText(it: QueueItem): string {
   switch (it.kind) {
@@ -99,6 +84,7 @@ export function queueItemText(it: QueueItem): string {
         : "equip job gear";
       return it.reset ? `Bank reset + ${what}` : what.charAt(0).toUpperCase() + what.slice(1);
     }
+    case "accept-task": return `Get a task (${it.master})`;
     case "deliver": return it.partial ? "Deliver task items from stock" : "Deliver task items";
     case "turn-in": return "Turn in the task";
   }
@@ -107,5 +93,5 @@ export function queueItemText(it: QueueItem): string {
 export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰",
-  "train": "🎓", "gear": "🧰", "deliver": "🤝", "turn-in": "✅",
+  "train": "🎓", "gear": "🧰", "accept-task": "📜", "deliver": "🤝", "turn-in": "✅",
 };
