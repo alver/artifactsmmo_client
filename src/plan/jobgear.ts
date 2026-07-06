@@ -43,7 +43,7 @@ export const effectValue = (it: Item, code: string): number => {
 };
 
 /** Everything the character can draw on: inventory + bank + worn gear, by count. */
-function ownedQty(ch: Character, bank: BankItem[]): Map<string, number> {
+export function ownedQtyOf(ch: Character, bank: BankItem[]): Map<string, number> {
   const q = new Map<string, number>();
   const add = (code: string, n: number) => {
     if (code && n > 0) q.set(code, (q.get(code) ?? 0) + n);
@@ -77,7 +77,7 @@ function bestBag(ch: Character, qty: Map<string, number>): string {
 export function jobSetFromRecommendation(ch: Character, bank: BankItem[], rec: GearRecommendation): Partial<Record<GearSlot, string>> {
   const out: Partial<Record<GearSlot, string>> = {};
   for (const g of MANAGED_SLOTS) out[g] = rec.slots[g] ?? "";
-  out.bag = bestBag(ch, ownedQty(ch, bank));
+  out.bag = bestBag(ch, ownedQtyOf(ch, bank));
   return out;
 }
 
@@ -90,13 +90,14 @@ export function jobSetFromRecommendation(ch: Character, bank: BankItem[], rec: G
  */
 export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<Record<GearSlot, string>> | undefined {
   if (job.kind === "none") return undefined;
-  const qty = ownedQty(ch, bank);
+  const qty = ownedQtyOf(ch, bank);
 
   if (job.kind === "fight") {
     // noUtilities: this set feeds the bank swap, which never equips potion
     // stacks — a forecast counting them would let fightRound's live gate
-    // refuse fights the solver called winnable.
-    const rec = bestInSlot(ch, job.monster, { owned: new Set(qty.keys()), includeCraftable: false, noUtilities: true })[0];
+    // refuse fights the solver called winnable. ownedQty lets the ring pair
+    // use two copies of the same ring.
+    const rec = bestInSlot(ch, job.monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, noUtilities: true })[0];
     return rec ? jobSetFromRecommendation(ch, bank, rec) : undefined;
   }
 
@@ -126,10 +127,13 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
 
   // Gathering tool: the weapon slot is scored by cooldown reduction instead
   // (tools carry a negative `<skill>` effect; most negative = fastest).
+  // Deterministic ties (worn first, then code) — map order moves with the
+  // swap's own actions and must never decide the winner.
   let tool = "";
   if (job.kind === "gather") {
+    const wornWeapon = slotCode(ch, "weapon");
     let bestVal = 0;
-    for (const code of qty.keys()) {
+    for (const code of [...qty.keys()].sort((a, b) => (a === wornWeapon ? -1 : b === wornWeapon ? 1 : a.localeCompare(b)))) {
       const it = item(code);
       if (!it || it.subtype !== "tool" || !canEquip(ch, it)) continue;
       const v = -effectValue(it, job.skill);
@@ -148,7 +152,7 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
     const worn = slotCode(ch, g);
     const top = (bySlot.get(g) ?? [])
       .filter((c) => (remaining.get(c.code) ?? 0) > 0)
-      .sort((a, b) => b.s - a.s || (b.code === worn ? 1 : 0) - (a.code === worn ? 1 : 0))[0];
+      .sort((a, b) => b.s - a.s || (b.code === worn ? 1 : 0) - (a.code === worn ? 1 : 0) || a.code.localeCompare(b.code))[0];
     if (!top) return "";
     take(top.code);
     return top.code;
@@ -192,6 +196,39 @@ export type GearAction =
   | { kind: "deposit"; items: { code: string; quantity: number }[] }
   | { kind: "deposit-gold"; quantity: number };
 
+const LIKE_SLOT_GROUPS: GearSlot[][] = [
+  ["ring1", "ring2"],
+  ["artifact1", "artifact2", "artifact3"],
+];
+
+/** Permute desired values within interchangeable slot groups to keep worn
+ *  items where they are (returns a copy — frozen plans are never mutated). */
+function canonicalizeGroups(ch: Character, desired: Partial<Record<GearSlot, string>>): Partial<Record<GearSlot, string>> {
+  let out: Partial<Record<GearSlot, string>> | null = null;
+  for (const grp of LIKE_SLOT_GROUPS) {
+    const present = grp.filter((g) => desired[g] !== undefined);
+    if (present.length < 2) continue;
+    const wants = present.map((g) => desired[g]!);
+    const assigned = new Map<GearSlot, string>();
+    for (const g of present) {
+      const worn = slotCode(ch, g);
+      const i = worn ? wants.indexOf(worn) : -1;
+      if (i >= 0) {
+        assigned.set(g, worn);
+        wants.splice(i, 1);
+      }
+    }
+    if (assigned.size === 0) continue; // nothing worn matches — keep as compiled
+    for (const g of present) if (!assigned.has(g)) assigned.set(g, wants.shift() ?? "");
+    for (const [g, code] of assigned) {
+      if (desired[g] === code && !out) continue;
+      out ??= { ...desired };
+      out[g] = code;
+    }
+  }
+  return out ?? desired;
+}
+
 const onBankTile = (ch: Character): boolean => {
   try {
     return tileAt(ch.x, ch.y, layerOf(ch))?.interactions.content?.type === "bank";
@@ -229,6 +266,11 @@ export function nextGearAction(
   desired: Partial<Record<GearSlot, string>>,
   opts: GearActionOpts = {},
 ): GearAction | null {
+  // Like-slot groups are interchangeable: remap `desired` so wanted items the
+  // character ALREADY wears stay in their current slot. Without this, a plan
+  // whose ring1/ring2 assignment merely mirrors the worn one would strip and
+  // re-equip both rings for nothing.
+  desired = canonicalizeGroups(ch, desired);
   const bankQty = new Map<string, number>();
   for (const b of bank) bankQty.set(b.code, (bankQty.get(b.code) ?? 0) + b.quantity);
   const inv = new Map<string, number>();

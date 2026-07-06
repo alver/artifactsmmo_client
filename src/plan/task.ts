@@ -16,7 +16,7 @@ import { titleCase } from "../lib/util";
 import { equippedCodes } from "../sim/stats";
 import { bestInSlot } from "./bis";
 import { resolve } from "./acquire";
-import { jobGear, jobSetFromRecommendation } from "./jobgear";
+import { jobGear, jobSetFromRecommendation, ownedQtyOf } from "./jobgear";
 import { bestFood, foodPerFight, foodQuantity } from "./consumables";
 import type { BankItem, Character, GearSlot } from "../types/api";
 import type { FoodSpec, GearRecommendation, Goal, Plan, Target } from "./types";
@@ -47,8 +47,9 @@ function prepareFight(ch: Character, bank: BankItem[], monsterCode: string, figh
   const name = m?.name ?? titleCase(monsterCode);
 
   // Bank-only: the best set from what is owned RIGHT NOW. noUtilities keeps the
-  // forecast honest — the bank swap never equips potion stacks.
-  const gear = bestInSlot(ch, monsterCode, { owned, includeCraftable: false, noUtilities: true })[0];
+  // forecast honest — the bank swap never equips potion stacks. ownedQty lets
+  // the ring pair use two copies of the same ring.
+  const gear = bestInSlot(ch, monsterCode, { owned, ownedQty: ownedQtyOf(ch, bank), includeCraftable: false, noUtilities: true })[0];
 
   const blockers: string[] = [];
   const notes: string[] = [];

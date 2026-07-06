@@ -274,7 +274,7 @@ function AddForm({ ch, onDone }: { ch: Character; onDone: () => void }) {
 
   return (
     <div class="q-add-form">
-      <select class="cp-refine-select" value={kind} onChange={(e) => { setKind(sel(e)); setCode(""); }}>
+      <select class="cp-refine-select" value={kind} onChange={(e) => { const k = sel(e); setKind(k); setCode(""); setTimes(k === "fight" ? 0 : 10); }}>
         {ADDABLE.map((o) => (
           <option key={o.kind} value={o.kind}>{o.label}</option>
         ))}

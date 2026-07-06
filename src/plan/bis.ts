@@ -24,6 +24,12 @@ import type { GearRecommendation } from "./types";
 export interface BisOptions {
   /** Item codes available right now (inventory ∪ bank ∪ equipped). */
   owned?: Set<string>;
+  /**
+   * Available count per code (inventory ∪ bank ∪ equipped). Lets the ring pair
+   * use TWO copies of the same ring. Codes absent from the map (craftable /
+   * "all"-pool candidates) are treated as producible in any quantity.
+   */
+  ownedQty?: Map<string, number>;
   /** Also consider items craftable at the character's current skill (default true). */
   includeCraftable?: boolean;
   /**
@@ -148,17 +154,22 @@ function buildPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlo
     const keep = codes.filter((c) => pinned.has(c));
     const rest = codes
       .filter((c) => !pinned.has(c))
-      .sort((a, b) => heuristic(item(b)!, m) - heuristic(item(a)!, m))
+      .sort((a, b) => heuristic(item(b)!, m) - heuristic(item(a)!, m) || a.localeCompare(b))
       .slice(0, Math.max(0, cap - keep.length));
     return [...keep, ...rest];
   };
-  for (const s of GEAR_SLOTS) pools[s] = rank(pools[s], s === "weapon" ? weaponCap : perSlotCap);
+  // Final pools are sorted by code: the search's "first candidate wins a tie"
+  // rule must NOT depend on insertion order (inventory → bank → worn), or the
+  // recommendation flips as a swap moves items around and the differ livelocks
+  // chasing it. Sorted pools make bestInSlot a pure function of the owned
+  // MULTISET — which a swap ceremony never changes.
+  for (const s of GEAR_SLOTS) pools[s] = rank(pools[s], s === "weapon" ? weaponCap : perSlotCap).sort();
   return pools as Record<GearSlot, string[]>;
 }
 
 interface Eval { score: number; f: ReturnType<typeof simulate>; worst: ReturnType<typeof simulate>; safe: boolean }
 
-function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>) {
+function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>, worn: Partial<Record<GearSlot, string>>) {
   return (slots: Record<GearSlot, string>): Eval => {
     const codes: string[] = [];
     for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
@@ -167,7 +178,20 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
     if (!f.win || f.timedOut) return { score: -Infinity, f, worst: f, safe: false };
     const worst = simulate(fighter, monster, { pessimistic: true });
     const safe = worst.win;
-    return { score: (safe ? 1e9 : 0) + f.hpRemaining * 1000 - f.turns, f, worst, safe };
+    // Combat-equal sets are broken deterministically: prefer MORE gear (a
+    // stat-neutral ring beats an empty slot — the fleet's spares get worn),
+    // then prefer what is ALREADY worn (an equal alternative in the bank must
+    // never trigger a swap — that churn is exactly the bank livelock). The
+    // epsilons stay orders of magnitude below any real forecast difference
+    // (1 turn = 1.0; the smallest EV hp delta ≈ 50).
+    let filled = 0;
+    let keep = 0;
+    for (const s of GEAR_SLOTS) {
+      if (!slots[s]) continue;
+      filled++;
+      if (slots[s] === worn[s]) keep++;
+    }
+    return { score: (safe ? 1e9 : 0) + f.hpRemaining * 1000 - f.turns + filled * 1e-3 + keep * 1e-4, f, worst, safe };
   };
 }
 
@@ -182,7 +206,12 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
   if (!m) return [];
   const base = baseStats(ch);
   const pools = buildPools(ch, m, opts);
-  const evaluate = makeEvaluator(base, m);
+  const worn: Partial<Record<GearSlot, string>> = {};
+  for (const s of GEAR_SLOTS) worn[s] = slotCode(ch, s);
+  const evaluate = makeEvaluator(base, m, worn);
+  // How many copies of a code the group search may place: owned counts when
+  // known, else "as many as the group has slots" (craftable candidates).
+  const countOf = (code: string): number => opts.ownedQty?.get(code) ?? 3;
 
   // Weapon fixes which element you scale — the one coupling that matters — so we
   // try each candidate weapon (plus the current one and unarmed) as an outer loop.
@@ -210,8 +239,9 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
         slots[s] = best;
       }
       // Ring pair / artifact triple / utility pair (identical items across the
-      // like slots, so one pool each; picked as distinct combinations).
-      chooseGroup(slots, RING_SLOTS, pools.ring1, evaluate);
+      // like slots, so one pool each). Rings may repeat a code (two copper
+      // rings) up to the owned count; artifacts must stay distinct.
+      chooseGroup(slots, RING_SLOTS, pools.ring1, evaluate, countOf);
       chooseGroup(slots, ARTIFACT_SLOTS, pools.artifact1, evaluate);
       if (!opts.noUtilities) chooseGroup(slots, UTILITY_SLOTS, pools.utility1, evaluate);
     }
@@ -238,17 +268,20 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
 }
 
 /**
- * Fill a group of like slots (rings / artifacts / utilities) with the distinct
+ * Fill a group of like slots (rings / artifacts / utilities) with the
  * combination of candidates that maximizes the objective. The slots are
- * interchangeable, so we enumerate *combinations* (subsets of size 0..n) of the
- * capped pool and place each into the group, leaving the rest empty — no wasted
- * permutations. Small pools ⇒ exhaustive is cheap.
+ * interchangeable, so we enumerate multiset combinations (size 0..n) of the
+ * capped pool — no wasted permutations. When `countOf` is given, a code may
+ * repeat up to its owned count (two copper rings); without it every code is
+ * used at most once (artifacts must be distinct). Small pools ⇒ exhaustive is
+ * cheap.
  */
 function chooseGroup(
   slots: Record<GearSlot, string>,
   group: GearSlot[],
   pool: string[],
   evaluate: (s: Record<GearSlot, string>) => Eval,
+  countOf?: (code: string) => number,
 ): void {
   const n = group.length;
   const cap = pool.slice(0, 12);
@@ -257,11 +290,14 @@ function chooseGroup(
 
   const combos: string[][] = [];
   const gen = (start: number, chosen: string[]) => {
-    combos.push(chosen.slice()); // record subsets of every size 0..n exactly once
+    combos.push(chosen.slice()); // record multisets of every size 0..n exactly once
     if (chosen.length === n) return;
     for (let i = start; i < cap.length; i++) {
+      const max = countOf ? Math.min(countOf(cap[i]), n) : 1;
+      const used = chosen.reduce((s, c) => s + (c === cap[i] ? 1 : 0), 0);
+      if (used >= max) continue;
       chosen.push(cap[i]);
-      gen(i + 1, chosen);
+      gen(used + 1 >= max ? i + 1 : i, chosen);
       chosen.pop();
     }
   };

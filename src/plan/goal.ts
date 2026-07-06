@@ -10,6 +10,7 @@
 
 import { monster as monsterOf } from "../catalog";
 import { bestInSlot } from "./bis";
+import { ownedQtyOf } from "./jobgear";
 import { compileTaskPlan, ownedCodes } from "./task";
 import { compileTrainCraft } from "./traincraft";
 import type { Character } from "../types/api";
@@ -21,7 +22,7 @@ export function compileGoal(ch: Character, bank: { code: string; quantity: numbe
   if (goal.kind === "beat-monster") {
     const m = monsterOf(goal.monster);
     // Bank-only, no utilities: exactly what the reset + swap will actually wear.
-    const gear = m ? bestInSlot(ch, goal.monster, { owned: ownedCodes(ch, bank), includeCraftable: false, noUtilities: true })[0] : undefined;
+    const gear = m ? bestInSlot(ch, goal.monster, { owned: ownedCodes(ch, bank), ownedQty: ownedQtyOf(ch, bank), includeCraftable: false, noUtilities: true })[0] : undefined;
     if (!m || !gear) {
       return {
         goal,

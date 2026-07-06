@@ -81,7 +81,8 @@ function SkillsSection({ ch, stat }: { ch: Character; stat: Record<string, numbe
   );
 }
 
-function contentLabel(type: string, code: string): string {
+/** Human name of a tile's content (also used by the roster cards' location line). */
+export function contentLabel(type: string, code: string): string {
   const name =
     type === "resource"
       ? resource(code)?.name

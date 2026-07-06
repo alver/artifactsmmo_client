@@ -1,10 +1,29 @@
 import type { Character } from "../types/api";
-import { characterList, focusCharacter, selectedCharacter } from "../state/store";
+import { characterList, craftSkillPins, focusCharacter, selectedCharacter } from "../state/store";
 import { campaignJobs } from "../state/campaign";
 import { queues } from "../state/queue";
 import { queueItemText } from "../plan/queue";
+import { CRAFT_TRAIN_SKILLS } from "../plan/traincraft";
+import { tileAt } from "../catalog";
 import { asset, assetFallback, pct } from "../lib/util";
 import { CooldownBadge } from "./Cooldown";
+import { contentLabel } from "./CharacterPanel";
+import type { GameMap } from "../types/catalog";
+
+const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
+
+const CONTENT_ICON: Record<string, string> = {
+  monster: "⚔", resource: "⛏", workshop: "⚙", bank: "🏦", npc: "🛒", tasks_master: "📋",
+};
+
+/** What actually matters about a tile: its monster/resource/building, not its biome. */
+function whereLabel(tile: GameMap | undefined): { icon: string; label: string } {
+  const c = tile?.interactions.content;
+  if (!c) return { icon: "📍", label: tile?.name ?? "" };
+  if (c.type === "tasks_master") return { icon: "📋", label: "Tasks Master" };
+  const label = contentLabel(c.type, c.code) + (c.type === "workshop" ? " workshop" : "");
+  return { icon: CONTENT_ICON[c.type] ?? "📍", label };
+}
 
 /**
  * The roster strip across the top of the workspace: one compact card per
@@ -31,6 +50,12 @@ export function Roster() {
 export function CharacterMini({ ch }: { ch: Character }) {
   const selected = selectedCharacter.value === ch.name;
   const status = activeStatus(ch.name);
+  // Pinned crafting specialization (📌 in the Skills card) — shown only when
+  // the user pinned one; the auto-highest highlight stays panel-only.
+  const pin = craftSkillPins.value[ch.name];
+  const pinLabel = pin ? CRAFT_TRAIN_SKILLS.find(([k]) => k === pin)?.[1] : undefined;
+  const tile = tileAt(ch.x, ch.y, layerOf(ch));
+  const where = whereLabel(tile);
 
   const focus = () => focusCharacter(ch.name);
 
@@ -50,6 +75,11 @@ export function CharacterMini({ ch }: { ch: Character }) {
     >
       <div class="pcard-head">
         <span class="pcard-name">{ch.name}</span>
+        {pinLabel && (
+          <span class="pcard-pin" title={`Crafting specialization (pinned): ${pinLabel}`}>
+            📌 {pinLabel}
+          </span>
+        )}
         <span class="pcard-lvl">Lvl {ch.level}</span>
       </div>
       <div class="pcard-body">
@@ -73,6 +103,13 @@ export function CharacterMini({ ch }: { ch: Character }) {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* Where the character stands right now (updates on every move echo):
+          the tile's monster/resource/building leads — the biome name is only
+          the fallback for empty tiles. */}
+      <div class="pcard-loc" title={`${where.label} (${ch.x}, ${ch.y})${tile ? ` · ${tile.name}` : ""}`}>
+        {where.icon} {where.label} · ({ch.x}, {ch.y})
       </div>
 
       {/* Foot: read-only status line + live cooldown timer. Control moved to the panel. */}

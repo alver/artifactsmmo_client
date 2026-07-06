@@ -584,8 +584,18 @@ body,
 }
 
 /* ── card foot: read-only status line + cooldown timer ──── */
+.pcard-loc {
+  margin-top: 6px;
+  padding: 0 2px;
+  font-size: 10.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
 .pcard-foot {
-  margin-top: 8px;
+  margin-top: 4px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -649,6 +659,17 @@ body,
   font-size: 12.5px;
   font-weight: 600;
   color: #a9c2b2;
+}
+/* Pinned crafting specialization badge (only when the user pinned one). */
+.pcard-pin {
+  flex: 0 1 auto;
+  min-width: 0;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .pcard-body {
   display: flex;
