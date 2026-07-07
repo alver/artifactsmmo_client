@@ -125,15 +125,7 @@ function QueueRow({ ch, it, index, running, count }: { ch: Character; it: QueueI
           <button disabled={locked || index <= (running ? 1 : 0)} title="Move up" onClick={() => moveItem(ch.name, it.id, -1)}>↑</button>
           <button disabled={locked || index >= count - 1} title="Move down" onClick={() => moveItem(ch.name, it.id, 1)}>↓</button>
           <button disabled={locked} title="Edit" onClick={() => setEditing(!editing)}>✎</button>
-          {/* Remove works even on the executing head: the in-flight action
-              finishes (a server cooldown can't be cancelled), then the queue
-              moves straight on to the next step. */}
-          <button
-            title={locked ? "Remove — the queue moves to the next step once the current action finishes" : "Remove"}
-            onClick={() => removeItem(ch.name, it.id)}
-          >
-            ✕
-          </button>
+          <button disabled={locked} title="Remove" onClick={() => removeItem(ch.name, it.id)}>✕</button>
         </span>
       </div>
       {it.error && <div class="q-error">⛔ {it.error}</div>}
