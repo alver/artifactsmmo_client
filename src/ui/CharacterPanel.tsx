@@ -119,8 +119,8 @@ export function CharacterPanel() {
   return (
     <div class="ws-body">
       {/* No header — the roster card above already shows everything (avatar,
-          level, location, task, cooldown ring). Only the situational Enter
-          button survives; it renders null unless the tile has a transition. */}
+          level, location, task, cooldown ring). The bar holds Walk (arms map
+          click-to-move) plus the situational Enter button on transition tiles. */}
       <ActionBar ch={ch} />
 
       <div class="ws-grid">

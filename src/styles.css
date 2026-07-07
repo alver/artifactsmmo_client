@@ -1431,6 +1431,16 @@ body,
   image-rendering: pixelated;
   object-fit: contain;
 }
+/* access-gated tile notice (e.g. Tasks Trader behind an achievement) */
+.cat-gate {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--gold);
+}
+.cat-gate.locked {
+  color: var(--bad);
+}
 
 /* ── character workspace atoms (skills, stats — see ui/CharacterPanel) ── */
 .cp-elements {
@@ -2128,6 +2138,15 @@ body,
 .insp-more {
   font-size: 11px;
   color: var(--muted);
+}
+.insp-gate {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--gold);
+}
+.insp-gate.locked {
+  color: var(--bad);
 }
 .insp-effect {
   display: flex;

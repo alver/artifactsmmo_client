@@ -1,13 +1,15 @@
 import { useEffect, useState } from "preact/hooks";
-import { bankDetails, bankItems, characters, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
+import { achievements, achievementsLoading, bankDetails, bankItems, characters, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
 import { itemHover } from "./ItemPopup";
 import type { PanelTarget } from "../state/store";
-import { catalog, item, itemName, npc } from "../catalog";
+import { catalog, item, itemName, npc, tileAt } from "../catalog";
+import { tileGate } from "../state/access";
 import { npcForSell } from "../plan/acquire";
 import { withId } from "../plan/queue";
+import { bankQty, moveTo, nearestBank, step } from "../state/loopkit";
 import { addItem, startQueue } from "../state/queue";
 import { asset, assetFallback, pct, titleCase } from "../lib/util";
-import { reconcile } from "../state/sync";
+import { loadAchievements, reconcile } from "../state/sync";
 import * as actions from "../api/actions";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
@@ -84,6 +86,18 @@ function CatalogBody({ target }: { target: PanelTarget }) {
   const actor = present.find((c) => c.name === selectedCharacter.value) ?? present[0];
   const ctl = useActionRunner(actor); // shared busy + cooldown gate for the whole panel
 
+  // The selected character, for the "Send here" shortcut when nobody's on the tile.
+  const walker = selectedCharacter.value ? characters.value[selectedCharacter.value] : undefined;
+  const walk = useActionRunner(walker);
+
+  // Access-gated tile (e.g. the Tasks Trader behind the Tasks Farmer achievement).
+  const gate = tileGate(tileAt(target.x, target.y, target.layer));
+  useEffect(() => {
+    // A gated tile is the one place unlocked-status matters — fetch achievements
+    // once (on-demand read) so the lock line can say unlocked vs. locked.
+    if (gate && achievements.value === null && !achievementsLoading.peek()) void loadAchievements();
+  }, [target.x, target.y, target.layer]);
+
   const isWorkshop = target.type === "workshop";
   const isBank = target.type === "bank";
   const isTasks = target.type === "tasks_master";
@@ -132,9 +146,28 @@ function CatalogBody({ target }: { target: PanelTarget }) {
             </span>
           </>
         ) : (
-          <span class="muted">Move a character here to {verb}.</span>
+          <>
+            <span class="muted">Move a character here to {verb}.</span>
+            {walker && (
+              <button
+                class="cat-btn"
+                disabled={walk.disabled}
+                title={`Move ${walker.name} to (${target.x}, ${target.y})`}
+                onClick={() => void walk.run(() => actions.move(walker.name, target.x, target.y))}
+              >
+                🚶 Send {walker.name}
+              </button>
+            )}
+          </>
         )}
       </div>
+
+      {gate && (
+        <div class={"cat-gate" + (gate.met === false ? " locked" : "")}>
+          🔒 Requires {gate.label}
+          {gate.met === false ? " — locked for this account" : gate.met === true ? " · unlocked ✓" : ""}
+        </div>
+      )}
 
       <div class="cat-body">
         {isWorkshop ? (
@@ -448,6 +481,24 @@ function NpcRow({ trade: t, curLabel, actor, ctl }: { trade: NpcTrade; curLabel:
 
 /** Tasks master: show the active task + accept / complete / cancel / exchange,
  *  plus a trade row for item-type tasks. */
+/**
+ * Cancel the current task, fetching the 1-tasks_coin fee from the bank first
+ * when the character isn't holding one: nearest bank → withdraw 1 → walk back
+ * → cancel. Each hop waits out its own cooldown (loopkit primitives).
+ */
+async function cancelTaskWithFee(actor: Character): Promise<void> {
+  const name = actor.name;
+  if (invQty(actor, "tasks_coin") < 1) {
+    const home = { x: actor.x, y: actor.y };
+    const bank = nearestBank(actor.x, actor.y);
+    if (!bank) return;
+    await moveTo(name, bank.x, bank.y);
+    await step(name, () => actions.withdrawItems(name, [{ code: "tasks_coin", quantity: 1 }]));
+    await moveTo(name, home.x, home.y);
+  }
+  await actions.taskCancel(name);
+}
+
 function TasksPanel({ actor, ctl }: { actor?: Character; ctl: ActionRunner }) {
   const [qty, setQty] = useState(1);
   if (!actor) return <div class="cat-empty">Move a character here to manage tasks.</div>;
@@ -456,6 +507,8 @@ function TasksPanel({ actor, ctl }: { actor?: Character; ctl: ActionRunner }) {
   const done = hasTask && actor.task_progress >= actor.task_total;
   const isItemTask = actor.task_type === "items";
   const held = hasTask ? invQty(actor, actor.task) : 0;
+  const coinsInHand = invQty(actor, "tasks_coin");
+  const canPayCancel = coinsInHand >= 1 || bankQty("tasks_coin") >= 1;
 
   return (
     <>
@@ -490,11 +543,15 @@ function TasksPanel({ actor, ctl }: { actor?: Character; ctl: ActionRunner }) {
         {hasTask && !done && (
           <button
             class="cat-btn sell"
-            disabled={ctl.disabled}
-            title="Cancel the current task (costs tasks coins)"
+            disabled={ctl.disabled || !canPayCancel}
+            title={
+              canPayCancel
+                ? `Cancel the current task (costs 1 tasks coin${coinsInHand < 1 ? " — fetched from the bank" : ""})`
+                : "Needs 1 tasks coin — none in bag or bank"
+            }
             onClick={() => {
-              if (confirm(`Cancel ${actor.name}'s current task? This costs tasks coins.`)) {
-                void ctl.run(() => actions.taskCancel(actor.name));
+              if (confirm(`Cancel ${actor.name}'s current task? This costs 1 tasks coin.`)) {
+                void ctl.run(() => cancelTaskWithFee(actor));
               }
             }}
           >

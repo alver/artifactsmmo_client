@@ -1,5 +1,6 @@
 import type { ComponentChildren } from "preact";
 import { mapHover } from "../state/store";
+import { tileGate } from "../state/access";
 import { item, monster, npc, resource } from "../catalog";
 import { asset, assetFallback, dropChance, titleCase } from "../lib/util";
 import type { AssetKind } from "../lib/util";
@@ -23,6 +24,19 @@ export function MapInspector() {
   return (
     <div class="inspector" style={style}>
       {renderContent(h.tile)}
+      <GateLine tile={h.tile} />
+    </div>
+  );
+}
+
+/** Access-gate notice for conditional tiles (e.g. the Tasks Trader). */
+function GateLine({ tile }: { tile: GameMap }) {
+  const gate = tileGate(tile);
+  if (!gate) return null;
+  return (
+    <div class={"insp-gate" + (gate.met === false ? " locked" : "")}>
+      🔒 Requires {gate.label}
+      {gate.met === false ? " — locked for this account" : gate.met === true ? " · unlocked ✓" : ""}
     </div>
   );
 }

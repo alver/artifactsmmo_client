@@ -352,7 +352,7 @@ export function MapView() {
       const mover = moveMode.value;
       if (mover) {
         moveMode.value = null;
-        void actions.move(mover, hx, hy);
+        actions.move(mover, hx, hy).catch(() => {}); // failures land in the activity log
         return;
       }
       const content = index.get(`${hx},${hy}`)?.interactions?.content;

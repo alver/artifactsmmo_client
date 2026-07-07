@@ -4,7 +4,8 @@
 
 import { api } from "./client";
 import { applyActionResult } from "../state/apply";
-import { pushLog } from "../state/store";
+import { characters, pushLog } from "../state/store";
+import { gateAt } from "../state/access";
 import type { ActionResult } from "../types/api";
 import type { ItemStack } from "../types/catalog";
 
@@ -19,7 +20,25 @@ async function act(name: string, action: string, body?: unknown): Promise<Action
   }
 }
 
-export const move = (name: string, x: number, y: number) => act(name, "move", { x, y });
+export const move = async (name: string, x: number, y: number): Promise<ActionResult> => {
+  try {
+    return await act(name, "move", { x, y });
+  } catch (e) {
+    // The server's "conditions not met" error only names a condition code; the
+    // static map data knows the tile's gate — rethrow with the requirement
+    // spelled out, so the log line and a paused queue say what to actually do.
+    if (/condition/i.test((e as Error).message ?? "")) {
+      const layer = (characters.value[name] as { layer?: string } | undefined)?.layer ?? "overworld";
+      const gate = gateAt(x, y, layer);
+      if (gate) {
+        const err = new Error(`(${x}, ${y}) is locked — requires ${gate.label}`);
+        pushLog({ ts: Date.now(), character: name, action: "move", text: err.message, kind: "bad" });
+        throw err;
+      }
+    }
+    throw e;
+  }
+};
 export const rest = (name: string) => act(name, "rest");
 export const gather = (name: string) => act(name, "gathering");
 export const fight = (name: string) => act(name, "fight");
