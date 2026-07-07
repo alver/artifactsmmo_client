@@ -43,6 +43,8 @@ A queue is a user-editable ordered list of simple actions (move / fight ×N / ga
 
 These simple items are the **only execution vocabulary**. The old planner/campaign layer (goal compiler, task/train-craft phase machines, acquisition resolver) was removed 2026-07-06 — a future planner must compile goals **down to queue items**, never run its own machinery.
 
+Stop semantics: ⏹ persists `running: false` IMMEDIATELY (a reload can never resurrect a stopped queue) while the loop drains its in-flight action — `liveLoops` covers that gap so ▶ during the drain just cancels the stop instead of double-launching. `queue.ts` self-reloads the page on HMR (a hot swap would zombie the old runLoop).
+
 The runner pattern (copy it if a second runner ever returns): a `signal<Record<name, Job>>`, a module-level `stopFlags` Set, `step()` = run one action then `waitCooldownFull` (`src/state/loopkit.ts`), and the **reload-resume** pattern — the job signal is hydrated from its own `localStorage` key at module load, an `effect()` writes it back on change, and `resumeQueue()` (called from `boot()`/`login()` in `sync.ts` **after** the sync) re-launches. Hydrate before the persisting `effect` first runs or it overwrites the saved jobs. **Do not route runner persistence through `persist.ts`** (import cycle: `persist → queue → actions → apply → persist`) — the runner owns its key. Shared risky mechanics (bank-off, food-first healing, forecast gating, gear swaps) live once in `src/state/exec.ts`.
 
 ## The gear model: bank reset, bank-only sets

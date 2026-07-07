@@ -59,6 +59,11 @@ function loadStored(): Record<string, QueueState> {
  */
 export const queues = signal<Record<string, QueueState>>(loadStored());
 const stopFlags = new Set<string>();
+// Names with a runLoop alive RIGHT NOW (in-memory twin of `running`). The two
+// differ while a stopped loop drains its final action: `running` is already
+// false (persisted, so a reload can't resurrect the queue) but the loop still
+// lives until the action's cooldown ends.
+const liveLoops = new Set<string>();
 
 // Mirror to localStorage on every change (edits AND per-action progress).
 effect(() => {
@@ -628,6 +633,8 @@ const S = (name: string): { losses: number } => {
 };
 
 async function runLoop(name: string): Promise<void> {
+  if (liveLoops.has(name)) return; // never two loops per character
+  liveLoops.add(name);
   try {
     while (!stopFlags.has(name)) {
       // Yield to the event loop every tick: no buggy path may spin the tab.
@@ -660,16 +667,29 @@ async function runLoop(name: string): Promise<void> {
       }
     }
   } finally {
+    liveLoops.delete(name);
     stopFlags.delete(name);
-    // Exited via the stop flag (manual ⏹) — drop the running state cleanly.
-    if (queues.value[name]?.running) setQueue(name, { running: false, note: undefined });
+    // Drop the running state (and any stale "stopping…" note) cleanly.
+    const q = queues.value[name];
+    if (q?.running || q?.note) setQueue(name, { running: false, note: undefined });
   }
 }
 
 /** Start executing the queue from its head. */
 export function startQueue(name: string): void {
   const q = queues.value[name];
-  if (!q || q.running) return;
+  if (!q) return;
+  // ▶ pressed while the stopped loop is still draining its final action:
+  // cancel the stop instead of launching a second loop — the live one carries on.
+  if (liveLoops.has(name)) {
+    if (stopFlags.has(name)) {
+      stopFlags.delete(name);
+      setQueue(name, { running: true, note: "running" });
+      log(name, "stop cancelled — queue continues", "info");
+    }
+    return;
+  }
+  if (q.running) return;
   if (!q.items.length) { log(name, "queue is empty", "bad"); return; }
   if (!characters.value[name]) return;
   stopFlags.delete(name);
@@ -681,11 +701,16 @@ export function startQueue(name: string): void {
   void runLoop(name);
 }
 
-/** Ask the queue to pause after the current action completes. */
+/**
+ * Stop the queue. `running: false` is set (and persisted) IMMEDIATELY so a
+ * reload can never resurrect a stopped queue; the live loop still finishes its
+ * in-flight action, then exits via the flag (liveLoops covers the drain gap).
+ */
 export function stopQueue(name: string): void {
   if (!queues.value[name]?.running) return;
   stopFlags.add(name);
-  setQueue(name, { note: "stopping…" });
+  setQueue(name, { running: false, note: undefined });
+  log(name, "queue stopped — finishing the current action", "info");
 }
 
 /**
@@ -695,7 +720,7 @@ export function stopQueue(name: string): void {
  */
 export function resumeQueue(): void {
   for (const [name, q] of Object.entries(queues.value)) {
-    if (!q.running) continue;
+    if (!q.running || liveLoops.has(name)) continue;
     if (characters.value[name]) {
       stopFlags.delete(name);
       log(name, "queue resumed after reload", "info");
@@ -705,3 +730,9 @@ export function resumeQueue(): void {
     }
   }
 }
+
+// Dev-only: this module owns long-lived async runners. A hot swap would
+// re-create the module state (queues signal, stopFlags, liveLoops) while the
+// OLD runLoop kept executing against the old objects — a zombie runner the ⏹
+// button can no longer reach. Force a full page reload instead.
+if (import.meta.hot) import.meta.hot.accept(() => location.reload());
