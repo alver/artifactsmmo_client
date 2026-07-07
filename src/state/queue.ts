@@ -82,7 +82,12 @@ function patchItem(name: string, id: string, patch: Partial<QueueItem>): void {
   setQueue(name, { items: cur.items.map((it) => (it.id === id ? ({ ...it, ...patch } as QueueItem) : it)) });
 }
 
-// ── User editing ops (all refuse to touch the currently-executing head) ─────
+// ── User editing ops ─────────────────────────────────────────────────────────
+// Edit/reorder refuse to touch the currently-executing head; REMOVE is allowed
+// even for it — the in-flight action finishes server-side (a cooldown can't be
+// cancelled anyway) and the next loop tick simply picks up the new head. The
+// runner is id-guarded everywhere (progress patches and completion no-op when
+// the item is gone), so a live removal can't corrupt the queue.
 
 const headLocked = (q: QueueState | undefined, id: string): boolean => !!q?.running && q.items[0]?.id === id;
 
@@ -97,8 +102,12 @@ export function addItem(name: string, item: QueueItem, index?: number): void {
 
 export function removeItem(name: string, id: string): void {
   const cur = queues.value[name];
-  if (!cur || headLocked(cur, id)) return;
-  setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
+  if (!cur) return;
+  const runningHead = headLocked(cur, id);
+  setQueue(name, {
+    items: cur.items.filter((it) => it.id !== id),
+    ...(runningHead ? { note: "dropping — finishing the current action" } : {}),
+  });
 }
 
 /** User edit — clears the item's error (an edited item gets a fresh chance). */
@@ -617,6 +626,13 @@ async function runLoop(name: string): Promise<void> {
           try { await bankOff(name, ch.x, ch.y, keepOf(item, ch), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
         }
         const msg = (e as Error).message;
+        // The item may have been REMOVED mid-action (live head removal): an
+        // orphan's failure just logs — pausing a queue on a deleted item would
+        // strand it with no visible error row.
+        if (!queues.value[name]?.items.some((i) => i.id === item.id)) {
+          log(name, `${queueItemText(item)} (removed): ${msg}`, "info");
+          continue;
+        }
         patchItem(name, item.id, { error: msg });
         setQueue(name, { running: false, note: undefined });
         log(name, `queue paused — ${queueItemText(item)}: ${msg}`, "bad");
