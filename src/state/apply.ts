@@ -81,5 +81,6 @@ export function summarize(name: string, action: string, data: ActionResult): str
   if (action === "task/exchange") return "exchanged task coins";
   if (action === "task/cancel") return "cancelled task";
   if (action === "task/trade") return "traded task items";
+  if (action.startsWith("claim_item")) return "claimed a pending reward";
   return action;
 }

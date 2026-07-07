@@ -16,6 +16,7 @@ import {
   catalogReady,
   characters,
   lastError,
+  pendingRewards,
   selectedCharacter,
   syncedAt,
   syncing,
@@ -24,7 +25,7 @@ import { loadPersisted, saveState } from "./persist";
 import { resumeQueue } from "./queue";
 import { api, getAllPages, hasToken } from "../api/client";
 import { loadCatalog } from "../catalog";
-import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character } from "../types/api";
+import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 
 export async function boot(): Promise<void> {
   loadPersisted(); // instant paint from last session
@@ -45,16 +46,19 @@ export async function reconcile(): Promise<void> {
   syncing.value = true;
   lastError.value = null;
   try {
-    const [chars, bank, items, events] = await Promise.all([
+    const [chars, bank, items, events, pending] = await Promise.all([
       api<Character[]>("/my/characters"),
       api<BankDetails>("/my/bank").catch(() => null),
       getAllPages<BankItem>("/my/bank/items").catch(() => [] as BankItem[]),
       // Time-limited map events: fetched only here (no polling — expiry is
       // handled locally by the clock in store.ts).
       getAllPages<ActiveEvent>("/events/active").catch(() => activeEvents.value),
+      // Unclaimed rewards (achievement payouts) — drives the 🎁 topbar badge.
+      getAllPages<PendingItem>("/my/pending_items").catch(() => pendingRewards.value),
     ]);
     characters.value = Object.fromEntries(chars.map((c) => [c.name, c]));
     activeEvents.value = events;
+    pendingRewards.value = pending.filter((p) => !p.claimed_at);
     // The workspace always shows the selected character — default to the first.
     if (!selectedCharacter.value || !characters.value[selectedCharacter.value]) {
       selectedCharacter.value = chars[0]?.name ?? null;
@@ -100,6 +104,20 @@ export async function loadAchievements(): Promise<void> {
     achievementsError.value = (e as Error).message;
   } finally {
     achievementsLoading.value = false;
+  }
+}
+
+/**
+ * Refresh the unclaimed-rewards pool on demand (the 🎁 panel's open/refresh).
+ * A single small read — never polled; reconcile() also refreshes it.
+ */
+export async function loadPendingRewards(): Promise<void> {
+  if (!hasToken()) return;
+  try {
+    pendingRewards.value = (await getAllPages<PendingItem>("/my/pending_items")).filter((p) => !p.claimed_at);
+    saveState();
+  } catch {
+    /* keep the current list — a stale badge beats a failed refresh */
   }
 }
 

@@ -69,6 +69,11 @@ export const taskExchange = (name: string) => act(name, "task/exchange");
 export const taskCancel = (name: string) => act(name, "task/cancel");
 export const taskTrade = (name: string, code: string, quantity: number) => act(name, "task/trade", { code, quantity });
 
+// Claim a pending account reward (achievement payout — see /my/pending_items).
+// The items drop into THIS character's inventory; echoes { cooldown, item,
+// character }, so applyActionResult keeps state current.
+export const claimItem = (name: string, id: string) => act(name, `claim_item/${id}`);
+
 // Give gold / items to another character. Verified field names: { quantity,
 // character } and { items, character } (NOT character_name). Both the giver
 // (data.character) and recipient (data.receiver_character) are echoed, so

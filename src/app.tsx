@@ -1,5 +1,5 @@
-import { achievementsOpen, authed, catalogReady, itemsCatalogOpen, lastError, panelTarget, routeHash, syncedAt, syncing } from "./state/store";
-import { loadAchievements, reconcile } from "./state/sync";
+import { achievementsOpen, authed, catalogReady, itemsCatalogOpen, lastError, panelTarget, pendingRewards, pendingRewardsOpen, routeHash, syncedAt, syncing } from "./state/store";
+import { loadAchievements, loadPendingRewards, reconcile } from "./state/sync";
 import { setToken } from "./api/client";
 import { clockTime } from "./lib/util";
 import { TokenGate } from "./ui/Token";
@@ -8,6 +8,7 @@ import { CharacterPanel } from "./ui/CharacterPanel";
 import { CatalogPanel } from "./ui/CatalogPanel";
 import { ItemPopup } from "./ui/ItemPopup";
 import { AchievementsPanel } from "./ui/AchievementsPanel";
+import { PendingRewardsPanel } from "./ui/PendingRewardsPanel";
 import { ItemsCatalogPanel } from "./ui/ItemsCatalog";
 import { SimPlayground } from "./ui/SimPlayground";
 import { Roster } from "./ui/CharacterMini";
@@ -53,6 +54,15 @@ export function App() {
           >
             🏆 Achievements
           </button>
+          <button
+            title="Unclaimed account rewards (achievement payouts)"
+            onClick={() => {
+              pendingRewardsOpen.value = true;
+              void loadPendingRewards();
+            }}
+          >
+            🎁 Rewards{pendingRewards.value.length > 0 ? ` (${pendingRewards.value.length})` : ""}
+          </button>
           <button onClick={() => void reconcile()} disabled={syncing.value}>
             ↻ Refresh
           </button>
@@ -84,6 +94,7 @@ export function App() {
       )}
       <ItemPopup />
       <AchievementsPanel />
+      <PendingRewardsPanel />
     </div>
   );
 }

@@ -177,6 +177,24 @@ export interface AccountAchievement {
   completed_at: string | null;
 }
 
+/**
+ * One unclaimed reward from GET /my/pending_items (achievement payouts land
+ * here — they never reach the bank by themselves). A character collects it via
+ * POST /my/{name}/action/claim_item/{id}; the items drop into that character's
+ * inventory.
+ */
+export interface PendingItem {
+  id: string;
+  account: string;
+  source: string; // e.g. "achievement"
+  source_id: string;
+  description: string;
+  gold: number;
+  items: ItemStack[];
+  created_at: string;
+  claimed_at: string | null;
+}
+
 export interface Cooldown {
   total_seconds: number;
   remaining_seconds: number;

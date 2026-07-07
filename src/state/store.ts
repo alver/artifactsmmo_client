@@ -3,7 +3,7 @@
 // "renderCard()" calls (the maintainability pain of the old client).
 
 import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
-import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character } from "../types/api";
+import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
 
@@ -189,6 +189,15 @@ export const achievementsOpen = signal(false);
 export const achievements = signal<AccountAchievement[] | null>(null);
 export const achievementsLoading = signal(false);
 export const achievementsError = signal<string | null>(null);
+
+/**
+ * Unclaimed account rewards (GET /my/pending_items — achievement payouts wait
+ * here until a character claims them). Fetched with every reconcile() and on
+ * demand from the rewards panel; persisted so the topbar badge paints
+ * instantly. Claims remove their entry locally — no re-read.
+ */
+export const pendingRewards = signal<PendingItem[]>([]);
+export const pendingRewardsOpen = signal(false);
 
 /**
  * One global clock that ticks 4x/second. Cooldown countdowns read this so they
