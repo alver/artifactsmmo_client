@@ -294,6 +294,15 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
           if (invCount(ch) > 0) { await bankOff(name, ch.x, ch.y, undefined, ctx.note); return false; }
           return true;
         }
+        // A finite order with zero feasible runs: fail NOW, naming the missing
+        // ingredient — don't withdraw the ingredients that do exist only to be
+        // rejected at the workshop.
+        if (!infinite && supplyTimes <= 0) {
+          const short = recipe.items
+            .filter((g) => Math.floor((invQty(ch, g.code) + bankQty(g.code)) / g.quantity) <= 0)
+            .map((g) => `${itemName(g.code)} (need ${g.quantity})`);
+          throw new Error(`no ${short.join(", ")} for ${itemName(it.code)} in bag + bank`);
+        }
         const batch = Math.max(1, Math.min(supplyTimes, bagTimes));
         const ing = recipe.items.find((g) => g.quantity * batch > invQty(ch, g.code) && bankQty(g.code) > 0);
         if (ing) {
