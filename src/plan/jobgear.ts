@@ -24,6 +24,14 @@ import type { GearJob, GearRecommendation } from "./types";
 /** The slots the swap manages — everything but the utility potion stacks. */
 export const MANAGED_SLOTS: GearSlot[] = GEAR_SLOTS.filter((s) => !s.startsWith("utility"));
 
+/**
+ * Artifacts pinned to the hero: once owned, every job set includes one and no
+ * swap or bank reset ever removes a worn copy (universal xp/drop/hp boosters
+ * that are useful on EVERY job, so cycling them through the bank is pure
+ * waste). Spare copies still belong in the bank.
+ */
+export const PINNED_ARTIFACTS = new Set(["novice_guide"]);
+
 /** Every gear slot mapped to "" — the desired map for a full strip. */
 export function stripAllMap(): Partial<Record<GearSlot, string>> {
   const out: Partial<Record<GearSlot, string>> = {};
@@ -73,11 +81,35 @@ function bestBag(ch: Character, qty: Map<string, number>): string {
   return best;
 }
 
-/** A BIS recommendation as a full desired slot map: utilities dropped, bag rule applied. */
+/**
+ * Overlay the pinned artifacts onto a job set: each owned pinned code gets an
+ * artifact slot — the one already wearing it wins, then an empty slot, then
+ * the last non-pinned slot (evicting that plan pick). Mutates `desired`.
+ */
+function pinArtifacts(ch: Character, qty: Map<string, number>, desired: Partial<Record<GearSlot, string>>): void {
+  for (const code of PINNED_ARTIFACTS) {
+    if ((qty.get(code) ?? 0) <= 0) continue; // not owned yet
+    const wornSlot = ARTIFACT_GROUP.find((g) => slotCode(ch, g) === code);
+    if (wornSlot) {
+      desired[wornSlot] = code;
+      continue;
+    }
+    if (ARTIFACT_GROUP.some((g) => desired[g] === code)) continue; // the plan already picked it
+    const slot =
+      ARTIFACT_GROUP.find((g) => !desired[g]) ??
+      [...ARTIFACT_GROUP].reverse().find((g) => !PINNED_ARTIFACTS.has(desired[g] ?? "")) ??
+      ARTIFACT_GROUP[ARTIFACT_GROUP.length - 1];
+    desired[slot] = code;
+  }
+}
+
+/** A BIS recommendation as a full desired slot map: utilities dropped, pins + bag rule applied. */
 export function jobSetFromRecommendation(ch: Character, bank: BankItem[], rec: GearRecommendation): Partial<Record<GearSlot, string>> {
   const out: Partial<Record<GearSlot, string>> = {};
+  const qty = ownedQtyOf(ch, bank);
   for (const g of MANAGED_SLOTS) out[g] = rec.slots[g] ?? "";
-  out.bag = bestBag(ch, ownedQtyOf(ch, bank));
+  pinArtifacts(ch, qty, out);
+  out.bag = bestBag(ch, qty);
   return out;
 }
 
@@ -150,13 +182,20 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
   const take = (code: string): void => {
     remaining.set(code, (remaining.get(code) ?? 0) - 1);
   };
+  // The game refuses a second copy of the SAME artifact (485 "This item is
+  // already equipped") — rings may pair up, artifacts must stay distinct even
+  // when several copies are owned (the fight solver's chooseGroup already
+  // enforces this; the argmax here must too).
+  const usedArtifacts = new Set<string>();
   const pick = (g: GearSlot): string => {
     const worn = slotCode(ch, g);
+    const artifact = g.startsWith("artifact");
     const top = (bySlot.get(g) ?? [])
-      .filter((c) => (remaining.get(c.code) ?? 0) > 0)
+      .filter((c) => (remaining.get(c.code) ?? 0) > 0 && !(artifact && usedArtifacts.has(c.code)))
       .sort((a, b) => b.s - a.s || (b.code === worn ? 1 : 0) - (a.code === worn ? 1 : 0) || a.code.localeCompare(b.code))[0];
     if (!top) return "";
     take(top.code);
+    if (artifact) usedArtifacts.add(top.code);
     return top.code;
   };
 
@@ -170,6 +209,7 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
     }
     desired[g] = pick(g);
   }
+  pinArtifacts(ch, qty, desired);
   desired.bag = bestBag(ch, qty);
   return desired;
 }
@@ -202,6 +242,39 @@ const LIKE_SLOT_GROUPS: GearSlot[][] = [
   ["ring1", "ring2"],
   ["artifact1", "artifact2", "artifact3"],
 ];
+
+const ARTIFACT_GROUP: GearSlot[] = ["artifact1", "artifact2", "artifact3"];
+
+/**
+ * The game refuses to equip a second copy of the same artifact code (485
+ * "This item is already equipped"), so a desired map repeating one across the
+ * artifact slots is unsatisfiable no matter how many copies are owned. Keep
+ * the copy that is already worn (or the first want) and drop the losing slots
+ * from management (they keep whatever they wear). Returns a copy when changed
+ * — frozen plans are never mutated. Belt-and-suspenders: jobGear no longer
+ * produces such maps, but persisted queues may still carry old ones.
+ */
+function dedupeArtifacts(ch: Character, desired: Partial<Record<GearSlot, string>>): Partial<Record<GearSlot, string>> {
+  let out = desired;
+  const seen = new Set<string>();
+  // Codes locked in place first: worn in an unmanaged slot, or want === worn —
+  // the dedupe must never evict the slot that already wears the code.
+  for (const g of ARTIFACT_GROUP) {
+    const worn = slotCode(ch, g);
+    if (worn && (desired[g] === undefined || desired[g] === worn)) seen.add(worn);
+  }
+  for (const g of ARTIFACT_GROUP) {
+    const want = desired[g];
+    if (!want || want === slotCode(ch, g)) continue;
+    if (seen.has(want)) {
+      if (out === desired) out = { ...desired };
+      delete out[g];
+    } else {
+      seen.add(want);
+    }
+  }
+  return out;
+}
 
 /** Permute desired values within interchangeable slot groups to keep worn
  *  items where they are (returns a copy — frozen plans are never mutated). */
@@ -272,7 +345,17 @@ export function nextGearAction(
   // character ALREADY wears stay in their current slot. Without this, a plan
   // whose ring1/ring2 assignment merely mirrors the worn one would strip and
   // re-equip both rings for nothing.
-  desired = canonicalizeGroups(ch, desired);
+  desired = dedupeArtifacts(ch, canonicalizeGroups(ch, desired));
+  // A worn PINNED artifact never leaves the hero: drop its slot from
+  // management so neither a swap nor a reset strip touches it. Fresh jobGear
+  // plans already keep it — this covers stale/frozen plans and stripAllMap.
+  for (const g of ARTIFACT_GROUP) {
+    const worn = slotCode(ch, g);
+    if (worn && PINNED_ARTIFACTS.has(worn) && desired[g] !== undefined && desired[g] !== worn) {
+      desired = { ...desired };
+      delete desired[g];
+    }
+  }
   const bankQty = new Map<string, number>();
   for (const b of bank) bankQty.set(b.code, (bankQty.get(b.code) ?? 0) + b.quantity);
   const inv = new Map<string, number>();
@@ -292,8 +375,13 @@ export function nextGearAction(
   if (opts.reset) {
     if (!onBankTile(ch)) return { kind: "goto-bank" };
     const keep = new Set(opts.keep ?? []);
+    // Count only the wants NOT already satisfied by the worn slot — a spare
+    // copy of an already-worn item (e.g. a pinned artifact) belongs in the
+    // bank, not the bag.
     const wantCount = new Map<string, number>();
-    for (const c of Object.values(desired)) if (c) wantCount.set(c, (wantCount.get(c) ?? 0) + 1);
+    for (const [g, c] of Object.entries(desired) as [GearSlot, string][]) {
+      if (c && slotCode(ch, g) !== c) wantCount.set(c, (wantCount.get(c) ?? 0) + 1);
+    }
     const stash: { code: string; quantity: number }[] = [];
     for (const [code, n] of inv) {
       if (n <= 0 || keep.has(code)) continue;
