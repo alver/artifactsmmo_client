@@ -54,13 +54,17 @@ export type QueueItem = { id: string; error?: string } & (
   // items follow); without it, running out with the task unfinished is an error.
   | { kind: "deliver"; keep?: string[]; partial?: boolean }
   | { kind: "turn-in" }
+  // Complete tasks in a loop: accept at the given master → work the task in
+  // the field (work-task rules) → turn it in → repeat. times 0 = forever;
+  // `done` counts turn-ins. `gear`/`geared` exactly as in work-task.
+  | { kind: "task-loop"; master: "monsters" | "items"; times: number; done: number; gear?: boolean; geared?: string }
 );
 
 export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "move", "rest", "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "recycle", "train", "gear", "accept-task", "work-task", "deliver", "turn-in",
+  "buy", "sell", "recycle", "train", "gear", "accept-task", "work-task", "deliver", "turn-in", "task-loop",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -100,6 +104,7 @@ export function queueItemText(it: QueueItem): string {
     case "work-task": return "Work the task (acquire & deliver)";
     case "deliver": return it.partial ? "Deliver task items from stock" : "Deliver task items";
     case "turn-in": return "Turn in the task";
+    case "task-loop": return `Complete ${it.times > 0 ? `${it.times}× ` : "(∞) "}tasks (${it.master})`;
   }
 }
 
@@ -107,4 +112,5 @@ export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
   "train": "🎓", "gear": "🧰", "accept-task": "📜", "work-task": "⚒", "deliver": "🤝", "turn-in": "✅",
+  "task-loop": "🔁",
 };

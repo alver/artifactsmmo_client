@@ -147,7 +147,7 @@ const keepOf = (it: QueueItem, ch: Character): string[] | undefined =>
   it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
   // The task deliverable and its recipe materials are working stock — neither
   // an overflow bank-off nor the job-start gear reset may stash them.
-  : it.kind === "work-task" ? (ch.task ? [ch.task, ...(itemOf(ch.task)?.craft?.items.map((g) => g.code) ?? [])] : undefined)
+  : it.kind === "work-task" || it.kind === "task-loop" ? (ch.task ? [ch.task, ...(itemOf(ch.task)?.craft?.items.map((g) => g.code) ?? [])] : undefined)
   // A withdrawal/sale/recycle protects its own item — otherwise an overflow
   // bank-off would deposit exactly what was just withdrawn and the item would
   // spin forever.
@@ -378,6 +378,33 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     }
     case "work-task":
       return runWorkTask(name, ch, it, ctx);
+    case "task-loop": {
+      // accept → work → turn in, repeated. One completed task = one `done`.
+      if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
+      if (!ch.task) {
+        const at = await goToMaster(name, ch, it.master, ctx.note);
+        if (at === "missing") return skipItem(name, it, `no ${it.master} tasks master on the map`);
+        if (at === "there") {
+          ctx.note(`task ${it.done + 1}${it.times > 0 ? `/${it.times}` : ""}: accepting`);
+          await step(name, () => actions.taskNew(name));
+        }
+        return false; // the echo sets ch.task → next tick starts working it
+      }
+      // Turn-in is checked BEFORE the work engine (which treats a finished
+      // task as "item complete") — completing here is what advances the loop.
+      if (ch.task_total - ch.task_progress <= 0) {
+        const at = await goToMaster(name, ch, ch.task_type === "items" ? "items" : "monsters", ctx.note);
+        if (at === "missing") return skipItem(name, it, "no tasks master on the map");
+        if (at === "there") {
+          ctx.note("turning in the task");
+          await step(name, () => actions.taskComplete(name));
+          patchItem(name, it.id, { done: it.done + 1 });
+          log(name, `task ${it.done + 1}${it.times > 0 ? `/${it.times}` : ""} turned in — rewards collected`, "ok");
+        }
+        return false;
+      }
+      return runWorkTask(name, ch, it, ctx);
+    }
     case "accept-task": {
       if (ch.task) return true; // already carrying a task (either type)
       const at = await goToMaster(name, ch, it.master, ctx.note);
@@ -472,7 +499,7 @@ function fieldSource(ch: Character, code: string): FieldSource | undefined {
 async function taskGear(
   name: string,
   ch: Character,
-  it: Extract<QueueItem, { kind: "work-task" }>,
+  it: Extract<QueueItem, { kind: "work-task" | "task-loop" }>,
   job: GearJob,
   ctx: StepCtx,
 ): Promise<boolean> {
@@ -496,7 +523,7 @@ async function taskGear(
 async function runWorkTask(
   name: string,
   ch: Character,
-  it: Extract<QueueItem, { kind: "work-task" }>,
+  it: Extract<QueueItem, { kind: "work-task" | "task-loop" }>,
   ctx: StepCtx,
 ): Promise<boolean> {
   if (!ch.task) return true; // nothing to work — accept-task comes first

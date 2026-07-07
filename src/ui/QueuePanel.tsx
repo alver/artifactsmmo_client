@@ -45,6 +45,7 @@ const ADDABLE: { kind: string; label: string }[] = [
   { kind: "work-task", label: "⚒ Work the task (acquire & deliver)" },
   { kind: "deliver", label: "🤝 Deliver task items (bank stock)" },
   { kind: "turn-in", label: "✅ Turn in the task" },
+  { kind: "task-loop", label: "🔁 Complete tasks in a loop ×N (0 = ∞)" },
 ];
 
 export function QueueSection({ ch }: { ch: Character }) {
@@ -104,7 +105,7 @@ export function QueueSection({ ch }: { ch: Character }) {
 }
 
 function progressOf(it: QueueItem): string {
-  if (it.kind === "fight" || it.kind === "gather") return it.done > 0 ? (it.times > 0 ? `${it.done}/${it.times}` : `${it.done}`) : "";
+  if (it.kind === "fight" || it.kind === "gather" || it.kind === "task-loop") return it.done > 0 ? (it.times > 0 ? `${it.done}/${it.times}` : `${it.done}`) : "";
   if (it.kind === "craft" || it.kind === "sell" || it.kind === "recycle") return it.done > 0 ? (it.quantity > 0 ? `${it.done}/${it.quantity}` : `${it.done}`) : "";
   return "";
 }
@@ -168,7 +169,7 @@ function EditForm({ ch, it, onDone }: { ch: Character; it: QueueItem; onDone: ()
         </button>
       </>
     );
-  } else if (it.kind === "fight" || it.kind === "gather") {
+  } else if (it.kind === "fight" || it.kind === "gather" || it.kind === "task-loop") {
     fields = (
       <>
         {field("times (0 = ∞)", "times", it.times, 0)}
@@ -287,6 +288,8 @@ function AddForm({ ch }: { ch: Character }) {
       // Equip via a bank reset once the task is known, acquire in the field,
       // deliver bagfuls to the master — never banks the stock.
       case "work-task": return { kind: "work-task", gear: true };
+      // accept → work → turn in, repeated; same gear rules as work-task.
+      case "task-loop": return { kind: "task-loop", master: taskMaster, times: Math.max(0, times), done: 0, gear: true };
       case "deliver": return { kind: "deliver" };
       case "turn-in": return { kind: "turn-in" };
       default: return null;
@@ -382,12 +385,13 @@ function AddForm({ ch }: { ch: Character }) {
         </select>
       )}
 
-      {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell" || kind === "recycle") && (
+      {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell" || kind === "recycle" || kind === "task-loop") && (
         <label
           class="q-field"
           title={
             kind === "fight" || kind === "gather" ? "0 = repeat forever (until stopped)"
             : kind === "craft" ? "0 = craft until the bank runs out of materials"
+            : kind === "task-loop" ? "0 = keep completing tasks forever (until stopped)"
             : "0 = once"
           }
         >
@@ -395,7 +399,7 @@ function AddForm({ ch }: { ch: Character }) {
         </label>
       )}
 
-      {kind === "accept-task" && (
+      {(kind === "accept-task" || kind === "task-loop") && (
         <select
           class="cp-refine-select"
           value={taskMaster}
