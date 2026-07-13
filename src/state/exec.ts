@@ -17,11 +17,13 @@ import { jobGear, nextGearAction } from "../plan/jobgear";
 import { carriedFood, foodPlan, foodQuantity, gatherSourceFor } from "../plan/consumables";
 import { bankDetails, bankItems, characters } from "./store";
 import { bankQty, depositAll, moveTo, nearest, nearestBank, step } from "./loopkit";
+import { slotCode } from "../types/api";
 import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
 import type { Character, GearSlot } from "../types/api";
-import type { Monster } from "../types/catalog";
+import type { CraftRecipe, Monster } from "../types/catalog";
 
 export const invCount = (ch: Character): number => (ch.inventory || []).reduce((s, it) => s + (it.quantity || 0), 0);
+const skillLevel = (ch: Character, skill: string): number => (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
 export const invQty = (ch: Character, code: string): number =>
   (ch.inventory || []).reduce((s, it) => s + (it.code === code ? it.quantity : 0), 0);
 export const freeSpace = (ch: Character): number => Math.max(0, ch.inventory_max_items - invCount(ch));
@@ -282,20 +284,37 @@ export async function provisionFood(name: string, ch: Character, m: Monster, ctx
   const fights = Math.min(ctx.fightsLeft ?? 1, FOOD_HORIZON);
   const stock = plan.source === "bank" ? plan.stock : Number.MAX_SAFE_INTEGER;
   const want = foodQuantity({ code: plan.code, heal: plan.heal, stock }, perFight, fights, ch);
-  // The food and its ingredients are working stock while provisioning runs.
-  const keep = [...new Set([...(ctx.keep ?? []), plan.code, ...(plan.source === "bank" ? [] : plan.recipe.items.map((g) => g.code))])];
-  const kctx: StepCtx = { ...ctx, keep };
 
   if (plan.source === "bank") {
     const bank = nearestBank(ch.x, ch.y);
     if (!bank) return "none";
+    // The food is working stock while provisioning runs.
+    const kctx: StepCtx = { ...ctx, keep: [...new Set([...(ctx.keep ?? []), plan.code])] };
     ctx.note(`restock ${itemName(plan.code)}`);
     await runStep(name, ch, { kind: "withdraw", code: plan.code, quantity: want, x: bank.x, y: bank.y }, kctx);
     return "acted";
   }
+  return produceOnce(name, ch, plan.code, plan.recipe, want, ctx);
+}
 
-  // Cook / gather: assemble a bag-sized batch of materials, then cook it.
-  const { recipe } = plan;
+/**
+ * One action toward producing `want`× `code` via `recipe` in the field:
+ * assemble a bag-sized batch of ingredients (withdraw stocked ones from the
+ * bank, gather the gatherable ones), then craft at the recipe's workshop.
+ * Shared by food (cook) and utility-potion (brew) provisioning. "none" ⇒
+ * infeasible right now (missing workshop/resource) — never an error.
+ */
+async function produceOnce(
+  name: string,
+  ch: Character,
+  code: string,
+  recipe: CraftRecipe,
+  want: number,
+  ctx: StepCtx,
+): Promise<"acted" | "none"> {
+  // The produce and its ingredients are working stock while provisioning runs.
+  const keep = [...new Set([...(ctx.keep ?? []), code, ...recipe.items.map((g) => g.code)])];
+  const kctx: StepCtx = { ...ctx, keep };
   const per = Math.max(1, recipe.quantity);
   const matsPerRun = Math.max(1, recipe.items.reduce((s, g) => s + g.quantity, 0));
   const matsHeld = recipe.items.reduce((s, g) => s + invQty(ch, g.code), 0);
@@ -309,8 +328,8 @@ export async function provisionFood(name: string, ch: Character, m: Monster, ctx
   if (!missing) {
     const tile = nearest("workshop", recipe.skill, ch.x, ch.y);
     if (!tile) return "none";
-    ctx.note(`cook ${itemName(plan.code)}`);
-    await runStep(name, ch, { kind: "craft", code: plan.code, quantity: batch * per, skill: recipe.skill, level: 0, x: tile.x, y: tile.y }, kctx);
+    ctx.note(`craft ${itemName(code)}`);
+    await runStep(name, ch, { kind: "craft", code, quantity: batch * per, skill: recipe.skill, level: 0, x: tile.x, y: tile.y }, kctx);
     return "acted";
   }
   if (bankQty(missing.code) > 0) {
@@ -328,6 +347,33 @@ export async function provisionFood(name: string, ch: Character, m: Monster, ctx
   ctx.note(`gather ${itemName(missing.code)} ${invQty(ch, missing.code)}/${missing.quantity * batch}`);
   await runStep(name, ch, { kind: "gather", code: missing.code, quantity: 1, resource: res.code, level: 0, x: tile.x, y: tile.y }, kctx);
   return "acted";
+}
+
+/**
+ * One brewing action toward the desired set's utility potions: when a wanted
+ * potion has NO supply anywhere (not in hand, not banked — the differ's
+ * unavailability guard is leaving its slot as-is) but the character can brew
+ * it, produce a fight-horizon batch; the next gear tick equips it. jobGear
+ * only plans unowned potions in when they materially improve the forecast, so
+ * getting here means the brew is worth the trip. "none" ⇒ nothing to brew.
+ */
+export async function provisionPotions(
+  name: string,
+  ch: Character,
+  desired: Partial<Record<GearSlot, string>>,
+  ctx: StepCtx,
+): Promise<"acted" | "none"> {
+  for (const g of ["utility1", "utility2"] as const) {
+    const want = desired[g];
+    if (!want || slotCode(ch, g) === want) continue;
+    if (invQty(ch, want) > 0 || bankQty(want) > 0) continue; // the differ's job
+    const recipe = item(want)?.craft;
+    if (!recipe || skillLevel(ch, recipe.skill) < recipe.level) continue;
+    // One potion fires (and is consumed) per fight at most — the horizon caps it.
+    const target = Math.min(ctx.fightsLeft ?? 1, FOOD_HORIZON);
+    if ((await produceOnce(name, ch, want, recipe, target, ctx)) === "acted") return "acted";
+  }
+  return "none";
 }
 
 /**

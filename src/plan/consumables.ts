@@ -126,6 +126,30 @@ export function foodPlan(ch: Character, bank: BankItem[], exclude?: string): Foo
 }
 
 /**
+ * Utility potions the character could put on RIGHT NOW or brew: an alchemy
+ * recipe at the current skill, equippable, and every ingredient either stocked
+ * (inventory ∪ bank) or gatherable at the current skill. Fed to the fight BIS
+ * solver as extra candidates — adopted only when they beat the owned-only set
+ * (see jobGear), and produced by exec.ts provisionPotions when the differ
+ * can't find them.
+ */
+export function brewablePotions(ch: Character, bank: BankItem[]): string[] {
+  try {
+    const out: string[] = [];
+    for (const it of catalog().items.values()) {
+      if (it.type !== "utility" || !it.craft) continue;
+      if (skillLevel(ch, it.craft.skill) < it.craft.level) continue;
+      if (!canEquip(ch, it)) continue;
+      const short = it.craft.items.filter((g) => stockOf(ch, bank, g.code) < g.quantity);
+      if (short.every((g) => gatherSourceFor(ch, g.code))) out.push(it.code);
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+/**
  * How many units of `food` to stock for `fightsLeft` fights: expected HP loss
  * with a 30% safety margin, capped to a third of the inventory so loot and
  * materials keep room, and always capped at what actually exists.

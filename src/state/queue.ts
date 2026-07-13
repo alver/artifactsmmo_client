@@ -24,7 +24,7 @@ import { RESET_UTILITY_STRIP, stripAllMap } from "../plan/jobgear";
 import { QUEUE_KINDS, queueItemText } from "../plan/queue";
 import { characters, pushLog } from "./store";
 import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
-import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, runStep } from "./exec";
+import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
@@ -365,9 +365,11 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (!m || !tile) return skipItem(name, it, `no ${it.monster} on the map (event over?)`);
       // Bank-gear self-heal: when something better landed in the bank, detour
       // and swap (memoized per bank reference — free when nothing changed).
+      // Planned-but-unowned utility potions get brewed (provisionPotions).
       if (it.gear) {
         const desired = desiredForJob(name, ch, { kind: "fight", monster: it.monster });
         if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return false;
+        if (desired && (await provisionPotions(name, ch, desired, ctx)) === "acted") return false;
       }
       ctx.note(`fighting ${it.done + 1}${it.times > 0 ? `/${it.times}` : ""}`);
       const out = await fightRound(name, ch, m, tile, S(name), ctx);
@@ -534,7 +536,11 @@ async function taskGear(
     patchItem(name, it.id, { geared: ch.task });
     return true; // converged — acquiring starts next tick
   }
-  return !!desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted";
+  if (!desired) return false;
+  if ((await gearSwapStep(name, ch, desired, ctx)) === "acted") return true;
+  // Fight-job sets may plan brewable potions in; non-fight sets have no
+  // utility wants, so this is a cheap no-op for them.
+  return job.kind === "fight" && (await provisionPotions(name, ch, desired, ctx)) === "acted";
 }
 
 /**

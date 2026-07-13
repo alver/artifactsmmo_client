@@ -18,6 +18,7 @@
 
 import { item, tileAt } from "../catalog";
 import { bestInSlot, canEquip } from "./bis";
+import { brewablePotions } from "./consumables";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode, slotQuantity } from "../types/api";
 import type { BankItem, Character, GearSlot } from "../types/api";
 import type { Item } from "../types/catalog";
@@ -142,7 +143,28 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
     // them, so the forecast counting them stays honest — fightRound's live
     // gate sees the worn stacks via currentFighter. ownedQty lets the ring
     // pair use two copies of the same ring.
-    const rec = bestInSlot(ch, job.monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false })[0];
+    const opts = { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false };
+    const rec = bestInSlot(ch, job.monster, opts)[0];
+    // Brewing escalation: potions the character could BREW (alchemy skill +
+    // ingredients stocked or gatherable) join the search as extra candidates,
+    // adopted only when they MATERIALLY beat the owned-only set — a win-flip,
+    // a safe-flip, or a real expected-HP gain. The solver's fills-a-slot
+    // tiebreak alone must never send anyone on a brewing expedition; a potion
+    // that never fires in the forecast gains 0 HP and is never adopted.
+    // provisionPotions (exec.ts) produces what the differ can't find.
+    const brews = brewablePotions(ch, bank);
+    if (brews.length) {
+      const recB = bestInSlot(ch, job.monster, { ...opts, extraCandidates: brews })[0];
+      if (
+        recB &&
+        rec &&
+        ((recB.forecast.win && !rec.forecast.win) ||
+          (recB.safe && !rec.safe) ||
+          (recB.forecast.win && recB.forecast.hpRemaining > rec.forecast.hpRemaining))
+      ) {
+        return jobSetFromRecommendation(ch, bank, recB);
+      }
+    }
     return rec ? jobSetFromRecommendation(ch, bank, rec) : undefined;
   }
 
