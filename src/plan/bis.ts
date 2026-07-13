@@ -45,9 +45,9 @@ export interface BisOptions {
   /** Codes force-included in their slot pools, exempt from the heuristic cap. */
   extraCandidates?: string[];
   /**
-   * Leave the utility slots out of the search. The bank-only gear swap never
-   * manages potion stacks, so a set meant for it must not let the forecast
-   * count potions that will never be equipped.
+   * Leave the utility slots out of the search — for callers that want a
+   * potion-free forecast (the gear swap equips + refills stacks, so job sets
+   * normally include them).
    */
   noUtilities?: boolean;
   perSlotCap?: number; // default 12

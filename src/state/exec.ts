@@ -14,8 +14,9 @@ import { item, itemName, npc as npcOf } from "../catalog";
 import { currentFighter } from "../sim/stats";
 import { simulate } from "../sim/combat";
 import { jobGear, nextGearAction } from "../plan/jobgear";
+import { carriedFood, foodPlan, foodQuantity, gatherSourceFor } from "../plan/consumables";
 import { bankDetails, bankItems, characters } from "./store";
-import { depositAll, moveTo, nearest, nearestBank, step } from "./loopkit";
+import { bankQty, depositAll, moveTo, nearest, nearestBank, step } from "./loopkit";
 import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
 import type { Character, GearSlot } from "../types/api";
 import type { Monster } from "../types/catalog";
@@ -37,7 +38,8 @@ export function craftableTimes(ch: Character, code: string, wantItems: number): 
 /** How a runner surfaces live status + protects working stock while a step runs. */
 export interface StepCtx {
   keep?: string[]; // never auto-deposited when banking off overflow
-  food?: FoodSpec; // eat this before resting
+  food?: boolean; // keep the fighter fed: eat before resting, provision when out (bank → cook → gather)
+  fightsLeft?: number; // fights the current item still owes — sizes the food restock
   note: (text: string) => void; // short human status shown on the card
 }
 
@@ -253,6 +255,81 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
   }
 }
 
+// ── Food provisioning (bank → cook → gather; see plan/consumables.ts) ────────
+
+/** Never eat (or plan to cook) the item-task deliverable. */
+const foodExclude = (ch: Character): string | undefined => (ch.task_type === "items" ? ch.task : undefined);
+
+/** Best food already in hand — what a hurt fighter eats right now. */
+export const foodInHand = (ch: Character): FoodSpec | undefined => carriedFood(ch, foodExclude(ch));
+
+/** Restock horizon for infinite fight items — enough for a long stretch, re-provisioned when dry. */
+const FOOD_HORIZON = 50;
+
+/**
+ * One provisioning action toward having between-fight food in hand: withdraw
+ * stocked food from the bank, else cook the best recipe the current stock can
+ * feed, else gather the raw materials in the field and cook them. Returns
+ * "none" when no source is feasible (missing workshop/resource/skill) — the
+ * caller heals by rest instead; provisioning never pauses a queue.
+ */
+export async function provisionFood(name: string, ch: Character, m: Monster, ctx: StepCtx): Promise<"acted" | "none"> {
+  const plan = foodPlan(ch, bankItems.value, foodExclude(ch));
+  if (!plan) return "none";
+  // Size the batch by the forecast's expected HP loss over the fights left.
+  const f = simulate(currentFighter(ch), m);
+  const perFight = Math.max(1, f.maxHp - f.hpRemaining);
+  const fights = Math.min(ctx.fightsLeft ?? 1, FOOD_HORIZON);
+  const stock = plan.source === "bank" ? plan.stock : Number.MAX_SAFE_INTEGER;
+  const want = foodQuantity({ code: plan.code, heal: plan.heal, stock }, perFight, fights, ch);
+  // The food and its ingredients are working stock while provisioning runs.
+  const keep = [...new Set([...(ctx.keep ?? []), plan.code, ...(plan.source === "bank" ? [] : plan.recipe.items.map((g) => g.code))])];
+  const kctx: StepCtx = { ...ctx, keep };
+
+  if (plan.source === "bank") {
+    const bank = nearestBank(ch.x, ch.y);
+    if (!bank) return "none";
+    ctx.note(`restock ${itemName(plan.code)}`);
+    await runStep(name, ch, { kind: "withdraw", code: plan.code, quantity: want, x: bank.x, y: bank.y }, kctx);
+    return "acted";
+  }
+
+  // Cook / gather: assemble a bag-sized batch of materials, then cook it.
+  const { recipe } = plan;
+  const per = Math.max(1, recipe.quantity);
+  const matsPerRun = Math.max(1, recipe.items.reduce((s, g) => s + g.quantity, 0));
+  const matsHeld = recipe.items.reduce((s, g) => s + invQty(ch, g.code), 0);
+  // Gatherable ingredients can always be topped up in the field; the others
+  // cap the batch at what hand + bank actually supply (≥1 by plan feasibility).
+  const runsCap = Math.min(
+    ...recipe.items.map((g) => (gatherSourceFor(ch, g.code) ? Infinity : Math.floor((invQty(ch, g.code) + bankQty(g.code)) / g.quantity))),
+  );
+  const batch = Math.max(1, Math.min(Math.ceil(want / per), Math.floor((freeSpace(ch) + matsHeld) / matsPerRun), runsCap));
+  const missing = recipe.items.find((g) => invQty(ch, g.code) < g.quantity * batch);
+  if (!missing) {
+    const tile = nearest("workshop", recipe.skill, ch.x, ch.y);
+    if (!tile) return "none";
+    ctx.note(`cook ${itemName(plan.code)}`);
+    await runStep(name, ch, { kind: "craft", code: plan.code, quantity: batch * per, skill: recipe.skill, level: 0, x: tile.x, y: tile.y }, kctx);
+    return "acted";
+  }
+  if (bankQty(missing.code) > 0) {
+    const bank = nearestBank(ch.x, ch.y);
+    if (!bank) return "none";
+    const short = missing.quantity * batch - invQty(ch, missing.code);
+    ctx.note(`withdraw ${itemName(missing.code)}`);
+    await runStep(name, ch, { kind: "withdraw", code: missing.code, quantity: Math.min(short, bankQty(missing.code)), x: bank.x, y: bank.y }, kctx);
+    return "acted";
+  }
+  const res = gatherSourceFor(ch, missing.code);
+  const tile = res ? nearest("resource", res.code, ch.x, ch.y) : undefined;
+  if (!res || !tile) return "none";
+  if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, keep, ctx.note); return "acted"; }
+  ctx.note(`gather ${itemName(missing.code)} ${invQty(ch, missing.code)}/${missing.quantity * batch}`);
+  await runStep(name, ch, { kind: "gather", code: missing.code, quantity: 1, resource: res.code, level: 0, x: tile.x, y: tile.y }, kctx);
+  return "acted";
+}
+
 /**
  * A fight round's outcome. "acted" ⇒ an intermediate action (move/heal/bank)
  * ran; "won"/"lost" ⇒ a fight happened; the terminal outcomes are RETURNED
@@ -263,9 +340,10 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
 export type FightOutcome = "acted" | "won" | "lost" | "no-win" | "gave-up";
 
 /**
- * One combat-phase action: walk to the tile, heal (food first), re-gate on a
- * fresh forecast, bank off overflow, then fight once. All the combat safety
- * rules in one place.
+ * One combat-phase action: walk to the tile, heal (food first — provisioning
+ * more when the hand is empty and ctx.food is on), re-gate on a fresh
+ * forecast, bank off overflow, then fight once. All the combat safety rules
+ * in one place.
  */
 export async function fightRound(
   name: string,
@@ -275,8 +353,13 @@ export async function fightRound(
   S: { losses: number },
   ctx: StepCtx,
 ): Promise<FightOutcome> {
+  if (ch.hp < ch.max_hp) {
+    const food = foodInHand(ch);
+    if (!food && ctx.food && (await provisionFood(name, ch, m, ctx)) === "acted") return "acted";
+    await healOnce(name, ch, food, ctx.note);
+    return "acted";
+  }
   if (ch.x !== tile.x || ch.y !== tile.y) { ctx.note("→ monster"); await moveTo(name, tile.x, tile.y); return "acted"; }
-  if (ch.hp < ch.max_hp) { await healOnce(name, ch, ctx.food, ctx.note); return "acted"; }
   // Re-forecast with actual current gear; refuse a fight that isn't a win.
   if (!simulate(currentFighter(ch), m).win) return "no-win";
   if (invCount(ch) >= ch.inventory_max_items) { await bankOff(name, tile.x, tile.y, ctx.keep, ctx.note); return "acted"; }

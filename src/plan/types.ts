@@ -24,11 +24,10 @@ export type AcquisitionStep =
   | { kind: "train"; skill: string; toLevel: number; resource: string; level: number; x?: number; y?: number };
 
 /** Between-fight healing food the runner should eat via the `use` action.
- *  Always bank-limited: eat what the bank holds, then heal by rest. */
+ *  Picked live from what is in hand (see plan/consumables.ts carriedFood). */
 export interface FoodSpec {
   code: string;
   heal: number; // HP restored per unit
-  perFight: number; // expected units consumed per fight (for live re-stocking)
 }
 
 /** The kind of work a gear set is optimized for (see plan/jobgear.ts). */

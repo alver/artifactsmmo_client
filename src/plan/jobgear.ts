@@ -7,10 +7,12 @@
 // wisdom = XP). nextGearAction() is the stateless differ that turns "worn vs
 // desired" into the ONE next swap action — re-derived from live state every
 // tick, so it is reload-idempotent and self-heals when two characters race the
-// same bank item. Utility slots are never managed here (the potion restock
-// machinery owns them); the bag slot is always "best bag owned", never
-// job-dependent, and is swapped last (capacity shrink is only safe with a
-// light inventory at the bank).
+// same bank item. Utility slots are managed only when a desired map names them:
+// fight sets do (the BIS solver picks potions from owned stock; the differ
+// equips stacks and re-fills an emptied slot from the bank), gather/craft sets
+// leave them alone (a reset strips them). The bag slot is always "best bag
+// owned", never job-dependent, and is swapped last (capacity shrink is only
+// safe with a light inventory at the bank).
 //
 // Pure module: catalog lookups only — no signals, no API.
 
@@ -21,8 +23,13 @@ import type { BankItem, Character, GearSlot } from "../types/api";
 import type { Item } from "../types/catalog";
 import type { GearJob, GearRecommendation } from "./types";
 
-/** The slots the swap manages — everything but the utility potion stacks. */
+/** The always-managed slots. Utility slots join only when a desired map names them (fight sets). */
 export const MANAGED_SLOTS: GearSlot[] = GEAR_SLOTS.filter((s) => !s.startsWith("utility"));
+
+/** Max stack a utility slot holds (the game 484-rejects more). */
+const UTILITY_STACK = 100;
+
+const isUtility = (g: GearSlot): boolean => g.startsWith("utility");
 
 /**
  * Artifacts pinned to the hero: once owned, every job set includes one and no
@@ -39,7 +46,9 @@ export function stripAllMap(): Partial<Record<GearSlot, string>> {
   return out;
 }
 
-/** Overlay that adds the (normally unmanaged) utility slots to a reset strip. */
+/** Underlay that adds utility-slot strips to a reset whose desired map doesn't
+ *  name them (gather/craft sets) — merge UNDER desired so a fight set's potion
+ *  picks win: `{ ...RESET_UTILITY_STRIP, ...desired }`. */
 export const RESET_UTILITY_STRIP: Partial<Record<GearSlot, string>> = { utility1: "", utility2: "" };
 
 const layerOf = (ch: Character): string => (ch as { layer?: string }).layer ?? "overworld";
@@ -59,6 +68,7 @@ export function ownedQtyOf(ch: Character, bank: BankItem[]): Map<string, number>
   for (const s of ch.inventory ?? []) add(s.code, s.quantity);
   for (const b of bank) add(b.code, b.quantity);
   for (const s of MANAGED_SLOTS) add(slotCode(ch, s), 1);
+  for (const s of ["utility1", "utility2"] as const) add(slotCode(ch, s), slotQuantity(ch, s) || 1);
   return q;
 }
 
@@ -103,11 +113,11 @@ function pinArtifacts(ch: Character, qty: Map<string, number>, desired: Partial<
   }
 }
 
-/** A BIS recommendation as a full desired slot map: utilities dropped, pins + bag rule applied. */
+/** A BIS recommendation as a full desired slot map: utilities included ("" strips), pins + bag rule applied. */
 export function jobSetFromRecommendation(ch: Character, bank: BankItem[], rec: GearRecommendation): Partial<Record<GearSlot, string>> {
   const out: Partial<Record<GearSlot, string>> = {};
   const qty = ownedQtyOf(ch, bank);
-  for (const g of MANAGED_SLOTS) out[g] = rec.slots[g] ?? "";
+  for (const g of GEAR_SLOTS) out[g] = rec.slots[g] ?? "";
   pinArtifacts(ch, qty, out);
   out.bag = bestBag(ch, qty);
   return out;
@@ -127,11 +137,12 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
   const qty = ownedQtyOf(ch, bank);
 
   if (job.kind === "fight") {
-    // noUtilities: this set feeds the bank swap, which never equips potion
-    // stacks — a forecast counting them would let fightRound's live gate
-    // refuse fights the solver called winnable. ownedQty lets the ring pair
-    // use two copies of the same ring.
-    const rec = bestInSlot(ch, job.monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, noUtilities: true })[0];
+    // Utilities are IN the search: the solver may pick owned potion stacks
+    // (restore healing / fight-start boosts) and the differ equips + refills
+    // them, so the forecast counting them stays honest — fightRound's live
+    // gate sees the worn stacks via currentFighter. ownedQty lets the ring
+    // pair use two copies of the same ring.
+    const rec = bestInSlot(ch, job.monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false })[0];
     return rec ? jobSetFromRecommendation(ch, bank, rec) : undefined;
   }
 
@@ -224,8 +235,9 @@ export interface GearActionOpts {
   /**
    * Full bank reset (job start): everything happens at the bank — the WHOLE
    * inventory (not just gear) plus all pocket gold is deposited first, and the
-   * strip extends to the utility slots. Combine with a total desired map
-   * (stripAllMap() / RESET_UTILITY_STRIP) so every unneeded slot is emptied.
+   * utility slots are managed too (fight sets re-equip potion stacks; other
+   * jobs strip them). Combine with a total desired map (stripAllMap() /
+   * RESET_UTILITY_STRIP underlay) so every unneeded slot is emptied.
    */
   reset?: boolean;
 }
@@ -241,6 +253,7 @@ export type GearAction =
 const LIKE_SLOT_GROUPS: GearSlot[][] = [
   ["ring1", "ring2"],
   ["artifact1", "artifact2", "artifact3"],
+  ["utility1", "utility2"],
 ];
 
 const ARTIFACT_GROUP: GearSlot[] = ["artifact1", "artifact2", "artifact3"];
@@ -394,9 +407,10 @@ export function nextGearAction(
 
   // Which desired slots actually need work, and is their item obtainable?
   // Supply counts inventory + bank + gear that this same swap will free up.
-  // A reset also manages the utility slots (strip-only — nothing re-equips them).
-  const scope = opts.reset ? GEAR_SLOTS : MANAGED_SLOTS;
-  const slots = scope.filter((g) => g !== "bag" && desired[g] !== undefined);
+  // Utility slots are managed whenever the desired map names them (fight sets
+  // pick potions; strips set ""): an emptied stack re-fills from the bank
+  // because "" ≠ want re-activates the slot on the tick after it drains.
+  const slots = GEAR_SLOTS.filter((g) => g !== "bag" && desired[g] !== undefined);
   const supply = new Map<string, number>();
   const addSupply = (code: string, n: number) => supply.set(code, (supply.get(code) ?? 0) + n);
   for (const [c, n] of inv) addSupply(c, n);
@@ -447,14 +461,17 @@ export function nextGearAction(
   }
 
   // 2. Equip whatever is already in hand into the (now empty) slots.
+  //    Utility slots take the whole held stack (game cap 100); a partial stack
+  //    is fine — the slot only re-activates once it drains to empty.
   const equipNow: { code: string; slot: GearSlot; quantity: number }[] = [];
   const invLeft = new Map(inv);
   for (const a of active) {
     if (slotCode(ch, a.slot)) continue; // still occupied (capped unequip) — next tick
     const n = invLeft.get(a.want) ?? 0;
     if (n > 0) {
-      invLeft.set(a.want, n - 1);
-      equipNow.push({ code: a.want, slot: a.slot, quantity: 1 });
+      const q = isUtility(a.slot) ? Math.min(n, UTILITY_STACK) : 1;
+      invLeft.set(a.want, n - q);
+      equipNow.push({ code: a.want, slot: a.slot, quantity: q });
     }
   }
   if (equipNow.length) return { kind: "equip", items: equipNow };
@@ -462,12 +479,14 @@ export function nextGearAction(
   // 3. Withdraw the remainder from the bank (aggregate per code, capped by room).
   const need = new Map<string, number>();
   for (const a of active) {
+    const target = isUtility(a.slot) ? UTILITY_STACK : 1;
     const n = invLeft.get(a.want) ?? 0;
     if (n > 0) {
-      invLeft.set(a.want, n - 1); // covered by hand, waiting for its slot
+      invLeft.set(a.want, Math.max(0, n - target)); // covered by hand, waiting for its slot
       continue;
     }
-    if ((bankQty.get(a.want) ?? 0) > (need.get(a.want) ?? 0)) need.set(a.want, (need.get(a.want) ?? 0) + 1);
+    const banked = bankQty.get(a.want) ?? 0;
+    if (banked > (need.get(a.want) ?? 0)) need.set(a.want, Math.min(banked, (need.get(a.want) ?? 0) + target));
   }
   if (need.size) {
     let room = free;

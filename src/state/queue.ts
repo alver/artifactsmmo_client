@@ -24,7 +24,7 @@ import { RESET_UTILITY_STRIP, stripAllMap } from "../plan/jobgear";
 import { QUEUE_KINDS, queueItemText } from "../plan/queue";
 import { characters, pushLog } from "./store";
 import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
-import { bankOff, craftableTimes, desiredForJob, fightRound, freeSpace, gearSwapStep, goToMaster, invCount, invQty, runStep } from "./exec";
+import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, runStep } from "./exec";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
@@ -148,21 +148,37 @@ function skipItem(name: string, it: QueueItem, why: string): true {
 const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
 
-const keepOf = (it: QueueItem, ch: Character): string[] | undefined =>
-  it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
-  // The task deliverable and its recipe materials are working stock — neither
-  // an overflow bank-off nor the job-start gear reset may stash them.
-  : it.kind === "work-task" || it.kind === "task-loop" ? (ch.task ? [ch.task, ...(itemOf(ch.task)?.craft?.items.map((g) => g.code) ?? [])] : undefined)
-  // A withdrawal/sale/recycle protects its own item — otherwise an overflow
-  // bank-off would deposit exactly what was just withdrawn and the item would
-  // spin forever.
-  : it.kind === "withdraw" || it.kind === "sell" || it.kind === "recycle" ? [it.code]
-  : undefined;
+function keepOf(it: QueueItem, ch: Character): string[] | undefined {
+  const base =
+    it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
+    // The task deliverable and its recipe materials are working stock — neither
+    // an overflow bank-off nor the job-start gear reset may stash them.
+    : it.kind === "work-task" || it.kind === "task-loop" ? (ch.task ? [ch.task, ...(itemOf(ch.task)?.craft?.items.map((g) => g.code) ?? [])] : undefined)
+    // A withdrawal/sale/recycle protects its own item — otherwise an overflow
+    // bank-off would deposit exactly what was just withdrawn and the item would
+    // spin forever.
+    : it.kind === "withdraw" || it.kind === "sell" || it.kind === "recycle" ? [it.code]
+    : undefined;
+  // Carried between-fight food is working stock too — a loot bank-off or the
+  // job-start gear reset must not stash the fighter's rations.
+  if (it.kind === "fight" || it.kind === "work-task" || it.kind === "task-loop" || (it.kind === "gear" && it.job?.kind === "fight")) {
+    const food = foodInHand(ch)?.code;
+    if (food) return [...(base ?? []), food];
+  }
+  return base;
+}
 
 function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
+  // Persisted queues from before food became a boolean may carry an old
+  // FoodSpec object here — any non-false value means "keep fed".
+  const fed = it.kind === "fight" ? it.food !== false : it.kind === "work-task" || it.kind === "task-loop" ? true : undefined;
   return {
     keep: keepOf(it, ch),
-    food: it.kind === "fight" ? it.food : undefined,
+    food: fed,
+    fightsLeft:
+      it.kind === "fight" ? (it.times > 0 ? Math.max(1, it.times - it.done) : 50)
+      : it.kind === "work-task" || it.kind === "task-loop" ? Math.max(1, ch.task_total - ch.task_progress)
+      : undefined,
     note: (text) => setQueue(name, { note: text }),
   };
 }
@@ -375,7 +391,8 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         if (!desired && it.job?.kind === "fight") {
           throw new Error(`can't plan gear vs ${monsterOf(it.job.monster)?.name ?? it.job.monster} — unknown monster`);
         }
-        const total = { ...(desired ?? stripAllMap()), ...RESET_UTILITY_STRIP };
+        // Utility strip as an UNDERLAY: a fight set's potion picks override it.
+        const total = { ...RESET_UTILITY_STRIP, ...(desired ?? stripAllMap()) };
         return (await gearSwapStep(name, ch, total, ctx, { reset: true })) === "done";
       }
       if (!desired) return true; // no set for this job (unknown monster / job "none") — keep current
@@ -511,7 +528,8 @@ async function taskGear(
   if (!it.gear) return false;
   const desired = desiredForJob(name, ch, job);
   if (it.geared !== ch.task) {
-    const total = { ...(desired ?? stripAllMap()), ...RESET_UTILITY_STRIP };
+    // Utility strip as an UNDERLAY: a fight set's potion picks override it.
+    const total = { ...RESET_UTILITY_STRIP, ...(desired ?? stripAllMap()) };
     if ((await gearSwapStep(name, ch, total, ctx, { reset: true })) === "acted") return true;
     patchItem(name, it.id, { geared: ch.task });
     return true; // converged — acquiring starts next tick

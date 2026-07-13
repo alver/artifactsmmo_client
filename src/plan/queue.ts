@@ -8,7 +8,7 @@
 
 import { itemName, monster as monsterOf } from "../catalog";
 import { titleCase } from "../lib/util";
-import type { FoodSpec, GearJob } from "./types";
+import type { GearJob } from "./types";
 import type { GearSlot } from "../types/api";
 
 export type QueueItem = { id: string; error?: string } & (
@@ -16,7 +16,9 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "rest" }
   // times 0 = infinite (fight until stopped / paused). `gear` ⇒ re-derive the
   // best bank set vs the monster each round and swap when it improves.
-  | { kind: "fight"; monster: string; times: number; done: number; food?: FoodSpec; keep?: string[]; gear?: boolean }
+  // `food` defaults ON (false disables): eat between fights and self-provision
+  // when the hand runs dry — bank stock, else cook from stock, else gather.
+  | { kind: "fight"; monster: string; times: number; done: number; food?: boolean; keep?: string[]; gear?: boolean }
   // times 0 = infinite. `gear` ⇒ keep the bank gathering set for the resource's skill on.
   | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; gear?: boolean }
   // quantity 0 = infinite: withdraw a bagful of materials from the bank, craft,
