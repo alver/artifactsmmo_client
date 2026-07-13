@@ -363,6 +363,29 @@ function junkOf(inv: Map<string, number>, desired: Partial<Record<GearSlot, stri
 }
 
 /**
+ * The WHOLE bag except protected stock and unmet wants — the
+ * "deposit all before equipping" rule: a swap ceremony that stands on the
+ * bank tile anyway sweeps the loot to the vault instead of leaving it to a
+ * later bank-off. Utility wants are protected up to a full stack (a freshly
+ * brewed batch must not be deposited out from under its own equip).
+ */
+function sweepOf(ch: Character, inv: Map<string, number>, desired: Partial<Record<GearSlot, string>>, opts: GearActionOpts): { code: string; quantity: number }[] {
+  if (opts.junk === false) return [];
+  const keep = new Set(opts.keep ?? []);
+  const wantCount = new Map<string, number>();
+  for (const [g, c] of Object.entries(desired) as [GearSlot, string][]) {
+    if (c && slotCode(ch, g) !== c) wantCount.set(c, (wantCount.get(c) ?? 0) + (isUtility(g) ? UTILITY_STACK : 1));
+  }
+  const out: { code: string; quantity: number }[] = [];
+  for (const [code, n] of inv) {
+    if (n <= 0 || keep.has(code)) continue;
+    const excess = n - (wantCount.get(code) ?? 0);
+    if (excess > 0) out.push({ code, quantity: excess });
+  }
+  return out;
+}
+
+/**
  * The ONE next action that moves the character toward `desired`, or null when
  * converged. Priority: unequip mismatches → equip from hand → withdraw from
  * bank → stow replaced/junk gear (only at the bank — never a dedicated trip
@@ -459,7 +482,16 @@ export function nextGearAction(
     if (worn) strip.push(g);
   }
 
-  const junkItems = junkOf(inv, desired, opts);
+  // At the bank the stow list is the WHOLE bag (minus keep + unmet wants) —
+  // deposit all before equipping; in the field it stays junk gear only (a
+  // dedicated trip for loot is the bank-off's call, not the swap's).
+  const atBank = onBankTile(ch);
+  const stow = atBank ? sweepOf(ch, inv, desired, opts) : junkOf(inv, desired, opts);
+
+  // 0. Once the ceremony stands on the bank tile with slot work still ahead,
+  //    the loot goes to the vault FIRST — strips get room, and the new set is
+  //    equipped onto a clean bag.
+  if (atBank && stow.length && (strip.length || active.length)) return { kind: "deposit", items: stow };
 
   // 1. Free the mismatched slots (one batched request). Utility stacks cost
   //    their whole quantity in inventory room, so the batch is capped by
@@ -469,7 +501,7 @@ export function nextGearAction(
     if (free === 0) {
       // No room for the unequipped gear — stow junk first; with nothing
       // depositable, yield and let the caller's normal bank-off make room.
-      return junkItems.length ? { kind: "deposit", items: junkItems } : null;
+      return stow.length ? { kind: "deposit", items: stow } : null;
     }
     const batch: { slot: GearSlot; quantity: number }[] = [];
     let room = free;
@@ -521,15 +553,15 @@ export function nextGearAction(
       }
     }
     if (items.length) return { kind: "withdraw", items };
-    return junkItems.length ? { kind: "deposit", items: junkItems } : null; // no room — stow junk or yield
+    return stow.length ? { kind: "deposit", items: stow } : null; // no room — stow or yield
   }
 
-  // 4. Bag last: swap only at the bank, junk stowed, and only when the load
+  // 4. Bag last: swap only at the bank, the bag swept, and only when the load
   //    survives the capacity shrink of removing the worn bag.
   const wantBag = desired.bag;
   if (wantBag !== undefined && wantBag !== "" && wantBag !== slotCode(ch, "bag") && ((inv.get(wantBag) ?? 0) > 0 || (bankQty.get(wantBag) ?? 0) > 0)) {
-    if (!onBankTile(ch)) return { kind: "goto-bank" };
-    if (junkItems.length) return { kind: "deposit", items: junkItems };
+    if (!atBank) return { kind: "goto-bank" };
+    if (stow.length) return { kind: "deposit", items: stow };
     const worn = slotCode(ch, "bag");
     if (worn) {
       const wornIt = item(worn);
@@ -542,7 +574,7 @@ export function nextGearAction(
     return null; // no room even for the bag — retry when lighter
   }
 
-  // 5. Converged on slots — stow replaced/junk gear if we happen to be at the bank.
-  if (junkItems.length && onBankTile(ch)) return { kind: "deposit", items: junkItems };
+  // 5. Converged on slots — sweep the bag if we happen to be at the bank.
+  if (atBank && stow.length) return { kind: "deposit", items: stow };
   return null;
 }
