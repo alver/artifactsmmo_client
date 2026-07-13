@@ -179,20 +179,28 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
     for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
     const fighter = applyGear(base, codes);
     const f = simulate(fighter, monster);
-    // Combat-equal sets are broken deterministically: prefer MORE gear (a
-    // stat-neutral ring beats an empty slot — the fleet's spares get worn),
-    // then prefer what is ALREADY worn (an equal alternative in the bank must
-    // never trigger a swap — that churn is exactly the bank livelock). The
-    // epsilons stay orders of magnitude below any real forecast difference
-    // (1 turn = 1.0; the smallest EV hp delta ≈ 50).
+    // Combat-equal sets are broken deterministically, in order: prefer the
+    // HIGHER-TIER items (Σ item level — "best in class": an iron ring whose
+    // +2% dmg rounds away vs this monster still beats the worn copper one),
+    // then MORE gear (a stat-neutral spare beats an empty slot), then what is
+    // ALREADY worn — so an equal-forecast, equal-level alternative in the
+    // bank never triggers a swap (that churn is exactly the bank livelock),
+    // while a higher-level one triggers exactly ONE stable swap. All three
+    // terms are pure functions of the set (+ worn state for `keep`), keeping
+    // bestInSlot order-free. Windows: a 1-level gap (5e-4) outranks a filled
+    // slot (1e-4) outranks a kept slot (1e-5); totals stay far below any real
+    // forecast difference (1 turn = 1.0) and far above double-precision noise
+    // at the 1e9 safe-tier magnitude (ulp ≈ 2.4e-7).
+    let tier = 0;
     let filled = 0;
     let keep = 0;
     for (const s of GEAR_SLOTS) {
       if (!slots[s]) continue;
+      tier += item(slots[s])?.level ?? 0;
       filled++;
       if (slots[s] === worn[s]) keep++;
     }
-    const tiebreak = filled * 1e-3 + keep * 1e-4;
+    const tiebreak = tier * 5e-4 + filled * 1e-4 + keep * 1e-5;
     if (!f.win || f.timedOut) {
       // Can't win with this set. Still rank it — survive the longest — on a
       // tier every winning set beats, so the solver can recommend the best
