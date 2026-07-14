@@ -12,7 +12,7 @@ import { acquireWaves, planAcquire } from "./acquire";
 import { crafterFor, fleetBis, skillLevel } from "./ctx";
 import { ratioOf } from "./objectives";
 import { SCORE, estMinutes, perHour } from "./score";
-import { fillIdle, taskSuitability } from "./tasks";
+import { taskSuitability } from "./tasks";
 import type { AccountAchievement, AchievementObjectiveProgress } from "../../types/api";
 import type { AccountGoal, Blocker, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "./types";
 
@@ -202,7 +202,6 @@ export function proposeAchievementGoals(ctx: HiveCtx): ScoredGoal[] {
 export function compileAchievementGoal(
   goal: Extract<AccountGoal, { kind: "achievement" }>,
   ctx: HiveCtx,
-  opts?: { fillIdle?: boolean },
 ): HivePlan {
   const a = ctx.achievements?.find((x) => x.code === goal.code);
   if (!a) {
@@ -250,7 +249,6 @@ export function compileAchievementGoal(
       assignments: [...byChar].map(([character, items]) => ({ character, label: labelIt(items), items })),
     });
   }
-  if (opts?.fillIdle !== false) fillIdle(waves, ctx);
   return {
     goal,
     waves,

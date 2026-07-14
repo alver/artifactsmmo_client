@@ -12,7 +12,6 @@ import { SLOTS_FOR_TYPE } from "../../types/api";
 import { acquireWaves, planAcquire, TRAIN_GAP } from "./acquire";
 import { crafterFor, fleetBis, fleetOwned } from "./ctx";
 import { SCORE, estMinutes, perHour } from "./score";
-import { fillIdle } from "./tasks";
 import { titleCase } from "../../lib/util";
 import type { BankItem, Character, GearSlot } from "../../types/api";
 import type { Monster } from "../../types/catalog";
@@ -198,7 +197,6 @@ export function proposeGearGoals(ctx: HiveCtx): ScoredGoal[] {
 export function compileGearGoal(
   goal: Extract<AccountGoal, { kind: "gear-upgrade" }>,
   ctx: HiveCtx,
-  opts?: { fillIdle?: boolean },
 ): HivePlan {
   const { ownedQty } = fleetOwned(ctx);
   const want = new Map<string, number>();
@@ -217,7 +215,6 @@ export function compileGearGoal(
   }
   const plan = planAcquire(targets, ctx);
   const waves = acquireWaves(plan, ctx);
-  if (opts?.fillIdle !== false) fillIdle(waves, ctx);
   return {
     goal,
     waves,

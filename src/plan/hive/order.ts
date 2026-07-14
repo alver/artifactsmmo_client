@@ -9,12 +9,11 @@
 import { itemName } from "../../catalog";
 import { acquireWaves, planAcquire } from "./acquire";
 import { fleetOwned } from "./ctx";
-import { fillIdle } from "./tasks";
 import type { AccountGoal, HiveCtx, HivePlan } from "./types";
 
 type CraftOrder = Extract<AccountGoal, { kind: "craft-order" }>;
 
-export function compileOrderGoal(goal: CraftOrder, ctx: HiveCtx, opts?: { fillIdle?: boolean }): HivePlan {
+export function compileOrderGoal(goal: CraftOrder, ctx: HiveCtx): HivePlan {
   const { ownedQty } = fleetOwned(ctx);
   const targets = goal.targets
     .map((t) => ({ code: t.code, quantity: t.quantity - (ownedQty.get(t.code) ?? 0) }))
@@ -25,7 +24,6 @@ export function compileOrderGoal(goal: CraftOrder, ctx: HiveCtx, opts?: { fillId
   }
   const plan = planAcquire(targets, ctx);
   const waves = acquireWaves(plan, ctx);
-  if (opts?.fillIdle !== false) fillIdle(waves, ctx);
   return { goal, waves, summary: `produce ${what}`, blockers: plan.blockers };
 }
 

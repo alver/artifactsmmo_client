@@ -16,7 +16,9 @@
 //   every compile. AccountGoal must stay plain JSON (persisted in ammo:v1:hive).
 // - Assignments: at most one per character per wave, and NO infinite items
 //   (times/quantity 0) — an infinite item never completes, so its wave would
-//   never advance.
+//   never advance. (Compile-side rules: the RUNTIME may append one `filler`
+//   assignment per idle character — an infinite task-loop it excludes from
+//   the barrier and pulls when the wave completes.)
 
 import type { QueueItemInput } from "../queue";
 import type { AccountAchievement, BankItem, Character, GearSlot } from "../../types/api";

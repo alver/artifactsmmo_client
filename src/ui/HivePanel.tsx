@@ -41,15 +41,25 @@ const STATUS_BADGE: Record<LiveAssignmentStatus, string> = {
   skipped: "⏭",
 };
 
-const needsAttention = (s: LiveAssignmentStatus): boolean => s === "paused" || s === "blocked" || s === "stopped";
+// A filler assignment is opportunistic: only its OWN error (paused) warrants
+// attention — a user-stopped or user-blocked filler is the user's choice.
+const needsAttention = (a: HiveAssignmentState, s: LiveAssignmentStatus): boolean =>
+  a.filler ? s === "paused" : s === "paused" || s === "blocked" || s === "stopped";
 
 /** Slim account-level status bar above the roster; null while the hive is idle. */
 export function HiveStrip() {
   const run = hive.value.run;
   if (!run) return null;
-  const rows = run.wave?.assignments ?? [];
-  const statuses = rows.map((a) => ({ a, s: assignmentStatus(a, queues.value[a.character]) }));
-  const attention = statuses.filter((x) => needsAttention(x.s)).length;
+  // One chip per character: a live filler outranks its finished main assignment
+  // (but a skipped one — e.g. no suitable master — never steals the ✓).
+  const byChar = new Map<string, { a: HiveAssignmentState; s: LiveAssignmentStatus }>();
+  for (const a of run.wave?.assignments ?? []) {
+    const s = assignmentStatus(a, queues.value[a.character]);
+    const cur = byChar.get(a.character);
+    if (!cur || ((cur.s === "done" || cur.s === "skipped") && s !== "skipped")) byChar.set(a.character, { a, s });
+  }
+  const statuses = [...byChar.values()];
+  const attention = statuses.filter((x) => needsAttention(x.a, x.s)).length;
   return (
     <div class="hive-strip" onClick={() => (hiveOpen.value = true)} title="Open the hive">
       <span class="hive-strip-title">🐝 {run.label}</span>
@@ -58,8 +68,8 @@ export function HiveStrip() {
         {run.status === "verifying" ? " · verifying…" : ""}
       </span>
       {statuses.map(({ a, s }) => (
-        <span key={a.character} class={`hive-chip ${s}`}>
-          {a.character} {STATUS_BADGE[s]}
+        <span key={a.character} class={`hive-chip ${s}`} title={a.filler ? "idle filler: tasks until the wave ends" : a.label}>
+          {a.character} {a.filler ? "⚒" : ""}{STATUS_BADGE[s]}
         </span>
       ))}
       {attention > 0 && <span class="hive-alert">⛔ {attention} need attention</span>}
@@ -273,6 +283,7 @@ function PlanPreview({ plan, onLaunch }: { plan: HivePlan; onLaunch: () => void 
       {plan.blockers.length > 0 && (
         <div class="hive-blockers">{plan.blockers.map((b) => `⚠ ${b.reason}`).join(" · ")}</div>
       )}
+      <div class="muted">Participants a wave leaves idle run tasks-master tasks until its barrier.</div>
       <button class="ach-btn hive-launch" disabled={plan.waves.length === 0} onClick={onLaunch}>
         🚀 Launch
       </button>
@@ -295,7 +306,7 @@ function RunView({ run }: { run: HiveRun }) {
         <div class="hive-wave">
           <div class="hive-wave-label">{run.wave.label}</div>
           {run.wave.assignments.map((a) => (
-            <AssignmentRow key={a.character} a={a} />
+            <AssignmentRow key={a.character + (a.filler ? ":filler" : "")} a={a} />
           ))}
         </div>
       )}
@@ -314,7 +325,7 @@ function RunView({ run }: { run: HiveRun }) {
 function AssignmentRow({ a }: { a: HiveAssignmentState }) {
   const q = queues.value[a.character];
   const s = assignmentStatus(a, q);
-  const bad = needsAttention(s);
+  const bad = needsAttention(a, s);
   return (
     <div class={"hive-assign" + (bad ? " failed" : "")}>
       <span class="hive-assign-who">

@@ -2,14 +2,15 @@
 // the rare crafting crystals at the Tasks Trader, and every turn-in advances
 // the Tasks Farmer achievement (100 tasks) that unlocks the trader's tile —
 // so "remove the gate" is a scoring lens here, not a separate goal kind.
-// Also home of the idle filler every other compiler uses: a character with
-// nothing to do this wave runs one task — always useful, roughly wave-sized.
+// Also home of the runtime's idle filler (fillerItems): a participant with
+// nothing left to do mid-wave runs tasks until the barrier.
 
 import { catalog } from "../../catalog";
 import { fleetBis, skillLevel } from "./ctx";
 import { SCORE, estMinutes, perHour } from "./score";
+import type { QueueItemInput } from "../queue";
 import type { Character } from "../../types/api";
-import type { AccountGoal, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "./types";
+import type { AccountGoal, HiveCtx, HivePlan, ScoredGoal } from "./types";
 
 /** Rough actions to finish one task (travel + fights/gathers + turn-in). */
 const ACTIONS_PER_TASK = 40;
@@ -108,23 +109,15 @@ export function compileTaskGoal(goal: Extract<AccountGoal, { kind: "farm-tasks" 
 }
 
 /**
- * Give every participant absent from wave 0 one filler task — always useful
- * (coins + gate progress), roughly wave-sized, self-contained. Characters with
- * no suitable master stay genuinely idle. Mutates and returns `waves`.
+ * The runtime's mid-wave idle filler: what a participant with nothing left to
+ * do this wave runs until the barrier — an INFINITE task loop at their
+ * best-suited master (always useful: coins + gate progress). The runtime
+ * tracks it as a `filler` assignment that never holds the barrier and pulls
+ * it when the wave completes, so the ∞ is deliberate — no idle gap between
+ * tasks. undefined = no suitable master; the character stays genuinely idle.
  */
-export function fillIdle(waves: HiveWave[], ctx: HiveCtx): HiveWave[] {
-  const first = waves[0];
-  if (!first) return waves;
-  const busy = new Set(first.assignments.filter((a) => a.items.length > 0).map((a) => a.character));
-  for (const ch of ctx.characters) {
-    if (busy.has(ch.name)) continue;
-    const fit = taskSuitability(ctx, ch);
-    if (!fit) continue;
-    first.assignments.push({
-      character: ch.name,
-      label: "filler: one task",
-      items: [{ kind: "task-loop", master: fit.master, times: 1, done: 0, gear: true }],
-    });
-  }
-  return waves;
+export function fillerItems(ctx: HiveCtx, ch: Character): QueueItemInput[] | undefined {
+  const fit = taskSuitability(ctx, ch);
+  if (!fit) return undefined;
+  return [{ kind: "task-loop", master: fit.master, times: 0, done: 0, gear: true }];
 }

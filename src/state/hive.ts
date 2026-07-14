@@ -12,14 +12,20 @@
 // achievements for achievement goals.
 //
 // Dispatch is idempotent via deterministic item ids
-// (hive:<startedAt>:<waveSeq>:<char>:<i>): a reload re-attaches to in-flight
-// items instead of re-pushing, and a user deleting a hive item just counts as
-// done — the hive appends and watches, user edits always win.
+// (hive:<startedAt>:<waveSeq>:<char>:<i>, filler items use f<i>): a reload
+// re-attaches to in-flight items instead of re-pushing, and a user deleting a
+// hive item just counts as done — the hive appends and watches, user edits
+// always win.
+//
+// Mid-wave idle is filled at RUNTIME, not compile time: a participant whose
+// part is done (or who was never assigned) gets an infinite task-loop as a
+// `filler` assignment — excluded from waveDone, pulled at the barrier — so
+// nobody stands around waiting AND filler never delays the goal.
 
 import { batch, effect, signal } from "@preact/signals";
 import { addItem, queues, removeItem, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
 import { achievements, bankDetails, bankItems, characterList, craftSkillPins, pushLog } from "./store";
-import { compileGoal, goalSatisfied, needsAchievements, proposeGoals } from "../plan/hive";
+import { compileGoal, fillerItems, goalSatisfied, needsAchievements, proposeGoals } from "../plan/hive";
 import type { AccountGoal, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "../plan/hive";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
 
@@ -32,6 +38,11 @@ export interface HiveAssignmentState {
   skipped?: boolean;
   /** Deterministic ids of the pushed queue items. */
   itemIds?: string[];
+  /** Runtime idle filler (an infinite task-loop): appended mid-wave when the
+   *  character's own part is done, never holds the barrier, pulled from the
+   *  queue when the wave completes. Its item ids live in the `f` namespace so
+   *  they can't collide with the character's completed main assignment. */
+  filler?: boolean;
 }
 
 export interface HiveWaveState {
@@ -119,8 +130,8 @@ export function refreshProposals(): void {
   hiveProposals.value = proposeGoals(buildHiveCtx());
 }
 
-const hiveItemId = (startedAt: number, waveSeq: number, character: string, i: number): string =>
-  `hive:${startedAt}:${waveSeq}:${character}:${i}`;
+const hiveItemId = (startedAt: number, waveSeq: number, character: string, i: number, filler?: boolean): string =>
+  `hive:${startedAt}:${waveSeq}:${character}:${filler ? "f" : ""}${i}`;
 export const isHiveItemId = (id: string): boolean => id.startsWith("hive:");
 
 const waveKeyOf = (w: HiveWave): string =>
@@ -160,6 +171,7 @@ export function assignmentStatus(a: HiveAssignmentState, q: QueueState | undefin
 
 const waveDone = (w: HiveWaveState): boolean =>
   w.assignments.every((a) => {
+    if (a.filler) return true; // filler never holds the barrier
     const s = assignmentStatus(a, queues.value[a.character]);
     return s === "done" || s === "skipped";
   });
@@ -191,8 +203,50 @@ function tick(): void {
   if (!run || run.status !== "running") return;
   if (!run.wave) return beginBarrier();
   if (run.wave.assignments.some((a) => !a.dispatched && !a.skipped)) return dispatchWave();
-  if (!waveDone(run.wave)) return; // paused/blocked/stopped assignments hold the wave
+  if (!waveDone(run.wave)) return fillWaveIdle(run); // paused/blocked/stopped assignments hold the wave
   beginBarrier();
+}
+
+/**
+ * Mid-wave idle filler: a participant whose own part is finished (or who was
+ * never assigned this wave) runs an INFINITE task-loop at their best-suited
+ * master instead of waiting for the barrier. Tracked as a `filler` assignment
+ * — excluded from waveDone, pulled by beginBarrier — so it never delays the
+ * goal. One filler per character per wave, and only an empty, stopped queue
+ * qualifies: user-queued work and paused assignments are never built over
+ * (user edits win, as always).
+ */
+function fillWaveIdle(run: HiveRun): void {
+  const wave = run.wave;
+  if (!wave) return;
+  const ctx = buildHiveCtx(); // participants only — opt-outs never get filler
+  const added: HiveAssignmentState[] = [];
+  for (const ch of ctx.characters) {
+    const mine = wave.assignments.filter((a) => a.character === ch.name);
+    if (mine.some((a) => a.filler)) continue; // one per wave — a pulled or skipped one is not re-issued
+    const busy = mine.some((a) => {
+      const s = assignmentStatus(a, queues.value[ch.name]);
+      return s !== "done" && s !== "skipped";
+    });
+    if (busy) continue;
+    const q = queues.value[ch.name];
+    if (q?.running || (q?.items.length ?? 0) > 0) continue; // the queue belongs to the user now
+    const items = fillerItems(ctx, ch);
+    added.push({
+      character: ch.name,
+      label: items ? "filler: run tasks until the wave ends" : "idle — no suitable tasks master",
+      items: items ?? [],
+      dispatched: false,
+      skipped: items ? undefined : true,
+      filler: true,
+    });
+  }
+  if (added.length === 0) return;
+  hive.value = {
+    ...hive.value,
+    run: { ...run, wave: { ...wave, assignments: [...wave.assignments, ...added] } },
+  };
+  // the write re-fires the observer → dispatchWave picks the fillers up
 }
 
 /** The only place queue items are written. Idempotent: deterministic ids + a
@@ -204,25 +258,30 @@ function dispatchWave(): void {
   const manual = new Set(st.manual);
   const known = new Set(characterList().map((c) => c.name));
   batch(() => {
+    let main = false;
+    const fillers: string[] = [];
     const assignments = run.wave!.assignments.map((a) => {
       if (a.dispatched || a.skipped) return a;
       if (!known.has(a.character) || manual.has(a.character) || a.items.length === 0) {
         if (!known.has(a.character)) log(`${a.character} is gone — assignment skipped`);
         return { ...a, skipped: true };
       }
-      const ids = a.items.map((_, i) => hiveItemId(run.startedAt, run.waveSeq, a.character, i));
+      const ids = a.items.map((_, i) => hiveItemId(run.startedAt, run.waveSeq, a.character, i, a.filler));
       const present = new Set((queues.value[a.character]?.items ?? []).map((it) => it.id));
       a.items.forEach((input, i) => {
         if (!present.has(ids[i])) addItem(a.character, { ...input, id: ids[i] } as QueueItem);
       });
       startQueue(a.character);
+      if (a.filler) fillers.push(a.character);
+      else main = true;
       return { ...a, dispatched: true, itemIds: ids };
     });
     hive.value = {
       ...hive.value,
       run: { ...hive.value.run!, wave: { ...run.wave!, assignments } },
     };
-    log(`wave ${run.waveSeq + 1} dispatched — ${run.label}`);
+    if (main) log(`wave ${run.waveSeq + 1} dispatched — ${run.label}`);
+    for (const name of fillers) log(`${name} is idle — running tasks until the wave ends`);
   });
 }
 
@@ -232,7 +291,21 @@ function beginBarrier(): void {
   const st = hive.value;
   const run = st.run;
   if (!run || run.status !== "running") return; // double-fire guard
-  hive.value = { ...st, run: { ...run, status: "verifying" } };
+  batch(() => {
+    // Filler never outlives its wave: pull the infinite task-loops NOW so the
+    // next wave (or the goal finishing) starts from clean, stopped queues. The
+    // in-flight action drains harmlessly; the next dispatch's startQueue
+    // reuses the draining loop (the cancel-stop path).
+    for (const a of run.wave?.assignments ?? []) {
+      if (!a.filler || !a.dispatched || a.skipped) continue;
+      const q = queues.value[a.character];
+      const ids = new Set(a.itemIds ?? []);
+      if (!(q?.items ?? []).some((it) => ids.has(it.id))) continue; // already gone
+      if (q?.running) stopQueue(a.character);
+      for (const id of a.itemIds ?? []) removeItem(a.character, id);
+    }
+    hive.value = { ...st, run: { ...run, status: "verifying" } };
+  });
   void continueRun();
 }
 
@@ -373,15 +446,20 @@ export function retryAssignment(character: string): void {
   startQueue(character);
 }
 
-/** Abandon one character's remaining work this wave: pull our items, mark skipped. */
+/** Abandon one character's remaining work this wave: pull our items, mark
+ *  skipped. A character can hold TWO assignments (main + filler) — every one
+ *  that isn't already finished is skipped; done ones keep their ✓. */
 export function skipAssignment(character: string): void {
   const run = hive.value.run;
-  const a = run?.wave?.assignments.find((x) => x.character === character);
-  if (!run || !run.wave || !a || a.skipped) return;
+  if (!run || !run.wave) return;
+  const mine = run.wave.assignments.filter(
+    (x) => x.character === character && !x.skipped && assignmentStatus(x, queues.value[character]) !== "done",
+  );
+  if (mine.length === 0) return;
   batch(() => {
-    if (a.dispatched) {
+    if (mine.some((a) => a.dispatched)) {
       if (queues.value[character]?.running) stopQueue(character);
-      for (const id of a.itemIds ?? []) removeItem(character, id);
+      for (const a of mine) for (const id of a.itemIds ?? []) removeItem(character, id);
     }
     const cur = hive.value.run;
     if (!cur?.wave) return;
@@ -391,7 +469,7 @@ export function skipAssignment(character: string): void {
         ...cur,
         wave: {
           ...cur.wave,
-          assignments: cur.wave.assignments.map((x) => (x.character === character ? { ...x, skipped: true } : x)),
+          assignments: cur.wave.assignments.map((x) => (mine.includes(x) ? { ...x, skipped: true } : x)),
         },
       },
     };

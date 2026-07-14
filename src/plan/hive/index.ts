@@ -12,11 +12,7 @@ import { compileTaskGoal, proposeTaskGoals } from "./tasks";
 import type { AccountGoal, HiveCtx, HivePlan, ScoredGoal } from "./types";
 
 export type { AccountGoal, Blocker, HiveAssignment, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "./types";
-
-export interface CompileOptions {
-  /** Give idle participants one filler task (default true). */
-  fillIdle?: boolean;
-}
+export { fillerItems } from "./tasks";
 
 /** Enumerate + score candidate account goals, best first. Blocked goals are
  *  discounted and their prerequisites promoted to standalone goals that carry
@@ -30,16 +26,16 @@ export function proposeGoals(ctx: HiveCtx): ScoredGoal[] {
 
 /** Compile a goal against the CURRENT ctx. Always returns a plan — possibly
  *  with empty waves and blockers explaining why. */
-export function compileGoal(goal: AccountGoal, ctx: HiveCtx, opts?: CompileOptions): HivePlan {
+export function compileGoal(goal: AccountGoal, ctx: HiveCtx): HivePlan {
   switch (goal.kind) {
     case "gear-upgrade":
-      return compileGearGoal(goal, ctx, opts);
+      return compileGearGoal(goal, ctx);
     case "craft-order":
-      return compileOrderGoal(goal, ctx, opts);
+      return compileOrderGoal(goal, ctx);
     case "farm-tasks":
       return compileTaskGoal(goal, ctx);
     case "achievement":
-      return compileAchievementGoal(goal, ctx, opts);
+      return compileAchievementGoal(goal, ctx);
     case "level-skill":
       return compileSkillGoal(goal, ctx);
   }
