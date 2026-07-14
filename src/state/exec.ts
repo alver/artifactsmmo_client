@@ -113,6 +113,22 @@ function brewKeep(ch: Character, desired: Partial<Record<GearSlot, string>>): st
 }
 
 /**
+ * Working stock of a cook in progress — the food-provisioning twin of
+ * brewKeep. When the fighter's next meal must be cooked (or gathered+cooked),
+ * provisionFood withdraws the recipe's stocked ingredients; raw ingredients
+ * are NOT healing food, so keepOf's carried-food protection never covers them
+ * and the swap sweep would stash them right back (the raw-beef loop, caught in
+ * logs/dev.log 2026-07-14). Recomputes the same deterministic foodPlan the
+ * provisioner uses, so the two can't disagree.
+ */
+function foodKeep(ch: Character): string[] {
+  const plan = foodPlan(ch, bankItems.value, foodExclude(ch));
+  if (!plan) return [];
+  if (plan.source === "bank") return [plan.code];
+  return [plan.code, ...plan.recipe.items.map((g) => g.code)];
+}
+
+/**
  * One step of the gear-swap ceremony toward `desired`: unequip mismatches →
  * equip from hand → withdraw from bank → stow replaced/junk gear → bag last.
  * Batched season-8 equip/unequip calls keep a full swap at ~5 requests.
@@ -125,9 +141,10 @@ export async function gearSwapStep(
   ctx: StepCtx,
   opts?: { junk?: boolean; reset?: boolean },
 ): Promise<"done" | "acted"> {
-  // Pending-brew ingredients are working stock — the sweep must not stash them.
-  const brew = brewKeep(ch, desired);
-  const keep = brew.length ? [...new Set([...(ctx.keep ?? []), ...brew])] : ctx.keep;
+  // Provisioning-in-progress stock is working stock — the sweep must not
+  // stash a pending brew's ingredients or the next meal being cooked.
+  const extra = [...brewKeep(ch, desired), ...(ctx.food ? foodKeep(ch) : [])];
+  const keep = extra.length ? [...new Set([...(ctx.keep ?? []), ...extra])] : ctx.keep;
   const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset });
   if (!act) return "done";
 
