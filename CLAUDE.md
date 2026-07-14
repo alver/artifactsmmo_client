@@ -18,6 +18,8 @@ npm run assets     # bash scripts/download-assets.sh — re-download public/asse
 
 There is **no test runner** in this project. Use `npm run typecheck` as the correctness gate; CI runs it before every deploy. The app sits behind a token-entry gate, so behavior usually can't be verified headlessly — rely on typecheck + the production build (`npm run build`) succeeding.
 
+**Dev forensics**: while the dev server runs, the app streams a trace of every API action (method, path, body, status), queue note change, head-item transition and activity-log entry to `logs/dev.log` (gitignored) — the browser batches lines to the `/__devlog` middleware in `vite.config.ts` (`src/lib/devlog.ts`; per-tab tags distinguish sessions). Read it to debug runner behavior post-hoc — it is how the potion-brew bank livelock was caught. No-op in production builds.
+
 On Windows/Git-Bash, do **not** set `BASE_PATH=/foo/` for a local build via the Bash tool — MSYS rewrites the leading-`/` value into a Windows path. Use PowerShell (`$env:BASE_PATH='/foo/'`) if you need to test a subpath build locally. CI (Linux) is unaffected.
 
 ## The core invariant: one sync, then no polling

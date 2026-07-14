@@ -23,6 +23,7 @@ import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, stripAllMap } from "../plan/jobgear";
 import { QUEUE_KINDS, queueItemText } from "../plan/queue";
 import { characters, pushLog } from "./store";
+import { devlog } from "../lib/devlog";
 import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
 import type { StepCtx } from "./exec";
@@ -77,6 +78,8 @@ effect(() => {
 function setQueue(name: string, patch: Partial<QueueState>): void {
   const cur = queues.value[name];
   if (!cur) return;
+  // Dev forensics: the note stream is the runner's narration — one line per change.
+  if ("note" in patch && patch.note !== cur.note && patch.note) devlog(`note ${name}: ${patch.note}`);
   queues.value = { ...queues.value, [name]: { ...cur, ...patch } };
 }
 
@@ -652,6 +655,9 @@ async function runWorkTask(
   return false;
 }
 
+// Dev forensics: last head-item id per character, to log head transitions once.
+const lastHead = new Map<string, string>();
+
 // Loss streaks are per-run, in-memory.
 const lossState = new Map<string, { losses: number }>();
 const S = (name: string): { losses: number } => {
@@ -675,6 +681,10 @@ async function runLoop(name: string): Promise<void> {
         setQueue(name, { running: false, note: undefined });
         log(name, "queue complete", "ok");
         return;
+      }
+      if (lastHead.get(name) !== item.id) {
+        lastHead.set(name, item.id);
+        devlog(`head ${name}: [${item.id}] ${queueItemText(item)}`);
       }
       try {
         const done = await runItem(name, ch, item);

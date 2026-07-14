@@ -6,6 +6,7 @@ import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
+import { devlog } from "../lib/devlog";
 
 /** The workshop skills a character can specialize in (the 📌 pin vocabulary). */
 export const CRAFT_TRAIN_SKILLS: [string, string][] = [
@@ -257,6 +258,7 @@ export function seedLogId(min: number): void {
 }
 export function pushLog(entry: Omit<LogEntry, "id">): void {
   log.value = [{ ...entry, id: ++_logId }, ...log.value].slice(0, 200);
+  devlog(`log[${entry.kind}] ${entry.character} ${entry.action}: ${entry.text}`);
 }
 
 export function setCharacter(ch: Character): void {

@@ -17,3 +17,4 @@ Thumbs.db
 
 # unused 1 MB SQLite mirror of the catalogs (the app reads public/data/*.json)
 game.db
+logs/

@@ -5,9 +5,17 @@
 // otherwise repeat: rate-limit backoff (HTTP 429) and the game's cooldown error
 // (code 499), plus pagination. `api()` returns the unwrapped `data` payload.
 
+import { devlog } from "../lib/devlog";
 import type { Paginated } from "../types/api";
 
 export const API_BASE = "https://api.artifactsmmo.com";
+
+/** Compact request-body rendering for the dev log (never the token). */
+const short = (v: unknown): string => {
+  if (v === undefined) return "";
+  const s = JSON.stringify(v);
+  return " " + (s.length > 160 ? s.slice(0, 157) + "…" : s);
+};
 const TOKEN_KEY = "ammo:v1:token";
 
 let _token = localStorage.getItem(TOKEN_KEY) || import.meta.env.TOKEN || "";
@@ -82,6 +90,7 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
     if (payload.error) {
       const code = payload.error.code || resp.status;
       const msg = payload.error.message || "API error";
+      devlog(`api ${method} ${path}${short(body)} -> ${code} ${msg}`);
       // 461 is momentary lock contention when several of the account's
       // characters bank at once — same wait-and-retry treatment as cooldown.
       if ((code === 499 || code === 461) && attempt < retries - 1) {
@@ -91,6 +100,7 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
       }
       throw new ApiError(msg, code);
     }
+    devlog(`api ${method} ${path}${short(body)} -> ok`);
     return (payload.data !== undefined ? payload.data : (payload as unknown)) as T;
   }
   throw new ApiError("too many retries", 0);
