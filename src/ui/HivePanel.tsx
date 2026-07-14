@@ -25,6 +25,8 @@ import { queues } from "../state/queue";
 import { compileGoal } from "../plan/hive";
 import type { HivePlan, ScoredGoal } from "../plan/hive";
 import { characterList } from "../state/store";
+import { catalog, itemName } from "../catalog";
+import { titleCase } from "../lib/util";
 
 const STATUS_BADGE: Record<LiveAssignmentStatus, string> = {
   pending: "…",
@@ -113,11 +115,41 @@ function ManualRow() {
   );
 }
 
+/** Every craftable item, grouped by skill then level — the order builder's menu. */
+function craftableItems(): { code: string; name: string; skill: string; level: number }[] {
+  try {
+    return [...catalog().items.values()]
+      .filter((i) => i.craft)
+      .map((i) => ({ code: i.code, name: i.name, skill: i.craft!.skill, level: i.craft!.level }))
+      .sort((a, b) => a.skill.localeCompare(b.skill) || a.level - b.level || a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
+
 function ProposalsView() {
   const [sel, setSel] = useState<{ g: ScoredGoal; plan: HivePlan } | null>(null);
+  const [orderCode, setOrderCode] = useState("");
+  const [orderQty, setOrderQty] = useState(1);
   const list = hiveProposals.value;
+  const craftables = craftableItems();
 
   const pick = (g: ScoredGoal) => setSel({ g, plan: compileGoal(g.goal, buildHiveCtx()) });
+  const pickOrder = () => {
+    const code = orderCode || craftables[0]?.code;
+    if (!code) return;
+    const quantity = Math.max(1, orderQty);
+    const g: ScoredGoal = {
+      goal: { kind: "craft-order", targets: [{ code, quantity }] },
+      label: `Craft ${quantity}× ${itemName(code)}`,
+      score: 0,
+      rationale: "your order — the fleet gathers, the qualified crafter finishes",
+      blockers: [],
+      estActions: 0,
+      estMinutes: 0,
+    };
+    setSel({ g, plan: compileGoal(g.goal, buildHiveCtx()) });
+  };
   const launch = () => {
     if (!sel) return;
     const takeover = takeoverPreview();
@@ -153,6 +185,26 @@ function ProposalsView() {
           <div class="muted">Scores every candidate goal against the live bank and roster (a second or two).</div>
         </div>
       )}
+      <div class="hive-hint">
+        <span class="muted">craft to order:</span>
+        <select class="cp-refine-select" value={orderCode || craftables[0]?.code || ""} onChange={(e) => setOrderCode((e.target as HTMLSelectElement).value)}>
+          {craftables.map((i) => (
+            <option key={i.code} value={i.code}>
+              {i.name} · {titleCase(i.skill)} {i.level}
+            </option>
+          ))}
+        </select>
+        <input
+          class="cat-num"
+          type="number"
+          min={1}
+          value={orderQty}
+          onInput={(e) => setOrderQty(parseInt((e.target as HTMLInputElement).value, 10) || 1)}
+        />
+        <button class="ach-btn" title="Fleet gathers the materials; the qualified crafter finishes" onClick={pickOrder}>
+          🛠 Plan order
+        </button>
+      </div>
       {list && list.length === 0 && <div class="muted">Nothing worth proposing right now.</div>}
       {list?.map((g) => (
         <div

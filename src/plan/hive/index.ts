@@ -6,6 +6,7 @@
 import { compileAchievementGoal, proposeAchievementGoals } from "./achievements";
 import { skillLevel } from "./ctx";
 import { compileGearGoal, gearGoalSatisfied, proposeGearGoals } from "./gear";
+import { compileOrderGoal, orderSatisfied } from "./order";
 import { compileSkillGoal, promoteBlockers } from "./skills";
 import { compileTaskGoal, proposeTaskGoals } from "./tasks";
 import type { AccountGoal, HiveCtx, HivePlan, ScoredGoal } from "./types";
@@ -33,6 +34,8 @@ export function compileGoal(goal: AccountGoal, ctx: HiveCtx, opts?: CompileOptio
   switch (goal.kind) {
     case "gear-upgrade":
       return compileGearGoal(goal, ctx, opts);
+    case "craft-order":
+      return compileOrderGoal(goal, ctx, opts);
     case "farm-tasks":
       return compileTaskGoal(goal, ctx);
     case "achievement":
@@ -49,6 +52,8 @@ export function goalSatisfied(goal: AccountGoal, ctx: HiveCtx): boolean | "unkno
   switch (goal.kind) {
     case "gear-upgrade":
       return gearGoalSatisfied(goal, ctx);
+    case "craft-order":
+      return orderSatisfied(goal, ctx);
     case "farm-tasks":
       return false;
     case "achievement": {

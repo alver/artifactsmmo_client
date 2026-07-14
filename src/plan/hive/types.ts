@@ -43,6 +43,8 @@ export interface GearUpgrade {
 
 export type AccountGoal =
   | { kind: "gear-upgrade"; monster: string; upgrades: GearUpgrade[] }
+  /** User-directed production run ("make me N of X") — never auto-proposed. */
+  | { kind: "craft-order"; targets: ItemDemand[] }
   | { kind: "farm-tasks"; perCharacter: { character: string; master: "monsters" | "items"; times: number }[] }
   | { kind: "achievement"; code: string }
   | {
