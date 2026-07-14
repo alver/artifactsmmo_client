@@ -50,8 +50,9 @@ export function gearFrontier(ctx: HiveCtx, size = 4): string[] {
 }
 
 // Probe results memoized per bank generation (same trick as fleetBis).
+// Also used by the Hive drawer's order builder to hide unsourceable items.
 const _probeCache = new WeakMap<BankItem[], Map<string, boolean>>();
-function probeFeasible(ctx: HiveCtx, code: string): boolean {
+export function probeFeasible(ctx: HiveCtx, code: string): boolean {
   let byCode = _probeCache.get(ctx.bank);
   if (!byCode) {
     byCode = new Map();

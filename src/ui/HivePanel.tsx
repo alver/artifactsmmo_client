@@ -2,7 +2,8 @@
 // slim always-visible status strip above the roster. Reads only the hive /
 // queues / proposals signals — never the 4 Hz clock.
 
-import { useState } from "preact/hooks";
+import { useMemo, useState } from "preact/hooks";
+import type { JSX } from "preact";
 import { achievements, achievementsLoading, hiveOpen } from "../state/store";
 import { loadAchievements } from "../state/sync";
 import {
@@ -23,7 +24,9 @@ import {
 } from "../state/hive";
 import { queues } from "../state/queue";
 import { compileGoal } from "../plan/hive";
-import type { HivePlan, ScoredGoal } from "../plan/hive";
+import { crafterFor } from "../plan/hive/ctx";
+import { probeFeasible } from "../plan/hive/gear";
+import type { HiveCtx, HivePlan, ScoredGoal } from "../plan/hive";
 import { characterList } from "../state/store";
 import { catalog, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
@@ -115,11 +118,21 @@ function ManualRow() {
   );
 }
 
-/** Every craftable item, grouped by skill then level — the order builder's menu. */
-function craftableItems(): { code: string; name: string; skill: string; level: number }[] {
+/**
+ * The order builder's menu: only what the fleet could actually produce —
+ * some participant's craft skill reaches the recipe NOW, and the materials
+ * are sourceable at all (gather/craft/fight/buy probe; memoized per bank
+ * generation). Grouped by skill, then level.
+ */
+function craftableItems(ctx: HiveCtx): { code: string; name: string; skill: string; level: number }[] {
   try {
     return [...catalog().items.values()]
-      .filter((i) => i.craft)
+      .filter((i) => {
+        if (!i.craft) return false;
+        const crafter = crafterFor(ctx, i.craft.skill);
+        if (!crafter || crafter.level < i.craft.level) return false; // nobody can craft it yet
+        return probeFeasible(ctx, i.code);
+      })
       .map((i) => ({ code: i.code, name: i.name, skill: i.craft!.skill, level: i.craft!.level }))
       .sort((a, b) => a.skill.localeCompare(b.skill) || a.level - b.level || a.name.localeCompare(b.name));
   } catch {
@@ -132,7 +145,8 @@ function ProposalsView() {
   const [orderCode, setOrderCode] = useState("");
   const [orderQty, setOrderQty] = useState(1);
   const list = hiveProposals.value;
-  const craftables = craftableItems();
+  // Recomputed once per drawer open (the probe sweep costs ~100ms cold).
+  const craftables = useMemo(() => craftableItems(buildHiveCtx()), []);
 
   const pick = (g: ScoredGoal) => setSel({ g, plan: compileGoal(g.goal, buildHiveCtx()) });
   const pickOrder = () => {
@@ -188,11 +202,22 @@ function ProposalsView() {
       <div class="hive-hint">
         <span class="muted">craft to order:</span>
         <select class="cp-refine-select" value={orderCode || craftables[0]?.code || ""} onChange={(e) => setOrderCode((e.target as HTMLSelectElement).value)}>
-          {craftables.map((i) => (
-            <option key={i.code} value={i.code}>
-              {i.name} · {titleCase(i.skill)} {i.level}
-            </option>
-          ))}
+          {craftables.flatMap((i, idx) => {
+            const opts: JSX.Element[] = [];
+            if (idx === 0 || i.skill !== craftables[idx - 1].skill) {
+              opts.push(
+                <option key={`sep-${i.skill}`} disabled class="q-opt-sep">
+                  {`------ ${titleCase(i.skill)} ------`}
+                </option>,
+              );
+            }
+            opts.push(
+              <option key={i.code} value={i.code}>
+                {i.name} (lv.{i.level})
+              </option>,
+            );
+            return opts;
+          })}
         </select>
         <input
           class="cat-num"
