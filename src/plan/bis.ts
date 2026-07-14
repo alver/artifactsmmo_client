@@ -65,7 +65,15 @@ const skillLevel = (ch: Character, skill: string): number =>
 /** Whether the character satisfies all of an item's equip conditions. */
 export function canEquip(ch: Character, it: Item): boolean {
   for (const c of it.conditions ?? []) {
-    const stat = c.code === "level" ? ch.level : skillLevel(ch, c.code);
+    // Condition codes come in two spellings: "level" (character level) and
+    // "<skill>_level" (e.g. iron_pickaxe wants mining_level > 9) — the latter
+    // is ALREADY the Character field name, so read it directly; appending
+    // another "_level" (the old bug) made every skill-gated tool unequippable
+    // and dressed the whole fleet in copper forever.
+    const stat =
+      c.code === "level" ? ch.level
+      : c.code.endsWith("_level") ? ((ch as unknown as Record<string, number>)[c.code] ?? 0)
+      : skillLevel(ch, c.code);
     const ok =
       c.operator === "gt" ? stat > c.value
       : c.operator === "ge" || c.operator === "gte" ? stat >= c.value
