@@ -141,13 +141,15 @@ random exclusive reward.
 
 | Action | Body | Client wrapper |
 |---|---|---|
-| `give/gold` | `{ quantity, character }` | `giveGold` |
-| `give/item` | `{ items: [{code, quantity}], character }` | `giveItems` |
+| `give/gold` | `{ quantity, character }` | — *(removed 2026-07-14 — the bank is the inter-character channel)* |
+| `give/item` | `{ items: [{code, quantity}], character }` | — *(removed 2026-07-14)* |
 | `claim_item/{id}` | — | `claimItem` |
 | `change_skin` | `{ skin }` | — *(not implemented)* |
 
 `give/*` transfers between **your own** characters standing on the same tile (both sides are
-echoed, so state stays current). `claim_item` collects a pending item (achievement payouts, filled
+echoed — the giver as `data.character`, the recipient as `data.receiver_character`, which
+`applyActionResult` still folds). The client dropped its wrappers + UI in favor of bank
+deposits/withdrawals. `claim_item` collects a pending item (achievement payouts, filled
 GE buy orders, event rewards — listed by `GET /my/pending_items`) into this character's inventory.
 `change_skin` applies an owned cosmetic skin.
 
@@ -173,8 +175,9 @@ GE buy orders, event rewards — listed by `GET /my/pending_items`) into this ch
 
 ## Client coverage summary
 
-Implemented (26 of 32): all movement, combat, skill, inventory, bank, NPC, task, give and claim
-actions. **Not implemented (6):** the five Grand Exchange actions and `change_skin`. Partially
+Implemented (24 of 32): all movement, combat, skill, inventory, bank, NPC, task and claim
+actions. **Not implemented (8):** the five Grand Exchange actions, `change_skin`, and the two
+`give/*` transfers (wrappers + UI removed — inter-character exchange goes via the bank). Partially
 implemented: `fight` lacks the `participants` option (multi-character boss fights). The queue's
 item vocabulary
 (move / fight / gather / craft / withdraw / gear / task items — see `src/plan/queue.ts`) composes

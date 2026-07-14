@@ -1365,44 +1365,6 @@ body,
   color: var(--gold);
 }
 
-/* ── give-to-character form ── */
-.give-form {
-  display: flex;
-  flex-direction: column;
-  gap: 7px;
-  margin-top: 8px;
-}
-.give-mode {
-  display: flex;
-  gap: 14px;
-  font-size: 12px;
-  color: var(--muted);
-}
-.give-mode label {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  cursor: pointer;
-}
-.give-form .cat-num {
-  width: 100%;
-}
-.give-form .cat-btn {
-  align-self: flex-start;
-  font-size: 12px;
-  padding: 6px 14px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-}
-.give-form .cat-btn.buy {
-  background: #1f3a52;
-  border-color: #2f5e86;
-  color: #cfe0f0;
-}
-.give-form .cat-btn:not(:disabled):hover {
-  filter: brightness(1.13);
-}
-
 .cat-actor {
   display: flex;
   align-items: center;

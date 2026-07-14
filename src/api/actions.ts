@@ -93,11 +93,8 @@ export const taskTrade = (name: string, code: string, quantity: number) => act(n
 // character }, so applyActionResult keeps state current.
 export const claimItem = (name: string, id: string) => act(name, `claim_item/${id}`);
 
-// Give gold / items to another character. Verified field names: { quantity,
-// character } and { items, character } (NOT character_name). Both the giver
-// (data.character) and recipient (data.receiver_character) are echoed, so
-// applyActionResult folds both — no staleness, no extra read.
-export const giveGold = (name: string, toCharacter: string, quantity: number) =>
-  act(name, "give/gold", { quantity, character: toCharacter });
-export const giveItems = (name: string, toCharacter: string, items: ItemStack[]) =>
-  act(name, "give/item", { items, character: toCharacter });
+// give/gold + give/item wrappers removed 2026-07-14 with the Give UI card —
+// the bank is the only inter-character channel in practice. If they return,
+// the verified field names are { quantity, character } / { items, character }
+// (NOT character_name), and both data.character and data.receiver_character
+// are echoed (applyActionResult still folds receiver_character).

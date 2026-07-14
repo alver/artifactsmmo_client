@@ -1,7 +1,6 @@
-import { useState } from "preact/hooks";
-import { CRAFT_TRAIN_SKILLS, characters, characterList, craftFocus, craftSkillPins, selectedCharacter, toggleCraftPin } from "../state/store";
+import { CRAFT_TRAIN_SKILLS, characters, craftFocus, craftSkillPins, selectedCharacter, toggleCraftPin } from "../state/store";
 import { saveState } from "../state/persist";
-import { item, itemName, monster, npc, resource } from "../catalog";
+import { item, monster, npc, resource } from "../catalog";
 import { liveTileAt } from "../state/events";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { queues } from "../state/queue";
@@ -15,9 +14,6 @@ import type { ActionRunner } from "./useAction";
 import * as actions from "../api/actions";
 import { slotCode, SLOTS_FOR_TYPE } from "../types/api";
 import type { Character, InventorySlot } from "../types/api";
-
-const invQtyOf = (c: Character, code: string): number =>
-  (c.inventory || []).reduce((s, it) => s + (it.code === code ? it.quantity : 0), 0);
 
 const SKILLS: [string, string][] = [
   ["mining", "Mining"],
@@ -150,12 +146,6 @@ export function CharacterPanel() {
             <InventorySection ch={ch} onBank={onBank} onWorkshop={onWorkshop} />
           </details>
 
-          {characterList().length > 1 && (
-            <details class="ws-card">
-              <summary>Give to another character</summary>
-              <GiveSection ch={ch} />
-            </details>
-          )}
         </div>
       </div>
     </div>
@@ -251,83 +241,6 @@ function InvRow({ ch, slot, ctl, onBank, onWorkshop }: { ch: Character; slot: In
           🗑
         </button>
       </div>
-    </div>
-  );
-}
-
-/** Transfer gold or an inventory item to another of your characters. Both sides
- *  are echoed by the API, so the recipient updates immediately too. */
-function GiveSection({ ch }: { ch: Character }) {
-  const ctl = useActionRunner(ch);
-  const others = characterList().filter((c) => c.name !== ch.name);
-  const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
-  const [to, setTo] = useState(others[0]?.name ?? "");
-  const [mode, setMode] = useState<"gold" | "item">("gold");
-  const [gold, setGold] = useState(0);
-  const [code, setCode] = useState(inv[0]?.code ?? "");
-  const [qty, setQty] = useState(1);
-
-  const recipient = others.find((c) => c.name === to) ? to : (others[0]?.name ?? "");
-  const held = invQtyOf(ch, code);
-  const canGive =
-    !!recipient && !ctl.disabled && (mode === "gold" ? gold >= 1 && gold <= ch.gold : !!code && qty >= 1 && qty <= held);
-
-  return (
-    <div class="give-form">
-      <select class="cp-refine-select" value={recipient} onChange={(e) => setTo((e.target as HTMLSelectElement).value)}>
-        {others.map((c) => (
-          <option key={c.name} value={c.name}>
-            {c.name} (Lv {c.level})
-          </option>
-        ))}
-      </select>
-      <div class="give-mode">
-        <label>
-          <input type="radio" checked={mode === "gold"} onChange={() => setMode("gold")} /> Gold
-        </label>
-        <label>
-          <input type="radio" checked={mode === "item"} onChange={() => setMode("item")} /> Item
-        </label>
-      </div>
-      {mode === "gold" ? (
-        <input
-          class="cat-num"
-          type="number"
-          min={1}
-          max={ch.gold}
-          value={gold}
-          onInput={(e) => setGold(parseInt((e.target as HTMLInputElement).value, 10) || 0)}
-        />
-      ) : (
-        <>
-          <select class="cp-refine-select" value={code} onChange={(e) => setCode((e.target as HTMLSelectElement).value)}>
-            {inv.map((s) => (
-              <option key={s.code} value={s.code}>
-                {itemName(s.code)} (×{s.quantity})
-              </option>
-            ))}
-          </select>
-          <input
-            class="cat-num"
-            type="number"
-            min={1}
-            max={held}
-            value={qty}
-            onInput={(e) => setQty(parseInt((e.target as HTMLInputElement).value, 10) || 1)}
-          />
-        </>
-      )}
-      <button
-        class="cat-btn buy"
-        disabled={!canGive}
-        onClick={() =>
-          ctl.run(() =>
-            mode === "gold" ? actions.giveGold(ch.name, recipient, gold) : actions.giveItems(ch.name, recipient, [{ code, quantity: qty }]),
-          )
-        }
-      >
-        Give
-      </button>
     </div>
   );
 }
