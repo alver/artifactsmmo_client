@@ -17,12 +17,11 @@ import type { JSX } from "preact";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
 import type { Character } from "../types/api";
 
-/** All normal monsters, easiest first (shared with the sim playground). */
-export function monsterList(): { code: string; name: string; level: number }[] {
+/** Every catalog monster, easiest first (shared with the sim playground). */
+export function monsterList(): { code: string; name: string; level: number; type: string }[] {
   try {
     return [...catalog().monsters.values()]
-      .filter((m) => m.type === "normal")
-      .map((m) => ({ code: m.code, name: m.name, level: m.level }))
+      .map((m) => ({ code: m.code, name: m.name, level: m.level, type: m.type }))
       .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
   } catch {
     return [];
@@ -322,7 +321,9 @@ function AddForm({ ch }: { ch: Character }) {
       {kind === "fight" && (
         <select class="cp-refine-select" value={code || monsters[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
           {monsters.map((m) => (
-            <option key={m.code} value={m.code}>{m.name} · Lv {m.level}{m.event ? " · ⚡ event" : ""}</option>
+            <option key={m.code} value={m.code}>
+              {m.name} · Lv {m.level}{m.type !== "normal" ? ` · 👑 ${m.type}` : ""}{m.event ? " · ⚡ event" : ""}
+            </option>
           ))}
         </select>
       )}

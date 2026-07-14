@@ -226,7 +226,7 @@ export function SimPlayground() {
           <label class="sim-label">Monster</label>
           <select class="cp-refine-select" value={m?.code ?? ""} onChange={(e) => pickMonster((e.target as HTMLSelectElement).value)}>
             {monsters.map((x) => (
-              <option key={x.code} value={x.code}>{x.name} · Lv {x.level}</option>
+              <option key={x.code} value={x.code}>{x.name} · Lv {x.level}{x.type !== "normal" ? ` · 👑 ${x.type}` : ""}</option>
             ))}
           </select>
         </div>

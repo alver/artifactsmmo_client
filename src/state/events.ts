@@ -50,10 +50,12 @@ function staticContentCodes(type: string): Set<string> {
 }
 
 /**
- * Monsters a character can actually walk to right now: normal monsters with a
- * static tile, plus whatever monsters active events spawn (flagged `event`).
+ * Monsters a character can actually walk to right now: anything with a static
+ * tile — bosses and elites included (the fight gate's live forecast is the
+ * safety mechanism, not the picker) — plus whatever monsters active events
+ * spawn (flagged `event`). `type` lets the UI tag the dangerous ones.
  */
-export function availableMonsters(): { code: string; name: string; level: number; event: boolean }[] {
+export function availableMonsters(): { code: string; name: string; level: number; type: string; event: boolean }[] {
   try {
     const statics = staticContentCodes("monster");
     const eventCodes = new Set(
@@ -62,8 +64,8 @@ export function availableMonsters(): { code: string; name: string; level: number
         .map((e) => e.map.interactions!.content!.code),
     );
     return [...catalog().monsters.values()]
-      .filter((m: Monster) => (m.type === "normal" && statics.has(m.code)) || eventCodes.has(m.code))
-      .map((m) => ({ code: m.code, name: m.name, level: m.level, event: !statics.has(m.code) }))
+      .filter((m: Monster) => statics.has(m.code) || eventCodes.has(m.code))
+      .map((m) => ({ code: m.code, name: m.name, level: m.level, type: m.type, event: !statics.has(m.code) }))
       .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
   } catch {
     return [];
