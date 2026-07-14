@@ -18,6 +18,7 @@
 
 import { effect, signal } from "@preact/signals";
 import * as actions from "../api/actions";
+import { ApiError } from "../api/client";
 import { catalog, item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
 import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, stripAllMap } from "../plan/jobgear";
@@ -696,6 +697,15 @@ async function runLoop(name: string): Promise<void> {
       } catch (e) {
         if (isInventoryFull(e)) {
           try { await bankOff(name, ch.x, ch.y, keepOf(item, ch), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
+        }
+        // Transient transport trouble (code 0: fetch kept failing / 429 storm
+        // exhausted its retries): never pause — hold a minute and try again,
+        // so a wifi blip doesn't strand the character. ⏹ stays responsive.
+        if (e instanceof ApiError && e.code === 0) {
+          log(name, `network trouble — retrying in 60s (${(e as Error).message})`, "bad");
+          setQueue(name, { note: "network trouble — waiting" });
+          for (let i = 0; i < 60 && !stopFlags.has(name); i++) await sleep(1000);
+          continue;
         }
         const msg = (e as Error).message;
         patchItem(name, item.id, { error: msg });

@@ -57,6 +57,29 @@ function retryAfterMs(resp: Response): number {
   return ((parseFloat(resp.headers.get("Retry-After") || "1") || 1) + 0.25) * 1000;
 }
 
+/** Transport-level retry budget, distinct from the API retries (429/499/461). */
+const NET_RETRIES = 6;
+
+/**
+ * fetch() that waits out transport failures — offline blip, DNS, connection
+ * reset — with growing backoff (2s → 30s, ~90s total) before giving up with a
+ * code-0 ApiError. Safe for actions: every echo is authoritative, and if the
+ * lost response's action DID land, the retry just gets a 499 cooldown, which
+ * the caller already waits out.
+ */
+async function fetchRetrying(url: string, init: RequestInit, tag: string): Promise<Response> {
+  for (let fails = 1; ; fails++) {
+    try {
+      return await fetch(url, init);
+    } catch (e) {
+      if (fails > NET_RETRIES) throw new ApiError(`network error: ${(e as Error).message}`, 0);
+      const wait = Math.min(30, 2 ** fails);
+      devlog(`api ${tag} network error — retry ${fails}/${NET_RETRIES} in ${wait}s`);
+      await sleep(wait * 1000);
+    }
+  }
+}
+
 export interface ApiOptions {
   method?: "GET" | "POST" | "DELETE";
   body?: unknown;
@@ -74,11 +97,15 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
   const { method = "GET", body, retries = 4 } = opts;
   const url = API_BASE + path;
   for (let attempt = 0; attempt < retries; attempt++) {
-    const resp = await fetch(url, {
-      method,
-      headers: authHeaders(),
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
+    const resp = await fetchRetrying(
+      url,
+      {
+        method,
+        headers: authHeaders(),
+        body: body !== undefined ? JSON.stringify(body) : undefined,
+      },
+      `${method} ${path}`,
+    );
     if (resp.status === 429) {
       await sleep(retryAfterMs(resp));
       continue;
@@ -120,7 +147,7 @@ export async function getAllPages<T = unknown>(
       size: String(size),
       page: String(page),
     }).toString();
-    const resp = await fetch(`${API_BASE}${path}?${qs}`, { headers: authHeaders() });
+    const resp = await fetchRetrying(`${API_BASE}${path}?${qs}`, { headers: authHeaders() }, `GET ${path}`);
     if (resp.status === 429) {
       await sleep(retryAfterMs(resp));
       continue;

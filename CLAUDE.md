@@ -31,7 +31,7 @@ This is the whole design and the thing most likely to be violated by accident. R
 - After that, **nothing polls.** Every action endpoint echoes the full authoritative `character` (and bank item moves echo `bank`), so `applyActionResult` (`src/state/apply.ts`) is the single chokepoint that folds responses into state — no GET-after-write. Re-sync only on the manual Refresh button (`reconcile()`).
 - Budgets to respect: per-account **read** endpoints are the scarcest (~300/hr) — never add polling/GET loops. Actions are ~2000/hr; automation loops are paced by the cooldown each action returns, which keeps them well under.
 
-`src/api/client.ts` is the only place that does `fetch`. It handles 429 (rate-limit) and 499 (still-on-cooldown) retries and pagination, and returns the unwrapped `data`. New API calls go through `api()` / typed wrappers in `src/api/actions.ts`, which route every response through `applyActionResult`.
+`src/api/client.ts` is the only place that does `fetch`. It handles 429 (rate-limit) and 499 (still-on-cooldown) retries, transient network failures (transport-level backoff, 2s→30s over ~90s, then a code-0 ApiError — which the queue runner holds-and-retries on instead of pausing), and pagination, and returns the unwrapped `data`. New API calls go through `api()` / typed wrappers in `src/api/actions.ts`, which route every response through `applyActionResult`.
 
 ## State
 
