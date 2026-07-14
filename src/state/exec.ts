@@ -308,6 +308,16 @@ export const foodInHand = (ch: Character): FoodSpec | undefined => carriedFood(c
 const FOOD_HORIZON = 50;
 
 /**
+ * Potions brewed per expedition. Deliberately small: a brew only starts when
+ * the potion has NO supply anywhere, so the fighter is standing around NOT
+ * fighting while ingredients are gathered — a horizon-sized batch (50 × up to
+ * 3 ingredients each) meant half an hour of sunflower picking before the first
+ * swing. A small batch reaches the fights in minutes; when the worn stack
+ * drains dry the next expedition brews the next batch.
+ */
+const BREW_BATCH = 15;
+
+/**
  * One provisioning action toward having between-fight food in hand: withdraw
  * stocked food from the bank, else cook the best recipe the current stock can
  * feed, else gather the raw materials in the field and cook them. Returns
@@ -408,8 +418,9 @@ export async function provisionPotions(
     if (invQty(ch, want) > 0 || bankQty(want) > 0) continue; // the differ's job
     const recipe = item(want)?.craft;
     if (!recipe || skillLevel(ch, recipe.skill) < recipe.level) continue;
-    // One potion fires (and is consumed) per fight at most — the horizon caps it.
-    const target = Math.min(ctx.fightsLeft ?? 1, FOOD_HORIZON);
+    // One potion fires (and is consumed) per fight at most — never brew more
+    // than the fights left, and never more than a batch per expedition.
+    const target = Math.min(ctx.fightsLeft ?? 1, BREW_BATCH);
     if ((await produceOnce(name, ch, want, recipe, target, ctx)) === "acted") return "acted";
   }
   return "none";
