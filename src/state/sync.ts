@@ -22,6 +22,7 @@ import {
   syncing,
 } from "./store";
 import { loadPersisted, saveState } from "./persist";
+import { resumeHive } from "./hive";
 import { resumeQueue } from "./queue";
 import { api, getAllPages, hasToken } from "../api/client";
 import { loadCatalog } from "../catalog";
@@ -37,6 +38,7 @@ export async function boot(): Promise<void> {
   if (authed.value) {
     await reconcile(); // one authoritative sync before runners act on character state
     resumeQueue(); // re-launch queues saved from a previous session
+    resumeHive(); // re-attach the hive AFTER the queues are back (it observes them)
   }
 }
 
@@ -127,5 +129,6 @@ export async function login(): Promise<void> {
   if (authed.value) {
     await reconcile();
     resumeQueue();
+    resumeHive();
   }
 }

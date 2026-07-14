@@ -190,6 +190,9 @@ export const achievements = signal<AccountAchievement[] | null>(null);
 export const achievementsLoading = signal(false);
 export const achievementsError = signal<string | null>(null);
 
+/** Whether the Hive drawer (account-goal coordinator) is open. */
+export const hiveOpen = signal(false);
+
 /**
  * Unclaimed account rewards (GET /my/pending_items — achievement payouts wait
  * here until a character claims them). Fetched with every reconcile() and on

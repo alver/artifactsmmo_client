@@ -2306,3 +2306,163 @@ body,
   font-size: 11px;
   color: var(--muted);
 }
+
+/* ── the hive (account-goal coordinator) ───────────────── */
+.hive-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px 10px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel-2);
+  cursor: pointer;
+  font-size: 12px;
+}
+.hive-strip-title {
+  font-weight: 700;
+}
+.hive-strip-wave {
+  color: var(--muted);
+  font-size: 11px;
+}
+.hive-chip {
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font-size: 11px;
+  background: transparent;
+  color: var(--text);
+}
+.hive-chip.done,
+.hive-chip.skipped {
+  opacity: 0.55;
+}
+.hive-chip.paused,
+.hive-chip.blocked,
+.hive-chip.stopped {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+.hive-chip.toggle {
+  cursor: pointer;
+}
+.hive-chip.toggle.off {
+  opacity: 0.5;
+  border-style: dashed;
+}
+.hive-alert {
+  color: var(--bad);
+  font-weight: 600;
+}
+.hive-manual {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.hive-hint,
+.hive-empty {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hive-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel-2);
+  cursor: pointer;
+}
+.hive-card:hover {
+  border-color: var(--accent);
+}
+.hive-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent) inset;
+}
+.hive-blockers {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--gold);
+  line-height: 1.4;
+}
+.hive-preview,
+.hive-goal,
+.hive-history {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--panel-2);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hive-preview-title {
+  font-weight: 600;
+  font-size: 12px;
+}
+.hive-wave {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: var(--panel-2);
+}
+.hive-wave-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.hive-assign {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.hive-assign.failed {
+  color: var(--bad);
+}
+.hive-assign-who {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+.hive-assign-what {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.hive-assign.failed .hive-assign-what {
+  color: var(--bad);
+  white-space: normal;
+}
+.hive-assign-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 4px;
+}
+.hive-launch {
+  align-self: flex-start;
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hive-stop {
+  align-self: flex-start;
+  border-color: var(--bad);
+  color: var(--bad);
+}

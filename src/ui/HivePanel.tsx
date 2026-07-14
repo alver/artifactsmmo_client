@@ -1,0 +1,281 @@
+// The Hive UI: a topbar drawer (propose → preview → launch → monitor) and a
+// slim always-visible status strip above the roster. Reads only the hive /
+// queues / proposals signals — never the 4 Hz clock.
+
+import { useState } from "preact/hooks";
+import { achievements, achievementsLoading, hiveOpen } from "../state/store";
+import { loadAchievements } from "../state/sync";
+import {
+  assignmentStatus,
+  buildHiveCtx,
+  hive,
+  hiveProposals,
+  launchHive,
+  refreshProposals,
+  retryAssignment,
+  skipAssignment,
+  stopHive,
+  takeoverPreview,
+  toggleHiveManual,
+  type HiveAssignmentState,
+  type HiveRun,
+  type LiveAssignmentStatus,
+} from "../state/hive";
+import { queues } from "../state/queue";
+import { compileGoal } from "../plan/hive";
+import type { HivePlan, ScoredGoal } from "../plan/hive";
+import { characterList } from "../state/store";
+
+const STATUS_BADGE: Record<LiveAssignmentStatus, string> = {
+  pending: "…",
+  running: "▶",
+  done: "✓",
+  paused: "⛔",
+  blocked: "⛔",
+  stopped: "⏸",
+  skipped: "⏭",
+};
+
+const needsAttention = (s: LiveAssignmentStatus): boolean => s === "paused" || s === "blocked" || s === "stopped";
+
+/** Slim account-level status bar above the roster; null while the hive is idle. */
+export function HiveStrip() {
+  const run = hive.value.run;
+  if (!run) return null;
+  const rows = run.wave?.assignments ?? [];
+  const statuses = rows.map((a) => ({ a, s: assignmentStatus(a, queues.value[a.character]) }));
+  const attention = statuses.filter((x) => needsAttention(x.s)).length;
+  return (
+    <div class="hive-strip" onClick={() => (hiveOpen.value = true)} title="Open the hive">
+      <span class="hive-strip-title">🐝 {run.label}</span>
+      <span class="hive-strip-wave">
+        wave {run.waveSeq + 1}
+        {run.status === "verifying" ? " · verifying…" : ""}
+      </span>
+      {statuses.map(({ a, s }) => (
+        <span key={a.character} class={`hive-chip ${s}`}>
+          {a.character} {STATUS_BADGE[s]}
+        </span>
+      ))}
+      {attention > 0 && <span class="hive-alert">⛔ {attention} need attention</span>}
+    </div>
+  );
+}
+
+export function HiveDrawer() {
+  if (!hiveOpen.value) return null;
+  const close = () => (hiveOpen.value = false);
+  const run = hive.value.run;
+  return (
+    <div class="ach-backdrop" onClick={close}>
+      <aside class="ach-panel hive-panel" onClick={(e) => e.stopPropagation()}>
+        <header class="ach-head">
+          <div class="ach-titles">
+            <div class="ach-title">🐝 Hive</div>
+            <div class="ach-sub">{run ? "working an account goal" : "one goal, every character on it"}</div>
+          </div>
+          {!run && (
+            <button class="ach-btn" title="Recompute candidate goals" onClick={refreshProposals}>
+              ↻ Propose
+            </button>
+          )}
+          <button class="cat-close" title="Close" onClick={close}>
+            ✕
+          </button>
+        </header>
+        <ManualRow />
+        <div class="ach-body">
+          {run ? <RunView run={run} /> : <ProposalsView />}
+          <HistoryView />
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+/** Per-character manual opt-out toggles (opted-out queues are never touched). */
+function ManualRow() {
+  const manual = new Set(hive.value.manual);
+  return (
+    <div class="hive-manual">
+      <span class="muted">participants:</span>
+      {characterList().map((c) => (
+        <button
+          key={c.name}
+          class={"hive-chip toggle" + (manual.has(c.name) ? " off" : "")}
+          title={manual.has(c.name) ? "Manual — click to enlist" : "In the hive — click to opt out"}
+          onClick={() => toggleHiveManual(c.name)}
+        >
+          {manual.has(c.name) ? "✋" : "🐝"} {c.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ProposalsView() {
+  const [sel, setSel] = useState<{ g: ScoredGoal; plan: HivePlan } | null>(null);
+  const list = hiveProposals.value;
+
+  const pick = (g: ScoredGoal) => setSel({ g, plan: compileGoal(g.goal, buildHiveCtx()) });
+  const launch = () => {
+    if (!sel) return;
+    const takeover = takeoverPreview();
+    if (
+      takeover.length &&
+      !confirm(
+        `Launching stops and clears these queues:\n${takeover
+          .map((t) => `  ${t.name} — ${t.items} item${t.items === 1 ? "" : "s"}${t.running ? ", running" : ""}`)
+          .join("\n")}\nContinue?`,
+      )
+    ) {
+      return;
+    }
+    launchHive(sel.g, sel.plan);
+    setSel(null);
+  };
+
+  return (
+    <>
+      {!achievements.value && (
+        <div class="hive-hint">
+          Achievement goals need progress data.{" "}
+          <button class="ach-btn" disabled={achievementsLoading.value} onClick={() => void loadAchievements()}>
+            {achievementsLoading.value ? "…" : "🏆 Load achievements"}
+          </button>
+        </div>
+      )}
+      {!list && (
+        <div class="hive-empty">
+          <button class="ach-btn" onClick={refreshProposals}>
+            🐝 Propose goals
+          </button>
+          <div class="muted">Scores every candidate goal against the live bank and roster (a second or two).</div>
+        </div>
+      )}
+      {list && list.length === 0 && <div class="muted">Nothing worth proposing right now.</div>}
+      {list?.map((g) => (
+        <div
+          key={g.label + g.score}
+          class={"hive-card" + (sel?.g === g ? " selected" : "")}
+          onClick={() => pick(g)}
+        >
+          <div class="ach-row-head">
+            <span class="ach-name">{g.label}</span>
+            <span class="ach-pts">{Math.round(g.score)} pts/h · ~{g.estMinutes}m</span>
+          </div>
+          <div class="ach-desc">{g.rationale}</div>
+          {g.blockers.length > 0 && (
+            <div class="hive-blockers">{g.blockers.map((b) => `⚠ ${b.reason}`).join(" · ")}</div>
+          )}
+        </div>
+      ))}
+      {sel && <PlanPreview plan={sel.plan} onLaunch={launch} />}
+    </>
+  );
+}
+
+function PlanPreview({ plan, onLaunch }: { plan: HivePlan; onLaunch: () => void }) {
+  return (
+    <div class="hive-preview">
+      <div class="hive-preview-title">{plan.summary}</div>
+      {plan.waves.map((w, i) => (
+        <div key={i} class="hive-wave">
+          <div class="hive-wave-label">
+            {i + 1}. {w.label}
+            {i > 0 ? " (preview — replanned live)" : ""}
+          </div>
+          {w.assignments.map((a) => (
+            <div key={a.character} class="hive-assign">
+              <span class="hive-assign-who">{a.character}</span>
+              <span class="hive-assign-what">{a.label}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+      {plan.blockers.length > 0 && (
+        <div class="hive-blockers">{plan.blockers.map((b) => `⚠ ${b.reason}`).join(" · ")}</div>
+      )}
+      <button class="ach-btn hive-launch" disabled={plan.waves.length === 0} onClick={onLaunch}>
+        🚀 Launch
+      </button>
+    </div>
+  );
+}
+
+function RunView({ run }: { run: HiveRun }) {
+  return (
+    <>
+      <div class="hive-goal">
+        <div class="ach-name">{run.label}</div>
+        <div class="ach-sub">
+          wave {run.waveSeq + 1}
+          {run.status === "verifying" ? " · verifying goal…" : ""}
+          {run.preview.length > 0 ? ` · next: ${run.preview.join(" → ")}` : ""}
+        </div>
+      </div>
+      {run.wave && (
+        <div class="hive-wave">
+          <div class="hive-wave-label">{run.wave.label}</div>
+          {run.wave.assignments.map((a) => (
+            <AssignmentRow key={a.character} a={a} />
+          ))}
+        </div>
+      )}
+      <button
+        class="ach-btn hive-stop"
+        onClick={() => {
+          if (confirm("Stop the hive and abandon this goal?")) stopHive();
+        }}
+      >
+        ⏹ Stop hive
+      </button>
+    </>
+  );
+}
+
+function AssignmentRow({ a }: { a: HiveAssignmentState }) {
+  const q = queues.value[a.character];
+  const s = assignmentStatus(a, q);
+  const bad = needsAttention(s);
+  return (
+    <div class={"hive-assign" + (bad ? " failed" : "")}>
+      <span class="hive-assign-who">
+        {STATUS_BADGE[s]} {a.character}
+      </span>
+      <span class="hive-assign-what">
+        {s === "running" && q?.note ? q.note : a.label}
+        {bad && q?.items[0]?.error ? ` — ${q.items[0].error}` : ""}
+      </span>
+      {bad && (
+        <span class="hive-assign-actions">
+          <button class="ach-btn" title="Restart this queue" onClick={() => retryAssignment(a.character)}>
+            ▶ Retry
+          </button>
+          <button class="ach-btn" title="Abandon this assignment" onClick={() => skipAssignment(a.character)}>
+            ⏭ Skip
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+function HistoryView() {
+  const history = hive.value.history;
+  if (history.length === 0) return null;
+  const badge = { done: "✅", incomplete: "🟨", abandoned: "⏹" } as const;
+  return (
+    <div class="hive-history">
+      <div class="hive-wave-label">History</div>
+      {[...history].reverse().map((h) => (
+        <div key={h.startedAt} class="hive-assign">
+          <span class="hive-assign-who">{badge[h.outcome]}</span>
+          <span class="hive-assign-what">
+            {h.label} · {Math.max(1, Math.round((h.endedAt - h.startedAt) / 60000))}m
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}

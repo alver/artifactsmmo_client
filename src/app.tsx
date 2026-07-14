@@ -1,4 +1,4 @@
-import { achievementsOpen, authed, catalogReady, itemsCatalogOpen, lastError, panelTarget, pendingRewards, pendingRewardsOpen, routeHash, syncedAt, syncing } from "./state/store";
+import { achievementsOpen, authed, catalogReady, hiveOpen, itemsCatalogOpen, lastError, panelTarget, pendingRewards, pendingRewardsOpen, routeHash, syncedAt, syncing } from "./state/store";
 import { loadAchievements, loadPendingRewards, reconcile } from "./state/sync";
 import { setToken } from "./api/client";
 import { clockTime } from "./lib/util";
@@ -14,6 +14,7 @@ import { SimPlayground } from "./ui/SimPlayground";
 import { Roster } from "./ui/CharacterMini";
 import { ActivityLog } from "./ui/ActivityLog";
 import { EventsPanel } from "./ui/EventsPanel";
+import { HiveDrawer, HiveStrip } from "./ui/HivePanel";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
@@ -54,6 +55,9 @@ export function App() {
           >
             🏆 Achievements
           </button>
+          <button title="Account-goal coordinator — one goal, every character on it" onClick={() => (hiveOpen.value = true)}>
+            🐝 Hive
+          </button>
           <button
             title="Unclaimed account rewards (achievement payouts)"
             onClick={() => {
@@ -76,6 +80,7 @@ export function App() {
           {/* Main area: character management. Roster strip on top, then a
               multi-column workspace for the selected character. */}
           <section class="workspace">
+            <HiveStrip />
             <Roster />
             <CharacterPanel />
           </section>
@@ -95,6 +100,7 @@ export function App() {
       <ItemPopup />
       <AchievementsPanel />
       <PendingRewardsPanel />
+      <HiveDrawer />
     </div>
   );
 }
