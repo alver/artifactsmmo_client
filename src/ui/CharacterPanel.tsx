@@ -6,7 +6,6 @@ import { liveTileAt } from "../state/events";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
 import { queues } from "../state/queue";
 import { GearSlots } from "./GearSlots";
-import { JobGearPreview } from "./JobGearPreview";
 import { ActionBar } from "./ActionBar";
 import { CombatForecast } from "./CombatForecast";
 import { QueueSection } from "./QueuePanel";
@@ -29,13 +28,6 @@ const SKILLS: [string, string][] = [
   ["jewelrycrafting", "Jewelrycraft"],
   ["cooking", "Cooking"],
   ["alchemy", "Alchemy"],
-];
-
-const ELEMENTS: [string, string][] = [
-  ["fire", "Fire"],
-  ["earth", "Earth"],
-  ["water", "Water"],
-  ["air", "Air"],
 ];
 
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
@@ -135,53 +127,6 @@ export function CharacterPanel() {
           <details class="ws-card" open>
             <summary>Equipment</summary>
             <GearSlots ch={ch} />
-          </details>
-
-          <details class="ws-card" open>
-            <summary>Job gear</summary>
-            <JobGearPreview ch={ch} />
-          </details>
-
-          <details class="ws-card" open>
-            <summary>Combat</summary>
-            <table class="cp-elements">
-              <thead>
-                <tr>
-                  <th />
-                  {ELEMENTS.map(([k, l]) => (
-                    <th key={k}>{l}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td>Attack</td>
-                  {ELEMENTS.map(([k]) => (
-                    <td key={k}>{stat[`attack_${k}`]}</td>
-                  ))}
-                </tr>
-                <tr>
-                  <td>Dmg %</td>
-                  {ELEMENTS.map(([k]) => (
-                    <td key={k}>{stat[`dmg_${k}`]}</td>
-                  ))}
-                </tr>
-                <tr>
-                  <td>Resist</td>
-                  {ELEMENTS.map(([k]) => (
-                    <td key={k}>{stat[`res_${k}`]}</td>
-                  ))}
-                </tr>
-              </tbody>
-            </table>
-            <div class="cp-stats">
-              <div class="kv-row"><span>Damage %</span><b>{ch.dmg}</b></div>
-              <div class="kv-row"><span>Critical</span><b>{ch.critical_strike}%</b></div>
-              <div class="kv-row"><span>Haste</span><b>{ch.haste}</b></div>
-              <div class="kv-row"><span>Wisdom</span><b>{ch.wisdom}</b></div>
-              <div class="kv-row"><span>Prospecting</span><b>{ch.prospecting}</b></div>
-              <div class="kv-row"><span>Speed</span><b>{ch.speed}</b></div>
-            </div>
           </details>
 
           {content?.type === "monster" && (
