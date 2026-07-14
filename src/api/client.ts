@@ -59,6 +59,7 @@ export interface ApiOptions {
  * Make one API request, retrying transient conditions.
  *  - 429 → wait `Retry-After`, retry
  *  - 499 (still on cooldown) → parse the seconds out of the message, wait, retry
+ *  - 461 (another character's bank transaction in flight) → wait a beat, retry
  * Returns `payload.data` (or the whole payload if there is no `data`).
  */
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
@@ -81,7 +82,9 @@ export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Pro
     if (payload.error) {
       const code = payload.error.code || resp.status;
       const msg = payload.error.message || "API error";
-      if (code === 499 && attempt < retries - 1) {
+      // 461 is momentary lock contention when several of the account's
+      // characters bank at once — same wait-and-retry treatment as cooldown.
+      if ((code === 499 || code === 461) && attempt < retries - 1) {
         const m = /([\d.]+)\s*second/.exec(msg);
         await sleep(((m ? parseFloat(m[1]) : 2) + 0.3) * 1000);
         continue;

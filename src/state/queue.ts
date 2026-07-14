@@ -212,9 +212,13 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // of other stuff instead falls through to runStep, whose bank-off clears
       // it while `keep` protects what was already withdrawn.)
       if (freeSpace(ch) === 0 && !(ch.inventory ?? []).some((sl) => sl.code && sl.quantity > 0 && sl.code !== it.code)) return true;
+      // Clamp to live bank stock — runStep corrects the local signal after a
+      // raced withdrawal, so an empty read here is authoritative, not stale.
+      const banked = bankQty(it.code);
+      if (banked <= 0) throw new Error(`bank has no ${itemName(it.code)} left`);
       const bank = it.x != null ? { x: it.x, y: it.y! } : nearestBank(ch.x, ch.y);
       if (!bank) return skipItem(name, it, "no bank on the map");
-      await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: missing, x: bank.x, y: bank.y }, ctx);
+      await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(missing, banked), x: bank.x, y: bank.y }, ctx);
       return false;
     }
     case "buy": {

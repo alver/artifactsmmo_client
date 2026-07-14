@@ -133,10 +133,11 @@ export async function gearSwapStep(
       try {
         await step(name, () => actions.withdrawItems(name, act.items));
       } catch (e) {
-        if (e instanceof ApiError && e.code === 478) {
-          // Another character raced this bank stock away. Drop the raced codes
-          // locally (the next bank echo restores authority) so the next tick
-          // re-plans with the next-best set instead of hammering the same call.
+        if (e instanceof ApiError && (e.code === 404 || e.code === 478)) {
+          // Another character raced this bank stock away (404: the whole stack
+          // is gone, 478: not enough left). Drop the raced codes locally (the
+          // next bank echo restores authority) so the next tick re-plans with
+          // the next-best set instead of hammering the same call.
           const raced = new Set(act.items.map((i) => i.code));
           bankItems.value = bankItems.value.filter((b) => !raced.has(b.code));
           ctx.note("bank changed — replanning");
@@ -201,7 +202,20 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       const cur = characters.value[name] ?? ch;
       const qty = Math.min(s.quantity, freeSpace(cur));
       if (qty <= 0) { await bankOff(name, t.x, t.y, keep, ctx.note); return { did: "banked" }; } // make room (throws if all-protected)
-      await step(name, () => actions.withdrawItems(name, [{ code: s.code, quantity: qty }]));
+      try {
+        await step(name, () => actions.withdrawItems(name, [{ code: s.code, quantity: qty }]));
+      } catch (e) {
+        if (e instanceof ApiError && (e.code === 404 || e.code === 478)) {
+          // Another character raced this bank stock away (404: the whole stack
+          // is gone, 478: not enough left). Drop the code locally (the next
+          // bank echo restores authority) so the caller re-plans from the
+          // corrected stock instead of pausing the queue.
+          bankItems.value = bankItems.value.filter((b) => b.code !== s.code);
+          ctx.note("bank changed — replanning");
+          return { did: "acted" };
+        }
+        throw e;
+      }
       return { did: "acted" };
     }
     case "buy": {
