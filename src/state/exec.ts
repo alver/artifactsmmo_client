@@ -163,7 +163,20 @@ export async function gearSwapStep(
       return "acted";
     case "unequip":
       ctx.note("swap gear");
-      await step(name, () => actions.unequipMany(name, act.slots));
+      try {
+        await step(name, () => actions.unequipMany(name, act.slots));
+      } catch (e) {
+        // 483: stripping +HP gear at low health would drop the character to
+        // 0 HP and the game refuses ("does not have enough HP to unequip").
+        // Heal a step (food first, else rest) and let the next tick retry —
+        // full HP always clears it, since an item's HP bonus is always
+        // smaller than the max HP that includes it.
+        if (e instanceof ApiError && e.code === 483) {
+          await healOnce(name, ch, foodInHand(ch), ctx.note);
+          return "acted";
+        }
+        throw e;
+      }
       return "acted";
     case "equip":
       ctx.note("equip gear");
