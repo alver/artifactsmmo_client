@@ -91,6 +91,28 @@ export async function goToMaster(name: string, ch: Character, type: "monsters" |
 // ── Bank-centric gear swapping (see plan/jobgear.ts for the planning side) ───
 
 /**
+ * Working stock of a brew in progress: for each desired utility potion with no
+ * supply anywhere (the differ's unavailability guard skips its slot while
+ * provisionPotions produces it), the potion code and its recipe ingredients.
+ * MUST mirror provisionPotions' pending-brew conditions exactly. Without this
+ * the swap ceremony's bank sweep deposits the very ingredients the brewer just
+ * withdrew and the two ping-pong the stack forever (the withdraw/deposit
+ * livelock caught in logs/dev.log, 2026-07-14).
+ */
+function brewKeep(ch: Character, desired: Partial<Record<GearSlot, string>>): string[] {
+  const out: string[] = [];
+  for (const g of ["utility1", "utility2"] as const) {
+    const want = desired[g];
+    if (!want || slotCode(ch, g) === want) continue;
+    if (invQty(ch, want) > 0 || bankQty(want) > 0) continue; // differ equips it — no brew pending
+    const recipe = item(want)?.craft;
+    if (!recipe || skillLevel(ch, recipe.skill) < recipe.level) continue; // can't brew — nothing pending
+    out.push(want, ...recipe.items.map((i) => i.code));
+  }
+  return out;
+}
+
+/**
  * One step of the gear-swap ceremony toward `desired`: unequip mismatches →
  * equip from hand → withdraw from bank → stow replaced/junk gear → bag last.
  * Batched season-8 equip/unequip calls keep a full swap at ~5 requests.
@@ -103,7 +125,10 @@ export async function gearSwapStep(
   ctx: StepCtx,
   opts?: { junk?: boolean; reset?: boolean },
 ): Promise<"done" | "acted"> {
-  const act = nextGearAction(ch, bankItems.value, desired, { keep: ctx.keep, junk: opts?.junk, reset: opts?.reset });
+  // Pending-brew ingredients are working stock — the sweep must not stash them.
+  const brew = brewKeep(ch, desired);
+  const keep = brew.length ? [...new Set([...(ctx.keep ?? []), ...brew])] : ctx.keep;
+  const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset });
   if (!act) return "done";
 
   const toBank = async (): Promise<boolean> => {
