@@ -19,14 +19,18 @@
 //
 // Mid-wave idle is filled at RUNTIME, not compile time: a participant whose
 // part is done (or who was never assigned) gets an infinite task-loop as a
-// `filler` assignment — excluded from waveDone, pulled at the barrier — so
-// nobody stands around waiting AND filler never delays the goal.
+// `filler` assignment — excluded from waveDone, pulled only when the run
+// continues to a next wave — so nobody stands around waiting AND filler never
+// delays the goal. A FINISHING goal (done/incomplete) never parks the fleet:
+// running fillers carry on, and every idle participant is handed an infinite
+// items task-loop as a plain user-owned queue item. Stop (⏹) still means stop.
 
 import { batch, effect, signal } from "@preact/signals";
 import { addItem, queues, removeItem, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
 import { achievements, bankDetails, bankItems, characterList, craftSkillPins, pushLog } from "./store";
 import { compileGoal, fillerItems, goalSatisfied, needsAchievements, proposeGoals } from "../plan/hive";
 import type { AccountGoal, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "../plan/hive";
+import { withId } from "../plan/queue";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
 
 export interface HiveAssignmentState {
@@ -40,8 +44,9 @@ export interface HiveAssignmentState {
   itemIds?: string[];
   /** Runtime idle filler (an infinite task-loop): appended mid-wave when the
    *  character's own part is done, never holds the barrier, pulled from the
-   *  queue when the wave completes. Its item ids live in the `f` namespace so
-   *  they can't collide with the character's completed main assignment. */
+   *  queue only when the run continues to a next wave (a finishing goal
+   *  leaves it running). Its item ids live in the `f` namespace so they
+   *  can't collide with the character's completed main assignment. */
   filler?: boolean;
 }
 
@@ -291,22 +296,24 @@ function beginBarrier(): void {
   const st = hive.value;
   const run = st.run;
   if (!run || run.status !== "running") return; // double-fire guard
-  batch(() => {
-    // Filler never outlives its wave: pull the infinite task-loops NOW so the
-    // next wave (or the goal finishing) starts from clean, stopped queues. The
-    // in-flight action drains harmlessly; the next dispatch's startQueue
-    // reuses the draining loop (the cancel-stop path).
-    for (const a of run.wave?.assignments ?? []) {
-      if (!a.filler || !a.dispatched || a.skipped) continue;
-      const q = queues.value[a.character];
-      const ids = new Set(a.itemIds ?? []);
-      if (!(q?.items ?? []).some((it) => ids.has(it.id))) continue; // already gone
-      if (q?.running) stopQueue(a.character);
-      for (const id of a.itemIds ?? []) removeItem(a.character, id);
-    }
-    hive.value = { ...st, run: { ...run, status: "verifying" } };
-  });
+  hive.value = { ...st, run: { ...run, status: "verifying" } };
   void continueRun();
+}
+
+/** Pull the finished wave's infinite fillers so the NEXT wave dispatches onto
+ *  clean queues (new items would starve behind an infinite task-loop). Called
+ *  only when the run continues — a finishing goal leaves fillers running. The
+ *  in-flight action drains harmlessly; the next dispatch's startQueue reuses
+ *  the draining loop (the cancel-stop path). */
+function pullFillers(run: HiveRun): void {
+  for (const a of run.wave?.assignments ?? []) {
+    if (!a.filler || !a.dispatched || a.skipped) continue;
+    const q = queues.value[a.character];
+    const ids = new Set(a.itemIds ?? []);
+    if (!(q?.items ?? []).some((it) => ids.has(it.id))) continue; // already gone
+    if (q?.running) stopQueue(a.character);
+    for (const id of a.itemIds ?? []) removeItem(a.character, id);
+  }
 }
 
 async function continueRun(): Promise<void> {
@@ -334,19 +341,46 @@ async function continueRun(): Promise<void> {
     log(`stalled — the next wave equals the one just finished (${run.label})`, "bad");
     return finish("incomplete");
   }
-  hive.value = {
-    ...hive.value,
-    run: {
-      ...run,
-      status: "running",
-      waveSeq: run.waveSeq + 1,
-      wave: toWaveState(next),
-      waveKey: key,
-      preview: plan.waves.slice(1).map((w) => w.label),
-      once: plan.once,
-    },
-  };
+  batch(() => {
+    pullFillers(run);
+    hive.value = {
+      ...hive.value,
+      run: {
+        ...run,
+        status: "running",
+        waveSeq: run.waveSeq + 1,
+        wave: toWaveState(next),
+        waveKey: key,
+        preview: plan.waves.slice(1).map((w) => w.label),
+        once: plan.once,
+      },
+    };
+  });
   // the hive write re-fires the observer → the new wave dispatches
+}
+
+/**
+ * A finished goal never parks the fleet: participants whose queue is still
+ * running (their wave's filler task-loop, or anything the user started) carry
+ * on untouched; everyone whose queue holds nothing but stale hive leftovers
+ * gets an infinite items-master task-loop. Pushed as PLAIN items (fresh ids,
+ * not hive:*) — the run is over, so the queue belongs to the user again.
+ */
+function handOffToTasks(): void {
+  const manual = new Set(hive.value.manual);
+  batch(() => {
+    for (const c of characterList()) {
+      if (manual.has(c.name)) continue;
+      const q = queues.value[c.name];
+      if (q?.running) continue; // already mid-task — let them carry on
+      const leftovers = (q?.items ?? []).filter((it) => isHiveItemId(it.id));
+      if ((q?.items.length ?? 0) > leftovers.length) continue; // user items — user's queue
+      for (const it of leftovers) removeItem(c.name, it.id);
+      addItem(c.name, withId({ kind: "task-loop", master: "items", times: 0, done: 0, gear: true }));
+      startQueue(c.name);
+      log(`${c.name} is idle — assigned an items task-loop`);
+    }
+  });
 }
 
 function finish(outcome: HiveHistoryEntry["outcome"]): void {
@@ -359,6 +393,8 @@ function finish(outcome: HiveHistoryEntry["outcome"]): void {
     history: [...st.history, { label: run.label, startedAt: run.startedAt, endedAt: Date.now(), outcome }].slice(-20),
   };
   log(`goal ${outcome} — ${run.label}`, outcome === "done" ? "ok" : outcome === "incomplete" ? "bad" : "info");
+  // Stop (⏹) still means stop — only a goal that RAN OUT hands the fleet over.
+  if (outcome !== "abandoned") handOffToTasks();
   // Propose the next move (never auto-launch). Deferred: proposeGoals runs a
   // cold BIS sweep (~seconds) and must not stall the completion paint.
   if (outcome !== "abandoned") setTimeout(refreshProposals, 100);

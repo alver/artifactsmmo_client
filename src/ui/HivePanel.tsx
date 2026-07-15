@@ -283,7 +283,10 @@ function PlanPreview({ plan, onLaunch }: { plan: HivePlan; onLaunch: () => void 
       {plan.blockers.length > 0 && (
         <div class="hive-blockers">{plan.blockers.map((b) => `⚠ ${b.reason}`).join(" · ")}</div>
       )}
-      <div class="muted">Participants a wave leaves idle run tasks-master tasks until its barrier.</div>
+      <div class="muted">
+        Participants a wave leaves idle run tasks-master tasks until its barrier; when the goal ends, everyone keeps
+        (or picks up) a task loop.
+      </div>
       <button class="ach-btn hive-launch" disabled={plan.waves.length === 0} onClick={onLaunch}>
         🚀 Launch
       </button>

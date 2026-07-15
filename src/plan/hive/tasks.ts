@@ -113,8 +113,9 @@ export function compileTaskGoal(goal: Extract<AccountGoal, { kind: "farm-tasks" 
  * do this wave runs until the barrier — an INFINITE task loop at their
  * best-suited master (always useful: coins + gate progress). The runtime
  * tracks it as a `filler` assignment that never holds the barrier and pulls
- * it when the wave completes, so the ∞ is deliberate — no idle gap between
- * tasks. undefined = no suitable master; the character stays genuinely idle.
+ * it only when the run continues to a next wave (a finishing goal leaves it
+ * running), so the ∞ is deliberate — no idle gap between tasks.
+ * undefined = no suitable master; the character stays genuinely idle.
  */
 export function fillerItems(ctx: HiveCtx, ch: Character): QueueItemInput[] | undefined {
   const fit = taskSuitability(ctx, ch);
