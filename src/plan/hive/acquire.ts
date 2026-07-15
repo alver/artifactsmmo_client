@@ -40,7 +40,7 @@ interface CraftAgg { runs: number; skill: string; level: number; per: number; ca
 /** Whether an NPC's tile gate is met. null (unknown / no achievements loaded)
  *  counts as met — the server stays the judge (same rule as state/access.ts,
  *  re-derived here so the pure domain doesn't import signal-reading modules). */
-function npcGateMet(npcCode: string, ctx: HiveCtx): boolean | null {
+export function npcGateMet(npcCode: string, ctx: HiveCtx): boolean | null {
   const tile = catalog().maps.find(
     (m) => m.interactions?.content?.type === "npc" && m.interactions.content.code === npcCode,
   );

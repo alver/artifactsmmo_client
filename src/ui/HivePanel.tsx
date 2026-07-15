@@ -154,6 +154,7 @@ function ProposalsView() {
   const [sel, setSel] = useState<{ g: ScoredGoal; plan: HivePlan } | null>(null);
   const [orderCode, setOrderCode] = useState("");
   const [orderQty, setOrderQty] = useState(1);
+  const [goldQty, setGoldQty] = useState(1000);
   const list = hiveProposals.value;
   // Recomputed once per drawer open (the probe sweep costs ~100ms cold).
   const craftables = useMemo(() => craftableItems(buildHiveCtx()), []);
@@ -173,6 +174,23 @@ function ProposalsView() {
       estMinutes: 0,
     };
     setSel({ g, plan: compileGoal(g.goal, buildHiveCtx()) });
+  };
+  const pickGold = () => {
+    const ctx = buildHiveCtx();
+    const n = Math.max(1, goldQty);
+    // Baseline = bank + participants' pockets, the same measure goldSatisfied
+    // uses — "earn +N from now" regardless of where the gold sits.
+    const base = ctx.bankGold + ctx.characters.reduce((s, c) => s + c.gold, 0);
+    const g: ScoredGoal = {
+      goal: { kind: "earn-gold", target: base + n },
+      label: `Earn ${n.toLocaleString()}g (vault → ${(base + n).toLocaleString()}g)`,
+      score: 0,
+      rationale: "your order — each character works its best gold-per-action lane and sells the loot",
+      blockers: [],
+      estActions: 0,
+      estMinutes: 0,
+    };
+    setSel({ g, plan: compileGoal(g.goal, ctx) });
   };
   const launch = () => {
     if (!sel) return;
@@ -238,6 +256,21 @@ function ProposalsView() {
         />
         <button class="ach-btn" title="Fleet gathers the materials; the qualified crafter finishes" onClick={pickOrder}>
           🛠 Plan order
+        </button>
+      </div>
+      <div class="hive-hint">
+        <span class="muted">earn gold:</span>
+        <span>+</span>
+        <input
+          class="cat-num"
+          type="number"
+          min={1}
+          step={100}
+          value={goldQty}
+          onInput={(e) => setGoldQty(parseInt((e.target as HTMLInputElement).value, 10) || 1)}
+        />
+        <button class="ach-btn" title="Each character works its best gold-per-action lane until the vault grows by this much" onClick={pickGold}>
+          🪙 Plan gold
         </button>
       </div>
       {list && list.length === 0 && <div class="muted">Nothing worth proposing right now.</div>}

@@ -13,7 +13,7 @@ import type { Character } from "../../types/api";
 import type { AccountGoal, HiveCtx, HivePlan, ScoredGoal } from "./types";
 
 /** Rough actions to finish one task (travel + fights/gathers + turn-in). */
-const ACTIONS_PER_TASK = 40;
+export const ACTIONS_PER_TASK = 40;
 const DEFAULT_TIMES = 3;
 /** A master suits a character when they can handle this share of its pool. */
 const OK_SHARE = 0.8;

@@ -64,6 +64,9 @@ export interface HiveRun {
   wave: HiveWaveState | null;
   /** Canonical fingerprint of the current wave (the stall guard's memory). */
   waveKey: string;
+  /** Plan.progress at last dispatch — an identical recompiled wave is only a
+   *  stall when this hasn't moved either (see HivePlan.progress). */
+  progress?: number;
   /** Labels of the last compile's later waves — an honest preview, nothing more. */
   preview: string[];
   /** Bounded single-shot plan: the wave completing IS the goal completing. */
@@ -337,7 +340,7 @@ async function continueRun(): Promise<void> {
     return finish(ok === false ? "incomplete" : "done");
   }
   const key = waveKeyOf(next);
-  if (key === run.waveKey) {
+  if (key === run.waveKey && plan.progress === run.progress) {
     log(`stalled — the next wave equals the one just finished (${run.label})`, "bad");
     return finish("incomplete");
   }
@@ -351,6 +354,7 @@ async function continueRun(): Promise<void> {
         waveSeq: run.waveSeq + 1,
         wave: toWaveState(next),
         waveKey: key,
+        progress: plan.progress,
         preview: plan.waves.slice(1).map((w) => w.label),
         once: plan.once,
       },
@@ -444,6 +448,7 @@ export function launchHive(picked: ScoredGoal, plan: HivePlan): void {
         waveSeq: 0,
         wave: toWaveState(first),
         waveKey: waveKeyOf(first),
+        progress: plan.progress,
         preview: plan.waves.slice(1).map((w) => w.label),
         once: plan.once,
         status: "running",

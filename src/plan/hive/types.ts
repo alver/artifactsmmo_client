@@ -47,6 +47,9 @@ export type AccountGoal =
   | { kind: "gear-upgrade"; monster: string; upgrades: GearUpgrade[] }
   /** User-directed production run ("make me N of X") — never auto-proposed. */
   | { kind: "craft-order"; targets: ItemDemand[] }
+  /** User-directed vault target: bank gold + participants' pockets ≥ target.
+   *  Never auto-proposed; each character works its best gold/action lane. */
+  | { kind: "earn-gold"; target: number }
   | { kind: "farm-tasks"; perCharacter: { character: string; master: "monsters" | "items"; times: number }[] }
   | { kind: "achievement"; code: string }
   | {
@@ -104,6 +107,13 @@ export interface HivePlan {
    * "do N of something" goal would re-emit the same wave forever.
    */
   once?: boolean;
+  /**
+   * Goal-progress metric at compile time (earn-gold: fleet gold). When set, a
+   * recompiled wave identical to the one just finished is only a STALL if this
+   * hasn't moved either — a capped lane legitimately repeats the same batch
+   * while still advancing the goal.
+   */
+  progress?: number;
 }
 
 // ── planAcquire vocabulary ───────────────────────────────────────────────────

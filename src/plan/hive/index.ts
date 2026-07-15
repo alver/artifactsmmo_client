@@ -6,6 +6,7 @@
 import { compileAchievementGoal, proposeAchievementGoals } from "./achievements";
 import { skillLevel } from "./ctx";
 import { compileGearGoal, gearGoalSatisfied, proposeGearGoals } from "./gear";
+import { compileGoldGoal, goldSatisfied } from "./gold";
 import { compileOrderGoal, orderSatisfied } from "./order";
 import { compileSkillGoal, promoteBlockers } from "./skills";
 import { compileTaskGoal, proposeTaskGoals } from "./tasks";
@@ -32,6 +33,8 @@ export function compileGoal(goal: AccountGoal, ctx: HiveCtx): HivePlan {
       return compileGearGoal(goal, ctx);
     case "craft-order":
       return compileOrderGoal(goal, ctx);
+    case "earn-gold":
+      return compileGoldGoal(goal, ctx);
     case "farm-tasks":
       return compileTaskGoal(goal, ctx);
     case "achievement":
@@ -50,6 +53,8 @@ export function goalSatisfied(goal: AccountGoal, ctx: HiveCtx): boolean | "unkno
       return gearGoalSatisfied(goal, ctx);
     case "craft-order":
       return orderSatisfied(goal, ctx);
+    case "earn-gold":
+      return goldSatisfied(goal, ctx);
     case "farm-tasks":
       return false;
     case "achievement": {
