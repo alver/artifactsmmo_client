@@ -9,7 +9,7 @@
 // a setup can be bookmarked/shared. Pure catalog+sim computation — no API.
 
 import { useMemo, useState } from "preact/hooks";
-import { characterList, selectedCharacter } from "../state/store";
+import { bankItems, characterList, selectedCharacter } from "../state/store";
 import { itemHover } from "./ItemPopup";
 import { catalog, monster as monsterOf } from "../catalog";
 import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
@@ -20,6 +20,8 @@ import { monteCarlo } from "../sim/monte";
 import { unmodeledEffects } from "../sim/effects";
 import { simAccuracy, simDeviations } from "../sim/validate";
 import { bestInSlot } from "../plan/bis";
+import type { BisOptions } from "../plan/bis";
+import { ownedQtyOf } from "../plan/jobgear";
 import { monsterList } from "./QueuePanel";
 import type { TurnEvent } from "../sim/combat";
 import type { Character, GearSlot } from "../types/api";
@@ -158,12 +160,12 @@ export function SimPlayground() {
     setSets(rest);
     saveSets(rest);
   };
-  const suggestBis = () => {
+  const runSearch = (opts: BisOptions) => {
     if (!m) return;
     setBusy(true);
     setTimeout(() => {
       try {
-        const rec = bestInSlot(ch, m.code, { pool: "all" })[0];
+        const rec = bestInSlot(ch, m.code, opts)[0];
         if (rec) {
           const g: GearSet = {};
           for (const s of GEAR_SLOTS) if (rec.slots[s]) g[s] = rec.slots[s];
@@ -174,6 +176,15 @@ export function SimPlayground() {
         setBusy(false);
       }
     }, 0);
+  };
+  const suggestBis = () => runSearch({ pool: "all" });
+  // The queue's fight gear-reset in miniature: the same owned-pool solve (bank
+  // ∪ this character's inventory ∪ worn, ring dupes up to the real count,
+  // utility potions from stock) — minus the brewing escalation. Always yields
+  // a set (best-effort when nothing owned wins), so the verdict stays honest.
+  const suggestBank = () => {
+    const qty = ownedQtyOf(ch, bankItems.value);
+    runSearch({ owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false });
   };
 
   return (
@@ -193,6 +204,14 @@ export function SimPlayground() {
           </button>
           <button class="cat-btn buy" disabled={busy || !m} title="Best-in-slot search over the whole catalog (ignores obtainability)" onClick={suggestBis}>
             {busy ? "Searching…" : "★ Best in slot"}
+          </button>
+          <button
+            class="cat-btn buy"
+            disabled={busy || !m}
+            title="Best set from what's owned right now (bank + inventory + worn) — what a gear reset would equip for this fight"
+            onClick={suggestBank}
+          >
+            {busy ? "Searching…" : "🏦 Best in bank"}
           </button>
         </div>
         <div class="sim-row">
