@@ -45,11 +45,21 @@ app and the token prompt is skipped. `.env` is gitignored.
   gear step dresses the character in the best set available in the bank at that
   moment (fight sets come from a combat-sim solver; fights re-check the bank every
   round and upgrade mid-grind).
+- **The hive** (🐝) — an account-level coordinator that puts every character on one
+  goal: pick a scored proposal (gear upgrades, task farming, achievements, skill
+  leveling) or order your own — *craft me N of X*, or *earn +N gold* with each
+  character working its best gold-per-hour lane. It compiles goals down to queue
+  items, re-plans at each wave boundary from live state, and idle characters run
+  tasks instead of standing around — including after the goal finishes.
+- **Fleet gear coverage** (🛡) — can the bank dress everyone? A slots × characters
+  matrix of the best owned set each character would get from shared stock, with
+  missing-copy shortages ("have 3 / need 10") and slots nobody can fill.
 - **Workshop / NPC / bank / tasks panels** — click a tile to craft, trade, manage
   the bank, or handle tasks; hovering any item anywhere shows one unified detail
   popup (stats, recipe, where to get it, prices).
 - **Fight-sim playground** (`#/sim`) — plan equipment setups against any monster
-  with the deterministic combat simulator.
+  with the deterministic combat simulator; one click loads the whole-catalog
+  best-in-slot set or the best set your bank could dress right now.
 
 <p align="center">
   <img src="docs/queue-actions.png" width="330" alt="The queue's action vocabulary">
@@ -85,8 +95,11 @@ public/assets/        map tiles + item/character icons (committed, served locall
 src/
   api/        client (fetch + retry + pagination), typed action calls
   catalog/    load *.json into typed Maps; lookups (item, monster, mapAt, …)
+  plan/       pure planning: queue vocabulary, gear/BIS solver, consumables,
+              fleet coverage, and the hive goal compiler (plan/hive/)
+  sim/        deterministic combat simulator (stats, forecast, Monte Carlo)
   state/      signals store, persistence, the apply chokepoint, boot sync,
-              the queue runner + shared execution mechanics
+              the queue runner + shared execution mechanics, the hive runtime
   ui/         Preact components (MapView, CharacterPanel, CatalogPanel, …)
   types/      api.ts (dynamic) + catalog.ts (static) domain models
 ```
