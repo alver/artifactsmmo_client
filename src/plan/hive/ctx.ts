@@ -58,8 +58,10 @@ export function crafterFor(ctx: HiveCtx, skill: string): { ch: Character; level:
   return best;
 }
 
-/** Everything the account owns: bank + every participant's inventory + worn gear. */
-export function fleetOwned(ctx: HiveCtx): { owned: Set<string>; ownedQty: Map<string, number> } {
+/** Everything the account owns: bank + every participant's inventory + worn gear.
+ *  Param is deliberately narrow — plan/coverage.ts calls this outside a HiveCtx
+ *  (with ALL characters, not just hive participants). */
+export function fleetOwned(ctx: Pick<HiveCtx, "characters" | "bank">): { owned: Set<string>; ownedQty: Map<string, number> } {
   const q = new Map<string, number>();
   const add = (code: string, n: number): void => {
     if (code && n > 0) q.set(code, (q.get(code) ?? 0) + n);

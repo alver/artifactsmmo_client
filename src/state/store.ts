@@ -194,6 +194,10 @@ export const achievementsError = signal<string | null>(null);
 /** Whether the Hive drawer (account-goal coordinator) is open. */
 export const hiveOpen = signal(false);
 
+/** Whether the fleet gear-coverage drawer (🛡) is open. Derives everything from
+ *  live signals — nothing to fetch, nothing persisted. */
+export const gearCoverageOpen = signal(false);
+
 /**
  * Unclaimed account rewards (GET /my/pending_items — achievement payouts wait
  * here until a character claims them). Fetched with every reconcile() and on

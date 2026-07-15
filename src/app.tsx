@@ -1,4 +1,4 @@
-import { achievementsOpen, authed, catalogReady, hiveOpen, itemsCatalogOpen, lastError, panelTarget, pendingRewards, pendingRewardsOpen, routeHash, syncedAt, syncing } from "./state/store";
+import { achievementsOpen, authed, catalogReady, gearCoverageOpen, hiveOpen, itemsCatalogOpen, lastError, panelTarget, pendingRewards, pendingRewardsOpen, routeHash, syncedAt, syncing } from "./state/store";
 import { loadAchievements, loadPendingRewards, reconcile } from "./state/sync";
 import { setToken } from "./api/client";
 import { clockTime } from "./lib/util";
@@ -15,6 +15,7 @@ import { Roster } from "./ui/CharacterMini";
 import { ActivityLog } from "./ui/ActivityLog";
 import { EventsPanel } from "./ui/EventsPanel";
 import { HiveDrawer, HiveStrip } from "./ui/HivePanel";
+import { GearCoveragePanel } from "./ui/GearCoveragePanel";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
@@ -57,6 +58,9 @@ export function App() {
           </button>
           <button title="Account-goal coordinator — one goal, every character on it" onClick={() => (hiveOpen.value = true)}>
             🐝 Hive
+          </button>
+          <button title="Fleet gear coverage — can the bank dress everyone?" onClick={() => (gearCoverageOpen.value = true)}>
+            🛡 Gear
           </button>
           <button
             title="Unclaimed account rewards (achievement payouts)"
@@ -101,6 +105,7 @@ export function App() {
       <AchievementsPanel />
       <PendingRewardsPanel />
       <HiveDrawer />
+      <GearCoveragePanel />
     </div>
   );
 }

@@ -2302,3 +2302,86 @@ body,
   border-color: var(--bad);
   color: var(--bad);
 }
+
+/* ── fleet gear coverage (🛡 drawer, ui/GearCoveragePanel.tsx) ── */
+.ach-panel.cov-panel {
+  width: min(780px, 100%);
+}
+.cov-grid {
+  display: grid;
+  gap: 4px;
+  font-size: 12px;
+  align-items: stretch;
+}
+.cov-head {
+  color: var(--muted);
+  font-weight: 600;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cov-slot {
+  color: var(--muted);
+  align-self: center;
+  font-size: 11px;
+}
+.cov-cell {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 3px 5px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.cov-cell.has-short {
+  border-color: var(--bad);
+}
+.cov-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.cov-item.short {
+  color: var(--bad);
+}
+.cov-item.empty {
+  color: var(--muted);
+}
+.cov-item.empty.short {
+  color: var(--bad);
+}
+.cov-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cov-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+.cov-lv {
+  color: var(--muted);
+  font-size: 10px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.cov-section-title {
+  font-weight: 700;
+  margin-top: 6px;
+}
+.cov-short-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.cov-need {
+  color: var(--bad);
+  font-weight: 600;
+  flex: 0 0 auto;
+}
