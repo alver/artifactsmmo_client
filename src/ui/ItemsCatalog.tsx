@@ -5,10 +5,10 @@
 // (recipes, NPC buy/sell prices, currency uses).
 
 import { useEffect, useState } from "preact/hooks";
-import { itemPopup, itemsCatalogOpen, moveMode, tilePick } from "../state/store";
+import { itemsCatalogOpen, moveMode, tilePick } from "../state/store";
 import { catalog } from "../catalog";
 import { asset, assetFallback, titleCase } from "../lib/util";
-import { itemHover } from "./ItemPopup";
+import { clearItemHover, itemHover } from "./ItemPopup";
 import type { Item } from "../types/catalog";
 
 const PAGE = 120; // keep the DOM light — the full list is ~1000 rows
@@ -54,7 +54,7 @@ function ItemsCatalogBody() {
   );
   const visible = filtered.slice(0, shown);
 
-  const hideInfo = () => (itemPopup.value = null);
+  const hideInfo = clearItemHover;
 
   return (
     <aside class="catalog-panel">

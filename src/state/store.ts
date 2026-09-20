@@ -121,10 +121,17 @@ export const panelTarget = signal<PanelTarget | null>(null);
 
 /**
  * An item whose parameters to show in a floating popup, with the cursor
- * position to anchor it. Set on hover (e.g. workshop recipe rows), cleared on
- * mouse-out. Purely transient UI — never persisted.
+ * position to anchor it. Hover cards are cleared on mouse-out; clicking an
+ * item pins the card until it is explicitly dismissed. Purely transient UI —
+ * never persisted.
  */
-export const itemPopup = signal<{ code: string; x: number; y: number } | null>(null);
+export const itemPopup = signal<{
+  code: string;
+  x: number;
+  y: number;
+  pinned: boolean;
+  expanded: boolean;
+} | null>(null);
 
 /**
  * Whether the full items-catalog panel (right side) is open. Mutually exclusive
@@ -132,6 +139,8 @@ export const itemPopup = signal<{ code: string; x: number; y: number } | null>(n
  * single panel.
  */
 export const itemsCatalogOpen = signal(false);
+/** Read-only account-bank inventory drawer. */
+export const bankOpen = signal(false);
 
 /**
  * The location hash, as a signal — the app's entire "router". `#/sim` renders

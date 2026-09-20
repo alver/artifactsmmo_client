@@ -1,4 +1,4 @@
-import { achievementsOpen, authed, catalogReady, gearCoverageOpen, hiveOpen, itemsCatalogOpen, lastError, panelTarget, pendingRewards, pendingRewardsOpen, routeHash, syncedAt, syncing } from "./state/store";
+import { achievementsOpen, authed, bankOpen, catalogReady, gearCoverageOpen, hiveOpen, itemsCatalogOpen, lastError, panelTarget, pendingRewards, pendingRewardsOpen, routeHash, syncedAt, syncing } from "./state/store";
 import { loadAchievements, loadPendingRewards, reconcile } from "./state/sync";
 import { setToken } from "./api/client";
 import { clockTime } from "./lib/util";
@@ -16,6 +16,7 @@ import { ActivityLog } from "./ui/ActivityLog";
 import { EventsPanel } from "./ui/EventsPanel";
 import { HiveDrawer, HiveStrip } from "./ui/HivePanel";
 import { GearCoveragePanel } from "./ui/GearCoveragePanel";
+import { BankPanel } from "./ui/BankPanel";
 
 export function App() {
   if (!authed.value) return <TokenGate />;
@@ -43,10 +44,26 @@ export function App() {
             onClick={() => {
               const open = !itemsCatalogOpen.value;
               itemsCatalogOpen.value = open;
-              if (open) panelTarget.value = null; // one right panel at a time
+              if (open) {
+                panelTarget.value = null;
+                bankOpen.value = false;
+              }
             }}
           >
             📦 Items
+          </button>
+          <button
+            class={bankOpen.value ? "active" : ""}
+            onClick={() => {
+              const open = !bankOpen.value;
+              bankOpen.value = open;
+              if (open) {
+                panelTarget.value = null;
+                itemsCatalogOpen.value = false;
+              }
+            }}
+          >
+            🏦 Bank
           </button>
           <button
             onClick={() => {
@@ -99,6 +116,7 @@ export function App() {
               tasks view (tile click) or the full items catalog (📦). */}
           <CatalogPanel />
           <ItemsCatalogPanel />
+          <BankPanel />
         </div>
       )}
       <ItemPopup />
