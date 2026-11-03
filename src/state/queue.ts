@@ -699,9 +699,10 @@ async function runLoop(name: string): Promise<void> {
           try { await bankOff(name, ch.x, ch.y, keepOf(item, ch), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
         }
         // Transient transport trouble (code 0: fetch kept failing / 429 storm
-        // exhausted its retries): never pause — hold a minute and try again,
-        // so a wifi blip doesn't strand the character. ⏹ stays responsive.
-        if (e instanceof ApiError && e.code === 0) {
+        // exhausted its retries) or a server-side 5xx outage (e.g. 500 "Fatal
+        // error (Get User)"): never pause — hold a minute and try again, so a
+        // blip doesn't strand the character. ⏹ stays responsive.
+        if (e instanceof ApiError && (e.code === 0 || e.code >= 500)) {
           log(name, `network trouble — retrying in 60s (${(e as Error).message})`, "bad");
           setQueue(name, { note: "network trouble — waiting" });
           for (let i = 0; i < 60 && !stopFlags.has(name); i++) await sleep(1000);
