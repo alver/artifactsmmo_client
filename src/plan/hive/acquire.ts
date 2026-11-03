@@ -22,8 +22,10 @@ const DROP_BUFFER = 1.2;
 const BUY_OVER_FIGHT_RATIO = 8;
 /** A skill gap this small becomes a level-skill suggestion instead of a dead end. */
 export const TRAIN_GAP = 5;
-/** Split a raw task across characters once it exceeds ~this many actions. */
-const SPLIT_ACTIONS = 60;
+/** Give each character at least ~this many actions of a raw task before
+ *  splitting further — below it the gear reset + walk overhead dominates.
+ *  (Was 60: a 60-ore order ran on ONE character while four idled.) */
+export const SPLIT_ACTIONS = 12;
 
 export interface AcquireOptions {
   /** Gold the plan may spend (default: ctx.bankGold). */
@@ -366,6 +368,7 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
   // Chain crafts into wave 0 where the gatherers can smelt their own haul.
   const crafts = plan.tasks.filter((t): t is Extract<AcquireTask, { how: "craft" }> => t.how === "craft");
   const chained = new Set<string>();
+  const leftovers: typeof crafts = [];
   for (const c of crafts.sort((a, b) => a.depth - b.depth)) {
     const rec = item(c.code)?.craft;
     if (!rec) continue;
@@ -389,7 +392,9 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
       .map((n) => ({ n, runs: Math.floor((c.runs * (per.get(n) ?? 0)) / totalGathered) }))
       .sort((a, b) => (per.get(b.n) ?? 0) - (per.get(a.n) ?? 0));
     for (const s of shares) left -= s.runs;
-    if (shares.length) shares[0].runs += left;
+    // Leftover runs exceed any one gatherer's own haul — craft them behind the
+    // barrier from the pooled bank stock instead of pausing someone short.
+    if (left > 0) leftovers.push({ ...c, runs: left, produced: left * (c.produced / c.runs) });
     for (const s of shares) {
       if (s.runs <= 0) continue;
       push(wave0, s.n, { kind: "craft", code: c.code, quantity: s.runs * (c.produced / c.runs), done: 0 });
@@ -412,7 +417,7 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
   }
 
   // Remaining crafts: one wave per depth layer (compressed to consecutive waves).
-  const remaining = crafts.filter((c) => !chained.has(c.code)).sort((a, b) => a.depth - b.depth);
+  const remaining = [...crafts.filter((c) => !chained.has(c.code)), ...leftovers].sort((a, b) => a.depth - b.depth);
   const depths = [...new Set(remaining.map((c) => c.depth))];
   for (const d of depths) {
     const byChar = new Map<string, QueueItemInput[]>();

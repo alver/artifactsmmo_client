@@ -8,7 +8,7 @@
 import { catalog, item, itemName, monster as monsterOf } from "../../catalog";
 import { queueItemText, type QueueItem, type QueueItemInput } from "../queue";
 import { npcForSell } from "../acquire";
-import { acquireWaves, planAcquire } from "./acquire";
+import { acquireWaves, planAcquire, SPLIT_ACTIONS } from "./acquire";
 import { crafterFor, fleetBis, skillLevel } from "./ctx";
 import { ratioOf } from "./objectives";
 import { SCORE, estMinutes, perHour } from "./score";
@@ -17,7 +17,6 @@ import type { AccountAchievement, AchievementObjectiveProgress } from "../../typ
 import type { AccountGoal, Blocker, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "./types";
 
 const DROP_BUFFER = 1.2;
-const SPLIT_ACTIONS = 60;
 /** Keep the proposal list focused on the closest/richest few. */
 const MAX_PROPOSALS = 5;
 
