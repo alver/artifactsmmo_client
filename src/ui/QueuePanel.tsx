@@ -11,7 +11,8 @@ import { npcForSell } from "../plan/acquire";
 import { catalog, item as itemOf, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
-import { addItem, clearQueue, moveItem, queues, removeItem, startQueue, stopQueue, updateItem } from "../state/queue";
+import { addItem, clearQueue, moveItem, queuePinTraining, queues, removeItem, setRepeat, startQueue, stopQueue, updateItem } from "../state/queue";
+import { PIN_SKILLS, skillPins } from "../state/store";
 import { availableMonsters, availableResources } from "../state/events";
 import type { JSX } from "preact";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
@@ -28,12 +29,13 @@ export function monsterList(): { code: string; name: string; level: number; type
   }
 }
 
-/** The item kinds the add form offers ("train" exists only for legacy saved queues). */
+/** The item kinds the add form offers. */
 const ADDABLE: { kind: string; label: string }[] = [
   { kind: "move", label: "🚶 Move to a tile" },
   { kind: "rest", label: "💤 Rest to full HP" },
   { kind: "fight", label: "⚔ Fight a monster ×N (0 = ∞)" },
   { kind: "gather", label: "⛏ Gather a resource ×N (0 = ∞)" },
+  { kind: "train", label: "🎓 Train a skill to Lv N (0 = ∞)" },
   { kind: "craft", label: "⚙ Craft / refine ×N (0 = ∞)" },
   { kind: "withdraw", label: "🏦 Withdraw from bank" },
   { kind: "sell", label: "💰 Sell bank stock ×N" },
@@ -61,6 +63,7 @@ export function QueueSection({ ch }: { ch: Character }) {
               {q.note || "running"}
             </span>
             <span class="q-count muted">{q.items.length} left</span>
+            <RepeatToggle name={ch.name} on={!!q.repeat} />
             <button class="btn-stop" title="Pause the queue after the current action" onClick={() => stopQueue(ch.name)}>⏹</button>
           </>
         ) : (
@@ -75,6 +78,15 @@ export function QueueSection({ ch }: { ch: Character }) {
             </button>
             {pausedError && <span class="q-paused">⏸ paused</span>}
             <span class="q-count muted">{q.items.length} item{q.items.length === 1 ? "" : "s"}</span>
+            <RepeatToggle name={ch.name} on={!!q.repeat} />
+            <button
+              class="cat-btn"
+              disabled={!skillPins.value[ch.name]?.length}
+              title="Queue a repeating loop that levels the pinned skills (📌 in the Skills card) in turn: +1 level each, round and round"
+              onClick={() => queuePinTraining(ch.name)}
+            >
+              📌 Train pins
+            </button>
             {q.items.length > 0 && (
               <button
                 class="cat-btn sell"
@@ -100,6 +112,18 @@ export function QueueSection({ ch }: { ch: Character }) {
         ))}
       </div>
     </div>
+  );
+}
+
+function RepeatToggle({ name, on }: { name: string; on: boolean }) {
+  return (
+    <button
+      class={"cat-btn" + (on ? " buy" : "")}
+      title={on ? "Repeat is ON: a finished item goes to the back of the queue — click to turn off" : "Repeat: a finished item goes to the back of the queue instead of away"}
+      onClick={() => setRepeat(name, !on)}
+    >
+      🔁
+    </button>
   );
 }
 
@@ -185,7 +209,7 @@ function EditForm({ ch, it, onDone }: { ch: Character; it: QueueItem; onDone: ()
   } else if (it.kind === "withdraw" || it.kind === "buy") {
     fields = field("quantity", "quantity", it.quantity, 1);
   } else if (it.kind === "train") {
-    fields = field("to level", "toLevel", it.toLevel, 1);
+    fields = field("to level (0 = ∞)", "toLevel", it.toLevel, 0);
   } else {
     fields = <span class="muted" style={{ fontSize: 11 }}>nothing to edit — remove and re-add instead</span>;
   }
@@ -255,6 +279,9 @@ function AddForm({ ch }: { ch: Character }) {
         const drop = r.drops.find((d) => d.rate === 1) ?? r.drops[0];
         return { kind: "gather", code: drop?.code ?? r.code, resource: r.code, times: Math.max(0, times), done: 0, gear: true };
       }
+      // Gathering skills pick their node per tick; workshop skills run the
+      // source → craft → recycle loop. gear keeps the bank gathering set on.
+      case "train": return { kind: "train", skill: code || PIN_SKILLS[0][0], toLevel: Math.max(0, times), gear: true };
       case "craft": {
         const rec = recipes.find((o) => o.code === code) ?? recipes[0];
         // quantity 0 = craft forever: bank-withdraw → craft → deposit cycles
@@ -338,6 +365,14 @@ function AddForm({ ch }: { ch: Character }) {
         </select>
       )}
 
+      {kind === "train" && (
+        <select class="cp-refine-select" value={code || PIN_SKILLS[0][0]} onChange={(e) => setCode(sel(e))}>
+          {PIN_SKILLS.map(([k, label]) => (
+            <option key={k} value={k}>{label} · Lv {stats[`${k}_level`] ?? 0}</option>
+          ))}
+        </select>
+      )}
+
       {kind === "craft" && (
         <select class="cp-refine-select" value={code || recipes[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
           {recipes.flatMap((r, i) => {
@@ -386,17 +421,18 @@ function AddForm({ ch }: { ch: Character }) {
         </select>
       )}
 
-      {(kind === "fight" || kind === "gather" || kind === "craft" || kind === "withdraw" || kind === "sell" || kind === "recycle" || kind === "task-loop") && (
+      {(kind === "fight" || kind === "gather" || kind === "train" || kind === "craft" || kind === "withdraw" || kind === "sell" || kind === "recycle" || kind === "task-loop") && (
         <label
           class="q-field"
           title={
             kind === "fight" || kind === "gather" ? "0 = repeat forever (until stopped)"
+            : kind === "train" ? "target level — 0 = train forever (until stopped)"
             : kind === "craft" ? "0 = craft until the bank runs out of materials"
             : kind === "task-loop" ? "0 = keep completing tasks forever (until stopped)"
             : "0 = once"
           }
         >
-          ×<input class="cat-num" type="number" min={0} value={times} onInput={(e) => setTimes(num(e))} />
+          {kind === "train" ? "to Lv" : "×"}<input class="cat-num" type="number" min={0} value={times} onInput={(e) => setTimes(num(e))} />
         </label>
       )}
 

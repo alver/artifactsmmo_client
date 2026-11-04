@@ -5,7 +5,7 @@
 // Static catalogs are NOT persisted here — they ship as files under public/data/
 // and are loaded into memory each boot.
 
-import { account, activeEvents, bankDetails, bankItems, characters, craftSkillPins, log, pendingRewards, seedLogId, syncedAt } from "./store";
+import { account, activeEvents, bankDetails, bankItems, characters, log, pendingRewards, seedLogId, skillPins, syncedAt } from "./store";
 import type { LogEntry } from "./store";
 import type { Account, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 
@@ -20,7 +20,8 @@ interface PersistShape {
   account: Account | null;
   log: LogEntry[];
   syncedAt: number | null;
-  craftPins?: Record<string, string>; // additive — older caches simply lack it
+  craftPins?: Record<string, string>; // legacy single craft pin — read once to migrate
+  pins?: Record<string, string[]>; // additive — main-skill pins (📌1/📌2)
   events?: ActiveEvent[]; // additive — active map events (expired ones dropped at load)
   pending?: PendingItem[]; // additive — unclaimed rewards (🎁 badge)
 }
@@ -41,7 +42,8 @@ export function loadPersisted(): void {
       seedLogId(s.log.reduce((m, e) => Math.max(m, e.id || 0), 0));
     }
     if (s.syncedAt) syncedAt.value = s.syncedAt;
-    if (s.craftPins) craftSkillPins.value = s.craftPins;
+    if (s.pins) skillPins.value = s.pins;
+    else if (s.craftPins) skillPins.value = Object.fromEntries(Object.entries(s.craftPins).map(([n, k]) => [n, [k]]));
     if (s.events) activeEvents.value = s.events.filter((e) => Date.parse(e.expiration) > Date.now());
     if (s.pending) pendingRewards.value = s.pending;
   } catch {
@@ -64,7 +66,7 @@ export function saveState(): void {
       account: account.value,
       log: log.value,
       syncedAt: syncedAt.value,
-      craftPins: craftSkillPins.value,
+      pins: skillPins.value,
       events: activeEvents.value,
       pending: pendingRewards.value,
     };

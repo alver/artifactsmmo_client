@@ -1,5 +1,5 @@
 import type { Character } from "../types/api";
-import { CRAFT_TRAIN_SKILLS, characterList, craftSkillPins, focusCharacter, selectedCharacter } from "../state/store";
+import { PIN_SKILLS, characterList, focusCharacter, selectedCharacter, skillPins } from "../state/store";
 import { queues } from "../state/queue";
 import { queueItemText } from "../plan/queue";
 import { liveTileAt } from "../state/events";
@@ -51,8 +51,7 @@ export function CharacterMini({ ch }: { ch: Character }) {
   const status = activeStatus(ch.name);
   // Pinned crafting specialization (📌 in the Skills card) — shown only when
   // the user pinned one; the auto-highest highlight stays panel-only.
-  const pin = craftSkillPins.value[ch.name];
-  const pinLabel = pin ? CRAFT_TRAIN_SKILLS.find(([k]) => k === pin)?.[1] : undefined;
+  const pinLabel = (skillPins.value[ch.name] ?? []).map((k) => PIN_SKILLS.find(([key]) => key === k)?.[1] ?? k).join(" · ") || undefined;
   const tile = liveTileAt(ch.x, ch.y, layerOf(ch));
   const where = whereLabel(tile);
 
@@ -75,7 +74,7 @@ export function CharacterMini({ ch }: { ch: Character }) {
       <div class="pcard-head">
         <span class="pcard-name">{ch.name}</span>
         {pinLabel && (
-          <span class="pcard-pin" title={`Crafting specialization (pinned): ${pinLabel}`}>
+          <span class="pcard-pin" title={`Main skills (pinned): ${pinLabel}`}>
             📌 {pinLabel}
           </span>
         )}

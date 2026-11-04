@@ -24,8 +24,17 @@ function trainingBatch(ctx: HiveCtx, ch: Character, skill: string, have: number)
   if (!pick) return undefined;
   const recipe = item(pick.code)!.craft!;
   const bag = Math.max(10, ch.inventory_max_items);
-  const runs = Math.max(1, Math.min(BATCH_RUNS, Math.floor(bag / 2 / Math.max(1, pick.matsPerRun))));
-  const plan = planAcquire(recipe.items.map((g) => ({ code: g.code, quantity: g.quantity * runs })), ctx);
+  let runs = Math.max(1, Math.min(BATCH_RUNS, Math.floor(bag / 2 / Math.max(1, pick.matsPerRun))));
+  const planFor = (n: number) => planAcquire(recipe.items.map((g) => ({ code: g.code, quantity: g.quantity * n })), ctx);
+  let plan = planFor(runs);
+  // A bank-only ingredient (Wooden Stick: no node, no recipe) covers fewer
+  // runs than the bag does — bisect to the largest feasible batch instead of
+  // a craft that starves mid-batch behind materials nobody will use.
+  if (!plan.feasible) {
+    let lo = 0, hi = runs;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (planFor(mid).feasible) lo = mid; else hi = mid; }
+    if (lo > 0) { runs = lo; plan = planFor(runs); }
+  }
   return { code: pick.code, runs, produced: runs * recipe.quantity, plan };
 }
 
@@ -186,5 +195,8 @@ export function compileSkillGoal(
     waves: [wave],
     summary: `${label} — batches of ${produced}× ${itemName(code)}`,
     blockers: plan.blockers,
+    // XP as progress: a tiny bank-fed batch (1 staff per barrier) repeats an
+    // identical wave while still levelling — the stall guard must let it.
+    progress: (ch as unknown as Record<string, number>)[`${goal.skill}_xp`],
   };
 }

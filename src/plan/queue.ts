@@ -36,7 +36,14 @@ export type QueueItem = { id: string; error?: string } & (
   // Recycle at the workshop that crafts the item (returns a share of the
   // materials); like sell, pulls bank stock when the hand is empty.
   | { kind: "recycle"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number }
-  | { kind: "train"; skill: string; toLevel: number; resource: string; x?: number; y?: number }
+  // Level a skill. Gathering skills work the best node for the current level
+  // (re-picked per tick; `resource` pins one); workshop skills loop source
+  // materials → craft a batch → recycle → repeat on the best in-window recipe
+  // the character can feed alone. toLevel 0 = forever; `levels` = +N from the
+  // level the item STARTED at (`from`, recorded on first run — a 🔁 rotation
+  // wipes it so every lap gains the next level). `gear` ⇒ keep the bank
+  // gathering set on while gathering.
+  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; gear?: boolean }
   // Swap to the best job gear from the bank (see plan/jobgear.ts): `desired` =
   // slot map frozen at compile; `job` = live spec recomputed from the bank at
   // run time (hand-added). `reset` ⇒ full bank reset first: deposit EVERYTHING
@@ -92,7 +99,7 @@ export function queueItemText(it: QueueItem): string {
     case "buy": return `Buy ${it.quantity}× ${itemName(it.code)}`;
     case "sell": return `Sell ${it.quantity}× ${itemName(it.code)}`;
     case "recycle": return `Recycle ${it.quantity}× ${itemName(it.code)}`;
-    case "train": return `Train ${titleCase(it.skill)} to Lv ${it.toLevel}`;
+    case "train": return `Train ${titleCase(it.skill)} ${it.levels ? `+${it.levels} level${it.levels === 1 ? "" : "s"}` : it.toLevel > 0 ? `to Lv ${it.toLevel}` : "(∞)"}`;
     case "gear": {
       const what = it.job
         ? it.job.kind === "fight"

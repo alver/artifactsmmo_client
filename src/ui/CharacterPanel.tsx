@@ -1,4 +1,4 @@
-import { CRAFT_TRAIN_SKILLS, characters, craftFocus, craftSkillPins, selectedCharacter, toggleCraftPin } from "../state/store";
+import { MAX_PINS, characters, selectedCharacter, skillPins, togglePin } from "../state/store";
 import { saveState } from "../state/persist";
 import { item, monster, npc, resource } from "../catalog";
 import { liveTileAt } from "../state/events";
@@ -29,35 +29,26 @@ const SKILLS: [string, string][] = [
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
 
 /**
- * The Skills grid. The character's crafting specialization (weapon/gear/
- * jewelry crafting or cooking) is highlighted: the highest of the four by
- * default, or whichever the user pinned by clicking a craft row (📌, click
- * again to unpin). The pin persists across reloads.
+ * The Skills grid. Click a row to pin it as one of the character's main
+ * skills (📌1/📌2 — up to MAX_PINS, one more replaces the oldest; click again
+ * to unpin). Pins persist across reloads and feed the queue's "📌 Train pins"
+ * loop and the hive's crafter routing.
  */
 function SkillsSection({ ch, stat }: { ch: Character; stat: Record<string, number> }) {
-  const craftKeys = CRAFT_TRAIN_SKILLS.map(([k]) => k);
-  const pinned = craftSkillPins.value[ch.name];
-  const focus = craftFocus(ch);
+  const pins = skillPins.value[ch.name] ?? [];
   return (
     <div class="cp-skills">
       {SKILLS.map(([key, label]) => {
-        const craft = craftKeys.includes(key);
-        const isFocus = craft && key === focus;
+        const idx = pins.indexOf(key);
         return (
           <div
             key={key}
-            class={"cp-skill" + (craft ? " cp-skill-pinnable" : "") + (isFocus ? " cp-skill-focus" : "")}
-            title={
-              craft
-                ? pinned === key
-                  ? "Unpin — back to auto-highlighting the highest craft skill"
-                  : "Pin as this character's crafting specialization"
-                : undefined
-            }
-            onClick={craft ? () => { toggleCraftPin(ch.name, key); saveState(); } : undefined}
+            class={"cp-skill cp-skill-pinnable" + (idx >= 0 ? " cp-skill-focus" : "")}
+            title={idx >= 0 ? "Unpin" : `Pin as a main skill (up to ${MAX_PINS}; one more replaces the oldest)`}
+            onClick={() => { togglePin(ch.name, key); saveState(); }}
           >
             <b class="cp-skill-lv">{stat[`${key}_level`]}</b>
-            <span class="cp-skill-name">{label}{isFocus && pinned === key ? " 📌" : ""}</span>
+            <span class="cp-skill-name">{label}{idx >= 0 ? ` 📌${idx + 1}` : ""}</span>
             <span class="cp-skill-xp">
               {stat[`${key}_xp`]}/{stat[`${key}_max_xp`]}
             </span>

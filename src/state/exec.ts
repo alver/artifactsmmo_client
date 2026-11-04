@@ -300,7 +300,7 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       // For "train": one gather per tick; the caller notices the level echo
       // and drops the step by itself (no polling).
       const t = needTile();
-      ctx.note(s.kind === "train" ? `train ${s.skill} → Lv ${s.toLevel}` : `gather ${itemName(s.code)}`);
+      ctx.note(s.kind === "train" ? `train ${s.skill}${s.toLevel > 0 ? ` → Lv ${s.toLevel}` : ""}` : `gather ${itemName(s.code)}`);
       await moveTo(name, t.x, t.y);
       if (invCount(characters.value[name] ?? ch) >= ch.inventory_max_items) { await bankOff(name, t.x, t.y, keep, ctx.note); return { did: "banked" }; }
       await step(name, () => actions.gather(name));

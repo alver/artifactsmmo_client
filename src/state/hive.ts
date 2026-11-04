@@ -26,8 +26,8 @@
 // items task-loop as a plain user-owned queue item. Stop (⏹) still means stop.
 
 import { batch, effect, signal } from "@preact/signals";
-import { addItem, dropItem, patchItem, queues, removeItem, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
-import { achievements, bankDetails, bankItems, characterList, characters, craftSkillPins, pushLog } from "./store";
+import { addItem, dropItem, patchItem, queues, removeItem, setRepeat, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
+import { achievements, bankDetails, bankItems, characterList, characters, craftPins, pushLog } from "./store";
 import { invQty } from "./exec";
 import { bankQty } from "./loopkit";
 import { compileGoal, fillerItems, goalSatisfied, needsAchievements, proposeGoals } from "../plan/hive";
@@ -145,7 +145,7 @@ export function buildHiveCtx(): HiveCtx {
     bank: bankItems.value,
     bankGold: bankDetails.value?.gold ?? 0,
     achievements: achievements.value,
-    craftPins: craftSkillPins.value,
+    craftPins: craftPins(),
   };
 }
 
@@ -300,6 +300,11 @@ export function releaseStarved(wave: HiveWaveState): boolean {
   if (starved.length === 0 || starved.length < live.length) return false;
   for (const { a, head } of starved) {
     dropItem(a.character, head.id);
+    // The batch's recycle was sized for the whole craft — a count it can't
+    // reach pauses the lane and holds the barrier; trim it to what was made.
+    const rec = queues.value[a.character]?.items.find((it) => it.kind === "recycle" && it.code === head.code && a.itemIds?.includes(it.id));
+    if (rec && head.done > 0) patchItem(a.character, rec.id, { quantity: head.done });
+    else if (rec) dropItem(a.character, rec.id);
     log(`${a.character}: nothing left to feed ${queueItemText(head)} — ${head.done} made, the rest replans at the barrier`);
   }
   return true;
@@ -448,6 +453,7 @@ function dispatchWave(): void {
       a.items.forEach((input, i) => {
         if (!present.has(ids[i])) addItem(a.character, { ...input, id: ids[i] } as QueueItem);
       });
+      setRepeat(a.character, false); // a rotating queue would never finish our ids
       startQueue(a.character);
       if (a.filler) fillers.push(a.character);
       else main = true;

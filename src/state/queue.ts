@@ -22,8 +22,10 @@ import { ApiError } from "../api/client";
 import { catalog, item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
 import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, stripAllMap } from "../plan/jobgear";
-import { QUEUE_KINDS, queueItemText } from "../plan/queue";
-import { characters, pushLog } from "./store";
+import { QUEUE_KINDS, queueItemText, withId } from "../plan/queue";
+import { trainingResourceFor } from "../plan/hive/skills";
+import { titleCase } from "../lib/util";
+import { CRAFT_TRAIN_SKILLS, characters, pushLog, skillPins } from "./store";
 import { devlog } from "../lib/devlog";
 import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
@@ -37,6 +39,7 @@ export interface QueueState {
   items: QueueItem[];
   running: boolean;
   note?: string; // live status of the head item while running
+  repeat?: boolean; // 🔁 a finished item goes to the back (progress wiped) instead of away
 }
 
 const STORE_KEY = "ammo:v1:queue";
@@ -171,6 +174,7 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
     // bank-off would deposit exactly what was just withdrawn and the item would
     // spin forever.
     : it.kind === "withdraw" || it.kind === "sell" || it.kind === "recycle" ? [it.code]
+    : it.kind === "train" ? trainKeep(ch, it)
     : undefined;
   // Carried between-fight food is working stock too — a loot bank-off or the
   // job-start gear reset must not stash the fighter's rations.
@@ -376,11 +380,16 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       return false;
     }
     case "train": {
-      if (skillLevel(ch, it.skill) >= it.toLevel) return true;
-      const tile = it.x != null ? { x: it.x, y: it.y } : nearest("resource", it.resource, ch.x, ch.y);
-      if (!tile || tile.x == null) return skipItem(name, it, `no ${it.resource} on the map (event over?)`);
-      const s: AcquisitionStep = { kind: "train", skill: it.skill, toLevel: it.toLevel, resource: it.resource, level: 0, x: tile.x, y: tile.y };
-      await runStep(name, ch, s, ctx);
+      const lv = skillLevel(ch, it.skill);
+      if (it.levels && it.from == null) { patchItem(name, it.id, { from: lv }); return false; }
+      const target = it.levels ? (it.from ?? lv) + it.levels : it.toLevel;
+      if (target > 0 && lv >= target) return true;
+      if (isCraftSkill(it.skill)) return runTrainCraft(name, ch, it, ctx);
+      const node = it.resource ?? trainingResourceFor(it.skill, lv)?.code;
+      const tile = it.x != null ? { x: it.x, y: it.y } : node ? nearest("resource", node, ch.x, ch.y) : undefined;
+      if (!node || !tile || tile.x == null) return skipItem(name, it, `no ${titleCase(it.skill)} node to train on (event over?)`);
+      if (await gatherGear(name, ch, it, it.skill, ctx)) return false;
+      await runStep(name, ch, { kind: "train", skill: it.skill, toLevel: target, resource: node, level: 0, x: tile.x, y: tile.y }, ctx);
       return false;
     }
     case "fight": {
@@ -537,6 +546,164 @@ function fieldSource(ch: Character, code: string): FieldSource | undefined {
   return undefined;
 }
 
+// ── Skill training (the `train` item) ────────────────────────────────────────
+
+const isCraftSkill = (skill: string): boolean => CRAFT_TRAIN_SKILLS.some(([k]) => k === skill);
+
+/** Per-round gather-set self-heal for a `gear` train item (as the gather item does). True ⇒ tick spent. */
+async function gatherGear(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, skill: string, ctx: StepCtx): Promise<boolean> {
+  if (!it.gear) return false;
+  const desired = desiredForJob(name, ch, { kind: "gather", skill });
+  return !!desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted";
+}
+
+/** Before a train craft: wear the best `<skill>_crafting` tool owned — weapon slot only, so it
+ *  ping-pongs with the gathering tool as a bag-only equip (trainKeep holds both). True ⇒ tick spent. */
+async function craftGear(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, skill: string, ctx: StepCtx): Promise<boolean> {
+  if (!it.gear) return false;
+  const tool = desiredForJob(name, ch, { kind: "craft", skill })?.weapon;
+  return !!tool && itemOf(tool)?.subtype === "tool" && (await gearSwapStep(name, ch, { weapon: tool }, ctx)) === "acted";
+}
+
+/** Whether this character can keep producing `code` by itself: a gatherable
+ *  drop, or a one-deep craft (ore → bar) of gatherable drops. */
+function renewable(ch: Character, code: string): boolean {
+  const src = fieldSource(ch, code);
+  if (src?.how === "gather") return true;
+  return src?.how === "craft" && src.recipe.items.every((g) => fieldSource(ch, g.code)?.how === "gather");
+}
+
+/**
+ * The recipe to train a workshop skill on right now: in the XP window
+ * ([lv−9 .. lv]), highest level first, then fewest materials, among recipes
+ * this character can feed ALONE — every ingredient renewable or already in
+ * bag + bank for one run. Re-picked every tick, so a bank-only ingredient
+ * running out (Wooden Stick) simply moves the loop on to the next recipe.
+ */
+export function trainRecipe(ch: Character, skill: string): { code: string; recipe: CraftRecipe } | undefined { // exported for the verify probe
+  const lv = skillLevel(ch, skill);
+  let best: { code: string; recipe: CraftRecipe; mats: number } | undefined;
+  for (const it of catalog().items.values()) {
+    const r = it.craft;
+    if (!r || r.skill !== skill || r.level > lv || r.level <= lv - 10) continue;
+    if (!r.items.every((g) => renewable(ch, g.code) || invQty(ch, g.code) + bankQty(g.code) >= g.quantity)) continue;
+    const mats = r.items.reduce((s, g) => s + g.quantity, 0);
+    if (!best || r.level > best.recipe.level || (r.level === best.recipe.level && mats < best.mats)) best = { code: it.code, recipe: r, mats };
+  }
+  return best;
+}
+
+/** Working stock of a workshop-skill train: the recipe's materials and their
+ *  one-deep sub-materials — never the product, which gets recycled or banked. */
+function trainKeep(ch: Character, it: Extract<QueueItem, { kind: "train" }>): string[] | undefined {
+  if (!isCraftSkill(it.skill)) return undefined;
+  const pick = trainRecipe(ch, it.skill);
+  // Spare tools ride in the bag (never the product itself — it must recycle/bank)
+  // so the gather ↔ craft tool swap never costs a bank trip.
+  const tools = it.gear ? (ch.inventory ?? []).filter((s) => s.code && s.code !== pick?.code && itemOf(s.code)?.subtype === "tool").map((s) => s.code) : [];
+  return [
+    ...(pick?.recipe.items.flatMap((g) => {
+      const src = fieldSource(ch, g.code);
+      return [g.code, ...(src?.how === "craft" ? src.recipe.items.map((s) => s.code) : [])];
+    }) ?? []),
+    ...tools,
+  ];
+}
+
+/**
+ * One tick of workshop-skill training, a self-contained loop: source a
+ * half-bag batch of materials (bank → one-deep sub-craft → gather) → craft →
+ * recycle the product (materials come back) or bank it → repeat. Every tick
+ * re-derives its state from bag + bank, so a reload resumes anywhere.
+ */
+async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, ctx: StepCtx): Promise<boolean> {
+  const pick = trainRecipe(ch, it.skill);
+  if (!pick) throw new Error(`no ${titleCase(it.skill)} recipe this character can feed at Lv ${skillLevel(ch, it.skill)}`);
+  const { code, recipe } = pick;
+  // 1. Product in hand → recycle it (materials come back), else bank it.
+  const made = invQty(ch, code);
+  if (made > 0) {
+    if (!itemOf(code)?.recyclable) { await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return false; }
+    const t = nearest("workshop", recipe.skill, ch.x, ch.y);
+    if (!t) throw new Error(`no ${recipe.skill} workshop on the map`);
+    if (ch.x !== t.x || ch.y !== t.y) { ctx.note("→ workshop"); await moveTo(name, t.x, t.y); return false; }
+    ctx.note(`train ${titleCase(it.skill)}: recycle ${itemName(code)}`);
+    await step(name, () => actions.recycle(name, code, made));
+    return false;
+  }
+  // 2. Batch: half a bag of materials; a non-renewable (bank-only) ingredient
+  //    caps it at what bag + bank hold.
+  const per = Math.max(1, recipe.quantity);
+  // A sub-crafted ingredient weighs its own materials (6 bars = 60 ore).
+  const matsPerRun = Math.max(1, recipe.items.reduce((s, g) => {
+    const src = fieldSource(ch, g.code);
+    const sub = src?.how === "craft" ? src.recipe : undefined;
+    return s + (sub ? (g.quantity / Math.max(1, sub.quantity)) * sub.items.reduce((t, x) => t + x.quantity, 0) : g.quantity);
+  }, 0));
+  let runs = Math.max(1, Math.floor(ch.inventory_max_items / 2 / matsPerRun));
+  for (const g of recipe.items) if (!renewable(ch, g.code)) runs = Math.min(runs, Math.floor((invQty(ch, g.code) + bankQty(g.code)) / g.quantity));
+  runs = Math.max(1, runs);
+  // 3. The batch's materials in hand (or a full bag with at least one run) → craft.
+  const can = craftableTimes(ch, code, runs * per);
+  if (can >= runs || (can > 0 && freeSpace(ch) === 0)) {
+    const t = nearest("workshop", recipe.skill, ch.x, ch.y);
+    if (!t) throw new Error(`no ${recipe.skill} workshop on the map`);
+    if (await craftGear(name, ch, it, recipe.skill, ctx)) return false;
+    ctx.note(`train ${titleCase(it.skill)}: craft ${itemName(code)}`);
+    await runStep(name, ch, { kind: "craft", code, quantity: can * per, skill: recipe.skill, level: 0, x: t.x, y: t.y }, ctx);
+    return false;
+  }
+  // 4. Source the first short ingredient (a full bag of other stuff banks off first).
+  if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return false; }
+  const short = recipe.items.find((g) => invQty(ch, g.code) < g.quantity * runs)!;
+  return sourceOne(name, ch, it, short.code, short.quantity * runs - invQty(ch, short.code), ctx, true);
+}
+
+/** Get `need` more of `code` into the bag, one action: withdraw bank stock,
+ *  else gather it, else (one level deep) craft it from gathered/banked materials. */
+async function sourceOne(
+  name: string,
+  ch: Character,
+  it: Extract<QueueItem, { kind: "train" }>,
+  code: string,
+  need: number,
+  ctx: StepCtx,
+  deep: boolean,
+): Promise<boolean> {
+  const banked = bankQty(code);
+  if (banked > 0) {
+    const bank = nearestBank(ch.x, ch.y);
+    if (!bank) return skipItem(name, it, "no bank on the map");
+    await runStep(name, ch, { kind: "withdraw", code, quantity: Math.max(1, Math.min(need, banked, freeSpace(ch))), x: bank.x, y: bank.y }, ctx);
+    return false;
+  }
+  const src = fieldSource(ch, code);
+  if (src?.how === "gather") {
+    const tile = nearest("resource", src.res.code, ch.x, ch.y);
+    if (!tile) return skipItem(name, it, `no ${src.res.name} on the map (event over?)`);
+    if (await gatherGear(name, ch, it, src.res.skill, ctx)) return false;
+    ctx.note(`train ${titleCase(it.skill)}: gather ${itemName(code)} ${invQty(ch, code)}/${invQty(ch, code) + need}`);
+    await runStep(name, ch, { kind: "gather", code, quantity: 1, resource: src.res.code, level: 0, x: tile.x, y: tile.y }, ctx);
+    return false;
+  }
+  if (src?.how === "craft" && deep) {
+    const sub = src.recipe;
+    const runs = Math.ceil(need / Math.max(1, sub.quantity));
+    const can = craftableTimes(ch, code, need);
+    if (can >= runs || (can > 0 && freeSpace(ch) === 0)) {
+      const t = nearest("workshop", sub.skill, ch.x, ch.y);
+      if (!t) throw new Error(`no ${sub.skill} workshop on the map`);
+      if (await craftGear(name, ch, it, sub.skill, ctx)) return false;
+      ctx.note(`train ${titleCase(it.skill)}: craft ${itemName(code)}`);
+      await runStep(name, ch, { kind: "craft", code, quantity: need, skill: sub.skill, level: 0, x: t.x, y: t.y }, ctx);
+      return false;
+    }
+    const short = sub.items.find((g) => invQty(ch, g.code) < g.quantity * runs)!;
+    return sourceOne(name, ch, it, short.code, short.quantity * runs - invQty(ch, short.code), ctx, false);
+  }
+  throw new Error(`no way to get ${itemName(code)} (skill too low?)`);
+}
+
 /**
  * Gear leg of a work-task tick. The FIRST time a given task is worked, wear
  * the phase's job set via a full bank reset (the standard job start — deposit
@@ -609,21 +776,23 @@ async function giveUpTask(
       return false;
     }
   }
+  // Coin fetch, walk and cancel in ONE call: a "no-win" verdict only exists on
+  // the monster tile, so returning between steps walked straight back there
+  // (and the bank sweep stowed the coin) — a livelock that never cancelled.
+  const master = nearest("tasks_master", ch.task_type === "items" ? "items" : "monsters", ch.x, ch.y);
+  if (!master) return skipItem(name, it, "no tasks master on the map");
   if (invQty(ch, "tasks_coin") <= 0) {
     if (bankQty("tasks_coin") <= 0) throw new Error(`${why} — and no tasks coin to cancel the task`);
     const bank = nearestBank(ch.x, ch.y);
     if (!bank) throw new Error(`${why} — and no bank to fetch a tasks coin from`);
     ctx.note("fetching a tasks coin to cancel the task");
     await runStep(name, ch, { kind: "withdraw", code: "tasks_coin", quantity: 1, x: bank.x, y: bank.y }, ctx);
-    return false;
   }
-  const at = await goToMaster(name, ch, ch.task_type === "items" ? "items" : "monsters", ctx.note);
-  if (at === "missing") return skipItem(name, it, "no tasks master on the map");
-  if (at === "there") {
-    ctx.note("cancelling the task");
-    await step(name, () => actions.taskCancel(name));
-    log(name, `task cancelled for a tasks coin — ${why}`, "bad");
-  }
+  ctx.note("→ tasks master");
+  await moveTo(name, master.x, master.y);
+  ctx.note("cancelling the task");
+  await step(name, () => actions.taskCancel(name));
+  log(name, `task cancelled for a tasks coin — ${why}`, "bad");
   return false; // the echo clears ch.task → a loop accepts the next one
 }
 
@@ -759,7 +928,12 @@ async function runLoop(name: string): Promise<void> {
         const done = await runItem(name, ch, item);
         if (done) {
           const cur = queues.value[name];
-          if (cur?.items[0]?.id === item.id) setQueue(name, { items: cur.items.slice(1), note: undefined });
+          if (cur?.items[0]?.id === item.id) {
+            const rest = cur.items.slice(1);
+            // 🔁 wipes progress; done/from/geared don't exist on every kind, hence the double cast.
+            const again = { ...item, done: 0, from: undefined, geared: undefined, error: undefined } as unknown as QueueItem;
+            setQueue(name, { items: cur.repeat ? [...rest, again] : rest, note: undefined });
+          }
           S(name).losses = 0;
         }
       } catch (e) {
@@ -790,6 +964,25 @@ async function runLoop(name: string): Promise<void> {
     const q = queues.value[name];
     if (q?.running || q?.note) setQueue(name, { running: false, note: undefined });
   }
+}
+
+/** 🔁: a finished item goes to the back of the queue (progress wiped) instead of away. */
+export function setRepeat(name: string, on: boolean): void {
+  if (!queues.value[name]) queues.value = { ...queues.value, [name]: { items: [], running: false } };
+  setQueue(name, { repeat: on || undefined });
+}
+
+/**
+ * The "main task" of a character: a repeating loop that levels the pinned
+ * skills (📌) in turn — per pin, a bank reset into the job set then +1 level,
+ * with 🔁 on so the rotation never ends. Appends behind whatever is queued.
+ */
+export function queuePinTraining(name: string): void {
+  for (const skill of skillPins.value[name] ?? []) {
+    addItem(name, withId({ kind: "gear", job: isCraftSkill(skill) ? { kind: "craft", skill } : { kind: "gather", skill }, reset: true }));
+    addItem(name, withId({ kind: "train", skill, toLevel: 0, levels: 1, gear: true }));
+  }
+  setRepeat(name, true);
 }
 
 /** Start executing the queue from its head. */

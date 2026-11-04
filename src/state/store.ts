@@ -53,25 +53,40 @@ export const lastError = signal<string | null>(null);
 /** Name of the currently selected character (highlights its card + map marker). */
 export const selectedCharacter = signal<string | null>(null);
 
+/** Every skill a character can pin as a main skill (📌): the workshop skills
+ *  train by crafting, the rest by gathering. */
+export const PIN_SKILLS: [string, string][] = [
+  ...CRAFT_TRAIN_SKILLS,
+  ["mining", "Mining"],
+  ["woodcutting", "Woodcutting"],
+  ["fishing", "Fishing"],
+  ["alchemy", "Alchemy"],
+];
+export const MAX_PINS = 2;
 /**
- * Per-character crafting-specialization pin (character name → craft skill key).
- * Unpinned characters auto-highlight their highest crafting skill instead.
- * Persisted via persist.ts; the UI toggles it by clicking a craft skill row.
+ * Per-character main-skill pins (character name → ordered skill keys, at most
+ * MAX_PINS; pinning one more replaces the oldest). Persisted via persist.ts;
+ * the UI toggles them by clicking a skill row. The first pinned WORKSHOP skill
+ * is the character's crafting specialization (hive crafter routing).
  */
-export const craftSkillPins = signal<Record<string, string>>({});
-export function toggleCraftPin(name: string, skill: string): void {
-  const cur = { ...craftSkillPins.value };
-  if (cur[name] === skill) delete cur[name];
-  else cur[name] = skill;
-  craftSkillPins.value = cur;
+export const skillPins = signal<Record<string, string[]>>({});
+export function togglePin(name: string, skill: string): void {
+  const cur = { ...skillPins.value };
+  const list = cur[name] ?? [];
+  const next = list.includes(skill) ? list.filter((s) => s !== skill) : [...list, skill].slice(-MAX_PINS);
+  if (next.length) cur[name] = next;
+  else delete cur[name];
+  skillPins.value = cur;
 }
-/** The character's crafting specialization: the pinned skill, else the highest. */
-export function craftFocus(ch: Character): string {
+/** Character name → pinned crafting specialization (first workshop pin), for the hive. */
+export function craftPins(): Record<string, string> {
   const keys = CRAFT_TRAIN_SKILLS.map(([k]) => k);
-  const pin = craftSkillPins.value[ch.name];
-  if (pin && keys.includes(pin)) return pin;
-  const stat = ch as unknown as Record<string, number>;
-  return keys.reduce((best, k) => ((stat[`${k}_level`] ?? 0) > (stat[`${best}_level`] ?? 0) ? k : best), keys[0]);
+  const out: Record<string, string> = {};
+  for (const [name, list] of Object.entries(skillPins.value)) {
+    const pin = list.find((k) => keys.includes(k));
+    if (pin) out[name] = pin;
+  }
+  return out;
 }
 /**
  * A bump-on-click focus request the map listens to. The `seq` lets repeated
