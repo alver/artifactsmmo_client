@@ -18,7 +18,7 @@ page.setDefaultTimeout(60000);
 page.on("pageerror", (e) => console.log("[pageerror]", e.message));
 await page.evaluateOnNewDocument((t) => localStorage.setItem("ammo:v1:token", t), TOKEN);
 await page.goto("http://localhost:5173/", { waitUntil: "domcontentloaded" });
-await page.waitForSelector(".pcard-name");
+await page.waitForSelector(".fleet-name");
 await new Promise((r) => setTimeout(r, 2500));
 
 const out = await page.evaluate(async () => {

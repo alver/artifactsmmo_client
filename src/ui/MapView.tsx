@@ -2,7 +2,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { effect } from "@preact/signals";
 import { catalog } from "../catalog";
-import { activeEvents, characters, deliverTilePick, disarmTilePick, focusRequest, itemsCatalogOpen, mapHover, moveMode, panelTarget, selectedCharacter, tileFocus, tilePick } from "../state/store";
+import { activeEvents, characters, deliverTilePick, disarmTilePick, focusRequest, mapHover, moveMode, panelTarget, selectedCharacter, tileFocus, tilePick } from "../state/store";
 import * as actions from "../api/actions";
 import type { GameMap } from "../types/catalog";
 import type { Character } from "../types/api";
@@ -68,6 +68,10 @@ function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: numbe
   ctx.closePath();
 }
 
+// Module-level so a focusTile() issued while no map is mounted (e.g. "show on
+// map" from another tab) is applied when the Map tab mounts — exactly once.
+let consumedTileFocus = 0;
+
 export function MapView() {
   const layer = useSignal<Layer>("overworld");
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -93,7 +97,6 @@ export function MapView() {
     let evts = activeEvents.peek();
     let selName = selectedCharacter.peek();
     let lastFocusSeq = focusRequest.peek()?.seq ?? 0;
-    let lastTileFocusSeq = tileFocus.peek()?.seq ?? 0;
 
     const rebuild = (lyr: Layer) => {
       index = new Map();
@@ -299,8 +302,8 @@ export function MapView() {
       }
       // A tile-focus request (e.g. an event row click) — jump there, hopping
       // layers first when needed.
-      if (tf && tf.seq !== lastTileFocusSeq) {
-        lastTileFocusSeq = tf.seq;
+      if (tf && tf.seq !== consumedTileFocus) {
+        consumedTileFocus = tf.seq;
         if (tf.layer !== curLayer && LAYERS.includes(tf.layer as Layer)) {
           layer.value = tf.layer as Layer; // re-runs this effect, which rebuilds
         }
@@ -323,8 +326,9 @@ export function MapView() {
       }
       if (!inited) {
         // Characters arrive asynchronously after the boot sync; center on the
-        // first one once it shows up (unless the user has already panned).
-        const c = firstCharOnLayer();
+        // selected one (else the first) once it shows up, unless the user panned.
+        const sel = selName ? chars[selName] : undefined;
+        const c = sel && ((sel as { layer?: string }).layer ?? "overworld") === curLayer ? sel : firstCharOnLayer();
         if (c) {
           if (!userMoved) centerOn(c.x, c.y);
           inited = true;
@@ -364,7 +368,6 @@ export function MapView() {
           content.type === "tasks_master")
       ) {
         panelTarget.value = { type: content.type, code: content.code, x: hx, y: hy, layer: curLayer };
-        itemsCatalogOpen.value = false; // one right panel at a time
       } else {
         panelTarget.value = null;
       }

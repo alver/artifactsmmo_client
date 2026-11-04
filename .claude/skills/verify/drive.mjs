@@ -59,14 +59,20 @@ async function boot(browser) {
   page.on("console", (m) => { if (m.type() === "error") say("[console.error]", m.text().slice(0, 200)); });
   await page.evaluateOnNewDocument((t) => localStorage.setItem("ammo:v1:token", t), TOKEN);
   await page.goto(URL, { waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".pcard-name", { timeout: 45000 });
+  await page.waitForSelector(".tabs", { timeout: 45000 });
   await sleep(1500); // let the boot sync land
 }
 
 async function selectCharacter() {
-  await clickByText(".pcard", CHAR);
-  await page.waitForFunction((n) => document.querySelector(".cp-name")?.textContent.includes(n), {}, CHAR);
+  await page.evaluate(() => (location.hash = "#/fleet"));
+  await page.waitForSelector(".fleet-name", { timeout: 45000 });
+  await clickByText(".fleet-name", CHAR);
+  await page.waitForFunction((n) => document.querySelector(".char-name")?.textContent.includes(n), {}, CHAR);
 }
+
+// Pin / unpin a skill: its row's button on the Character tab.
+const togglePinRow = (label) =>
+  page.evaluate((l) => [...document.querySelectorAll(".cp-skill")].find((r) => r.textContent.includes(l))?.querySelector("button")?.click(), label);
 
 // Poll the queue until pred() is true; narrate note/log changes as we go.
 async function watch(label, pred, timeoutMs) {
@@ -120,7 +126,7 @@ try {
   const midQ = await queueOf();
   say("reloading mid-reset; note was:", midQ?.note, "items:", midQ?.items.length);
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".pcard-name", { timeout: 45000 });
+  await page.waitForSelector(".tabs", { timeout: 45000 });
   await sleep(2000);
   q = await queueOf();
   say("after reload: running=", q?.running, "items:", q?.items.map((i) => i.kind).join(","));
@@ -203,18 +209,18 @@ try {
   step("skills pin: auto-highlight → pin Jewelrycraft → reload persists → unpin");
   const focusName = () => page.$$eval(".cp-skill-focus .cp-skill-name", (ns) => ns.map((n) => n.textContent.trim()));
   say("auto focus:", JSON.stringify(await focusName()));
-  await clickByText(".cp-skill-pinnable", "Jewelrycraft");
+  await togglePinRow("Jewelrycraft");
   await sleep(500);
   say("after pin:", JSON.stringify(await focusName()));
   await shot("10-pinned");
   await page.reload({ waitUntil: "domcontentloaded" });
-  await page.waitForSelector(".pcard-name", { timeout: 45000 });
+  await page.waitForSelector(".tabs", { timeout: 45000 });
   await sleep(1500);
   await selectCharacter();
   const persisted = await focusName();
   say("after reload:", JSON.stringify(persisted));
   summary.pinPersisted = persisted;
-  await clickByText(".cp-skill-pinnable", "Jewelrycraft"); // unpin
+  await togglePinRow("Jewelrycraft"); // unpin
   await sleep(400);
   say("after unpin:", JSON.stringify(await focusName()));
   await shot("11-unpinned");

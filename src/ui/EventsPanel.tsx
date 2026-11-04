@@ -34,8 +34,11 @@ function contentName(e: ActiveEvent): string | undefined {
         : undefined;
 }
 
+/** What an event brings (its monster / resource / merchant name), for list rows. */
+export const eventLabel = (e: ActiveEvent): string => contentName(e) ?? e.name;
+
 /** Tiny 4 Hz leaf: the remaining time of one event, formatted like "64m 22s". */
-function EventTimer({ until }: { until: number }) {
+export function EventTimer({ until }: { until: number }) {
   const left = Math.max(0, Math.floor((until - now.value) / 1000));
   const m = Math.floor(left / 60);
   const s = left % 60;

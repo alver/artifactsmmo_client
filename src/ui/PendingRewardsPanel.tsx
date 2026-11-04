@@ -1,12 +1,11 @@
 // On-demand viewer for the account's unclaimed rewards (/my/pending_items).
 // Achievement payouts land in this pool and stay there invisibly — nothing
-// moves them to the bank — so the topbar shows a 🎁 badge and this drawer lets
-// the SELECTED character claim each one (the items drop into its inventory).
-// A claim's echo carries the character, so the row is simply removed locally.
-//
-// Reuses the achievements drawer styles (.ach-*): same backdrop/panel shape.
+// moves them to the bank — so the Achievements tab shows a badge and this
+// section lets the SELECTED character claim each one (the items drop into its
+// inventory). A claim's echo carries the character, so the row is simply
+// removed locally. Reuses the achievements styles (.ach-*).
 
-import { characters, pendingRewards, pendingRewardsOpen, selectedCharacter } from "../state/store";
+import { characters, pendingRewards, selectedCharacter } from "../state/store";
 import { loadPendingRewards } from "../state/sync";
 import * as actions from "../api/actions";
 import { itemName } from "../catalog";
@@ -14,12 +13,9 @@ import { itemHover } from "./ItemPopup";
 import { useActionRunner } from "./useAction";
 import type { PendingItem } from "../types/api";
 
-export function PendingRewardsPanel() {
+export function PendingRewardsView() {
   const actor = selectedCharacter.value ? characters.value[selectedCharacter.value] : undefined;
   const ctl = useActionRunner(actor);
-  if (!pendingRewardsOpen.value) return null;
-
-  const close = () => (pendingRewardsOpen.value = false);
   const list = pendingRewards.value;
 
   const claim = (p: PendingItem) =>
@@ -30,8 +26,7 @@ export function PendingRewardsPanel() {
     });
 
   return (
-    <div class="ach-backdrop" onClick={close}>
-      <aside class="ach-panel" onClick={(e) => e.stopPropagation()}>
+    <section class="ws-card ach-section">
         <header class="ach-head">
           <div class="ach-titles">
             <div class="ach-title">🎁 Pending rewards</div>
@@ -44,15 +39,12 @@ export function PendingRewardsPanel() {
           <button class="ach-btn" title="Refresh the list" onClick={() => void loadPendingRewards()}>
             ↻
           </button>
-          <button class="cat-close" title="Close" onClick={close}>
-            ✕
-          </button>
         </header>
 
         <div class="ach-body">
           {list.length === 0 && (
             <div class="muted">
-              No unclaimed rewards. New ones appear when achievements complete — hit ↻ (or the topbar Refresh) to check.
+              No unclaimed rewards. New ones appear when achievements complete — hit ↻ (or the top-bar Refresh) to check.
             </div>
           )}
           {list.map((p) => (
@@ -83,7 +75,6 @@ export function PendingRewardsPanel() {
             </div>
           ))}
         </div>
-      </aside>
-    </div>
+    </section>
   );
 }

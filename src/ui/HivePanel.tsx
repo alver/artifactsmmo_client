@@ -1,5 +1,5 @@
 // The Hive UI: a topbar drawer (propose → preview → launch → monitor) and a
-// slim always-visible status strip above the roster. Reads only the hive /
+// slim status strip atop the Fleet tab. Reads only the hive /
 // queues / proposals signals — never the 4 Hz clock.
 
 import { useMemo, useState } from "preact/hooks";
@@ -49,7 +49,7 @@ const STATUS_BADGE: Record<LiveAssignmentStatus, string> = {
 const needsAttention = (a: HiveAssignmentState, s: LiveAssignmentStatus): boolean =>
   a.filler ? s === "paused" : s === "paused" || s === "blocked" || s === "stopped";
 
-/** Slim account-level status bar above the roster; null while the hive is idle. */
+/** Slim account-level status bar atop the Fleet tab; null while the hive is idle. */
 export function HiveStrip() {
   const run = hive.value.run;
   if (!run) return null;
@@ -80,23 +80,17 @@ export function HiveStrip() {
   );
 }
 
-export function HiveDrawer() {
-  if (!hiveOpen.value) return null;
-  const close = () => (hiveOpen.value = false);
+/** The hive controls — a collapsible section of the Fleet tab. */
+export function HiveSection() {
   const run = hive.value.run;
   return (
-    <div class="ach-backdrop" onClick={close}>
-      <aside class="ach-panel hive-panel" onClick={(e) => e.stopPropagation()}>
+    <>
         <header class="ach-head">
           <div class="ach-titles">
-            <div class="ach-title">🐝 Hive</div>
             <div class="ach-sub">{run ? "working an account goal" : "one goal, every character on it"}</div>
           </div>
           <button class="ach-btn" title="Recompute candidate goals" onClick={refreshProposals}>
             ↻ Propose
-          </button>
-          <button class="cat-close" title="Close" onClick={close}>
-            ✕
           </button>
         </header>
         <ManualRow />
@@ -106,8 +100,7 @@ export function HiveDrawer() {
           <BacklogView />
           <HistoryView />
         </div>
-      </aside>
-    </div>
+    </>
   );
 }
 

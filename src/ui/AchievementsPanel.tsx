@@ -1,10 +1,11 @@
-import { useState } from "preact/hooks";
-import { achievements, achievementsError, achievementsLoading, achievementsOpen } from "../state/store";
+import { useEffect, useState } from "preact/hooks";
+import { achievements, achievementsError, achievementsLoading } from "../state/store";
 import { loadAchievements } from "../state/sync";
 import { locate, objectiveText, ratioOf } from "../plan/hive/objectives";
 import { itemName } from "../catalog";
 import { pct } from "../lib/util";
 import { itemHover } from "./ItemPopup";
+import { PendingRewardsView } from "./PendingRewardsPanel";
 import type { AccountAchievement } from "../types/api";
 
 const ICON: Record<string, string> = {
@@ -20,16 +21,26 @@ const ICON: Record<string, string> = {
   combat_level: "⬆",
 };
 
-/**
- * On-demand achievements viewer (opened from the topbar). Fetches progress when
- * opened, shows it sorted closest-to-completion, and annotates each objective
- * with how + where to advance it. Not persisted — always requested fresh.
- */
-export function AchievementsPanel() {
-  const [hideDone, setHideDone] = useState(true);
-  if (!achievementsOpen.value) return null;
+/** The Achievements tab: unclaimed rewards on top, then achievement progress. */
+export function AchievementsTab() {
+  // A read (scarce budget): fetch once when first shown, then only on ↻.
+  useEffect(() => {
+    if (achievements.value === null && !achievementsLoading.peek()) void loadAchievements();
+  }, []);
+  return (
+    <div class="page">
+      <PendingRewardsView />
+      <AchievementsView />
+    </div>
+  );
+}
 
-  const close = () => (achievementsOpen.value = false);
+/**
+ * Achievement progress sorted closest-to-completion, each objective annotated
+ * with how + where to advance it. Not persisted — fetched on demand.
+ */
+function AchievementsView() {
+  const [hideDone, setHideDone] = useState(true);
   const list = achievements.value;
   const loading = achievementsLoading.value;
   const err = achievementsError.value;
@@ -46,8 +57,7 @@ export function AchievementsPanel() {
   );
 
   return (
-    <div class="ach-backdrop" onClick={close}>
-      <aside class="ach-panel" onClick={(e) => e.stopPropagation()}>
+    <section class="ws-card ach-section">
         <header class="ach-head">
           <div class="ach-titles">
             <div class="ach-title">🏆 Achievements</div>
@@ -55,9 +65,6 @@ export function AchievementsPanel() {
           </div>
           <button class="ach-btn" title="Refresh" disabled={loading} onClick={() => void loadAchievements()}>
             {loading ? "…" : "↻"}
-          </button>
-          <button class="cat-close" title="Close" onClick={close}>
-            ✕
           </button>
         </header>
 
@@ -75,8 +82,7 @@ export function AchievementsPanel() {
             <AchievementRow key={a.code} a={a} />
           ))}
         </div>
-      </aside>
-    </div>
+    </section>
   );
 }
 

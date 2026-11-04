@@ -142,21 +142,24 @@ export const panelTarget = signal<PanelTarget | null>(null);
 export const itemPopup = signal<{ code: string; x: number; y: number } | null>(null);
 
 /**
- * Whether the full items-catalog panel (right side) is open. Mutually exclusive
- * with panelTarget — opening one closes the other so the right slot holds a
- * single panel.
- */
-export const itemsCatalogOpen = signal(false);
-
-/**
  * The location hash, as a signal — the app's entire "router". `#/sim` renders
- * the fight-sim playground instead of the map stage; GitHub Pages needs no
+ * the fight-sim playground tab; GitHub Pages needs no
  * server config for hash routes, and the sim page encodes its loadout in the
  * hash query so setups are shareable.
  */
 export const routeHash = signal(typeof location !== "undefined" ? location.hash : "");
 if (typeof window !== "undefined") {
   window.addEventListener("hashchange", () => (routeHash.value = location.hash));
+}
+/** The active top-bar tab: the hash's first segment ("#/sim?…" → "sim"), Fleet by default. */
+export const route = computed(() => routeHash.value.replace(/^#\/?/, "").split(/[/?]/)[0] || "fleet");
+export function go(tab: string): void {
+  location.hash = `#/${tab}`;
+}
+/** Open a character's page (selects it, and the map centers on it when shown). */
+export function openCharacter(name: string): void {
+  focusCharacter(name);
+  go("char");
 }
 
 /**
@@ -197,30 +200,28 @@ effect(() => {
 });
 
 /**
- * Achievements viewer state. Fetched on demand when the panel is opened (a read,
- * so never polled) and deliberately NOT persisted — it's always requested fresh.
+ * Achievements tab state. Fetched on demand — when the tab is first shown and on
+ * its ↻ (a read, so never polled) — and deliberately NOT persisted.
  * `achievements === null` means "not loaded yet".
  */
-export const achievementsOpen = signal(false);
 export const achievements = signal<AccountAchievement[] | null>(null);
 export const achievementsLoading = signal(false);
 export const achievementsError = signal<string | null>(null);
 
-/** Whether the Hive drawer (account-goal coordinator) is open. */
+/** Whether the Fleet tab's Hive section (account-goal coordinator) is expanded. */
 export const hiveOpen = signal(false);
 
-/** Whether the fleet gear-coverage drawer (🛡) is open. Derives everything from
- *  live signals — nothing to fetch, nothing persisted. */
+/** Whether the Fleet tab's 🛡 gear-coverage section is expanded. Derives everything
+ *  from live signals — nothing to fetch, nothing persisted. */
 export const gearCoverageOpen = signal(false);
 
 /**
  * Unclaimed account rewards (GET /my/pending_items — achievement payouts wait
  * here until a character claims them). Fetched with every reconcile() and on
- * demand from the rewards panel; persisted so the topbar badge paints
+ * demand from the Achievements tab; persisted so the tab badge paints
  * instantly. Claims remove their entry locally — no re-read.
  */
 export const pendingRewards = signal<PendingItem[]>([]);
-export const pendingRewardsOpen = signal(false);
 
 /**
  * One global clock that ticks 4x/second. Cooldown countdowns read this so they

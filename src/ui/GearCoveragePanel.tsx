@@ -1,4 +1,4 @@
-// The fleet gear-coverage drawer (🛡 topbar button): a slot-groups × characters
+// Fleet gear coverage (a collapsible section of the Fleet tab): a slot-groups × characters
 // matrix of what a virtual bank reset would dress everyone in RIGHT NOW, plus
 // the shortage list ("have 3 / need 10") and the slots nobody can fill. Pure
 // read-only view over the characters/bank signals — no fetching, no actions,
@@ -6,22 +6,15 @@
 
 import { Fragment } from "preact";
 import { useMemo } from "preact/hooks";
-import { bankItems, characterList, characters, gearCoverageOpen } from "../state/store";
+import { bankItems, characterList, characters } from "../state/store";
 import { fleetCoverage } from "../plan/coverage";
 import type { SlotAssign } from "../plan/coverage";
 import { itemName } from "../catalog";
 import { asset, assetFallback, slotLabel } from "../lib/util";
 import { itemHover } from "./ItemPopup";
 
-/** Hook-free shell (the CatalogPanel trick): the body mounts fresh per open,
- *  so its hooks and signal subscriptions only exist while the drawer shows. */
-export function GearCoveragePanel() {
-  if (!gearCoverageOpen.value) return null;
-  return <CoverageBody />;
-}
-
-function CoverageBody() {
-  const close = () => (gearCoverageOpen.value = false);
+/** Mounted only while its Fleet section is expanded, so the derivation runs only then. */
+export function GearCoverageSection() {
   const chars = characterList();
   const bank = bankItems.value;
   // Cheap derivation (sorted owned pools, zero simulate() calls) — recomputing
@@ -33,20 +26,15 @@ function CoverageBody() {
   for (const u of cov.unfillable) unfillByGroup.set(u.group, [...(unfillByGroup.get(u.group) ?? []), u.character]);
 
   return (
-    <div class="ach-backdrop" onClick={close}>
-      <aside class="ach-panel cov-panel" onClick={(e) => e.stopPropagation()}>
+    <>
         <header class="ach-head">
           <div class="ach-titles">
-            <div class="ach-title">🛡 Fleet Gear</div>
             <div class="ach-sub">
               {missing === 0 && cov.unfillable.length === 0
                 ? "every slot covered by owned stock ✓"
                 : `${missing} missing cop${missing === 1 ? "y" : "ies"} · ${cov.unfillable.length} unfillable slot${cov.unfillable.length === 1 ? "" : "s"}`}
             </div>
           </div>
-          <button class="cat-close" title="Close" onClick={close}>
-            ✕
-          </button>
         </header>
         <div class="ach-body">
           <div class="cov-grid" style={{ gridTemplateColumns: `92px repeat(${chars.length}, 1fr)` }}>
@@ -100,8 +88,7 @@ function CoverageBody() {
             </>
           )}
         </div>
-      </aside>
-    </div>
+    </>
   );
 }
 

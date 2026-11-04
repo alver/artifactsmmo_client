@@ -1,57 +1,53 @@
-import { MAX_PINS, characters, selectedCharacter, skillPins, togglePin } from "../state/store";
+import { MAX_PINS, PIN_SKILLS, characterList, characters, focusCharacter, selectedCharacter, skillPins, togglePin } from "../state/store";
 import { saveState } from "../state/persist";
 import { item, monster, npc, resource } from "../catalog";
 import { liveTileAt } from "../state/events";
-import { asset, assetFallback, slotLabel, titleCase } from "../lib/util";
-import { queues } from "../state/queue";
+import { asset, assetFallback, pct, slotLabel, titleCase } from "../lib/util";
 import { GearSlots } from "./GearSlots";
 import { ActionBar } from "./ActionBar";
 import { CombatForecast } from "./CombatForecast";
 import { QueueSection } from "./QueuePanel";
+import { CooldownRing } from "./Cooldown";
+import { Bar } from "./DataTable";
 import { itemHover } from "./ItemPopup";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
 import * as actions from "../api/actions";
 import { slotCode, SLOTS_FOR_TYPE } from "../types/api";
 import type { Character, InventorySlot } from "../types/api";
-
-const SKILLS: [string, string][] = [
-  ["mining", "Mining"],
-  ["woodcutting", "Woodcutting"],
-  ["fishing", "Fishing"],
-  ["weaponcrafting", "Weaponcraft"],
-  ["gearcrafting", "Gearcraft"],
-  ["jewelrycrafting", "Jewelrycraft"],
-  ["cooking", "Cooking"],
-  ["alchemy", "Alchemy"],
-];
+import type { GameMap } from "../types/catalog";
 
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
 
 /**
- * The Skills grid. Click a row to pin it as one of the character's main
- * skills (📌1/📌2 — up to MAX_PINS, one more replaces the oldest; click again
- * to unpin). Pins persist across reloads and feed the queue's "📌 Train pins"
+ * The Skills table. Pin a row as one of the character's main skills
+ * (📌1/📌2 — up to MAX_PINS, one more replaces the oldest; click again to
+ * unpin). Pins persist across reloads and feed the queue's "📌 Train pins"
  * loop and the hive's crafter routing.
  */
 function SkillsSection({ ch, stat }: { ch: Character; stat: Record<string, number> }) {
   const pins = skillPins.value[ch.name] ?? [];
   return (
     <div class="cp-skills">
-      {SKILLS.map(([key, label]) => {
+      {PIN_SKILLS.map(([key, label]) => {
         const idx = pins.indexOf(key);
+        const xp = stat[`${key}_xp`] ?? 0;
+        const max = stat[`${key}_max_xp`] ?? 0;
         return (
-          <div
-            key={key}
-            class={"cp-skill cp-skill-pinnable" + (idx >= 0 ? " cp-skill-focus" : "")}
-            title={idx >= 0 ? "Unpin" : `Pin as a main skill (up to ${MAX_PINS}; one more replaces the oldest)`}
-            onClick={() => { togglePin(ch.name, key); saveState(); }}
-          >
+          <div key={key} class={"cp-skill" + (idx >= 0 ? " cp-skill-focus" : "")}>
+            <span class="cp-skill-name">{label}</span>
             <b class="cp-skill-lv">{stat[`${key}_level`]}</b>
-            <span class="cp-skill-name">{label}{idx >= 0 ? ` 📌${idx + 1}` : ""}</span>
+            <Bar pct={pct(xp, max)} />
             <span class="cp-skill-xp">
-              {stat[`${key}_xp`]}/{stat[`${key}_max_xp`]}
+              {xp}/{max}
             </span>
+            <button
+              class={"cat-btn" + (idx >= 0 ? " buy" : "")}
+              title={idx >= 0 ? "Unpin" : `Pin as a main skill (up to ${MAX_PINS}; one more replaces the oldest)`}
+              onClick={() => { togglePin(ch.name, key); saveState(); }}
+            >
+              {idx >= 0 ? `📌${idx + 1}` : "Pin"}
+            </button>
           </div>
         );
       })}
@@ -59,7 +55,7 @@ function SkillsSection({ ch, stat }: { ch: Character; stat: Record<string, numbe
   );
 }
 
-/** Human name of a tile's content (also used by the roster cards' location line). */
+/** Human name of a tile's content (also used by the Fleet table's location column). */
 export function contentLabel(type: string, code: string): string {
   const name =
     type === "resource"
@@ -72,17 +68,24 @@ export function contentLabel(type: string, code: string): string {
   return name ?? titleCase(code);
 }
 
+/** What matters about a tile: its monster/resource/building, not its biome. */
+export function whereLabel(tile: GameMap | undefined): string {
+  const c = tile?.interactions.content;
+  if (!c) return tile?.name ?? "";
+  if (c.type === "tasks_master") return "Tasks Master";
+  return contentLabel(c.type, c.code) + (c.type === "workshop" ? " workshop" : "");
+}
+
 /**
- * The main character workspace: full state and control of the selected
- * character laid out as a multi-column dashboard so (almost) everything is
- * visible without scrolling. The control column (the Queue) comes first
- * and widest; equipment/combat and skills/inventory fill the other columns.
- * Selection comes from the roster strip above (see ui/CharacterMini.tsx).
+ * The Character tab: full state and control of the selected character. A
+ * switcher row on top, a summary strip, then the Queue (wide, left) beside
+ * equipment / skills / inventory tables. Selection comes from the Fleet table
+ * or the switcher.
  */
 export function CharacterPanel() {
   const name = selectedCharacter.value;
   const ch = name ? characters.value[name] : undefined;
-  if (!ch) return <div class="ws-empty muted">Select a character above to manage it.</div>;
+  if (!ch) return <div class="ws-empty muted">Pick a character on the Fleet tab.</div>;
 
   // Most combat/skill fields are flat numeric props read by computed key.
   const stat = ch as unknown as Record<string, number>;
@@ -93,50 +96,65 @@ export function CharacterPanel() {
   const onWorkshop = content?.type === "workshop" ? content.code : undefined;
   const inv = (ch.inventory || []).filter((s) => s.code && s.quantity > 0);
   const invQty = inv.reduce((s, it) => s + it.quantity, 0);
-  const queueCount = queues.value[ch.name]?.items.length ?? 0;
 
   return (
     <div class="ws-body">
-      {/* No header — the roster card above already shows everything (avatar,
-          level, location, task, cooldown ring). The bar holds Walk (arms map
-          click-to-move) plus the situational Enter button on transition tiles. */}
-      <ActionBar ch={ch} />
+      <nav class="char-switch" aria-label="Characters">
+        {characterList().map((c) => (
+          <button key={c.name} class={c.name === ch.name ? "active" : ""} onClick={() => focusCharacter(c.name)}>
+            {c.name}
+          </button>
+        ))}
+      </nav>
+
+      <section class="char-head">
+        <CooldownRing ch={ch}>
+          <img class="char-avatar" src={asset("characters", ch.skin || "men1")} alt="" onError={assetFallback("characters", ch.skin || "men1")} />
+        </CooldownRing>
+        <div>
+          <h2 class="char-name">{ch.name}</h2>
+          <div class="muted">
+            Level {ch.level} · {ch.xp}/{ch.max_xp} xp
+          </div>
+        </div>
+        <dl class="char-facts">
+          <div><dt>HP</dt><dd>{ch.hp}/{ch.max_hp}</dd></div>
+          <div><dt>Where</dt><dd>{whereLabel(tile)} ({ch.x}, {ch.y})</dd></div>
+          <div><dt>Task</dt><dd>{ch.task ? `${contentLabel(ch.task_type === "monsters" ? "monster" : "item", ch.task)} ${ch.task_progress}/${ch.task_total}` : "none"}</dd></div>
+          <div><dt>Gold</dt><dd class="gold">{ch.gold.toLocaleString()}</dd></div>
+        </dl>
+        <ActionBar ch={ch} />
+      </section>
 
       <div class="ws-grid">
         <div class="ws-col ws-col-control">
-          <details class="ws-card" open>
-            <summary>Queue{queueCount > 0 ? ` (${queueCount})` : ""}</summary>
+          <section class="ws-card">
+            <h3>Queue</h3>
             <QueueSection ch={ch} />
-          </details>
-        </div>
-
-        <div class="ws-col">
-          <details class="ws-card" open>
-            <summary>Equipment</summary>
-            <GearSlots ch={ch} />
-          </details>
-
+          </section>
           {content?.type === "monster" && (
-            <details class="ws-card" open>
-              <summary>Forecast</summary>
+            <section class="ws-card">
+              <h3>Forecast</h3>
               <CombatForecast ch={ch} monsterCode={content.code} />
-            </details>
+            </section>
           )}
         </div>
 
         <div class="ws-col">
-          <details class="ws-card" open>
-            <summary>Skills</summary>
+          <section class="ws-card">
+            <h3>Equipment</h3>
+            <GearSlots ch={ch} />
+          </section>
+          <section class="ws-card">
+            <h3>Skills</h3>
             <SkillsSection ch={ch} stat={stat} />
-          </details>
-
-          <details class="ws-card" open>
-            <summary>
-              Inventory ({inv.length} · {invQty}/{ch.inventory_max_items})
-            </summary>
+          </section>
+          <section class="ws-card">
+            <h3>
+              Inventory · {invQty}/{ch.inventory_max_items}
+            </h3>
             <InventorySection ch={ch} onBank={onBank} onWorkshop={onWorkshop} />
-          </details>
-
+          </section>
         </div>
       </div>
     </div>

@@ -9,7 +9,8 @@ import { useState } from "preact/hooks";
 import { armTilePick, bankItems, CRAFT_TRAIN_SKILLS, tilePick } from "../state/store";
 import { npcForSell } from "../plan/acquire";
 import { catalog, item as itemOf, itemName } from "../catalog";
-import { titleCase } from "../lib/util";
+import { pct, titleCase } from "../lib/util";
+import { Bar } from "./DataTable";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
 import { addItem, clearQueue, moveItem, queuePinTraining, queues, removeItem, setRepeat, startQueue, stopQueue, updateItem } from "../state/queue";
 import { PIN_SKILLS, skillPins } from "../state/store";
@@ -60,7 +61,7 @@ export function QueueSection({ ch }: { ch: Character }) {
           <>
             <span class="gather-tag banking">
               <span class="spinner" />
-              {q.note || "running"}
+              running
             </span>
             <span class="q-count muted">{q.items.length} left</span>
             <RepeatToggle name={ch.name} on={!!q.repeat} />
@@ -106,11 +107,19 @@ export function QueueSection({ ch }: { ch: Character }) {
         <div class="muted" style={{ fontSize: 12 }}>Empty — add a step above.</div>
       )}
 
-      <div class="q-list">
-        {q.items.map((it, i) => (
-          <QueueRow key={it.id} ch={ch} it={it} index={i} running={q.running} count={q.items.length} />
-        ))}
-      </div>
+      {q.items.length > 0 && (
+        <div class="q-list" role="table" aria-label="Queue">
+          <div class="q-row-main q-thead" role="row">
+            <span>#</span>
+            <span>Action</span>
+            <span>Progress</span>
+            <span />
+          </div>
+          {q.items.map((it, i) => (
+            <QueueRow key={it.id} ch={ch} it={it} index={i} running={q.running} count={q.items.length} note={i === 0 && q.running ? q.note : undefined} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -127,24 +136,50 @@ function RepeatToggle({ name, on }: { name: string; on: boolean }) {
   );
 }
 
-function progressOf(it: QueueItem): string {
-  if (it.kind === "fight" || it.kind === "gather" || it.kind === "task-loop") return it.done > 0 ? (it.times > 0 ? `${it.done}/${it.times}` : `${it.done}`) : "";
-  if (it.kind === "craft" || it.kind === "sell" || it.kind === "recycle") return it.done > 0 ? (it.quantity > 0 ? `${it.done}/${it.quantity}` : `${it.done}`) : "";
-  return "";
+/** Progress of a queue item for tables (queue + Fleet): a bar share when bounded, plus a label. */
+export function itemProgress(ch: Character, it: QueueItem): { pct: number | null; label: string } | null {
+  const stat = ch as unknown as Record<string, number>;
+  const of = (done: number, total: number) =>
+    total > 0 ? { pct: pct(done, total), label: `${done}/${total}` } : done > 0 ? { pct: null, label: `${done} done` } : null;
+  switch (it.kind) {
+    case "fight":
+    case "gather":
+    case "task-loop":
+      return of(it.done, it.times);
+    case "craft":
+    case "sell":
+    case "recycle":
+      return of(it.done, it.quantity);
+    case "work-task":
+      return ch.task ? of(ch.task_progress, ch.task_total) : null;
+    case "train": {
+      const xp = stat[`${it.skill}_xp`] ?? 0;
+      const max = stat[`${it.skill}_max_xp`] ?? 0;
+      return { pct: pct(xp, max), label: `Lv ${stat[`${it.skill}_level`] ?? 0} · ${xp}/${max} xp` };
+    }
+    default:
+      return null;
+  }
 }
 
-function QueueRow({ ch, it, index, running, count }: { ch: Character; it: QueueItem; index: number; running: boolean; count: number }) {
+function QueueRow({ ch, it, index, running, count, note }: { ch: Character; it: QueueItem; index: number; running: boolean; count: number; note?: string }) {
   const [editing, setEditing] = useState(false);
   const isHead = index === 0;
   const locked = running && isHead; // the executing item can't be touched
-  const progress = progressOf(it);
+  const progress = itemProgress(ch, it);
 
   return (
-    <div class={"q-row" + (running && isHead ? " q-running" : "") + (it.error ? " q-failed" : "")}>
+    <div class={"q-row" + (running && isHead ? " q-running" : "") + (it.error ? " q-failed" : "")} role="row">
       <div class="q-row-main">
-        <span class="q-icon">{queueItemIcon[it.kind]}</span>
-        <span class="q-text">{queueItemText(it)}</span>
-        {progress && <span class="q-progress">{progress}</span>}
+        <span class="q-idx">{index + 1}</span>
+        <span class="q-text">
+          <span class="q-icon">{queueItemIcon[it.kind]}</span> {queueItemText(it)}
+          {note && <span class="q-note">now: {note}</span>}
+        </span>
+        <span class="q-prog">
+          {progress?.pct != null && <Bar pct={progress.pct} />}
+          {progress && <span class="q-progress">{progress.label}</span>}
+        </span>
         <span class="q-actions">
           <button disabled={locked || index <= (running ? 1 : 0)} title="Move up" onClick={() => moveItem(ch.name, it.id, -1)}>↑</button>
           <button disabled={locked || index >= count - 1} title="Move down" onClick={() => moveItem(ch.name, it.id, 1)}>↓</button>

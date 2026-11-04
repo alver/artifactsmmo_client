@@ -20,7 +20,12 @@ behavior. This recipe drives the REAL app against the REAL game API.
 
 - Bypass the token gate before app JS runs:
   `page.evaluateOnNewDocument(t => localStorage.setItem("ammo:v1:token", t), TOKEN)`.
-- Boot is done when `.pcard-name` appears (+ ~1.5s for the sync echo).
+- Boot is done when `.tabs` appears (`.fleet-name` on the Fleet tab) + ~1.5s for the sync echo.
+- Tabs are hash routes — switch with `location.hash = "#/items"` (no reload,
+  no extra reads): fleet · char · bank · items · monsters · achievements · map · sim.
+- A fresh profile has no queues/pins: seed `ammo:v1:queue` (with `running:false`
+  — never auto-resumed) and `ammo:v1:state` `{schema:1, pins}` via
+  `evaluateOnNewDocument` to render Fleet/Character columns without side effects.
 - `confirm()` dialogs (queue clear-all): `page.on("dialog", d => d.accept())`.
 
 ## Observe through the app's own persisted state (authoritative, no DOM scraping)
@@ -35,13 +40,15 @@ behavior. This recipe drives the REAL app against the REAL game API.
 
 ## Useful selectors
 
-- Roster card: `.pcard` (contains `.pcard-name`); selected panel: `.cp-name`.
+- Fleet table: `.fleet-name` links (click = select + open Character tab); Character
+  tab header `.char-name`, switcher `.char-switch button`. Tables: `.dt-row`, sortable
+  headers `.dt-sort`.
 - Planner: selects are `.cp-refine-select` (find the right one by which option
   values it contains, then set value + dispatch `change`); buttons
   `button.btn-refine` by text ("📋 Plan", "▶ Run").
 - Queue: rows `.q-row .q-text`, head controls `.q-head .btn-stop` /
   `.cat-btn` ("＋ Add") / `.cat-btn.sell` (clear-all ✕); add form `.q-add-form`.
-- Skills: `.cp-skill-pinnable` rows (click to pin), focus row `.cp-skill-focus`.
+- Skills: `.cp-skill` rows, each with a Pin/📌N `button`; pinned rows `.cp-skill-focus`.
 
 ## Flows worth driving
 
