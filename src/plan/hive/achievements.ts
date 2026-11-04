@@ -11,8 +11,8 @@ import { npcForSell } from "../acquire";
 import { acquireWaves, planAcquire, SPLIT_ACTIONS } from "./acquire";
 import { crafterFor, fleetBis, skillLevel } from "./ctx";
 import { ratioOf } from "./objectives";
-import { SCORE, estMinutes, perHour } from "./score";
-import { taskSuitability } from "./tasks";
+import { SCORE, estMinutes, perHour, wallActions } from "./score";
+import { actionsPerTask, taskSuitability } from "./tasks";
 import type { AccountAchievement, AchievementObjectiveProgress } from "../../types/api";
 import type { AccountGoal, Blocker, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "./types";
 
@@ -99,7 +99,6 @@ const rewardValue = (a: AccountAchievement): number => {
 
 export function proposeAchievementGoals(ctx: HiveCtx): ScoredGoal[] {
   if (!ctx.achievements) return []; // not loaded — the UI offers the fetch
-  const maxLevel = Math.max(0, ...ctx.characters.map((c) => c.level));
   const out: ScoredGoal[] = [];
 
   for (const a of ctx.achievements) {
@@ -112,12 +111,12 @@ export function proposeAchievementGoals(ctx: HiveCtx): ScoredGoal[] {
       if (remaining === 0) continue;
       switch (o.type) {
         case "combat_kill": {
-          // Cheap level gate for scoring; compile runs the real forecast.
+          // Mirrors the compile's forecast — a level gate listed unwinnable fights.
           const m = o.target ? monsterOf(o.target) : undefined;
-          if (m && m.level <= maxLevel + 2) {
+          if (m && fighters(ctx, m.code).length > 0) {
             actions += remaining;
             compilable++;
-          } else notes.push({ reason: `${m?.name ?? o.target}: out of the fleet's league for now` });
+          } else notes.push({ reason: `${m?.name ?? o.target}: nobody wins that fight yet` });
           break;
         }
         case "gathering": {
@@ -140,8 +139,7 @@ export function proposeAchievementGoals(ctx: HiveCtx): ScoredGoal[] {
         }
         case "combat_drop": {
           const d = o.target ? dropEst(o.target, remaining) : undefined;
-          const m = d ? monsterOf(d.monster) : undefined;
-          if (d && m && m.level <= maxLevel + 2) {
+          if (d && fighters(ctx, d.monster).length > 0) {
             actions += d.fights;
             compilable++;
           } else notes.push({ reason: `${itemName(o.target ?? "?")}: no beatable source monster` });
@@ -170,8 +168,14 @@ export function proposeAchievementGoals(ctx: HiveCtx): ScoredGoal[] {
           break;
         }
         case "task": {
-          actions += remaining * 40;
-          compilable++;
+          const per = ctx.characters.flatMap((c) => {
+            const fit = taskSuitability(ctx, c);
+            return fit ? [actionsPerTask(c, fit.master)] : [];
+          });
+          if (per.length > 0) {
+            actions += (remaining * per.reduce((s, x) => s + x, 0)) / per.length;
+            compilable++;
+          } else notes.push({ reason: "tasks: nobody suits either tasks master" });
           break;
         }
         case "combat_level":
@@ -183,17 +187,23 @@ export function proposeAchievementGoals(ctx: HiveCtx): ScoredGoal[] {
     }
     if (compilable === 0) continue;
     const value = rewardValue(a) * (0.5 + ratioOf(a) / 2);
+    const wall = wallActions(ctx.characters.length, Math.max(1, actions));
     out.push({
       goal: { kind: "achievement", code: a.code },
       label: `🏆 ${a.name}`,
-      score: perHour(value, Math.max(1, actions)) * (notes.length ? SCORE.BLOCKED_DISCOUNT : 1),
+      score: perHour(value, wall) * (notes.length ? SCORE.BLOCKED_DISCOUNT : 1),
       rationale: `${Math.round(ratioOf(a) * 100)}% done — ${a.points} pt${a.points === 1 ? "" : "s"}${(a.rewards?.gold ?? 0) > 0 ? ` + ${a.rewards!.gold} gold` : ""}`,
       blockers: notes,
-      estActions: actions,
-      estMinutes: estMinutes(actions),
+      estActions: Math.round(actions),
+      estMinutes: estMinutes(wall),
     });
   }
-  return out.sort((x, y) => y.score - x.score).slice(0, MAX_PROPOSALS);
+  // Scoring approximates; the compile is the truth — a proposal whose plan has
+  // no wave can't be launched, so it never makes the list.
+  return out
+    .sort((x, y) => y.score - x.score)
+    .filter((g) => g.goal.kind === "achievement" && compileAchievementGoal(g.goal, ctx).waves.length > 0)
+    .slice(0, MAX_PROPOSALS);
 }
 
 // ── compile ──────────────────────────────────────────────────────────────────

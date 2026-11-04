@@ -9,12 +9,25 @@ import { catalog, item, itemName } from "../../catalog";
 import { titleCase } from "../../lib/util";
 import { acquireWaves, planAcquire } from "./acquire";
 import { GATHER_SKILLS, skillLevel } from "./ctx";
-import { SCORE, estMinutes } from "./score";
+import { estMinutes, hoursOf, wallActions } from "./score";
 import type { QueueItemInput } from "../queue";
+import type { Character } from "../../types/api";
 import type { AccountGoal, HiveCtx, HivePlan, ScoredGoal } from "./types";
 
 /** Max craft runs per batch — one barrier's worth of work. */
 const BATCH_RUNS = 40;
+
+/** One craft-skill training batch at the current level: the in-window recipe,
+ *  half-bag-sized runs, and the material plan that feeds it. */
+function trainingBatch(ctx: HiveCtx, ch: Character, skill: string, have: number) {
+  const pick = trainingRecipeFor(ctx, skill, have);
+  if (!pick) return undefined;
+  const recipe = item(pick.code)!.craft!;
+  const bag = Math.max(10, ch.inventory_max_items);
+  const runs = Math.max(1, Math.min(BATCH_RUNS, Math.floor(bag / 2 / Math.max(1, pick.matsPerRun))));
+  const plan = planAcquire(recipe.items.map((g) => ({ code: g.code, quantity: g.quantity * runs })), ctx);
+  return { code: pick.code, runs, produced: runs * recipe.quantity, plan };
+}
 
 /**
  * Best node to TRAIN a gathering skill on at the current level: the
@@ -63,24 +76,28 @@ export function trainingRecipeFor(ctx: HiveCtx, skill: string, atLevel: number):
 
 /**
  * Turn the blockers of already-scored goals into standalone prerequisite
- * goals. A prerequisite inherits its parent's UNDISCOUNTED score (the parent
- * itself was blocked-discounted), so "level Weaponcrafting to 10" naturally
- * outranks the gear goal it unlocks. Deduped by target, best parent wins.
+ * goals. A prerequisite sits on the path to its parent's value, so its rate is
+ * that value over the COMBINED wall-clock: a cheap gate scores almost like the
+ * parent, an hours-long grind sinks below it. (Inheriting parent ÷
+ * BLOCKED_DISCOUNT ranked three identical level-skill goals above the
+ * 2-minute parent they claimed to unlock.) Deduped by target, best parent wins.
  */
 export function promoteBlockers(ctx: HiveCtx, parents: ScoredGoal[]): ScoredGoal[] {
   const byKey = new Map<string, ScoredGoal>();
+  const n = ctx.characters.length;
   for (const parent of parents) {
     for (const b of parent.blockers) {
       if (!b.suggest) continue;
       const goal = b.suggest;
       const key = goal.kind === "level-skill" ? `skill|${goal.skill}|${goal.character}` : goal.kind;
-      const score = parent.score / SCORE.BLOCKED_DISCOUNT;
       const cur = byKey.get(key);
-      if (cur && cur.score >= score && !(goal.kind === "level-skill" && cur.goal.kind === "level-skill" && goal.toLevel > cur.goal.toLevel)) continue;
       const toLevel = goal.kind === "level-skill" ? Math.max(goal.toLevel, cur?.goal.kind === "level-skill" ? cur.goal.toLevel : 0) : 0;
+      const estActions = goal.kind === "level-skill" ? trainEstActions(ctx, goal.skill, goal.character, toLevel) : 120;
+      const parentHours = hoursOf(wallActions(n, parent.estActions));
+      const score = (parent.score * parentHours) / (parentHours + hoursOf(wallActions(n, estActions)));
+      if (cur && cur.score >= score && !(goal.kind === "level-skill" && cur.goal.kind === "level-skill" && goal.toLevel > cur.goal.toLevel)) continue;
       const promoted: AccountGoal =
         goal.kind === "level-skill" ? { ...goal, toLevel, unlocks: parent.label } : goal;
-      const estActions = goal.kind === "level-skill" ? trainEstActions(ctx, goal.skill, goal.character, toLevel) : 120;
       byKey.set(key, {
         goal: promoted,
         label:
@@ -91,19 +108,25 @@ export function promoteBlockers(ctx: HiveCtx, parents: ScoredGoal[]): ScoredGoal
         rationale: `unlocks: ${parent.label} — ${b.reason}`,
         blockers: [],
         estActions,
-        estMinutes: estMinutes(estActions),
+        estMinutes: estMinutes(wallActions(n, estActions)),
       });
     }
   }
   return [...byKey.values()];
 }
 
-/** Rough actions to close a skill gap (XP curves aren't in the catalog). */
+/** Rough actions to close a skill gap (XP curves aren't in the catalog): a
+ *  gathering skill levels in ~25 gathers; a craft skill takes one material +
+ *  craft batch per level, and the MATERIALS dominate (a 9-helmet batch is
+ *  ~540 actions, not 25), so the batch plan is priced instead of guessed. */
 const GATHERS_PER_LEVEL = 25;
 function trainEstActions(ctx: HiveCtx, skill: string, character: string, toLevel: number): number {
   const ch = ctx.characters.find((c) => c.name === character);
-  const gap = Math.max(1, toLevel - (ch ? skillLevel(ch, skill) : 0));
-  return gap * GATHERS_PER_LEVEL;
+  const have = ch ? skillLevel(ch, skill) : 0;
+  const gap = Math.max(1, toLevel - have);
+  if (!ch || (GATHER_SKILLS as readonly string[]).includes(skill)) return gap * GATHERS_PER_LEVEL;
+  const batch = trainingBatch(ctx, ch, skill, have);
+  return gap * (batch ? batch.plan.estActions + batch.runs : GATHERS_PER_LEVEL);
 }
 
 export function compileSkillGoal(
@@ -141,30 +164,23 @@ export function compileSkillGoal(
   // Craft skills: bounded craft(+recycle) batches — material waves feed the
   // bank, the crafter consumes them, and the barrier recompile re-picks the
   // recipe as the level rises until goalSatisfied.
-  const pick = trainingRecipeFor(ctx, goal.skill, have);
-  if (!pick) {
+  const batch = trainingBatch(ctx, ch, goal.skill, have);
+  if (!batch) {
     return { goal, waves: [], summary: label, blockers: [{ reason: `no feasible ${titleCase(goal.skill)} training recipe at Lv ${have}` }] };
   }
-  const recipe = item(pick.code)!.craft!;
-  const bag = Math.max(10, ch.inventory_max_items);
-  const runs = Math.max(1, Math.min(BATCH_RUNS, Math.floor(bag / 2 / Math.max(1, pick.matsPerRun))));
-  const plan = planAcquire(
-    recipe.items.map((g) => ({ code: g.code, quantity: g.quantity * runs })),
-    ctx,
-  );
+  const { code, produced, plan } = batch;
   const waves = acquireWaves(plan, ctx);
-  const produced = runs * recipe.quantity;
-  const crafterItems: QueueItemInput[] = [{ kind: "craft", code: pick.code, quantity: produced, done: 0 }];
-  if (item(pick.code)?.recyclable) crafterItems.push({ kind: "recycle", code: pick.code, quantity: produced, done: 0 });
+  const crafterItems: QueueItemInput[] = [{ kind: "craft", code, quantity: produced, done: 0 }];
+  if (item(code)?.recyclable) crafterItems.push({ kind: "recycle", code, quantity: produced, done: 0 });
   crafterItems.push({ kind: "deposit-all" });
   waves.push({
     label: `Craft batch (${titleCase(goal.skill)} ${have} → ${goal.toLevel})`,
-    assignments: [{ character: ch.name, label: `craft ${produced}× ${itemName(pick.code)}`, items: crafterItems }],
+    assignments: [{ character: ch.name, label: `craft ${produced}× ${itemName(code)}`, items: crafterItems }],
   });
   return {
     goal,
     waves,
-    summary: `${label} — batches of ${produced}× ${itemName(pick.code)}`,
+    summary: `${label} — batches of ${produced}× ${itemName(code)}`,
     blockers: plan.blockers,
   };
 }

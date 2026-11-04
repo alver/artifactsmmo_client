@@ -304,7 +304,8 @@ const push = (byChar: Map<string, QueueItemInput[]>, name: string, ...add: Queue
 /**
  * Turn an AcquirePlan into waves with the fewest barriers:
  * - raw tasks (gather / fight / buy) split chunk-and-LPT across their
- *   candidates and run in wave 0, each producer ending with deposit-all;
+ *   candidates and run in wave 0, each producer ending with deposit-all — a
+ *   gather that feeds a chained craft is split in WHOLE craft runs;
  * - a craft whose gathered ingredients all belong to craft-capable gatherers
  *   chains into their own wave-0 queues (gather → smelt, no barrier) —
  *   remaining ingredients must already be bank stock (the craft item
@@ -331,6 +332,26 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
   const raw = plan.tasks.filter((t) => t.how !== "craft");
   const sizeOf = (t: AcquireTask): number =>
     t.how === "gather" ? t.estActions : t.how === "fight" ? t.expectedFights : 2;
+  const crafts = plan.tasks.filter((t): t is Extract<AcquireTask, { how: "craft" }> => t.how === "craft");
+  const capable = (names: string[], c: Extract<AcquireTask, { how: "craft" }>): boolean =>
+    names.every((n) => {
+      const ch = ctx.characters.find((x) => x.name === n);
+      return !!ch && skillLevel(ch, c.skill) >= c.level;
+    });
+  // A gather feeding a craft its gatherers can run themselves is split in WHOLE
+  // RUNS of that craft (ore in tens for bars): every haul smelts without a bank
+  // trip, and no floor-rounding leftover spills into an extra barrier wave.
+  // Returns the craft's per-run input, or undefined when the gather isn't chained.
+  const chainUnit = (t: Extract<AcquireTask, { how: "gather" }>): number | undefined => {
+    for (const c of crafts) {
+      const rec = item(c.code)?.craft;
+      const mine = rec?.items.find((g) => g.code === t.code);
+      if (!rec || !mine) continue;
+      const otherGathered = rec.items.some((g) => g.code !== t.code && raw.some((x) => x.how === "gather" && x.code === g.code));
+      if (!otherGathered && capable(t.candidates, c)) return mine.quantity;
+    }
+    return undefined;
+  };
   for (const t of raw.sort((a, b) => sizeOf(b) - sizeOf(a))) {
     if (t.how === "buy") {
       const buyer = assign(ctx.characters.map((c) => c.name), 2);
@@ -346,18 +367,23 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
       continue;
     }
     const total = sizeOf(t);
-    const chunks = Math.max(1, Math.min(t.candidates.length, Math.ceil(total / SPLIT_ACTIONS)));
+    const unit = t.how === "gather" ? chainUnit(t) : undefined;
+    // Chained gathers are split in runs (unit items each), everything else in actions.
+    const perItem = t.how === "gather" ? t.estActions / Math.max(1, t.qty) : 1;
+    const units = unit ? Math.ceil(t.qty / unit) : total;
+    const chunks = Math.max(1, Math.min(t.candidates.length, units, Math.ceil(total / SPLIT_ACTIONS)));
     for (let i = 0; i < chunks; i++) {
-      const share = Math.ceil(total / chunks);
-      const actions = Math.min(share, total - share * i);
-      if (actions <= 0) break;
+      const share = Math.ceil(units / chunks);
+      const n = Math.min(share, units - share * i);
+      if (n <= 0) break;
+      const actions = unit ? Math.ceil(n * unit * perItem) : n;
       const who = assign(t.candidates, actions);
       if (!who) continue;
       if (t.how === "gather") {
         push(wave0, who, { kind: "gather", code: t.code, resource: t.resource, times: actions, done: 0, gear: true });
         const per = gatheredBy.get(t.code) ?? new Map<string, number>();
         // Expected items this chunk yields (times are ACTIONS; rate>1 drops less).
-        per.set(who, (per.get(who) ?? 0) + Math.floor(actions / (t.estActions / t.qty)));
+        per.set(who, (per.get(who) ?? 0) + (unit ? n * unit : Math.floor(actions / perItem)));
         gatheredBy.set(t.code, per);
       } else {
         push(wave0, who, { kind: "fight", monster: t.monster, times: actions, done: 0, gear: true });
@@ -366,7 +392,6 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
   }
 
   // Chain crafts into wave 0 where the gatherers can smelt their own haul.
-  const crafts = plan.tasks.filter((t): t is Extract<AcquireTask, { how: "craft" }> => t.how === "craft");
   const chained = new Set<string>();
   const leftovers: typeof crafts = [];
   for (const c of crafts.sort((a, b) => a.depth - b.depth)) {
@@ -378,22 +403,32 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
     // bank stock, and every gatherer of it can run the craft.
     if (gatheredIngs.length !== 1) continue;
     if (!rest.every((g) => (bankCover.get(g.code) ?? 0) >= g.quantity * c.runs)) continue;
-    const per = gatheredBy.get(gatheredIngs[0].code)!;
+    const ing = gatheredIngs[0];
+    const per = gatheredBy.get(ing.code)!;
     const gatherers = [...per.keys()];
-    const capable = gatherers.every((n) => {
-      const ch = ctx.characters.find((x) => x.name === n);
-      return !!ch && skillLevel(ch, c.skill) >= c.level;
-    });
-    if (!capable || gatherers.length === 0) continue;
-    // Split runs proportional to gathered quantities; remainder to the biggest.
-    const totalGathered = [...per.values()].reduce((s, n) => s + n, 0) || 1;
+    if (gatherers.length === 0 || !capable(gatherers, c)) continue;
+    // Whole runs out of each haul (exact: chained hauls were split in units of
+    // ing.quantity), biggest haul first.
     let left = c.runs;
     const shares = gatherers
-      .map((n) => ({ n, runs: Math.floor((c.runs * (per.get(n) ?? 0)) / totalGathered) }))
-      .sort((a, b) => (per.get(b.n) ?? 0) - (per.get(a.n) ?? 0));
-    for (const s of shares) left -= s.runs;
-    // Leftover runs exceed any one gatherer's own haul — craft them behind the
-    // barrier from the pooled bank stock instead of pausing someone short.
+      .sort((a, b) => (per.get(b) ?? 0) - (per.get(a) ?? 0))
+      .map((n) => {
+        const runs = Math.min(left, Math.floor((per.get(n) ?? 0) / ing.quantity));
+        left -= runs;
+        return { n, runs };
+      });
+    // The remainder is the stock planAcquire found in the bank: ONE gatherer
+    // crafts it (its craft item withdraws the shortfall) — a single bank trip,
+    // no cross-character race for the same ore.
+    const bankRuns = Math.floor((bankCover.get(ing.code) ?? 0) / ing.quantity);
+    if (left > 0 && left <= bankRuns) {
+      const claimant = [...shares].sort((a, b) => (load.get(a.n) ?? 0) - (load.get(b.n) ?? 0))[0];
+      claimant.runs += left;
+      bankCover.set(ing.code, (bankCover.get(ing.code) ?? 0) - left * ing.quantity);
+      left = 0;
+    }
+    // A remainder the bank can't feed either (random drops, deeper chain
+    // levels) is crafted behind the barrier from the pooled deposits.
     if (left > 0) leftovers.push({ ...c, runs: left, produced: left * (c.produced / c.runs) });
     for (const s of shares) {
       if (s.runs <= 0) continue;

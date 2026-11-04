@@ -77,6 +77,17 @@ export function fleetOwned(ctx: Pick<HiveCtx, "characters" | "bank">): { owned: 
   return { owned: new Set(q.keys()), ownedQty: q };
 }
 
+/** What the fleet owns OUTSIDE the bank (inventories + worn gear). A compile
+ *  subtracts only this from its targets and lets planAcquire claim the bank
+ *  itself — subtracting fleetOwned there too counted bank stock twice, so a
+ *  partial batch sitting in the bank compiled to an EMPTY plan and the run
+ *  ended "incomplete" one wave from done. */
+export function ownedOutsideBank(ctx: Pick<HiveCtx, "characters" | "bank">): Map<string, number> {
+  const { ownedQty } = fleetOwned(ctx);
+  for (const b of ctx.bank) if (b.code && b.quantity > 0) ownedQty.set(b.code, (ownedQty.get(b.code) ?? 0) - b.quantity);
+  return ownedQty;
+}
+
 // Memoized per bank ARRAY REFERENCE (bank echoes replace the array, so identity
 // is a valid generation key — the same trick desiredForJob uses). The inner key
 // carries the character's level so a level-up invalidates naturally; worn-gear

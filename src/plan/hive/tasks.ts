@@ -12,9 +12,20 @@ import type { QueueItemInput } from "../queue";
 import type { Character } from "../../types/api";
 import type { AccountGoal, HiveCtx, HivePlan, ScoredGoal } from "./types";
 
-/** Rough actions to finish one task (travel + fights/gathers + turn-in). */
-export const ACTIONS_PER_TASK = 40;
+/** Accept + travel + turn-in overhead per task, on top of its units. */
+const TASK_OVERHEAD = 5;
 const DEFAULT_TIMES = 3;
+
+/** Expected actions for one task at this master: the mean size of the
+ *  character's level-eligible pool (one fight/gather per unit) plus overhead.
+ *  (Was a flat 40 — live tasks run 50–400 units, so "15 tasks ≈ 10 min" was
+ *  really a day.) */
+export function actionsPerTask(ch: Character, master: "monsters" | "items"): number {
+  const pool = [...catalog().tasks.values()].filter((t) => t.type === master && t.level <= ch.level);
+  if (pool.length === 0) return TASK_OVERHEAD;
+  const mean = pool.reduce((s, t) => s + (t.min_quantity + t.max_quantity) / 2, 0) / pool.length;
+  return Math.round(mean) + TASK_OVERHEAD;
+}
 /** A master suits a character when they can handle this share of its pool. */
 const OK_SHARE = 0.8;
 
@@ -61,9 +72,12 @@ function gateProgress(ctx: HiveCtx): { done: number; total: number; complete: bo
 
 export function proposeTaskGoals(ctx: HiveCtx): ScoredGoal[] {
   const perCharacter: { character: string; master: "monsters" | "items"; times: number }[] = [];
+  const actionsBy: number[] = [];
   for (const ch of ctx.characters) {
     const fit = taskSuitability(ctx, ch);
-    if (fit) perCharacter.push({ character: ch.name, master: fit.master, times: DEFAULT_TIMES });
+    if (!fit) continue;
+    perCharacter.push({ character: ch.name, master: fit.master, times: DEFAULT_TIMES });
+    actionsBy.push(DEFAULT_TIMES * actionsPerTask(ch, fit.master));
   }
   if (perCharacter.length === 0) return [];
 
@@ -71,21 +85,21 @@ export function proposeTaskGoals(ctx: HiveCtx): ScoredGoal[] {
   const coins = totalTasks * (2.5 + SCORE.TASK_BONUS_COINS);
   const gate = gateProgress(ctx);
   const gateValue = gate && !gate.complete ? SCORE.GATE_PROGRESS * totalTasks : 0;
-  const estActions = totalTasks * ACTIONS_PER_TASK;
+  const estActions = actionsBy.reduce((s, a) => s + a, 0);
   // Tasks paid per character in parallel — wall-clock is the slowest lane.
-  const wallActions = Math.max(...perCharacter.map((p) => p.times * ACTIONS_PER_TASK));
+  const wall = Math.max(...actionsBy);
   const goal: AccountGoal = { kind: "farm-tasks", perCharacter };
   return [
     {
       goal,
       label: `Farm ${totalTasks} tasks (${perCharacter.length} characters)`,
-      score: perHour(coins * SCORE.TASK_COIN + gateValue, wallActions),
+      score: perHour(coins * SCORE.TASK_COIN + gateValue, wall),
       rationale:
         `~${Math.round(coins)} task coins across ${perCharacter.length} characters` +
         (gate && !gate.complete ? ` — and advances Tasks Farmer ${gate.done}/${gate.total}` : ""),
       blockers: [],
       estActions,
-      estMinutes: estMinutes(wallActions),
+      estMinutes: estMinutes(wall),
     },
   ];
 }

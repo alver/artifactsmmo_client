@@ -8,15 +8,15 @@
 
 import { itemName } from "../../catalog";
 import { acquireWaves, planAcquire } from "./acquire";
-import { fleetOwned } from "./ctx";
+import { fleetOwned, ownedOutsideBank } from "./ctx";
 import type { AccountGoal, HiveCtx, HivePlan } from "./types";
 
 type CraftOrder = Extract<AccountGoal, { kind: "craft-order" }>;
 
 export function compileOrderGoal(goal: CraftOrder, ctx: HiveCtx): HivePlan {
-  const { ownedQty } = fleetOwned(ctx);
+  const outside = ownedOutsideBank(ctx); // planAcquire claims the bank's share itself
   const targets = goal.targets
-    .map((t) => ({ code: t.code, quantity: t.quantity - (ownedQty.get(t.code) ?? 0) }))
+    .map((t) => ({ code: t.code, quantity: t.quantity - (outside.get(t.code) ?? 0) }))
     .filter((t) => t.quantity > 0);
   const what = goal.targets.map((t) => `${t.quantity}× ${itemName(t.code)}`).join(", ");
   if (targets.length === 0) {

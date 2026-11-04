@@ -19,14 +19,23 @@ export const SCORE = {
   /** Rough coin-equivalent of the turn-in bonus roll (task_rewards.json EV). */
   TASK_BONUS_COINS: 1,
 
-  /** Cooldown-paced wall-clock guess; every estimate is a floor. */
-  SEC_PER_ACTION: 5,
-  /** Multiplier on goals that can't fully compile yet. */
+  /** Seconds per cooldown-paced action. Measured from dev.log medians
+   *  (2026-11-04): gather 31 s, fight 39 s, rest 23 s, move 22 s, craft 19 s —
+   *  gathering dominates every plan. Every estimate is a floor. */
+  SEC_PER_ACTION: 30,
+  /** Multiplier on goals whose PLAN is partial (compile left blockers). */
   BLOCKED_DISCOUNT: 0.5,
 } as const;
 
 export const estMinutes = (actions: number): number => Math.round((actions * SCORE.SEC_PER_ACTION) / 60);
 
-/** Value-per-hour with a 15-minute floor so trivial errands don't divide by ~0. */
-export const perHour = (value: number, actions: number): number =>
-  value / Math.max(0.25, (actions * SCORE.SEC_PER_ACTION) / 3600);
+/** Hours an action count takes, floored at 15 minutes so trivial errands don't divide by ~0. */
+export const hoursOf = (actions: number): number => Math.max(0.25, (actions * SCORE.SEC_PER_ACTION) / 3600);
+
+export const perHour = (value: number, actions: number): number => value / hoursOf(actions);
+
+/** Wall-clock actions for work the fleet splits across its participants: the
+ *  ideal even split (a floor, like every estimate — one crafter's serial batch
+ *  is longer, but the gathering that dominates really does run in parallel). */
+export const wallActions = (participants: number, actions: number): number =>
+  Math.ceil(actions / Math.max(1, participants));

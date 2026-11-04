@@ -10,8 +10,8 @@ import { catalog, itemName, monster as monsterOf } from "../../catalog";
 import { canEquip } from "../bis";
 import { SLOTS_FOR_TYPE } from "../../types/api";
 import { acquireWaves, planAcquire, TRAIN_GAP } from "./acquire";
-import { crafterFor, fleetBis, fleetOwned } from "./ctx";
-import { SCORE, estMinutes, perHour } from "./score";
+import { crafterFor, fleetBis, fleetOwned, ownedOutsideBank } from "./ctx";
+import { SCORE, estMinutes, perHour, wallActions } from "./score";
 import { titleCase } from "../../lib/util";
 import type { BankItem, Character, GearSlot } from "../../types/api";
 import type { Monster } from "../../types/catalog";
@@ -132,11 +132,12 @@ const demandOf = (deltas: CharDelta[]): Map<string, number> => {
   return demand;
 };
 
-const acquireCost = (ctx: HiveCtx, demand: Map<string, number>): number =>
-  planAcquire([...demand].map(([code, quantity]) => ({ code, quantity })), ctx).estActions;
+const acquirePlan = (ctx: HiveCtx, demand: Map<string, number>) =>
+  planAcquire([...demand].map(([code, quantity]) => ({ code, quantity })), ctx);
 
 export function proposeGearGoals(ctx: HiveCtx): ScoredGoal[] {
   const out: ScoredGoal[] = [];
+  const n = ctx.characters.length;
   for (const code of gearFrontier(ctx)) {
     const m = monsterOf(code);
     if (!m) continue;
@@ -153,10 +154,10 @@ export function proposeGearGoals(ctx: HiveCtx): ScoredGoal[] {
     // One greedy drop pass: an expensive piece that only buys margin gets
     // re-scored without itself; the drop sticks when value-per-hour rises.
     let demand = demandOf(deltas);
-    let cost = acquireCost(ctx, demand);
-    let score = perHour(deltas.reduce((s, d) => s + d.value, 0), cost);
+    let plan = acquirePlan(ctx, demand);
+    let score = perHour(deltas.reduce((s, d) => s + d.value, 0), wallActions(n, plan.estActions));
     const pricey = [...demand]
-      .map(([c, qty]) => ({ c, unit: acquireCost(ctx, new Map([[c, qty]])) / qty }))
+      .map(([c, qty]) => ({ c, unit: acquirePlan(ctx, new Map([[c, qty]])).estActions / qty }))
       .filter((x) => x.unit >= DROP_COST_FLOOR)
       .sort((a, b) => b.unit - a.unit)
       .slice(0, MAX_DROP_EVALS);
@@ -166,12 +167,12 @@ export function proposeGearGoals(ctx: HiveCtx): ScoredGoal[] {
         .filter((d): d is CharDelta => !!d);
       if (trimmed.length === 0) continue;
       const dDemand = demandOf(trimmed);
-      const dCost = acquireCost(ctx, dDemand);
-      const dScore = perHour(trimmed.reduce((s, d) => s + d.value, 0), dCost);
+      const dPlan = acquirePlan(ctx, dDemand);
+      const dScore = perHour(trimmed.reduce((s, d) => s + d.value, 0), wallActions(n, dPlan.estActions));
       if (dScore > score) {
         deltas = trimmed;
         demand = dDemand;
-        cost = dCost;
+        plan = dPlan;
         score = dScore;
       }
     }
@@ -180,15 +181,19 @@ export function proposeGearGoals(ctx: HiveCtx): ScoredGoal[] {
     const pieces = [...demand.keys()].map((c) => itemName(c));
     const who = deltas.map((d) => `${d.ch.name}${d.kind === "win" ? " ⚔" : d.kind === "safe" ? " 🛡" : ""}`);
     const goal: AccountGoal = { kind: "gear-upgrade", monster: m.code, upgrades };
-    const blocked = goalBlockers.length > 0;
+    // Only a PARTIAL plan is discounted. Near-miss candidates (a Lv-5 recipe
+    // when the crafter has 2) stay listed for promotion, but they don't halve
+    // a goal whose own plan compiles clean — that inversion ranked three
+    // promoted level-skill goals above the 2-minute parent they "unlocked".
+    const blocked = plan.blockers.length > 0;
     out.push({
       goal,
       label: `Gear up vs ${m.name} (Lv ${m.level})`,
       score: score * (blocked ? SCORE.BLOCKED_DISCOUNT : 1),
       rationale: `${pieces.join(" + ")} ${deltas.some((d) => d.kind === "win") ? "win-flips" : deltas.some((d) => d.kind === "safe") ? "safe-flips" : "improves"} ${m.name} for ${who.join(", ")}`,
-      blockers: goalBlockers,
-      estActions: cost,
-      estMinutes: estMinutes(cost),
+      blockers: [...plan.blockers, ...goalBlockers],
+      estActions: plan.estActions,
+      estMinutes: estMinutes(wallActions(n, plan.estActions)),
     });
   }
   return out;
@@ -198,7 +203,7 @@ export function compileGearGoal(
   goal: Extract<AccountGoal, { kind: "gear-upgrade" }>,
   ctx: HiveCtx,
 ): HivePlan {
-  const { ownedQty } = fleetOwned(ctx);
+  const outside = ownedOutsideBank(ctx); // planAcquire claims the bank's share itself
   const want = new Map<string, number>();
   for (const u of goal.upgrades) {
     if (!ctx.characters.some((c) => c.name === u.character)) continue;
@@ -206,7 +211,7 @@ export function compileGearGoal(
   }
   const targets: ItemDemand[] = [];
   for (const [code, qty] of want) {
-    const missing = qty - (ownedQty.get(code) ?? 0);
+    const missing = qty - (outside.get(code) ?? 0);
     if (missing > 0) targets.push({ code, quantity: missing });
   }
   const mName = monsterOf(goal.monster)?.name ?? goal.monster;

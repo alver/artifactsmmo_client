@@ -67,3 +67,8 @@ A working driver (selectors + polling + probes, 2026-07-06): `drive.mjs` next
 to this file. Run it from a scratch dir that has puppeteer-core installed:
 `$env:AMMO_TOKEN = (token from .env); node <path>\drive.mjs` — it needs the
 dev server up and writes screenshots + drive-summary.json beside itself.
+
+A read-only planning probe (2026-11-04): `hive-probe.mjs` next to this file —
+same boot, then in-page `import("/src/plan/hive/index.ts")` to dump
+proposals, compiled waves and synthetic craft orders against live state.
+No queue writes; ~4 reads per run. Output: `hive-probe-out.json` beside it.

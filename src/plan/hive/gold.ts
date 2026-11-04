@@ -24,7 +24,7 @@ import { catalog } from "../../catalog";
 import { npcForSell } from "../acquire";
 import { npcGateMet } from "./acquire";
 import { bankStock, fleetBis, skillLevel } from "./ctx";
-import { ACTIONS_PER_TASK, taskSuitability } from "./tasks";
+import { actionsPerTask, taskSuitability } from "./tasks";
 import { SCORE, estMinutes } from "./score";
 import type { QueueItemInput } from "../queue";
 import type { Character } from "../../types/api";
@@ -132,7 +132,7 @@ function taskLane(ctx: HiveCtx, ch: Character): GoldLane | undefined {
   if (doable.length === 0) return undefined;
   const avgGold = doable.reduce((s, t) => s + (t.rewards?.gold ?? 0), 0) / doable.length;
   if (avgGold <= 0) return undefined;
-  return { kind: "tasks", master: fit.master, goldPerAction: avgGold / ACTIONS_PER_TASK, label: `run ${fit.master} tasks` };
+  return { kind: "tasks", master: fit.master, goldPerAction: avgGold / actionsPerTask(ch, fit.master), label: `run ${fit.master} tasks` };
 }
 
 /** v2 seam: a gem-craft evaluator slots in here iff it fits the
@@ -185,7 +185,7 @@ export function compileGoldGoal(goal: EarnGold, ctx: HiveCtx): HivePlan {
   const bankClaimed = new Set<string>();
 
   const assignments = lanes.map(({ ch, lane }) => {
-    const perUnit = lane.kind === "fight" ? FIGHT_ACTIONS_PER_KILL : lane.kind === "tasks" ? ACTIONS_PER_TASK : 1;
+    const perUnit = lane.kind === "fight" ? FIGHT_ACTIONS_PER_KILL : lane.kind === "tasks" ? actionsPerTask(ch, lane.master) : 1;
     const unitsCap = lane.kind === "tasks" ? MAX_TASK_TURNINS : CAP_ACTIONS;
     const units = Math.max(1, Math.min(unitsCap, Math.ceil(actionsWave / perUnit)));
     const items: QueueItemInput[] = [];
