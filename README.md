@@ -5,10 +5,14 @@ directly to the public game API from the browser. It syncs your account's durabl
 state **once** at load and then keeps it current from action responses — no
 polling — so it stays well inside the API rate limits.
 
+The game isn't real-time, so the client is a **table-first check-in console**: the
+home screen answers *is everyone working, what's next, what needs me?*, and the
+catalog (recipes, shops, monsters, bank) lives in sortable tables.
+
 Built with **Vite + TypeScript + Preact** (signals for reactive state). Deploys as
 static files to GitHub Pages; no backend.
 
-![The workspace: roster cards with cooldown rings and tasks, the action queue, equipment, skills, inventory, and the live map with a tile inspector and active events](docs/workspace.png)
+![The Fleet tab: a "Needs you" list, one row per character (status, what it's doing with progress, what's next, pinned skills, bag, task, location), the fleet skills grid, and the always-on activity panel on the right](docs/fleet.webp)
 
 ## Run
 
@@ -28,43 +32,63 @@ app and the token prompt is skipped. `.env` is gitignored.
 
 ## Features
 
-- **Canvas world map** — pan/zoom across the overworld/underground/interior layers,
-  with your characters drawn as markers and a hover inspector for tiles.
-- **Live map events** — time-limited monsters, resources and traveling merchants
-  overlay the map with countdowns; they join the fight/gather pickers while active.
-- **Character workspace** — roster cards (HP/XP, cooldown throbber, location, task)
-  above a dashboard of the selected character: equipment, job-gear preview, combat
-  stats, skills, and inventory.
+Everything lives in tabs — **Fleet · Character · Bank · Items · Monsters ·
+Achievements · Map · Sim** — with an always-on activity panel beside them.
+
+- **Fleet** (home) — *Needs you* first (paused queues with Retry, idle characters,
+  rewards to claim, live events), then one row per character: status, what it's
+  doing with progress, what's next, pinned main skills, bag, task and location; a
+  characters × skills grid (click a cell to pin a main skill); and the hive and
+  fleet gear coverage as collapsible sections.
+- **Activity panel** — on the right of every tab: each character's live status
+  and the action feed, newest first. Hide it to a thin edge strip.
 - **The action queue** — the automation engine: a per-character, editable list of
-  simple actions (move, fight ×N, gather ×N, craft ×N, bank moves, gear swaps, task
-  steps…). A count of 0 means *forever* — infinite crafting cycles
-  withdraw-a-bagful → craft → deposit until the bank runs dry. Paced by action
-  cooldowns, **survives a page reload**, and skips steps whose map target vanished
-  (an event that ended) instead of stalling.
+  simple actions (move, fight ×N, gather ×N, craft ×N, train a skill, bank moves,
+  gear swaps, task loops…), shown as a numbered table on the **Character** tab with
+  the runner's live step. A count of 0 means *forever*. Paced by action cooldowns,
+  **survives a page reload**, and skips steps whose map target vanished (an event
+  that ended) instead of stalling.
+- **Skill loops** — pin up to two main skills per character; *Train pins* queues a
+  repeating loop that levels them in turn (gathering skills work the best node for
+  the level, workshop skills run source → craft → recycle).
 - **Bank-centric gear** — the bank is the single source of truth for equipment: a
   gear step dresses the character in the best set available in the bank at that
   moment (fight sets come from a combat-sim solver; fights re-check the bank every
   round and upgrade mid-grind).
-- **The hive** (🐝) — an account-level coordinator that puts every character on one
-  goal: pick a scored proposal (gear upgrades, task farming, achievements, skill
-  leveling) or order your own — *craft me N of X*, or *earn +N gold* with each
-  character working its best gold-per-hour lane. It compiles goals down to queue
-  items, re-plans at each wave boundary from live state, and idle characters run
-  tasks instead of standing around — including after the goal finishes.
-- **Fleet gear coverage** (🛡) — can the bank dress everyone? A slots × characters
-  matrix of the best owned set each character would get from shared stock, with
-  missing-copy shortages ("have 3 / need 10") and slots nobody can fill.
-- **Workshop / NPC / bank / tasks panels** — click a tile to craft, trade, manage
-  the bank, or handle tasks; hovering any item anywhere shows one unified detail
-  popup (stats, recipe, where to get it, prices).
-- **Fight-sim playground** (`#/sim`) — plan equipment setups against any monster
-  with the deterministic combat simulator; one click loads the whole-catalog
-  best-in-slot set or the best set your bank could dress right now.
+- **Items** — the whole catalog in one table: recipe with bank stock per
+  ingredient, how many the bank can make, the best crafter, which NPCs sell and
+  buy it and whether they're reachable now (event merchants count down). Queue a
+  craft for any character straight from the row; hover any item anywhere for its
+  full card (stats, recipe, where to get it, prices).
+- **Bank** — a compact tile grid grouped by type, sortable by name / quantity /
+  value / level, with slots, gold and what the stock would sell for.
+- **Monsters** — a fight forecast for every character against every monster (HP
+  left at the end), with current gear or — one click — the best set the bank could
+  dress them in; queue fights from the row.
+- **The hive** (🐝, on Fleet) — an account-level coordinator that puts every
+  character on one goal: pick a scored proposal (gear upgrades, task farming,
+  achievements, skill leveling) or order your own — *craft me N of X*, or *earn +N
+  gold* with each character working its best gold-per-hour lane. It compiles goals
+  down to queue items and re-plans at each wave boundary from live state.
+- **Fleet gear coverage** (🛡, on Fleet) — can the bank dress everyone? A slots ×
+  characters matrix of the best owned set each character would get from shared
+  stock, with missing-copy shortages and slots nobody can fill.
+- **Achievements** — progress sorted closest-to-done, each objective with where to
+  advance it, plus unclaimed rewards to claim.
+- **Map** — the canvas world map on its own tab (layers, live event overlays, a
+  hover inspector); click a building to craft, trade, use the bank or handle tasks
+  by hand. *Walk* and *Pick on map* open a pop-up map from any tab.
+- **Fight-sim playground** — plan equipment setups against any monster with the
+  deterministic combat simulator; one click loads the whole-catalog best-in-slot
+  set or the best set your bank could dress right now.
 
 <p align="center">
-  <img src="docs/queue-actions.png" width="330" alt="The queue's action vocabulary">
-  &nbsp;&nbsp;
-  <img src="docs/workshop.png" width="430" alt="Workshop drawer with the unified item hover popup">
+  <img src="docs/character.webp" width="49%" alt="Character tab: the queue as a numbered table with the running step, equipment, skills with pins, inventory">
+  <img src="docs/items.webp" width="49%" alt="Items tab: recipes with bank stock, can-make, best crafter, NPC buy/sell offers">
+</p>
+<p align="center">
+  <img src="docs/monsters.webp" width="49%" alt="Monsters tab: per-character fight forecasts, with a best-bank-set row">
+  <img src="docs/bank.webp" width="49%" alt="Bank tab: compact tile grid grouped by type">
 </p>
 
 > Automation runs **in the open browser tab** — the page sends the commands, so a
@@ -77,7 +101,7 @@ app and the token prompt is skipped. `.env` is gitignored.
 - **One sync, then no polling.** At boot the app paints instantly from
   `localStorage`, loads the static catalogs from `public/data/*.json` into memory,
   then does a single authoritative read of `/my/characters`, `/my/bank`,
-  `/my/bank/items`, and account info. After that, every action response carries the
+  `/my/bank/items`, active events, unclaimed rewards and account info. After that, every action response carries the
   full authoritative character (and bank item moves echo the bank), so local state
   is updated from responses alone — see `src/state/apply.ts`. Re-sync only happens
   when you click **Refresh**.
@@ -100,7 +124,9 @@ src/
   sim/        deterministic combat simulator (stats, forecast, Monte Carlo)
   state/      signals store, persistence, the apply chokepoint, boot sync,
               the queue runner + shared execution mechanics, the hive runtime
-  ui/         Preact components (MapView, CharacterPanel, CatalogPanel, …)
+  ui/         Preact components: one per tab (FleetView, CharacterPanel,
+              TableTabs = Bank/Items/Monsters, …), the shared DataTable,
+              the activity panel, MapView
   types/      api.ts (dynamic) + catalog.ts (static) domain models
 ```
 
