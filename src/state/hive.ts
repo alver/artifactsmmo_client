@@ -26,8 +26,10 @@
 // items task-loop as a plain user-owned queue item. Stop (⏹) still means stop.
 
 import { batch, effect, signal } from "@preact/signals";
-import { addItem, patchItem, queues, removeItem, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
-import { achievements, bankDetails, bankItems, characterList, craftSkillPins, pushLog } from "./store";
+import { addItem, dropItem, patchItem, queues, removeItem, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
+import { achievements, bankDetails, bankItems, characterList, characters, craftSkillPins, pushLog } from "./store";
+import { invQty } from "./exec";
+import { bankQty } from "./loopkit";
 import { compileGoal, fillerItems, goalSatisfied, needsAchievements, proposeGoals } from "../plan/hive";
 import type { AccountGoal, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "../plan/hive";
 import { SPLIT_ACTIONS } from "../plan/hive/acquire";
@@ -262,6 +264,42 @@ function longestWait(wave: HiveWaveState): number {
   return max;
 }
 
+/** A pipelined (`wait`) craft at the head of a lane that neither bag nor bank
+ *  can feed one run of — holding, not working. */
+function starvedWaiter(a: HiveAssignmentState): Extract<QueueItem, { kind: "craft" }> | undefined {
+  const q = queues.value[a.character];
+  const head = q?.items[0];
+  if (!q?.running || !head || head.kind !== "craft" || !head.wait || !(a.itemIds ?? []).includes(head.id)) return undefined;
+  const ch = characters.value[a.character];
+  const recipe = item(head.code)?.craft;
+  if (!ch || !recipe) return undefined;
+  return recipe.items.some((g) => invQty(ch, g.code) + bankQty(g.code) < g.quantity) ? head : undefined;
+}
+
+/**
+ * Drop pipelined crafters nobody can feed anymore: when every unfinished lane
+ * of the wave is a starved `wait` craft (no producer running, no paused lane
+ * the user still has to act on), pull those items — each lane's deposit-all
+ * banks the produce — so the barrier recompile tops the shortfall up instead
+ * of the wave hanging forever. True ⇒ queues changed (re-tick).
+ * Exported for the verify probe (synthetic queues, no actions).
+ */
+export function releaseStarved(wave: HiveWaveState): boolean {
+  const live = wave.assignments.filter(
+    (a) => !a.filler && !a.skipped && a.dispatched && assignmentStatus(a, queues.value[a.character]) !== "done",
+  );
+  const starved = live.flatMap((a) => {
+    const head = starvedWaiter(a);
+    return head ? [{ a, head }] : [];
+  });
+  if (starved.length === 0 || starved.length < live.length) return false;
+  for (const { a, head } of starved) {
+    dropItem(a.character, head.id);
+    log(`${a.character}: nothing left to feed ${queueItemText(head)} — ${head.done} made, the rest replans at the barrier`);
+  }
+  return true;
+}
+
 export interface Steal {
   victim: string;
   items: QueueItemInput[];
@@ -338,6 +376,7 @@ export function planSteal(wave: HiveWaveState, ctx: HiveCtx, thief: Character): 
 function rebalanceWave(run: HiveRun): void {
   const wave = run.wave;
   if (!wave) return;
+  if (releaseStarved(wave)) return; // the queue write re-ticks
   const ctx = buildHiveCtx(); // participants only — opt-outs never get work
   const added: HiveAssignmentState[] = [];
   let wait: number | undefined;

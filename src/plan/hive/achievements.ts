@@ -218,7 +218,6 @@ export function compileAchievementGoal(
   }
   const load = new Map<string, number>(ctx.characters.map((c) => [c.name, 0]));
   const wave0 = new Map<string, QueueItemInput[]>();
-  const laterFromCrafting: HiveWave[][] = [];
   const blockers: Blocker[] = [];
   const push = (name: string, ...items: QueueItemInput[]): void => {
     const cur = wave0.get(name) ?? [];
@@ -229,33 +228,16 @@ export function compileAchievementGoal(
   for (const o of a.objectives) {
     const remaining = Math.max(0, o.total - Math.min(o.progress, o.total));
     if (remaining === 0) continue;
-    compileObjective(o, remaining, ctx, { load, push, laterFromCrafting, blockers });
+    compileObjective(o, remaining, ctx, { load, push, blockers });
   }
 
-  // Assemble: direct work + every crafting objective's wave 0, then later
-  // material/craft waves merged by index.
+  // One wave: direct work, materials, and the crafts pipelined behind them.
   const waves: HiveWave[] = [];
   if (wave0.size > 0) {
     for (const items of wave0.values()) if (items[items.length - 1]?.kind !== "deposit-all") items.push({ kind: "deposit-all" });
     waves.push({
       label: `${a.name}: field work`,
       assignments: [...wave0].map(([character, items]) => ({ character, label: labelIt(items), items })),
-    });
-  }
-  const deepest = Math.max(0, ...laterFromCrafting.map((w) => w.length));
-  for (let i = 0; i < deepest; i++) {
-    const byChar = new Map<string, QueueItemInput[]>();
-    for (const seq of laterFromCrafting) {
-      for (const asg of seq[i]?.assignments ?? []) {
-        const cur = byChar.get(asg.character) ?? [];
-        cur.push(...asg.items);
-        byChar.set(asg.character, cur);
-      }
-    }
-    if (byChar.size === 0) continue;
-    waves.push({
-      label: `${a.name}: crafting`,
-      assignments: [...byChar].map(([character, items]) => ({ character, label: labelIt(items), items })),
     });
   }
   return {
@@ -269,12 +251,11 @@ export function compileAchievementGoal(
 interface ObjectiveSink {
   load: Map<string, number>;
   push: (name: string, ...items: QueueItemInput[]) => void;
-  laterFromCrafting: HiveWave[][];
   blockers: Blocker[];
 }
 
 function compileObjective(o: AchievementObjectiveProgress, remaining: number, ctx: HiveCtx, sink: ObjectiveSink): void {
-  const { load, push, laterFromCrafting, blockers } = sink;
+  const { load, push, blockers } = sink;
   switch (o.type) {
     case "combat_kill": {
       const m = o.target ? monsterOf(o.target) : undefined;
@@ -313,29 +294,20 @@ function compileObjective(o: AchievementObjectiveProgress, remaining: number, ct
       const runs = Math.ceil(remaining / rec.quantity);
       const plan = planAcquire(rec.items.map((g) => ({ code: g.code, quantity: g.quantity * runs })), ctx);
       blockers.push(...plan.blockers);
-      const matWaves = acquireWaves(plan, ctx);
-      // deposit-all FIRST so a hand already holding the product can't trigger
-      // the craft item's already-have skip (progress needs fresh crafts).
-      const craftItems: QueueItemInput[] = [
-        { kind: "deposit-all" },
-        { kind: "craft", code: o.target, quantity: remaining, done: 0 },
-        { kind: "deposit-all" },
-      ];
-      const craftWave: HiveWave = {
-        label: "craft",
-        assignments: [{ character: crafter.ch.name, label: `craft ${remaining}× ${itemName(o.target)}`, items: craftItems }],
-      };
-      if (matWaves.length === 0) {
-        // materials already banked — the craft can join the field-work wave
-        for (const it of craftItems) push(crafter.ch.name, it);
-        load.set(crafter.ch.name, (load.get(crafter.ch.name) ?? 0) + runs);
-      } else {
-        for (const asg of matWaves[0].assignments) {
-          push(asg.character, ...asg.items);
-          load.set(asg.character, (load.get(asg.character) ?? 0) + 20);
-        }
-        laterFromCrafting.push([...matWaves.slice(1), craftWave]);
+      for (const asg of acquireWaves(plan, ctx)[0]?.assignments ?? []) {
+        push(asg.character, ...asg.items);
+        load.set(asg.character, (load.get(asg.character) ?? 0) + 20);
       }
+      // deposit-all FIRST so a hand already holding the product can't trigger
+      // the craft item's already-have skip (progress needs fresh crafts); the
+      // craft pipelines behind its materials (`wait`).
+      push(
+        crafter.ch.name,
+        { kind: "deposit-all" },
+        { kind: "craft", code: o.target, quantity: remaining, done: 0, wait: true },
+        { kind: "deposit-all" },
+      );
+      load.set(crafter.ch.name, (load.get(crafter.ch.name) ?? 0) + runs);
       return;
     }
     case "recycling": {

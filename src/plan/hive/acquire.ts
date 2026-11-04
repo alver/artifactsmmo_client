@@ -309,9 +309,14 @@ const push = (byChar: Map<string, QueueItemInput[]>, name: string, ...add: Queue
  * - a craft whose gathered ingredients all belong to craft-capable gatherers
  *   chains into their own wave-0 queues (gather → smelt, no barrier) —
  *   remaining ingredients must already be bank stock (the craft item
- *   self-withdraws them);
- * - all other crafts form later waves by depth, one barrier per layer, so a
- *   consumer craft only compiles once its producers' deposits are in the bank.
+ *   self-withdraws them) — unless its skill is PINNED to a specialist, whose
+ *   crafts (and their XP) are never handed to whoever gathered;
+ * - every other craft PIPELINES in wave 0 on its preferred crafter (the pin
+ *   first) as a `wait` craft: it holds while the producers' deposits trickle
+ *   in, self-withdrawing each bagful, so the crafter starts on the first haul
+ *   instead of behind a barrier. Depth order keeps a crafter's consumers
+ *   behind its producers; the runtime drops a crafter nobody can feed anymore
+ *   so the barrier recompile tops the shortfall up.
  */
 export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
   const load = new Map<string, number>(ctx.characters.map((c) => [c.name, 0]));
@@ -338,6 +343,7 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
       const ch = ctx.characters.find((x) => x.name === n);
       return !!ch && skillLevel(ch, c.skill) >= c.level;
     });
+  const pinned = (skill: string): boolean => ctx.characters.some((ch) => ctx.craftPins[ch.name] === skill);
   // A gather feeding a craft its gatherers can run themselves is split in WHOLE
   // RUNS of that craft (ore in tens for bars): every haul smelts without a bank
   // trip, and no floor-rounding leftover spills into an extra barrier wave.
@@ -346,7 +352,7 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
     for (const c of crafts) {
       const rec = item(c.code)?.craft;
       const mine = rec?.items.find((g) => g.code === t.code);
-      if (!rec || !mine) continue;
+      if (!rec || !mine || pinned(c.skill)) continue;
       const otherGathered = rec.items.some((g) => g.code !== t.code && raw.some((x) => x.how === "gather" && x.code === g.code));
       if (!otherGathered && capable(t.candidates, c)) return mine.quantity;
     }
@@ -396,7 +402,7 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
   const leftovers: typeof crafts = [];
   for (const c of crafts.sort((a, b) => a.depth - b.depth)) {
     const rec = item(c.code)?.craft;
-    if (!rec) continue;
+    if (!rec || pinned(c.skill)) continue; // the specialist's craft pipelines instead (below)
     const gatheredIngs = rec.items.filter((g) => gatheredBy.has(g.code));
     const rest = rec.items.filter((g) => !gatheredBy.has(g.code));
     // Chainable: exactly one gathered ingredient, everything else pre-existing
@@ -442,32 +448,16 @@ export function acquireWaves(plan: AcquirePlan, ctx: HiveCtx): HiveWave[] {
     gatheredBy.set(c.code, out);
   }
 
-  const waves: HiveWave[] = [];
-  if (wave0.size > 0) {
-    for (const items of wave0.values()) items.push({ kind: "deposit-all" });
-    waves.push({
-      label: "Produce materials",
-      assignments: [...wave0].map(([character, items]) => ({ character, label: labelOf(items), items })),
-    });
-  }
-
-  // Remaining crafts: one wave per depth layer (compressed to consecutive waves).
+  // Every other craft pipelines on its preferred crafter, producers first.
   const remaining = [...crafts.filter((c) => !chained.has(c.code)), ...leftovers].sort((a, b) => a.depth - b.depth);
-  const depths = [...new Set(remaining.map((c) => c.depth))];
-  for (const d of depths) {
-    const byChar = new Map<string, QueueItemInput[]>();
-    for (const c of remaining.filter((x) => x.depth === d)) {
-      const who = c.candidates[0];
-      if (!who) continue;
-      push(byChar, who, { kind: "craft", code: c.code, quantity: c.produced, done: 0 });
-    }
-    if (byChar.size === 0) continue;
-    for (const items of byChar.values()) items.push({ kind: "deposit-all" });
-    waves.push({
-      label: depths.length > 1 ? `Craft (stage ${waves.length + 1})` : "Craft",
-      assignments: [...byChar].map(([character, items]) => ({ character, label: labelOf(items), items })),
-    });
+  for (const c of remaining) {
+    const who = c.candidates[0];
+    if (!who) continue;
+    push(wave0, who, { kind: "craft", code: c.code, quantity: c.produced, done: 0, wait: true });
+    load.set(who, (load.get(who) ?? 0) + c.runs);
   }
 
-  return waves;
+  if (wave0.size === 0) return [];
+  for (const items of wave0.values()) items.push({ kind: "deposit-all" });
+  return [{ label: "Produce", assignments: [...wave0].map(([character, items]) => ({ character, label: labelOf(items), items })) }];
 }

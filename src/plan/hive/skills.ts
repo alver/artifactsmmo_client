@@ -169,17 +169,21 @@ export function compileSkillGoal(
     return { goal, waves: [], summary: label, blockers: [{ reason: `no feasible ${titleCase(goal.skill)} training recipe at Lv ${have}` }] };
   }
   const { code, produced, plan } = batch;
-  const waves = acquireWaves(plan, ctx);
-  const crafterItems: QueueItemInput[] = [{ kind: "craft", code, quantity: produced, done: 0 }];
+  const crafterItems: QueueItemInput[] = [{ kind: "craft", code, quantity: produced, done: 0, wait: true }];
   if (item(code)?.recyclable) crafterItems.push({ kind: "recycle", code, quantity: produced, done: 0 });
   crafterItems.push({ kind: "deposit-all" });
-  waves.push({
-    label: `Craft batch (${titleCase(goal.skill)} ${have} → ${goal.toLevel})`,
-    assignments: [{ character: ch.name, label: `craft ${produced}× ${itemName(code)}`, items: crafterItems }],
-  });
+  // The batch pipelines in wave 0 behind its materials (a `wait` craft holds
+  // for the deposits) — appended to the crafter's own production lane.
+  const wave = acquireWaves(plan, ctx)[0] ?? { label: `Craft batch (${titleCase(goal.skill)} ${have} → ${goal.toLevel})`, assignments: [] };
+  const mine = wave.assignments.find((a) => a.character === ch.name);
+  const craftLabel = `craft ${produced}× ${itemName(code)}`;
+  if (mine) {
+    mine.items.push(...crafterItems);
+    mine.label += ` · ${craftLabel}`;
+  } else wave.assignments.push({ character: ch.name, label: craftLabel, items: crafterItems });
   return {
     goal,
-    waves,
+    waves: [wave],
     summary: `${label} — batches of ${produced}× ${itemName(code)}`,
     blockers: plan.blockers,
   };

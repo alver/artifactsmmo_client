@@ -1,9 +1,9 @@
 // craft-order goals — a user-directed production run: "make me N of X".
 // The fleet gathers/produces the materials in parallel (acquireWaves splits by
 // skill and forecast, chains smelts into the gatherers' own queues) and the
-// qualified crafter — the pinned specialist first — finishes the job behind a
-// bank barrier. Never auto-proposed; created from the Hive drawer's order
-// builder. Satisfied when the fleet OWNS the ordered quantities, so already-
+// qualified crafter — the pinned specialist first — pipelines the final craft
+// behind their deposits in the same wave. Never auto-proposed; created from
+// the Hive drawer's order builder. Satisfied when the fleet OWNS the ordered quantities, so already-
 // stocked pieces aren't re-crafted and barrier recompiles top up shortfalls.
 
 import { itemName } from "../../catalog";

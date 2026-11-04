@@ -23,7 +23,10 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; gear?: boolean }
   // quantity 0 = infinite: withdraw a bagful of materials from the bank, craft,
   // deposit, repeat — completes when the bank can no longer feed the recipe.
-  | { kind: "craft"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number }
+  // `wait` (hive pipelining): when bag + bank can't feed one run, hold and look
+  // again instead of pausing — producers are still depositing; the hive drops
+  // the item once nobody is left to feed it.
+  | { kind: "craft"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number; wait?: boolean }
   | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number }
   | { kind: "deposit-all" }
   | { kind: "buy"; code: string; quantity: number; npc?: string; x?: number; y?: number }
@@ -83,7 +86,7 @@ export function queueItemText(it: QueueItem): string {
     case "rest": return "Rest to full HP";
     case "fight": return `Fight ${it.times > 0 ? `${it.times}× ` : "(∞) "}${monsterOf(it.monster)?.name ?? titleCase(it.monster)}`;
     case "gather": return `Gather ${it.times > 0 ? `${it.times}× ` : "(∞) "}${itemName(it.code)}`;
-    case "craft": return `Craft ${it.quantity > 0 ? `${it.quantity}× ` : "(∞) "}${itemName(it.code)}`;
+    case "craft": return `Craft ${it.quantity > 0 ? `${it.quantity}× ` : "(∞) "}${itemName(it.code)}${it.wait ? " (as materials arrive)" : ""}`;
     case "withdraw": return `Withdraw ${it.quantity}× ${itemName(it.code)}`;
     case "deposit-all": return "Deposit everything";
     case "buy": return `Buy ${it.quantity}× ${itemName(it.code)}`;

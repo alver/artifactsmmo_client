@@ -112,6 +112,13 @@ export function removeItem(name: string, id: string): void {
   setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
 }
 
+/** Hive-only: drop one of ITS items even while it is the running head — the
+ *  loop re-reads the head every step, and a finished step's slice is id-guarded. */
+export function dropItem(name: string, id: string): void {
+  const cur = queues.value[name];
+  if (cur) setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
+}
+
 /** User edit — clears the item's error (an edited item gets a fresh chance). */
 export function updateItem(name: string, id: string, patch: Partial<QueueItem>): void {
   if (headLocked(queues.value[name], id)) return;
@@ -332,6 +339,14 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
           const short = recipe.items
             .filter((g) => Math.floor((invQty(ch, g.code) + bankQty(g.code)) / g.quantity) <= 0)
             .map((g) => `${itemName(g.code)} (need ${g.quantity})`);
+          if (it.wait) {
+            // Pipelined hive craft: the producers are still filling the bank —
+            // hold and look again (the hive drops the item once nobody is left
+            // to feed it). ⏹ stays responsive through the 1 s slices.
+            ctx.note(`waiting for ${short.join(", ")}`);
+            for (let i = 0; i < 15 && !stopFlags.has(name); i++) await sleep(1000);
+            return false;
+          }
           throw new Error(`no ${short.join(", ")} for ${itemName(it.code)} in bag + bank`);
         }
         const batch = Math.max(1, Math.min(supplyTimes, bagTimes));
