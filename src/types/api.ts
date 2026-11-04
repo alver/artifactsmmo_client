@@ -195,6 +195,50 @@ export interface PendingItem {
   claimed_at: string | null;
 }
 
+/**
+ * Season 9 seasonal offerings (the Seasonal Altar). Each UTC day offers one
+ * offering per level bracket in 3 categories (combat + 2 rotating skills); a
+ * character accepts one per category (activating its XP/drop favor on the
+ * target until reset), then completes it by handing over the requirement.
+ */
+export interface OfferingFavor {
+  target_type: "monster" | "resource" | "craft";
+  target_code: string;
+  xp_multiplier: number;
+  drop_multiplier: number;
+}
+export interface SeasonalOffering {
+  id: string;
+  category: string; // "combat" | skill name
+  type: "monster" | "resource" | "craft";
+  level_min: number;
+  level_max: number;
+  requirement: ItemStack;
+  favor: OfferingFavor;
+}
+export interface SelectedOffering {
+  offering_id: string;
+  category: string;
+  status: "accepted" | "completed";
+  accepted_at: string;
+  completed_at?: string | null;
+  reward_xp?: number | null;
+  requirement: ItemStack;
+  favor: OfferingFavor;
+  expires_at: string;
+}
+/** GET /my/{name}/offerings — today's rotation + this character's progress. */
+export interface CharacterOfferings {
+  date: string; // UTC date of the rotation
+  expires_at: string; // next reset (midnight UTC)
+  skills: string[]; // the 2 skill categories today (combat is always on)
+  xp_reward_percent: number; // % of the current level's XP requirement per completion
+  offerings: SeasonalOffering[];
+  selected_offerings: SelectedOffering[];
+  completed_categories: string[];
+  active_favors: OfferingFavor[];
+}
+
 export interface Cooldown {
   total_seconds: number;
   remaining_seconds: number;
@@ -244,6 +288,10 @@ export interface ActionResult {
   details?: SkillInfo;
   destination?: GameMap;
   hp_restored?: number;
+  /** offering accept/complete echo the offering, the favor expiry, and (complete) the XP reward */
+  offering?: SeasonalOffering;
+  favor_expires_at?: string;
+  reward?: { category: string; xp: number };
 }
 
 /** Standard paginated GET envelope. */

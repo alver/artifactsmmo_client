@@ -70,13 +70,19 @@ export type QueueItem = { id: string; error?: string } & (
   // the field (work-task rules) → turn it in → repeat. times 0 = forever;
   // `done` counts turn-ins. `gear`/`geared` exactly as in work-task.
   | { kind: "task-loop"; master: "monsters" | "items"; times: number; done: number; gear?: boolean; geared?: string }
+  // Today's seasonal offerings at the Seasonal Altar: accept each category's
+  // offering for the character's level bracket first (its favor boosts the
+  // farming), then get each requirement (bank → favored target → field) and
+  // complete it. A category with no way through is skipped for that UTC day
+  // (`skip`, valid while `day` matches); done when nothing is left today.
+  | { kind: "offering"; day?: string; skip?: string[] }
 );
 
 export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "move", "rest", "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "recycle", "train", "gear", "accept-task", "work-task", "deliver", "turn-in", "task-loop",
+  "buy", "sell", "recycle", "train", "gear", "accept-task", "work-task", "deliver", "turn-in", "task-loop", "offering",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -117,6 +123,7 @@ export function queueItemText(it: QueueItem): string {
     case "deliver": return it.partial ? "Deliver task items from stock" : "Deliver task items";
     case "turn-in": return "Turn in the task";
     case "task-loop": return `Complete ${it.times > 0 ? `${it.times}× ` : "(∞) "}tasks (${it.master})`;
+    case "offering": return "Today's seasonal offerings";
   }
 }
 
@@ -124,5 +131,5 @@ export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
   "train": "🎓", "gear": "🧰", "accept-task": "📜", "work-task": "⚒", "deliver": "🤝", "turn-in": "✅",
-  "task-loop": "🔁",
+  "task-loop": "🔁", "offering": "🛐",
 };

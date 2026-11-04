@@ -5,7 +5,7 @@
 // have to GET state back — we just adopt what the action already told us.
 
 import type { ActionResult, Character } from "../types/api";
-import { bankDetails, bankItems, characters, pushLog, setCharacter } from "./store";
+import { bankDetails, bankItems, characters, offerings, pushLog, setCharacter } from "./store";
 import { mapAt, monster as monsterOf } from "../catalog";
 import { recordFight } from "../sim/validate";
 import { saveState } from "./persist";
@@ -26,6 +26,7 @@ export function applyActionResult(name: string, action: string, data: ActionResu
     // gold moves echo only the new bank gold total as { quantity }
     bankDetails.value = { ...bankDetails.value, gold: data.bank.quantity };
   }
+  if (data.offering) foldOffering(name, action, data);
   // Passive, zero-cost simulator validation: compare the forecast for this fight
   // against what actually happened. Never throws into the action path.
   if (data.fight && prevForFight) {
@@ -40,6 +41,32 @@ export function applyActionResult(name: string, action: string, data: ActionResu
 
   pushLog({ ts: Date.now(), character: name, action, text: summarize(name, action, data), kind: "ok" });
   saveState();
+}
+
+/** Offering accept/complete echo → today's cached offering state (no re-read). */
+function foldOffering(name: string, action: string, data: ActionResult): void {
+  const st = offerings.value[name];
+  const o = data.offering!;
+  if (!st) return; // not loaded yet — the first read will carry it
+  const now = new Date().toISOString();
+  const next =
+    action === "offering/accept"
+      ? {
+          ...st,
+          selected_offerings: [
+            ...st.selected_offerings.filter((s) => s.category !== o.category),
+            { offering_id: o.id, category: o.category, status: "accepted" as const, accepted_at: now, requirement: o.requirement, favor: o.favor, expires_at: data.favor_expires_at ?? st.expires_at },
+          ],
+          active_favors: [...st.active_favors, o.favor],
+        }
+      : {
+          ...st,
+          selected_offerings: st.selected_offerings.map((s) =>
+            s.offering_id === o.id ? { ...s, status: "completed" as const, completed_at: now, reward_xp: data.reward?.xp ?? null } : s,
+          ),
+          completed_categories: [...new Set([...st.completed_categories, o.category])],
+        };
+  offerings.value = { ...offerings.value, [name]: next };
 }
 
 /** Short human-readable summary of an action result, for the activity log. */
@@ -82,5 +109,10 @@ export function summarize(name: string, action: string, data: ActionResult): str
   if (action === "task/cancel") return "cancelled task";
   if (action === "task/trade") return "traded task items";
   if (action.startsWith("claim_item")) return "claimed a pending reward";
+  if (action === "offering/accept" && data.offering) {
+    const f = data.offering.favor;
+    return `accepted ${data.offering.category} offering — favor ×${f.xp_multiplier} xp on ${f.target_code}`;
+  }
+  if (action === "offering") return `completed ${data.reward?.category ?? "an"} offering · +${data.reward?.xp ?? 0} xp`;
   return action;
 }

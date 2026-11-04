@@ -88,6 +88,11 @@ export const taskExchange = (name: string) => act(name, "task/exchange");
 export const taskCancel = (name: string) => act(name, "task/cancel");
 export const taskTrade = (name: string, code: string, quantity: number) => act(name, "task/trade", { code, quantity });
 
+// Seasonal offerings (Seasonal Altar tile). Body { offering_id }. Accept starts
+// the favor; complete hands over the requirement for the XP reward.
+export const acceptOffering = (name: string, id: string) => act(name, "offering/accept", { offering_id: id });
+export const completeOffering = (name: string, id: string) => act(name, "offering", { offering_id: id });
+
 // Claim a pending account reward (achievement payout — see /my/pending_items).
 // The items drop into THIS character's inventory; echoes { cooldown, item,
 // character }, so applyActionResult keeps state current.

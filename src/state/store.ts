@@ -3,7 +3,7 @@
 // "renderCard()" calls (the maintainability pain of the old client).
 
 import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
-import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
+import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, CharacterOfferings, PendingItem } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
 import { devlog } from "../lib/devlog";
@@ -126,7 +126,7 @@ export const mapHover = signal<MapHover | null>(null);
  * Null when nothing is selected (panel hidden).
  */
 export interface PanelTarget {
-  type: "workshop" | "npc" | "bank" | "tasks_master";
+  type: "workshop" | "npc" | "bank" | "tasks_master" | "seasonal_altar";
   code: string;
   x: number;
   y: number;
@@ -214,6 +214,18 @@ export const hiveOpen = signal(false);
 /** Whether the Fleet tab's 🛡 gear-coverage section is expanded. Derives everything
  *  from live signals — nothing to fetch, nothing persisted. */
 export const gearCoverageOpen = signal(false);
+
+/**
+ * Today's seasonal offerings per character (GET /my/{name}/offerings). Read
+ * at most once per character per UTC day — on demand (Fleet ↻, the altar
+ * drawer) or by the `offering` queue item — then kept current from the
+ * accept/complete echoes in apply.ts. Persisted; stale days are dropped.
+ */
+export type CachedOfferings = CharacterOfferings & { fetchedAt: number };
+export const offerings = signal<Record<string, CachedOfferings>>({});
+
+/** Whether the Fleet tab's 🛐 seasonal-offerings section is expanded. */
+export const offeringsOpen = signal(false);
 
 /**
  * Unclaimed account rewards (GET /my/pending_items — achievement payouts wait

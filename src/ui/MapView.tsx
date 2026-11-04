@@ -365,7 +365,8 @@ export function MapView() {
         (content.type === "workshop" ||
           content.type === "npc" ||
           content.type === "bank" ||
-          content.type === "tasks_master")
+          content.type === "tasks_master" ||
+          content.type === "seasonal_altar")
       ) {
         panelTarget.value = { type: content.type, code: content.code, x: hx, y: hy, layer: curLayer };
       } else {

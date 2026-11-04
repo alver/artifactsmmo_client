@@ -5,8 +5,8 @@
 // Static catalogs are NOT persisted here — they ship as files under public/data/
 // and are loaded into memory each boot.
 
-import { account, activeEvents, bankDetails, bankItems, characters, log, pendingRewards, seedLogId, skillPins, syncedAt } from "./store";
-import type { LogEntry } from "./store";
+import { account, activeEvents, bankDetails, bankItems, characters, log, offerings, pendingRewards, seedLogId, skillPins, syncedAt } from "./store";
+import type { CachedOfferings, LogEntry } from "./store";
 import type { Account, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 
 const KEY = "ammo:v1:state";
@@ -24,6 +24,7 @@ interface PersistShape {
   pins?: Record<string, string[]>; // additive — main-skill pins (📌1/📌2)
   events?: ActiveEvent[]; // additive — active map events (expired ones dropped at load)
   pending?: PendingItem[]; // additive — unclaimed rewards (🎁 badge)
+  offerings?: Record<string, CachedOfferings>; // additive — today's seasonal offerings (past days dropped at load)
 }
 
 export function loadPersisted(): void {
@@ -46,6 +47,7 @@ export function loadPersisted(): void {
     else if (s.craftPins) skillPins.value = Object.fromEntries(Object.entries(s.craftPins).map(([n, k]) => [n, [k]]));
     if (s.events) activeEvents.value = s.events.filter((e) => Date.parse(e.expiration) > Date.now());
     if (s.pending) pendingRewards.value = s.pending;
+    if (s.offerings) offerings.value = Object.fromEntries(Object.entries(s.offerings).filter(([, o]) => Date.parse(o.expires_at) > Date.now()));
   } catch {
     /* corrupt cache — start clean */
   }
@@ -69,6 +71,7 @@ export function saveState(): void {
       pins: skillPins.value,
       events: activeEvents.value,
       pending: pendingRewards.value,
+      offerings: offerings.value,
     };
     try {
       localStorage.setItem(KEY, JSON.stringify(s));

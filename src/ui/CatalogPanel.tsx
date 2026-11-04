@@ -14,6 +14,7 @@ import * as actions from "../api/actions";
 import { useActionRunner } from "./useAction";
 import type { ActionRunner } from "./useAction";
 import { CooldownRing } from "./Cooldown";
+import { AltarPanel } from "./OfferingsPanel";
 import type { Character } from "../types/api";
 import type { Item, Npc } from "../types/catalog";
 
@@ -101,28 +102,33 @@ function CatalogBody({ target }: { target: PanelTarget }) {
   const isWorkshop = target.type === "workshop";
   const isBank = target.type === "bank";
   const isTasks = target.type === "tasks_master";
-  const n = isWorkshop || isBank || isTasks ? undefined : npc(target.code);
+  const isAltar = target.type === "seasonal_altar";
+  const n = isWorkshop || isBank || isTasks || isAltar ? undefined : npc(target.code);
   const title = isWorkshop
     ? `${titleCase(target.code)} Workshop`
     : isBank
       ? "Bank"
       : isTasks
         ? "Tasks Master"
-        : (n?.name ?? titleCase(target.code));
+        : isAltar
+          ? "Seasonal Altar"
+          : (n?.name ?? titleCase(target.code));
   const sub = isWorkshop
     ? `Craft items · (${target.x}, ${target.y})`
     : isBank
       ? `Account bank · (${target.x}, ${target.y})`
       : isTasks
         ? `${titleCase(target.code)} tasks · (${target.x}, ${target.y})`
-        : `${titleCase(n?.type ?? "NPC")} · (${target.x}, ${target.y})`;
-  const verb = isWorkshop ? "craft" : isBank ? "deposit or withdraw" : isTasks ? "manage tasks" : "trade";
+        : isAltar
+          ? `Daily offerings · (${target.x}, ${target.y})`
+          : `${titleCase(n?.type ?? "NPC")} · (${target.x}, ${target.y})`;
+  const verb = isWorkshop ? "craft" : isBank ? "deposit or withdraw" : isTasks ? "manage tasks" : isAltar ? "make offerings" : "trade";
 
   return (
     <aside class="catalog-panel">
       <div class="cat-head">
-        {isWorkshop || isBank || isTasks ? (
-          <span class="cat-icon emoji">{isWorkshop ? "🛠️" : isBank ? "🏦" : "📋"}</span>
+        {isWorkshop || isBank || isTasks || isAltar ? (
+          <span class="cat-icon emoji">{isWorkshop ? "🛠️" : isBank ? "🏦" : isAltar ? "🛐" : "📋"}</span>
         ) : (
           <img class="cat-icon" src={asset("npcs", target.code)} alt="" onError={assetFallback("npcs", target.code)} />
         )}
@@ -176,6 +182,8 @@ function CatalogBody({ target }: { target: PanelTarget }) {
           <BankList actor={actor} ctl={ctl} />
         ) : isTasks ? (
           <TasksPanel actor={actor} ctl={ctl} />
+        ) : isAltar ? (
+          <AltarPanel actor={actor} ctl={ctl} />
         ) : (
           <NpcList npc={n} actor={actor} ctl={ctl} />
         )}

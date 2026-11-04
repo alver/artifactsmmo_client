@@ -125,6 +125,8 @@ function renderContent(tile: GameMap) {
       return <Frame emoji="💱" title="Grand Exchange" sub={`Buy & sell with players · ${coords}`} />;
     case "tasks_master":
       return <Frame emoji="📋" title="Tasks Master" sub={`${titleCase(c.code)} tasks · ${coords}`} />;
+    case "seasonal_altar":
+      return <Frame emoji="🛐" title="Seasonal Altar" sub={`Daily offerings · ${coords}`} />;
     default:
       return <Frame emoji="📍" title={titleCase(c.code)} sub={`${titleCase(c.type)} · ${coords}`} />;
   }

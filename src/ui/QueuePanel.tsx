@@ -15,6 +15,7 @@ import { queueItemIcon, queueItemText, withId } from "../plan/queue";
 import { addItem, clearQueue, moveItem, queuePinTraining, queues, removeItem, setRepeat, startQueue, stopQueue, updateItem } from "../state/queue";
 import { PIN_SKILLS, skillPins } from "../state/store";
 import { availableMonsters, availableResources } from "../state/events";
+import { offeringSlots, todayOfferings } from "../state/offerings";
 import type { JSX } from "preact";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
 import type { Character } from "../types/api";
@@ -48,6 +49,7 @@ const ADDABLE: { kind: string; label: string }[] = [
   { kind: "deliver", label: "🤝 Deliver task items (bank stock)" },
   { kind: "turn-in", label: "✅ Turn in the task" },
   { kind: "task-loop", label: "🔁 Complete tasks in a loop ×N (0 = ∞)" },
+  { kind: "offering", label: "🛐 Today's seasonal offerings" },
 ];
 
 export function QueueSection({ ch }: { ch: Character }) {
@@ -152,6 +154,11 @@ export function itemProgress(ch: Character, it: QueueItem): { pct: number | null
       return of(it.done, it.quantity);
     case "work-task":
       return ch.task ? of(ch.task_progress, ch.task_total) : null;
+    case "offering": {
+      const st = todayOfferings(ch.name);
+      const slots = st ? offeringSlots(ch, st).filter((s) => s.status !== "none") : [];
+      return slots.length ? { pct: pct(slots.filter((s) => s.status === "done").length, slots.length), label: `${slots.filter((s) => s.status === "done").length}/${slots.length} today` } : null;
+    }
     case "train": {
       const xp = stat[`${it.skill}_xp`] ?? 0;
       const max = stat[`${it.skill}_max_xp`] ?? 0;
@@ -353,6 +360,7 @@ function AddForm({ ch }: { ch: Character }) {
       case "task-loop": return { kind: "task-loop", master: taskMaster, times: Math.max(0, times), done: 0, gear: true };
       case "deliver": return { kind: "deliver" };
       case "turn-in": return { kind: "turn-in" };
+      case "offering": return { kind: "offering" };
       default: return null;
     }
   };

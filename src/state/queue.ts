@@ -29,10 +29,11 @@ import { CRAFT_TRAIN_SKILLS, characters, pushLog, skillPins } from "./store";
 import { devlog } from "../lib/devlog";
 import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
+import { loadOfferings, offeringSlots, todayOfferings } from "./offerings";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
-import type { Character } from "../types/api";
+import type { Character, OfferingFavor } from "../types/api";
 import type { CraftRecipe, DropRate, Monster, Resource } from "../types/catalog";
 
 export interface QueueState {
@@ -175,10 +176,11 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
     // spin forever.
     : it.kind === "withdraw" || it.kind === "sell" || it.kind === "recycle" ? [it.code]
     : it.kind === "train" ? trainKeep(ch, it)
+    : it.kind === "offering" ? offeringKeep(ch, it)
     : undefined;
   // Carried between-fight food is working stock too — a loot bank-off or the
   // job-start gear reset must not stash the fighter's rations.
-  if (it.kind === "fight" || it.kind === "work-task" || it.kind === "task-loop" || (it.kind === "gear" && it.job?.kind === "fight")) {
+  if (it.kind === "fight" || it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight")) {
     const food = foodInHand(ch)?.code;
     if (food) return [...(base ?? []), food];
   }
@@ -188,13 +190,14 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
 function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
   // Persisted queues from before food became a boolean may carry an old
   // FoodSpec object here — any non-false value means "keep fed".
-  const fed = it.kind === "fight" ? it.food !== false : it.kind === "work-task" || it.kind === "task-loop" ? true : undefined;
+  const fed = it.kind === "fight" ? it.food !== false : it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" ? true : undefined;
   return {
     keep: keepOf(it, ch),
     food: fed,
     fightsLeft:
       it.kind === "fight" ? (it.times > 0 ? Math.max(1, it.times - it.done) : 50)
       : it.kind === "work-task" || it.kind === "task-loop" ? Math.max(1, ch.task_total - ch.task_progress)
+      : it.kind === "offering" ? 20 // a handful of drops — sizes one food restock
       : undefined,
     note: (text) => setQueue(name, { note: text }),
   };
@@ -436,6 +439,8 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     }
     case "work-task":
       return runWorkTask(name, ch, it, ctx);
+    case "offering":
+      return runOffering(name, ch, it, ctx);
     case "task-loop": {
       // accept → work → turn in, repeated. One completed task = one `done`.
       if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
@@ -896,6 +901,181 @@ async function runWorkTask(
   if (held > 0) return handOver(name, ch, it, ctx);
   await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note);
   return false;
+}
+
+// ── offering: today's seasonal offerings at the Seasonal Altar ───────────────
+
+type OfferingItem = Extract<QueueItem, { kind: "offering" }>;
+
+/** After the offerings read answered 575 (no rotation — season over?): no re-read per tick. */
+const offeringsUnavailable = new Map<string, number>();
+
+/** Categories this item still works today (accepted or open, not skipped). */
+function offeringWork(ch: Character, it: OfferingItem) {
+  const st = todayOfferings(ch.name);
+  if (!st) return { st, work: [] };
+  const skip = it.day === st.date ? (it.skip ?? []) : [];
+  return { st, skip, work: offeringSlots(ch, st).filter((s) => (s.status === "accepted" || s.status === "open") && !skip.includes(s.category)) };
+}
+
+/** Working stock: every owed requirement and its recipe tree (two levels, as obtainOffering goes). */
+function offeringKeep(ch: Character, it: OfferingItem): string[] {
+  const out: string[] = [];
+  const add = (code: string, depth: number): void => {
+    out.push(code);
+    if (depth > 0) for (const g of itemOf(code)?.craft?.items ?? []) add(g.code, depth - 1);
+  };
+  for (const s of offeringWork(ch, it).work) if (s.requirement) add(s.requirement.code, 2);
+  return out;
+}
+
+/** The favored target, when it yields `code` and the character can work it (×1.5 drops/xp there). */
+function favorSource(ch: Character, code: string, f?: OfferingFavor): FieldSource | undefined {
+  if (f?.target_type === "monster") {
+    const mon = monsterOf(f.target_code);
+    return mon?.drops.some((d) => d.code === code) ? { how: "fight", mon } : undefined;
+  }
+  if (f?.target_type === "resource") {
+    const res = resourceOf(f.target_code);
+    return res?.drops.some((d) => d.code === code) && skillLevel(ch, res.skill) >= res.level ? { how: "gather", res } : undefined;
+  }
+  const recipe = f?.target_code === code ? itemOf(code)?.craft : undefined;
+  return recipe && skillLevel(ch, recipe.skill) >= recipe.level ? { how: "craft", recipe } : undefined;
+}
+
+/**
+ * One action toward `need` more `code` in the bag: bank stock (unless
+ * `useBank` is off — a craft offering crafts its own product; banked gear is
+ * the fleet's), else the favored target, else the usual field source —
+ * gather, fight, or a craft whose short ingredient is sourced the same way
+ * up to `depth` levels down. "dead" ⇒ no way to get it right now.
+ */
+async function obtainOffering(
+  name: string,
+  ch: Character,
+  code: string,
+  need: number,
+  ctx: StepCtx,
+  favor: OfferingFavor | undefined,
+  depth: number,
+  useBank: boolean,
+): Promise<"acted" | "dead"> {
+  const banked = useBank ? bankQty(code) : 0;
+  if (banked > 0) {
+    if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return "acted"; }
+    const bank = nearestBank(ch.x, ch.y);
+    if (!bank) return "dead";
+    await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(need, banked, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
+    return "acted";
+  }
+  const src = favorSource(ch, code, favor) ?? fieldSource(ch, code);
+  if (!src) return "dead";
+  if (src.how === "craft") {
+    const r = src.recipe;
+    const runs = Math.ceil(need / Math.max(1, r.quantity));
+    const can = craftableTimes(ch, code, need);
+    // Everything in hand — or a full bag holding at least one run (stage it through).
+    if (can >= runs || (can > 0 && freeSpace(ch) === 0)) {
+      const t = nearest("workshop", r.skill, ch.x, ch.y);
+      if (!t) return "dead";
+      ctx.note(`offering: craft ${itemName(code)}`);
+      await runStep(name, ch, { kind: "craft", code, quantity: need, skill: r.skill, level: 0, x: t.x, y: t.y }, ctx);
+      return "acted";
+    }
+    if (depth <= 0) return "dead";
+    const short = r.items.find((g) => invQty(ch, g.code) < g.quantity * runs)!;
+    return obtainOffering(name, ch, short.code, short.quantity * runs - invQty(ch, short.code), ctx, undefined, depth - 1, true);
+  }
+  const have = invQty(ch, code);
+  if (src.how === "gather") {
+    const tile = nearest("resource", src.res.code, ch.x, ch.y);
+    if (!tile) return "dead";
+    const desired = desiredForJob(name, ch, { kind: "gather", skill: src.res.skill });
+    if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return "acted";
+    ctx.note(`offering: gather ${itemName(code)} ${have}/${have + need}`);
+    await runStep(name, ch, { kind: "gather", code, quantity: need, resource: src.res.code, level: 0, x: tile.x, y: tile.y }, ctx);
+    return "acted";
+  }
+  const tile = nearest("monster", src.mon.code, ch.x, ch.y);
+  if (!tile) return "dead";
+  const desired = desiredForJob(name, ch, { kind: "fight", monster: src.mon.code });
+  if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return "acted";
+  if (desired && (await provisionPotions(name, ch, desired, ctx)) === "acted") return "acted";
+  ctx.note(`offering: hunt ${src.mon.name} for ${itemName(code)} ${have}/${have + need}`);
+  const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
+  if (out === "no-win") return "dead";
+  if (out === "gave-up") throw new Error("lost 2 fights in a row");
+  if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+  return "acted";
+}
+
+/**
+ * One action of the offering item. Order: read today's state (once a day) →
+ * at the altar, complete what the bag covers, accept every open category →
+ * get the first owed requirement → back to the altar. Dead ends skip the
+ * category for the day instead of pausing, so a daily 🔁 item never wedges.
+ */
+async function runOffering(name: string, ch: Character, it: OfferingItem, ctx: StepCtx): Promise<boolean> {
+  const { st, skip, work } = offeringWork(ch, it);
+  if (!st) {
+    if ((offeringsUnavailable.get(name) ?? 0) > Date.now()) return skipItem(name, it, "no seasonal offerings right now");
+    ctx.note("reading today's offerings");
+    try {
+      await loadOfferings(name);
+    } catch (e) {
+      // runLoop treats every code ≥ 500 as an outage and retries forever — 575 is the game saying "none today".
+      if (e instanceof ApiError && e.code === 575) {
+        offeringsUnavailable.set(name, Date.now() + 3_600_000);
+        return skipItem(name, it, "no seasonal offerings right now");
+      }
+      throw e;
+    }
+    return false;
+  }
+  const skipCategory = (category: string, why: string): false => {
+    patchItem(name, it.id, { day: st.date, skip: [...(skip ?? []), category] });
+    log(name, `skipped today's ${category} offering — ${why}`, "bad");
+    return false;
+  };
+
+  if (!work.length) {
+    // Done for today. Alone on a 🔁 queue, hold for the next rotation instead of spinning the loop.
+    const q = queues.value[name];
+    if (q?.repeat && q.items.length === 1) {
+      ctx.note(`today's offerings done — next rotation at ${new Date(st.expires_at).toLocaleTimeString()}`);
+      for (let i = 0; i < 60 && !stopFlags.has(name); i++) await sleep(1000);
+      return false;
+    }
+    return true;
+  }
+
+  const ready = work.find((s) => s.status === "accepted" && invQty(ch, s.requirement!.code) >= s.requirement!.quantity);
+  const next = ready ?? work.find((s) => s.status === "open");
+  if (next) {
+    const altar = nearest("seasonal_altar", null, ch.x, ch.y);
+    if (!altar) return skipItem(name, it, "no seasonal altar on the map");
+    if (ch.x !== altar.x || ch.y !== altar.y) { ctx.note("→ seasonal altar"); await moveTo(name, altar.x, altar.y); return false; }
+    ctx.note(`${ready ? "complete" : "accept"} the ${next.category} offering`);
+    try {
+      await step(name, () => (ready ? actions.completeOffering(name, next.id!) : actions.acceptOffering(name, next.id!)));
+    } catch (e) {
+      if (!(e instanceof ApiError)) throw e;
+      if (e.code === 575) return skipCategory(next.category, "not available for this character");
+      // 574 already completed / 576 already chosen / 577 not accepted yet: the cached day is stale — re-read it.
+      if (e.code === 574 || e.code === 576 || e.code === 577) { await loadOfferings(name); return false; }
+      if (e.code === 598) throw new Error(e.message); // a game code, not an outage — pause, don't retry forever
+      throw e;
+    }
+    if (ready) log(name, `${next.category} offering completed`, "ok");
+    return false;
+  }
+
+  // Everything left is accepted and owes its requirement — work the first one.
+  const s = work[0];
+  const req = s.requirement!;
+  const need = req.quantity - invQty(ch, req.code);
+  const r = await obtainOffering(name, ch, req.code, need, ctx, s.favor, 2, s.favor?.target_type !== "craft");
+  return r === "dead" ? skipCategory(s.category, `no way to get ${need}× ${itemName(req.code)}`) : false;
 }
 
 // Dev forensics: last head-item id per character, to log head transitions once.
