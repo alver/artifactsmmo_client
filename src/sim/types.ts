@@ -16,8 +16,6 @@ export interface EffectiveStats {
   initiative: number;
   wisdom: number;
   prospecting: number;
-  // gathering cooldown reductions (%), for the non-combat BIS objective
-  mining: number; woodcutting: number; fishing: number; alchemy: number;
 }
 
 /** A combat effect (rune / utility / consumable) carried into a fight. */
@@ -38,7 +36,6 @@ export const STAT_KEYS: (keyof EffectiveStats)[] = [
   "dmg", "dmg_fire", "dmg_earth", "dmg_water", "dmg_air",
   "res_fire", "res_earth", "res_water", "res_air",
   "critical_strike", "haste", "initiative", "wisdom", "prospecting",
-  "mining", "woodcutting", "fishing", "alchemy",
 ];
 
 /** Effect codes that map 1:1 onto a stat-block field (always-on equipment stats). */
@@ -54,7 +51,8 @@ export function zeroStats(): EffectiveStats {
 export function isConsumableEffect(code: string): boolean {
   return (
     code === "heal" || code === "gold" || code === "teleport" || code === "gems" ||
-    code === "inventory_space" || code === "threat"
+    code === "inventory_space" || code === "threat" ||
+    code.endsWith("_gathering") || code.endsWith("_crafting") // season 9 tool/artifact time reductions
   );
 }
 

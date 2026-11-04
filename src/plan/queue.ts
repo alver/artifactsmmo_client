@@ -100,7 +100,7 @@ export function queueItemText(it: QueueItem): string {
           : it.job.kind === "gather"
             ? `equip for ${titleCase(it.job.skill)}`
             : it.job.kind === "craft"
-              ? "equip for crafting"
+              ? `equip for ${it.job.skill ? `${titleCase(it.job.skill)} ` : ""}crafting`
               : "equip job gear"
         : "equip job gear";
       return it.reset ? `Bank reset + ${what}` : what.charAt(0).toUpperCase() + what.slice(1);

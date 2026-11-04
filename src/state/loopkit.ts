@@ -58,12 +58,12 @@ export async function moveTo(name: string, x: number, y: number): Promise<void> 
  * Manhattan distance. Active event tiles count too — a queued fight/gather can
  * target an event monster/resource while its event runs.
  */
-export function nearest(type: string, code: string | null, x: number, y: number): GameMap | undefined {
+export function nearest(type: string, code: string | null, x: number, y: number, ok?: (m: GameMap) => boolean): GameMap | undefined {
   let best: GameMap | undefined;
   let bestD = Infinity;
   const consider = (m: GameMap) => {
     const c = m.interactions?.content;
-    if (!c || c.type !== type || (code != null && c.code !== code)) return;
+    if (!c || c.type !== type || (code != null && c.code !== code) || (ok && !ok(m))) return;
     const d = Math.abs(m.x - x) + Math.abs(m.y - y);
     if (d < bestD) {
       bestD = d;
@@ -75,7 +75,10 @@ export function nearest(type: string, code: string | null, x: number, y: number)
   return best;
 }
 
-export const nearestBank = (x: number, y: number): GameMap | undefined => nearest("bank", null, x, y);
+/** Nearest bank, never an achievement-gated one (season 9: the Sandwhisper Isle bank — also only
+ *  reachable by boat): Manhattan distance alone sends mainland dryad/imp/spider work there. */
+export const nearestBank = (x: number, y: number): GameMap | undefined =>
+  nearest("bank", null, x, y, (m) => m.access?.type !== "conditional");
 
 export const isInventoryFull = (e: unknown): boolean =>
   e instanceof ApiError && (e.code === 497 || /inventor/i.test(e.message));

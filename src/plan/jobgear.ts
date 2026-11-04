@@ -192,20 +192,21 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
     }
   }
 
-  // Gathering tool: the weapon slot is scored by cooldown reduction instead
-  // (tools carry a negative `<skill>` effect; most negative = fastest).
-  // Deterministic ties (highest item level — best in class — then worn, then
-  // code) — map order moves with the swap's own actions and must never decide
-  // the winner.
+  // Tool: the weapon slot is scored by time reduction instead (tools carry a
+  // negative `<skill>_gathering` / `<skill>_crafting` effect; most negative =
+  // fastest). Deterministic ties (highest item level — best in class — then
+  // worn, then code) — map order moves with the swap's own actions and must
+  // never decide the winner.
   let tool = "";
-  if (job.kind === "gather") {
+  const toolEffect = job.kind === "gather" ? `${job.skill}_gathering` : job.kind === "craft" && job.skill ? `${job.skill}_crafting` : "";
+  if (toolEffect) {
     const wornWeapon = slotCode(ch, "weapon");
     const lvl = (code: string): number => item(code)?.level ?? 0;
     let bestVal = 0;
     for (const code of [...qty.keys()].sort((a, b) => lvl(b) - lvl(a) || (a === wornWeapon ? -1 : b === wornWeapon ? 1 : 0) || a.localeCompare(b))) {
       const it = item(code);
       if (!it || it.subtype !== "tool" || !canEquip(ch, it)) continue;
-      const v = -effectValue(it, job.skill);
+      const v = -effectValue(it, toolEffect);
       if (v > bestVal) {
         bestVal = v;
         tool = code;

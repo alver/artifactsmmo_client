@@ -14,6 +14,8 @@ npm run build      # production build → dist/  (BASE_PATH env var sets Vite `b
 npm run preview    # serve the production build
 npm run typecheck  # tsc --noEmit
 npm run assets     # bash scripts/download-assets.sh — re-download public/assets/ icons+tiles
+node scripts/fetch-data.mjs       # new season: re-snapshot public/data/*.json from the live API
+node scripts/fetch-map-assets.mjs # then fetch new map tiles (+ npm run assets for new icons)
 ```
 
 There is **no test runner** in this project. Use `npm run typecheck` as the correctness gate; CI runs it before every deploy. The app sits behind a token-entry gate, so behavior usually can't be verified headlessly — rely on typecheck + the production build (`npm run build`) succeeding.

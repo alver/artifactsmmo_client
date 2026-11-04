@@ -6,7 +6,7 @@
 // 4 Hz `now` clock — see the cooldown-clock invariant in store.ts.
 
 import { useState } from "preact/hooks";
-import { armTilePick, bankItems, tilePick } from "../state/store";
+import { armTilePick, bankItems, CRAFT_TRAIN_SKILLS, tilePick } from "../state/store";
 import { npcForSell } from "../plan/acquire";
 import { catalog, item as itemOf, itemName } from "../catalog";
 import { titleCase } from "../lib/util";
@@ -280,7 +280,7 @@ function AddForm({ ch }: { ch: Character }) {
           const monster = code || monsters[0]?.code;
           return monster ? { kind: "gear", job: { kind: "fight", monster }, reset } : null;
         }
-        if (gearJob === "craft") return { kind: "gear", job: { kind: "craft" }, reset };
+        if (gearJob.startsWith("craft:")) return { kind: "gear", job: { kind: "craft", skill: gearJob.slice(6) }, reset };
         return { kind: "gear", job: { kind: "gather", skill: gearJob }, reset };
       }
       case "accept-task": return { kind: "accept-task", master: taskMaster };
@@ -420,7 +420,9 @@ function AddForm({ ch }: { ch: Character }) {
             <option value="woodcutting">Woodcutting</option>
             <option value="fishing">Fishing</option>
             <option value="alchemy">Alchemy (gathering)</option>
-            <option value="craft">Crafting (wisdom)</option>
+            {[...CRAFT_TRAIN_SKILLS, ["alchemy", "Alchemy"]].map(([k, label]) => (
+              <option key={k} value={`craft:${k}`}>{label} (crafting)</option>
+            ))}
           </select>
           {gearJob === "fight" && (
             <select class="cp-refine-select" value={code || monsters[0]?.code || ""} onChange={(e) => setCode(sel(e))}>
