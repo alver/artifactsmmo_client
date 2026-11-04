@@ -12,12 +12,15 @@ import {
   hive,
   hiveProposals,
   launchHive,
+  queueGoal,
   refreshProposals,
   retryAssignment,
   skipAssignment,
   stopHive,
   takeoverPreview,
+  toggleHiveAuto,
   toggleHiveManual,
+  unqueueGoal,
   type HiveAssignmentState,
   type HiveRun,
   type LiveAssignmentStatus,
@@ -89,18 +92,18 @@ export function HiveDrawer() {
             <div class="ach-title">🐝 Hive</div>
             <div class="ach-sub">{run ? "working an account goal" : "one goal, every character on it"}</div>
           </div>
-          {!run && (
-            <button class="ach-btn" title="Recompute candidate goals" onClick={refreshProposals}>
-              ↻ Propose
-            </button>
-          )}
+          <button class="ach-btn" title="Recompute candidate goals" onClick={refreshProposals}>
+            ↻ Propose
+          </button>
           <button class="cat-close" title="Close" onClick={close}>
             ✕
           </button>
         </header>
         <ManualRow />
         <div class="ach-body">
-          {run ? <RunView run={run} /> : <ProposalsView />}
+          {run && <RunView run={run} />}
+          <ProposalsView />
+          <BacklogView />
           <HistoryView />
         </div>
       </aside>
@@ -108,9 +111,11 @@ export function HiveDrawer() {
   );
 }
 
-/** Per-character manual opt-out toggles (opted-out queues are never touched). */
+/** Per-character manual opt-out toggles (opted-out queues are never touched)
+ *  and the ⟳ continuous switch. */
 function ManualRow() {
   const manual = new Set(hive.value.manual);
+  const auto = hive.value.auto;
   return (
     <div class="hive-manual">
       <span class="muted">participants:</span>
@@ -124,6 +129,17 @@ function ManualRow() {
           {manual.has(c.name) ? "✋" : "🐝"} {c.name}
         </button>
       ))}
+      <button
+        class={"hive-chip toggle" + (auto ? "" : " off")}
+        title={
+          auto
+            ? "Continuous — when a goal ends, the next queued goal (else the best proposal) launches itself. Click to switch off."
+            : "Click for continuous mode: the fleet moves on to the next queued goal, else the best proposal, by itself"
+        }
+        onClick={toggleHiveAuto}
+      >
+        ⟳ continuous
+      </button>
     </div>
   );
 }
@@ -195,10 +211,11 @@ function ProposalsView() {
   const launch = () => {
     if (!sel) return;
     const takeover = takeoverPreview();
+    const replacing = hive.value.run ? `This abandons the running goal (${hive.value.run.label}).\n` : "";
     if (
-      takeover.length &&
+      (takeover.length || replacing) &&
       !confirm(
-        `Launching stops and clears these queues:\n${takeover
+        `${replacing}Launching stops and clears these queues:\n${takeover
           .map((t) => `  ${t.name} — ${t.items} item${t.items === 1 ? "" : "s"}${t.running ? ", running" : ""}`)
           .join("\n")}\nContinue?`,
       )
@@ -206,6 +223,11 @@ function ProposalsView() {
       return;
     }
     launchHive(sel.g, sel.plan);
+    setSel(null);
+  };
+  const queue = () => {
+    if (!sel) return;
+    queueGoal(sel.g);
     setSel(null);
   };
 
@@ -290,12 +312,12 @@ function ProposalsView() {
           )}
         </div>
       ))}
-      {sel && <PlanPreview plan={sel.plan} onLaunch={launch} />}
+      {sel && <PlanPreview plan={sel.plan} onLaunch={launch} onQueue={queue} />}
     </>
   );
 }
 
-function PlanPreview({ plan, onLaunch }: { plan: HivePlan; onLaunch: () => void }) {
+function PlanPreview({ plan, onLaunch, onQueue }: { plan: HivePlan; onLaunch: () => void; onQueue: () => void }) {
   return (
     <div class="hive-preview">
       <div class="hive-preview-title">{plan.summary}</div>
@@ -323,12 +345,21 @@ function PlanPreview({ plan, onLaunch }: { plan: HivePlan; onLaunch: () => void 
       </div>
       <button class="ach-btn hive-launch" disabled={plan.waves.length === 0} onClick={onLaunch}>
         🚀 Launch
+      </button>{" "}
+      <button
+        class="ach-btn"
+        title={hive.value.run ? "Run it after the current goal" : "Queue it — launches now, keeping anything you queued by hand"}
+        disabled={plan.waves.length === 0}
+        onClick={onQueue}
+      >
+        ＋ Queue
       </button>
     </div>
   );
 }
 
 function RunView({ run }: { run: HiveRun }) {
+  const next = hive.value.backlog[0]?.label;
   return (
     <>
       <div class="hive-goal">
@@ -337,6 +368,7 @@ function RunView({ run }: { run: HiveRun }) {
           wave {run.waveSeq + 1}
           {run.status === "verifying" ? " · verifying goal…" : ""}
           {run.preview.length > 0 ? ` · next: ${run.preview.join(" → ")}` : ""}
+          {next ? ` · then: ${next}` : hive.value.auto ? " · then: the best proposal (continuous)" : ""}
         </div>
       </div>
       {run.wave && (
@@ -382,6 +414,28 @@ function AssignmentRow({ a }: { a: HiveAssignmentState }) {
           </button>
         </span>
       )}
+    </div>
+  );
+}
+
+/** Goals queued for after the current one, in launch order. */
+function BacklogView() {
+  const backlog = hive.value.backlog;
+  if (backlog.length === 0) return null;
+  return (
+    <div class="hive-history">
+      <div class="hive-wave-label">Queued next</div>
+      {backlog.map((b, i) => (
+        <div key={i} class="hive-assign">
+          <span class="hive-assign-who">{i + 1}.</span>
+          <span class="hive-assign-what">{b.label}</span>
+          <span class="hive-assign-actions">
+            <button class="ach-btn" title="Remove from the backlog" onClick={() => unqueueGoal(i)}>
+              ✕
+            </button>
+          </span>
+        </div>
+      ))}
     </div>
   );
 }

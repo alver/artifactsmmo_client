@@ -97,6 +97,11 @@ export interface HiveState {
   /** Per-character manual opt-out (these queues are never touched). */
   manual: string[];
   history: HiveHistoryEntry[];
+  /** Continuous mode: when a goal runs out, launch the next backlog goal,
+   *  else the best launchable proposal — the fleet never waits for a click. */
+  auto: boolean;
+  /** User-queued goals, launched in order as each goal ends (JSON — see types.ts). */
+  backlog: { goal: AccountGoal; label: string }[];
 }
 
 // ── persistence (the runner pattern: hydrate BEFORE the persisting effect) ──
@@ -107,10 +112,10 @@ const SCHEMA = 1;
 function loadStored(): HiveState {
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) || "null") as (HiveState & { schema?: number }) | null;
-    if (!s || s.schema !== SCHEMA) return { run: null, manual: [], history: [] };
-    return { run: s.run ?? null, manual: s.manual ?? [], history: s.history ?? [] };
+    if (!s || s.schema !== SCHEMA) return { run: null, manual: [], history: [], auto: false, backlog: [] };
+    return { run: s.run ?? null, manual: s.manual ?? [], history: s.history ?? [], auto: !!s.auto, backlog: s.backlog ?? [] };
   } catch {
-    return { run: null, manual: [], history: [] };
+    return { run: null, manual: [], history: [], auto: false, backlog: [] };
   }
 }
 
@@ -562,11 +567,72 @@ function finish(outcome: HiveHistoryEntry["outcome"]): void {
     history: [...st.history, { label: run.label, startedAt: run.startedAt, endedAt: Date.now(), outcome }].slice(-20),
   };
   log(`goal ${outcome} — ${run.label}`, outcome === "done" ? "ok" : outcome === "incomplete" ? "bad" : "info");
-  // Stop (⏹) still means stop — only a goal that RAN OUT hands the fleet over.
-  if (outcome !== "abandoned") handOffToTasks();
-  // Propose the next move (never auto-launch). Deferred: proposeGoals runs a
-  // cold BIS sweep (~seconds) and must not stall the completion paint.
-  if (outcome !== "abandoned") setTimeout(refreshProposals, 100);
+  // Stop (⏹) still means stop — only a goal that RAN OUT moves the fleet on.
+  // Deferred: proposeGoals is a cold BIS sweep (~seconds) and must not stall
+  // the completion paint.
+  if (outcome !== "abandoned") setTimeout(moveOn, 100);
+}
+
+/**
+ * After a goal ran out: launch the next backlog goal, else (continuous mode)
+ * the best launchable proposal, else hand the fleet to task loops. An
+ * auto-launch keeps user items on participants' queues (the hive appends
+ * behind them) — only the manual Launch, behind its confirm, clears.
+ */
+function moveOn(): void {
+  if (hive.value.run) return; // the user launched something meanwhile
+  const next = nextGoal();
+  if (next) {
+    launchHive(next.picked, next.plan, { keepUserItems: true });
+    return;
+  }
+  handOffToTasks();
+  refreshProposals();
+}
+
+/** Backlog head first (unlaunchable entries are dropped with a log line);
+ *  then, in continuous mode, the top proposal that compiles — minus labels
+ *  that recently ended `incomplete`, so a stalling goal can't relaunch itself
+ *  in a loop. Exported for the verify probe (pure apart from the backlog pop). */
+export function nextGoal(): { picked: { goal: AccountGoal; label: string }; plan: HivePlan } | undefined {
+  const ctx = buildHiveCtx();
+  while (hive.value.backlog.length > 0) {
+    const [picked, ...rest] = hive.value.backlog;
+    hive.value = { ...hive.value, backlog: rest };
+    const plan = compileGoal(picked.goal, ctx);
+    if (plan.waves.length > 0) return { picked, plan };
+    log(`backlog: ${picked.label} skipped — ${plan.blockers[0]?.reason ?? plan.summary}`);
+  }
+  if (!hive.value.auto) return undefined;
+  const failed = new Set(hive.value.history.slice(-5).filter((h) => h.outcome === "incomplete").map((h) => h.label));
+  const proposals = proposeGoals(ctx);
+  hiveProposals.value = proposals;
+  for (const g of proposals) {
+    if (failed.has(g.label)) continue;
+    const plan = compileGoal(g.goal, ctx);
+    if (plan.waves.length > 0) return { picked: g, plan };
+  }
+  log("continuous: nothing launchable right now — the fleet runs task loops");
+  return undefined;
+}
+
+/** ⟳ Continuous mode. Switched on while idle, the fleet moves on right away. */
+export function toggleHiveAuto(): void {
+  const on = !hive.value.auto;
+  hive.value = { ...hive.value, auto: on };
+  log(`continuous mode ${on ? "on — when a goal ends, the next one launches itself" : "off"}`);
+  if (on && !hive.value.run) setTimeout(moveOn, 100);
+}
+
+/** ＋ Queue a goal for after the current one (launches now when idle). */
+export function queueGoal(picked: { goal: AccountGoal; label: string }): void {
+  hive.value = { ...hive.value, backlog: [...hive.value.backlog, { goal: picked.goal, label: picked.label }] };
+  log(`queued — ${picked.label}`);
+  if (!hive.value.run) setTimeout(moveOn, 100);
+}
+
+export function unqueueGoal(index: number): void {
+  hive.value = { ...hive.value, backlog: hive.value.backlog.filter((_, i) => i !== index) };
 }
 
 // ── user actions ─────────────────────────────────────────────────────────────
@@ -586,8 +652,14 @@ export function takeoverPreview(): { name: string; items: number; running: boole
 /**
  * Take over the participants' queues and start the plan. The UI compiles at
  * selection time and passes that exact plan — what was previewed is what runs.
+ * `keepUserItems` (auto-launch, nobody confirmed a takeover): only hive
+ * leftovers are pulled; user items stay and the new wave appends behind them.
  */
-export function launchHive(picked: ScoredGoal, plan: HivePlan): void {
+export function launchHive(
+  picked: { goal: AccountGoal; label: string },
+  plan: HivePlan,
+  opts: { keepUserItems?: boolean } = {},
+): void {
   const first = plan.waves[0];
   if (!first) throw new Error("plan has no executable wave");
   for (const a of plan.waves.flatMap((w) => w.assignments)) {
@@ -602,7 +674,9 @@ export function launchHive(picked: ScoredGoal, plan: HivePlan): void {
       const q = queues.value[c.name];
       if (!q) continue;
       if (q.running) stopQueue(c.name); // persists running:false immediately…
-      if (q.items.length) clearQueue(c.name); // …so the clear is allowed in the same turn
+      if (opts.keepUserItems) {
+        for (const it of q.items) if (isHiveItemId(it.id)) removeItem(c.name, it.id);
+      } else if (q.items.length) clearQueue(c.name); // …so the clear is allowed in the same turn
     }
     hive.value = {
       ...hive.value,
@@ -624,12 +698,13 @@ export function launchHive(picked: ScoredGoal, plan: HivePlan): void {
   // wave 0 dispatches on the tick the hive write just scheduled
 }
 
-/** ⏹ Make-stop-stick: persist the stop FIRST, then unwind the queues. */
+/** ⏹ Make-stop-stick: persist the stop FIRST, then unwind the queues. Stop
+ *  means stop — continuous mode goes off with it. */
 export function stopHive(): void {
   const st = hive.value;
   const run = st.run;
   if (!run) return;
-  if (run.status !== "stopped") hive.value = { ...st, run: { ...run, status: "stopped" } };
+  if (run.status !== "stopped") hive.value = { ...st, run: { ...run, status: "stopped" }, auto: false };
   unwindStop();
 }
 
