@@ -631,15 +631,11 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
     await step(name, () => actions.recycle(name, code, made));
     return false;
   }
-  // 2. Batch: half a bag of materials; a non-renewable (bank-only) ingredient
-  //    caps it at what bag + bank hold.
+  // 2. Batch: half a bag of the recipe's DIRECT materials (6 bars per axe, not
+  //    60 ore — sourceOne stages a sub-craft through the other half); a
+  //    non-renewable (bank-only) ingredient caps it at what bag + bank hold.
   const per = Math.max(1, recipe.quantity);
-  // A sub-crafted ingredient weighs its own materials (6 bars = 60 ore).
-  const matsPerRun = Math.max(1, recipe.items.reduce((s, g) => {
-    const src = fieldSource(ch, g.code);
-    const sub = src?.how === "craft" ? src.recipe : undefined;
-    return s + (sub ? (g.quantity / Math.max(1, sub.quantity)) * sub.items.reduce((t, x) => t + x.quantity, 0) : g.quantity);
-  }, 0));
+  const matsPerRun = Math.max(1, recipe.items.reduce((s, g) => s + g.quantity, 0));
   let runs = Math.max(1, Math.floor(ch.inventory_max_items / 2 / matsPerRun));
   for (const g of recipe.items) if (!renewable(ch, g.code)) runs = Math.min(runs, Math.floor((invQty(ch, g.code) + bankQty(g.code)) / g.quantity));
   runs = Math.max(1, runs);
@@ -653,8 +649,13 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
     await runStep(name, ch, { kind: "craft", code, quantity: can * per, skill: recipe.skill, level: 0, x: t.x, y: t.y }, ctx);
     return false;
   }
-  // 4. Source the first short ingredient (a full bag of other stuff banks off first).
-  if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return false; }
+  // 4. Source the first short ingredient (a full bag of other stuff banks off
+  //    first; a bag full of our own staged materials goes on to the sub-craft).
+  const keep = new Set(ctx.keep ?? []);
+  if (freeSpace(ch) === 0 && (ch.inventory ?? []).some((s) => s.code && s.quantity > 0 && !keep.has(s.code))) {
+    await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note);
+    return false;
+  }
   const short = recipe.items.find((g) => invQty(ch, g.code) < g.quantity * runs)!;
   return sourceOne(name, ch, it, short.code, short.quantity * runs - invQty(ch, short.code), ctx, true);
 }
@@ -671,10 +672,10 @@ async function sourceOne(
   deep: boolean,
 ): Promise<boolean> {
   const banked = bankQty(code);
-  if (banked > 0) {
+  if (banked > 0 && freeSpace(ch) > 0) {
     const bank = nearestBank(ch.x, ch.y);
     if (!bank) return skipItem(name, it, "no bank on the map");
-    await runStep(name, ch, { kind: "withdraw", code, quantity: Math.max(1, Math.min(need, banked, freeSpace(ch))), x: bank.x, y: bank.y }, ctx);
+    await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(need, banked, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
     return false;
   }
   const src = fieldSource(ch, code);
@@ -688,7 +689,11 @@ async function sourceOne(
   }
   if (src?.how === "craft" && deep) {
     const sub = src.recipe;
-    const runs = Math.ceil(need / Math.max(1, sub.quantity));
+    // Stage through the bag: only as many sub-runs as their missing raw
+    // materials fit in free space (48 bars = 480 ore arrive a bagful at a time).
+    let runs = Math.ceil(need / Math.max(1, sub.quantity));
+    const missing = (r: number): number => sub.items.reduce((t, g) => t + Math.max(0, g.quantity * r - invQty(ch, g.code)), 0);
+    while (runs > 1 && missing(runs) > freeSpace(ch)) runs--;
     const can = craftableTimes(ch, code, need);
     if (can >= runs || (can > 0 && freeSpace(ch) === 0)) {
       const t = nearest("workshop", sub.skill, ch.x, ch.y);
