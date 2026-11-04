@@ -26,12 +26,17 @@
 // items task-loop as a plain user-owned queue item. Stop (⏹) still means stop.
 
 import { batch, effect, signal } from "@preact/signals";
-import { addItem, queues, removeItem, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
+import { addItem, patchItem, queues, removeItem, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
 import { achievements, bankDetails, bankItems, characterList, craftSkillPins, pushLog } from "./store";
 import { compileGoal, fillerItems, goalSatisfied, needsAchievements, proposeGoals } from "../plan/hive";
 import type { AccountGoal, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "../plan/hive";
-import { withId } from "../plan/queue";
+import { SPLIT_ACTIONS } from "../plan/hive/acquire";
+import { fleetBis, skillLevel } from "../plan/hive/ctx";
+import { actionsPerTask } from "../plan/hive/tasks";
+import { item, resource } from "../catalog";
+import { queueItemText, withId } from "../plan/queue";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
+import type { Character } from "../types/api";
 
 export interface HiveAssignmentState {
   character: string;
@@ -48,6 +53,9 @@ export interface HiveAssignmentState {
    *  leaves it running). Its item ids live in the `f` namespace so they
    *  can't collide with the character's completed main assignment. */
   filler?: boolean;
+  /** Item-id namespace of an extra assignment in the same wave (a stolen
+   *  slice: `s<k>`) — keeps its ids apart from the finished main one. */
+  ns?: string;
 }
 
 export interface HiveWaveState {
@@ -138,8 +146,9 @@ export function refreshProposals(): void {
   hiveProposals.value = proposeGoals(buildHiveCtx());
 }
 
-const hiveItemId = (startedAt: number, waveSeq: number, character: string, i: number, filler?: boolean): string =>
-  `hive:${startedAt}:${waveSeq}:${character}:${filler ? "f" : ""}${i}`;
+const hiveItemId = (startedAt: number, waveSeq: number, character: string, i: number, ns: string): string =>
+  `hive:${startedAt}:${waveSeq}:${character}:${ns}${i}`;
+const nsOf = (a: HiveAssignmentState): string => (a.filler ? "f" : (a.ns ?? ""));
 export const isHiveItemId = (id: string): boolean => id.startsWith("hive:");
 
 const waveKeyOf = (w: HiveWave): string =>
@@ -211,27 +220,129 @@ function tick(): void {
   if (!run || run.status !== "running") return;
   if (!run.wave) return beginBarrier();
   if (run.wave.assignments.some((a) => !a.dispatched && !a.skipped)) return dispatchWave();
-  if (!waveDone(run.wave)) return fillWaveIdle(run); // paused/blocked/stopped assignments hold the wave
+  if (!waveDone(run.wave)) return rebalanceWave(run); // paused/blocked/stopped assignments hold the wave
   beginBarrier();
 }
 
+// ── mid-wave rebalancing: steal work, else fill idle ────────────────────────
+
+/** Below this many actions a slice isn't worth the thief's gear swap + walk. */
+const MIN_STEAL = SPLIT_ACTIONS;
+/** A filler's gear reset (~8 actions) only pays off when the wave's longest
+ *  remaining lane is at least this long (~10 min at SEC_PER_ACTION). */
+const FILLER_MIN_WAIT = 20;
+
+/** Actions a dispatched assignment still owes (its live hive items). */
+function remainingActions(a: HiveAssignmentState, q: QueueState | undefined): number {
+  const ids = new Set(a.itemIds ?? []);
+  const ch = characterList().find((c) => c.name === a.character);
+  let n = 0;
+  for (const it of q?.items ?? []) {
+    if (!ids.has(it.id)) continue;
+    if (it.kind === "fight" || it.kind === "gather") n += Math.max(0, it.times - it.done);
+    else if (it.kind === "craft" || it.kind === "sell" || it.kind === "recycle") n += Math.max(0, it.quantity - it.done);
+    else if (it.kind === "task-loop") n += Math.max(0, it.times - it.done) * (ch ? actionsPerTask(ch, it.master) : 100);
+    else n += 1;
+  }
+  return n;
+}
+
+/** The wave's longest remaining lane; Infinity when a lane is paused/blocked/
+ *  stopped (no end in sight until the user acts). */
+function longestWait(wave: HiveWaveState): number {
+  let max = 0;
+  for (const a of wave.assignments) {
+    if (a.filler || a.skipped || !a.dispatched) continue;
+    const q = queues.value[a.character];
+    const s = assignmentStatus(a, q);
+    if (s === "done") continue;
+    if (s !== "running") return Infinity;
+    max = Math.max(max, remainingActions(a, q));
+  }
+  return max;
+}
+
+export interface Steal {
+  victim: string;
+  items: QueueItemInput[];
+  patches: { id: string; patch: Partial<QueueItem> }[];
+  size: number;
+}
+
 /**
- * Mid-wave idle filler: a participant whose own part is finished (or who was
- * never assigned this wave) runs an INFINITE task-loop at their best-suited
- * master instead of waiting for the barrier. Tracked as a `filler` assignment
- * — excluded from waveDone, pulled by beginBarrier — so it never delays the
- * goal. One filler per character per wave, and only an empty, stopped queue
- * qualifies: user-queued work and paused assignments are never built over
- * (user edits win, as always).
+ * Carve half of the biggest running gather/fight lane this thief can work:
+ * the victim's head item shrinks (a `times` patch on OUR item — the runner
+ * completes it at its next step) and the thief gets the slice as a fresh
+ * assignment. A smelt chained right behind the gather moves with its ore in
+ * whole runs, so neither side ends up at the bank short of materials.
+ * Exported for the verify probe (synthetic queues, no actions).
  */
-function fillWaveIdle(run: HiveRun): void {
+export function planSteal(wave: HiveWaveState, ctx: HiveCtx, thief: Character): Steal | undefined {
+  let best: Steal | undefined;
+  for (const a of wave.assignments) {
+    if (a.filler || a.skipped || !a.dispatched || a.character === thief.name) continue;
+    const q = queues.value[a.character];
+    const ids = new Set(a.itemIds ?? []);
+    const head = q?.items[0];
+    // Only a RUNNING head is carved: a paused lane is the user's to retry or skip.
+    if (!q?.running || !head || !ids.has(head.id)) continue;
+    if ((head.kind !== "gather" && head.kind !== "fight") || head.times <= 0) continue;
+    let unit = 1;
+    let craft: Extract<QueueItem, { kind: "craft" }> | undefined;
+    if (head.kind === "gather") {
+      const res = resource(head.resource);
+      if (!res || skillLevel(thief, res.skill) < res.level) continue;
+      const consumer = q.items.find(
+        (x) => ids.has(x.id) && x.kind === "craft" && !!item(x.code)?.craft?.items.some((g) => g.code === head.code),
+      );
+      if (consumer && consumer.kind === "craft") {
+        // Carvable only as the immediate next item, on a sure drop, and when its
+        // product feeds no deeper craft of ours (plank → shield): otherwise the
+        // victim would reach the workshop short of what the thief banks later.
+        const deeper = q.items.some((x) => ids.has(x.id) && x.kind === "craft" && !!item(x.code)?.craft?.items.some((g) => g.code === consumer.code));
+        if (consumer !== q.items[1] || deeper || res.drops.find((d) => d.code === head.code)?.rate !== 1) continue;
+        unit = item(consumer.code)!.craft!.items.find((g) => g.code === head.code)!.quantity;
+        craft = consumer;
+      }
+    } else if (!fleetBis(ctx, thief, head.monster)?.forecast.win) continue;
+    const share = Math.floor((head.times - head.done) / unit / 2) * unit;
+    if (share < MIN_STEAL || (best && share <= best.size)) continue;
+    const items: QueueItemInput[] =
+      head.kind === "gather"
+        ? [{ kind: "gather", code: head.code, resource: head.resource, times: share, done: 0, gear: true }]
+        : [{ kind: "fight", monster: head.monster, times: share, done: 0, gear: true }];
+    const patches: Steal["patches"] = [{ id: head.id, patch: { times: head.times - share } }];
+    if (craft) {
+      const moved = (share / unit) * Math.max(1, item(craft.code)?.craft?.quantity ?? 1);
+      if (craft.quantity - moved <= 0) continue; // 0 would mean ∞ — leave this lane alone
+      items.push({ kind: "craft", code: craft.code, quantity: moved, done: 0 });
+      patches.push({ id: craft.id, patch: { quantity: craft.quantity - moved } });
+    }
+    items.push({ kind: "deposit-all" });
+    best = { victim: a.character, items, patches, size: share };
+  }
+  return best;
+}
+
+/**
+ * Mid-wave rebalancing for a participant whose own part is finished (or who
+ * was never assigned): first HELP — take over half of the biggest lane they
+ * can work, as a fresh barrier-holding assignment — and only when nothing is
+ * carvable run an INFINITE task-loop `filler` at their best-suited master
+ * (excluded from waveDone, pulled by beginBarrier), and that only when the
+ * wave's longest lane outlasts the filler's own gear reset: a 3-minute tail
+ * is cheaper stood by than re-geared for. One filler per character per wave,
+ * and only an empty, stopped queue qualifies: user-queued work and paused
+ * assignments are never built over (user edits win, as always).
+ */
+function rebalanceWave(run: HiveRun): void {
   const wave = run.wave;
   if (!wave) return;
-  const ctx = buildHiveCtx(); // participants only — opt-outs never get filler
+  const ctx = buildHiveCtx(); // participants only — opt-outs never get work
   const added: HiveAssignmentState[] = [];
+  let wait: number | undefined;
   for (const ch of ctx.characters) {
     const mine = wave.assignments.filter((a) => a.character === ch.name);
-    if (mine.some((a) => a.filler)) continue; // one per wave — a pulled or skipped one is not re-issued
     const busy = mine.some((a) => {
       const s = assignmentStatus(a, queues.value[ch.name]);
       return s !== "done" && s !== "skipped";
@@ -239,6 +350,20 @@ function fillWaveIdle(run: HiveRun): void {
     if (busy) continue;
     const q = queues.value[ch.name];
     if (q?.running || (q?.items.length ?? 0) > 0) continue; // the queue belongs to the user now
+    const steal = planSteal(wave, ctx, ch);
+    if (steal) {
+      for (const p of steal.patches) patchItem(steal.victim, p.id, p.patch); // the victim's lane shrinks NOW
+      const text = steal.items
+        .filter((it) => it.kind !== "deposit-all")
+        .map((it) => queueItemText({ ...it, id: "" } as QueueItem))
+        .join(" · ");
+      added.push({ character: ch.name, label: `${text} — taken over from ${steal.victim}`, items: steal.items, dispatched: false, ns: `s${mine.length}` });
+      log(`${ch.name} takes over from ${steal.victim}: ${text}`);
+      continue;
+    }
+    if (mine.some((a) => a.filler)) continue; // one per wave — a pulled or skipped one is not re-issued
+    if (wait === undefined) wait = longestWait(wave);
+    if (wait < FILLER_MIN_WAIT) continue; // the wave ends soon — standing by beats a gear reset
     const items = fillerItems(ctx, ch);
     added.push({
       character: ch.name,
@@ -274,7 +399,7 @@ function dispatchWave(): void {
         if (!known.has(a.character)) log(`${a.character} is gone — assignment skipped`);
         return { ...a, skipped: true };
       }
-      const ids = a.items.map((_, i) => hiveItemId(run.startedAt, run.waveSeq, a.character, i, a.filler));
+      const ids = a.items.map((_, i) => hiveItemId(run.startedAt, run.waveSeq, a.character, i, nsOf(a)));
       const present = new Set((queues.value[a.character]?.items ?? []).map((it) => it.id));
       a.items.forEach((input, i) => {
         if (!present.has(ids[i])) addItem(a.character, { ...input, id: ids[i] } as QueueItem);
@@ -290,6 +415,7 @@ function dispatchWave(): void {
     };
     if (main) log(`wave ${run.waveSeq + 1} dispatched — ${run.label}`);
     for (const name of fillers) log(`${name} is idle — running tasks until the wave ends`);
+    // (a stolen slice logs itself in rebalanceWave — `main` just re-logs the wave)
   });
 }
 

@@ -22,10 +22,14 @@ await page.waitForSelector(".pcard-name");
 await new Promise((r) => setTimeout(r, 2500));
 
 const out = await page.evaluate(async () => {
-  const h = await import("/src/state/hive.ts");
-  const p = await import("/src/plan/hive/index.ts");
-  const c = await import("/src/plan/hive/ctx.ts");
-  const s = await import("/src/state/sync.ts");
+  // After HMR invalidations the dev server serves modules under `?t=` URLs; a
+  // bare dynamic import would get a SECOND instance (separate signals) — import
+  // the exact URLs the app loaded so buildHiveCtx reads the live state.
+  const loaded = (path) => performance.getEntriesByType("resource").map((r) => r.name).find((n) => n.includes(path)) ?? path;
+  const h = await import(loaded("/src/state/hive.ts"));
+  const p = await import(loaded("/src/plan/hive/index.ts"));
+  const c = await import(loaded("/src/plan/hive/ctx.ts"));
+  const s = await import(loaded("/src/state/sync.ts"));
   await s.loadAchievements().catch(() => undefined);
   const ctx = h.buildHiveCtx(); // sandbox has no pins → argmax crafter
   const skills = ["mining", "woodcutting", "fishing", "alchemy", "weaponcrafting", "gearcrafting", "jewelrycrafting", "cooking"];

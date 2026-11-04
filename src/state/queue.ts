@@ -84,8 +84,10 @@ function setQueue(name: string, patch: Partial<QueueState>): void {
   queues.value = { ...queues.value, [name]: { ...cur, ...patch } };
 }
 
-/** The runner's own item patch — no head lock (the runner must update progress). */
-function patchItem(name: string, id: string, patch: Partial<QueueItem>): void {
+/** The runner's own item patch — no head lock (the runner must update progress).
+ *  Exported for the hive, which carves its OWN running items when it
+ *  rebalances a wave (a shrunken `times` completes at the next step). */
+export function patchItem(name: string, id: string, patch: Partial<QueueItem>): void {
   const cur = queues.value[name];
   if (!cur) return;
   setQueue(name, { items: cur.items.map((it) => (it.id === id ? ({ ...it, ...patch } as QueueItem) : it)) });
@@ -551,11 +553,71 @@ async function taskGear(
   return job.kind === "fight" && (await provisionPotions(name, ch, desired, ctx)) === "acted";
 }
 
+/** Hand the deliverable in hand to the items master (bagfuls, never via the bank). */
+async function handOver(name: string, ch: Character, it: QueueItem, ctx: StepCtx): Promise<boolean> {
+  const at = await goToMaster(name, ch, "items", ctx.note);
+  if (at === "missing") return skipItem(name, it, "no items tasks master on the map");
+  if (at === "there") {
+    ctx.note(`deliver ${itemName(ch.task)}`);
+    const remaining = Math.max(0, ch.task_total - ch.task_progress);
+    await step(name, () => actions.taskTrade(name, ch.task, Math.min(invQty(ch, ch.task), remaining)));
+  }
+  return false;
+}
+
+/**
+ * Dead-end fallback for the current task — the field can't produce it (skill
+ * too low, no winnable set). An items task hands over BANK stock first (the
+ * one case task stock may come from the bank: it's that or a paused queue),
+ * then the task is cancelled for a tasks coin, fetched from the bank when not
+ * in hand. Only with no coin anywhere does the queue pause with `why`.
+ */
+async function giveUpTask(
+  name: string,
+  ch: Character,
+  it: Extract<QueueItem, { kind: "work-task" | "task-loop" }>,
+  ctx: StepCtx,
+  why: string,
+): Promise<boolean> {
+  const remaining = Math.max(0, ch.task_total - ch.task_progress);
+  if (ch.task_type === "items") {
+    const held = invQty(ch, ch.task);
+    const banked = bankQty(ch.task);
+    if (held > 0 && (banked === 0 || freeSpace(ch) === 0)) return handOver(name, ch, it, ctx);
+    if (banked > 0) {
+      if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note); return false; }
+      const bank = nearestBank(ch.x, ch.y);
+      if (!bank) return skipItem(name, it, "no bank on the map");
+      ctx.note(`${itemName(ch.task)}: not producible in the field — using bank stock`);
+      const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining - held, freeSpace(ch)), x: bank.x, y: bank.y };
+      await runStep(name, ch, s, ctx);
+      return false;
+    }
+  }
+  if (invQty(ch, "tasks_coin") <= 0) {
+    if (bankQty("tasks_coin") <= 0) throw new Error(`${why} — and no tasks coin to cancel the task`);
+    const bank = nearestBank(ch.x, ch.y);
+    if (!bank) throw new Error(`${why} — and no bank to fetch a tasks coin from`);
+    ctx.note("fetching a tasks coin to cancel the task");
+    await runStep(name, ch, { kind: "withdraw", code: "tasks_coin", quantity: 1, x: bank.x, y: bank.y }, ctx);
+    return false;
+  }
+  const at = await goToMaster(name, ch, ch.task_type === "items" ? "items" : "monsters", ctx.note);
+  if (at === "missing") return skipItem(name, it, "no tasks master on the map");
+  if (at === "there") {
+    ctx.note("cancelling the task");
+    await step(name, () => actions.taskCancel(name));
+    log(name, `task cancelled for a tasks coin — ${why}`, "bad");
+  }
+  return false; // the echo clears ch.task → a loop accepts the next one
+}
+
 /**
  * One action of a work-task item. Monsters task ⇒ fight the task monster
  * (fight-item rules). Items task ⇒ acquire ch.task in the field and hand
  * bagfuls straight to the items master — stock never moves through the bank;
- * the bank only hosts the gear reset/self-heal and the junk-overflow valve.
+ * the bank only hosts the gear reset/self-heal and the junk-overflow valve
+ * (and the giveUpTask dead-end fallback).
  */
 async function runWorkTask(
   name: string,
@@ -574,7 +636,7 @@ async function runWorkTask(
     if (await taskGear(name, ch, it, { kind: "fight", monster: ch.task }, ctx)) return false;
     ctx.note(`task ${ch.task_progress + 1}/${ch.task_total}: fight ${m.name}`);
     const out = await fightRound(name, ch, m, tile, S(name), ctx);
-    if (out === "no-win") throw new Error(`not a safe win vs ${m.name}`);
+    if (out === "no-win") return giveUpTask(name, ch, it, ctx, `not a safe win vs ${m.name}`);
     if (out === "gave-up") throw new Error("lost 2 fights in a row");
     if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
     return false;
@@ -582,24 +644,15 @@ async function runWorkTask(
   if (ch.task_type !== "items") return true; // unknown task type — leave it be
 
   const held = invQty(ch, ch.task);
-  const deliver = async (): Promise<boolean> => {
-    const at = await goToMaster(name, ch, "items", ctx.note);
-    if (at === "missing") return skipItem(name, it, "no items tasks master on the map");
-    if (at === "there") {
-      ctx.note(`deliver ${itemName(ch.task)}`);
-      await step(name, () => actions.taskTrade(name, ch.task, Math.min(held, remaining)));
-    }
-    return false;
-  };
-  if (held >= remaining) return deliver(); // enough in hand — hand it over
+  if (held >= remaining) return handOver(name, ch, it, ctx); // enough in hand — hand it over
 
   const src = fieldSource(ch, ch.task);
-  if (!src) throw new Error(`no way to acquire ${itemName(ch.task)} in the field (skill too low?)`);
+  if (!src) return giveUpTask(name, ch, it, ctx, `no way to acquire ${itemName(ch.task)} in the field (skill too low?)`);
 
   if (src.how === "gather" || src.how === "fight") {
     // A full bag first hands over what it holds, then (all junk) banks off.
     if (freeSpace(ch) === 0) {
-      if (held > 0) return deliver();
+      if (held > 0) return handOver(name, ch, it, ctx);
       await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note);
       return false;
     }
@@ -616,7 +669,7 @@ async function runWorkTask(
     if (await taskGear(name, ch, it, { kind: "fight", monster: src.mon.code }, ctx)) return false;
     ctx.note(`task ${held + ch.task_progress}/${ch.task_total}: hunt ${src.mon.name}`);
     const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
-    if (out === "no-win") throw new Error(`not a safe win vs ${src.mon.name}`);
+    if (out === "no-win") return giveUpTask(name, ch, it, ctx, `not a safe win vs ${src.mon.name}`);
     if (out === "gave-up") throw new Error("lost 2 fights in a row");
     if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
     return false;
@@ -635,7 +688,7 @@ async function runWorkTask(
   const missing = recipe.items.find((g) => invQty(ch, g.code) < g.quantity * batch);
   if (missing && freeSpace(ch) > 0) {
     const mat = fieldSource(ch, missing.code);
-    if (mat?.how !== "gather") throw new Error(`no way to gather ${itemName(missing.code)} (skill too low?)`);
+    if (mat?.how !== "gather") return giveUpTask(name, ch, it, ctx, `no way to gather ${itemName(missing.code)} (skill too low?)`);
     const tile = nearest("resource", mat.res.code, ch.x, ch.y);
     if (!tile) throw new Error(`no ${mat.res.name} on the map (event over?)`);
     if (await taskGear(name, ch, it, { kind: "gather", skill: mat.res.skill }, ctx)) return false;
@@ -651,7 +704,7 @@ async function runWorkTask(
     return false;
   }
   // Bag jammed with nothing craftable — deliver what's done, or dump the junk.
-  if (held > 0) return deliver();
+  if (held > 0) return handOver(name, ch, it, ctx);
   await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note);
   return false;
 }
