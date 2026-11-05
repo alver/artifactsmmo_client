@@ -5,7 +5,7 @@
 // have to GET state back — we just adopt what the action already told us.
 
 import type { ActionResult, Character } from "../types/api";
-import { bankDetails, bankItems, characters, offerings, pushLog, setCharacter } from "./store";
+import { bankDetails, bankItems, characters, offerings, pendingRewards, pushLog, setCharacter } from "./store";
 import { mapAt, monster as monsterOf } from "../catalog";
 import { recordFight } from "../sim/validate";
 import { saveState } from "./persist";
@@ -27,6 +27,10 @@ export function applyActionResult(name: string, action: string, data: ActionResu
     bankDetails.value = { ...bankDetails.value, gold: data.bank.quantity };
   }
   if (data.offering) foldOffering(name, action, data);
+  if (action.startsWith("claim_item/")) {
+    const id = action.slice("claim_item/".length);
+    pendingRewards.value = pendingRewards.value.filter((p) => p.id !== id); // claimed — no re-read
+  }
   // Passive, zero-cost simulator validation: compare the forecast for this fight
   // against what actually happened. Never throws into the action path.
   if (data.fight && prevForFight) {

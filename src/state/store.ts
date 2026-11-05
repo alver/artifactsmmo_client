@@ -3,6 +3,7 @@
 // "renderCard()" calls (the maintainability pain of the old client).
 
 import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
+import { IS_SERVER, expose, rpc } from "../lib/remote";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, CharacterOfferings, PendingItem } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
@@ -71,6 +72,7 @@ export const MAX_PINS = 2;
  */
 export const skillPins = signal<Record<string, string[]>>({});
 export function togglePin(name: string, skill: string): void {
+  if (!IS_SERVER) return rpc("togglePin", [name, skill]);
   const cur = { ...skillPins.value };
   const list = cur[name] ?? [];
   const next = list.includes(skill) ? list.filter((s) => s !== skill) : [...list, skill].slice(-MAX_PINS);
@@ -306,3 +308,5 @@ export function setCharacter(ch: Character): void {
 export function characterList(): Character[] {
   return Object.values(characters.value);
 }
+
+expose({ togglePin });

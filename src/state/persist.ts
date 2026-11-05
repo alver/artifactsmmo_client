@@ -6,6 +6,7 @@
 // and are loaded into memory each boot.
 
 import { account, activeEvents, bankDetails, bankItems, characters, log, offerings, pendingRewards, seedLogId, skillPins, syncedAt } from "./store";
+import { IS_SERVER, expose, rpc } from "../lib/remote";
 import type { CachedOfferings, LogEntry } from "./store";
 import type { Account, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 
@@ -57,6 +58,7 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 /** Debounced save; many rapid mutations collapse into one write. */
 export function saveState(): void {
+  if (!IS_SERVER) return rpc("saveState", []);
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
@@ -80,3 +82,5 @@ export function saveState(): void {
     }
   }, 300);
 }
+
+expose({ saveState });

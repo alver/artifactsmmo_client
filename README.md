@@ -1,16 +1,17 @@
 # ArtifactsMMO Client
 
-A small web client for [ArtifactsMMO](https://play.artifactsmmo.com/) that talks
-directly to the public game API from the browser. It syncs your account's durable
-state **once** at load and then keeps it current from action responses — no
-polling — so it stays well inside the API rate limits.
+A small local client for [ArtifactsMMO](https://play.artifactsmmo.com/): a Node
+service on your PC plays the game (queues, automation, every API call) and serves
+a browser UI that is only a view. It syncs your account's durable state **once**
+at start and then keeps it current from action responses — no polling — so it
+stays well inside the API rate limits.
 
 The game isn't real-time, so the client is a **table-first check-in console**: the
 home screen answers *is everyone working, what's next, what needs me?*, and the
 catalog (recipes, shops, monsters, bank) lives in sortable tables.
 
-Built with **Vite + TypeScript + Preact** (signals for reactive state). Deploys as
-static files to GitHub Pages; no backend.
+Built with **TypeScript + Preact** (signals for reactive state); the same engine
+code runs in the Node service, the UI is built with Vite.
 
 ![The Fleet tab: a "Needs you" list, one row per character (status, what it's doing with progress, what's next, pinned skills, bag, task, location), the fleet skills grid, and the always-on activity panel on the right](docs/fleet.webp)
 
@@ -18,17 +19,16 @@ static files to GitHub Pages; no backend.
 
 ```bash
 npm install
-npm run dev        # dev server with HMR
-npm run build      # static production build → dist/
-npm run preview    # serve the production build
+npm start          # build the UI, run the service (restarted if it ever dies)
+npm run dev        # development: Vite HMR inside the service, restarts on engine edits
 npm run typecheck  # tsc --noEmit
 ```
 
-Open the dev URL and paste your API token (from
-[artifactsmmo.com](https://artifactsmmo.com/account)). It's stored only in your
-browser's `localStorage`. For convenience during development you can instead put
-`TOKEN=<your jwt>` in a `.env` file (see `.env.example`) — Vite exposes it to the
-app and the token prompt is skipped. `.env` is gitignored.
+Open <http://localhost:5173/>. Put your API token (from
+[artifactsmmo.com](https://artifactsmmo.com/account)) in `.env` as `TOKEN=<your jwt>`
+(see `.env.example`; gitignored), or paste it into the token prompt. The service
+keeps it and all its state in `.ammo/` (gitignored); the browser holds neither.
+The service listens on `127.0.0.1` only.
 
 ## Features
 
@@ -46,7 +46,7 @@ Achievements · Map · Sim** — with an always-on activity panel beside them.
   simple actions (move, fight ×N, gather ×N, craft ×N, train a skill, bank moves,
   gear swaps, task loops…), shown as a numbered table on the **Character** tab with
   the runner's live step. A count of 0 means *forever*. Paced by action cooldowns,
-  **survives a page reload**, and skips steps whose map target vanished (an event
+  **survives a service restart**, and skips steps whose map target vanished (an event
   that ended) instead of stalling.
 - **Skill loops** — pin up to two main skills per character; *Train pins* queues a
   repeating loop that levels them in turn (gathering skills work the best node for
@@ -91,15 +91,19 @@ Achievements · Map · Sim** — with an always-on activity panel beside them.
   <img src="docs/bank.webp" width="49%" alt="Bank tab: compact tile grid grouped by type">
 </p>
 
-> Automation runs **in the open browser tab** — the page sends the commands, so a
-> tab must stay open somewhere for characters to keep working. Run automation in
-> **one tab per account** (multiple tabs would double-send and conflict). Mobile
-> browsers suspend background tabs, so they aren't reliable for long runs.
+> Automation runs **in the local service**, not in the browser: close the tab and
+> the characters keep working. Open as many tabs as you like — they are views. Only
+> one service can run at a time (the second one refuses the port).
 
 ## How it works
 
-- **One sync, then no polling.** At boot the app paints instantly from
-  `localStorage`, loads the static catalogs from `public/data/*.json` into memory,
+- **A local service, the browser as a view.** One Node process
+  (`src/server/main.ts`) runs every queue and API call; the page gets a state
+  snapshot plus live changes over Server-Sent Events (`/events`) and sends edits
+  and actions back as `POST /rpc`. `scripts/serve.mjs` restarts the service if it
+  ever exits (with a growing delay, so a crash loop can't burn the API budget),
+  and it resumes the queues where they stopped.
+- **One sync, then no polling.** At start the service restores its saved state, loads the static catalogs from `public/data/*.json` into memory,
   then does a single authoritative read of `/my/characters`, `/my/bank`,
   `/my/bank/items`, active events, unclaimed rewards and account info. After that, every action response carries the
   full authoritative character (and bank item moves echo the bank), so local state
@@ -117,6 +121,7 @@ See [CLAUDE.md](CLAUDE.md) for the architecture in more depth.
 public/data/*.json   bundled snapshot of the game's static catalogs
 public/assets/        map tiles + item/character icons (committed, served locally)
 src/
+  server/     the local service: SSE state stream (/events), /rpc, static UI, Vite in dev
   api/        client (fetch + retry + pagination), typed action calls
   catalog/    load *.json into typed Maps; lookups (item, monster, mapAt, …)
   plan/       pure planning: queue vocabulary, gear/BIS solver, consumables,
@@ -129,14 +134,6 @@ src/
               the activity panel, MapView
   types/      api.ts (dynamic) + catalog.ts (static) domain models
 ```
-
-## Deploy (GitHub Pages)
-
-Pushing to `main` triggers `.github/workflows/deploy.yml`, which builds and
-publishes to GitHub Pages. The build's `base` is set from the repo name
-(`BASE_PATH=/<repo>/`) so it resolves under `https://<user>.github.io/<repo>/`.
-Enable it once under **Settings → Pages → Source: GitHub Actions**. The deployed
-build ships no token — each visitor pastes their own into the in-browser gate.
 
 ## Refreshing the catalog snapshot
 

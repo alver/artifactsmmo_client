@@ -15,6 +15,7 @@
 // sessions — reaching the trustworthy bar takes ~50 fights.
 
 import { effect, signal } from "@preact/signals";
+import { IS_SERVER } from "../lib/remote";
 import type { Character, FightResult } from "../types/api";
 import type { Monster } from "../types/catalog";
 import { currentFighter } from "./stats";
@@ -52,9 +53,9 @@ function loadStored(): Deviation[] {
 }
 
 /** Rolling window of the most recent fight predictions vs reality (newest first). */
-export const simDeviations = signal<Deviation[]>(loadStored());
+export const simDeviations = signal<Deviation[]>(IS_SERVER ? loadStored() : []); // tab: mirror only
 
-effect(() => {
+if (IS_SERVER) effect(() => {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(simDeviations.value));
   } catch {

@@ -18,3 +18,6 @@ Thumbs.db
 # unused 1 MB SQLite mirror of the catalogs (the app reads public/data/*.json)
 game.db
 logs/
+
+# local game service storage (queues, hive, token) — see src/server/main.ts
+.ammo/

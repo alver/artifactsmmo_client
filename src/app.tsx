@@ -1,6 +1,5 @@
 import { authed, catalogReady, lastError, moveMode, pendingRewards, route, syncedAt, syncing, tilePick, disarmTilePick } from "./state/store";
-import { reconcile } from "./state/sync";
-import { setToken } from "./api/client";
+import { logout, reconcile } from "./state/sync";
 import { clockTime } from "./lib/util";
 import { liveEvents } from "./state/events";
 import { TokenGate } from "./ui/Token";
@@ -66,13 +65,10 @@ function MapPickOverlay() {
 }
 
 export function App() {
+  // catalogReady also waits for the service's first snapshot, so `authed` is real by then.
+  if (!catalogReady.value) return <div class="loading">Connecting to the local service…</div>;
   if (!authed.value) return <TokenGate />;
-  if (!catalogReady.value) return <div class="loading">Loading catalog…</div>;
 
-  const logout = () => {
-    setToken("");
-    authed.value = false;
-  };
   const tab = TABS.find(([k]) => k === route.value) ?? TABS[0];
   const Page = tab[2];
   const rewards = pendingRewards.value.length;

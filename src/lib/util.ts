@@ -6,7 +6,7 @@ export const IMG = "https://artifactsmmo.com/images";
 /** Image categories bundled under public/assets/<kind>/ (downloaded from the CDN). */
 export type AssetKind = "items" | "monsters" | "resources" | "npcs" | "effects" | "badges" | "characters";
 
-const ASSET_BASE = `${import.meta.env.BASE_URL || "/"}assets/`;
+const ASSET_BASE = "/assets/";
 
 /** Local-first icon URL: the bundled copy under public/assets/<kind>/<code>.png. */
 export function asset(kind: AssetKind, code: string): string {

@@ -5,12 +5,19 @@
 import type { CatalogName } from "../types/catalog";
 import { getAllPages } from "../api/client";
 
-const BASE = import.meta.env.BASE_URL || "/";
+// The tab fetches the served file; the local service swaps in a disk read.
+let readData = async (name: CatalogName): Promise<unknown> => {
+  const r = await fetch(`/data/${name}.json`, { cache: "force-cache" });
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+};
+export function setDataReader(fn: (name: CatalogName) => Promise<unknown>): void {
+  readData = fn;
+}
 
 export async function loadCatalogFile<T>(name: CatalogName): Promise<T[]> {
   try {
-    const r = await fetch(`${BASE}data/${name}.json`, { cache: "force-cache" });
-    if (r.ok) return (await r.json()) as T[];
+    return (await readData(name)) as T[];
   } catch {
     /* fall through to the live API */
   }

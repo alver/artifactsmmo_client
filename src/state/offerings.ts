@@ -6,6 +6,7 @@
 // accept/complete echoes in apply.ts). Never polled.
 
 import { api } from "../api/client";
+import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { offerings } from "./store";
 import { saveState } from "./persist";
 import type { CachedOfferings } from "./store";
@@ -22,6 +23,7 @@ export function todayOfferings(name: string): CachedOfferings | undefined {
 
 /** One read of the character's offerings for today. */
 export async function loadOfferings(name: string): Promise<CachedOfferings> {
+  if (!IS_SERVER) return rpc("loadOfferings", [name]);
   const st = { ...(await api<CharacterOfferings>(`/my/${name}/offerings`)), fetchedAt: Date.now() };
   offerings.value = { ...offerings.value, [name]: st };
   saveState();
@@ -55,3 +57,5 @@ export function offeringSlots(ch: Character, st: CharacterOfferings): OfferingSl
     return o ? { category, status: "open", id: o.id, requirement: o.requirement, favor: o.favor } : { category, status: "none" };
   });
 }
+
+expose({ loadOfferings });

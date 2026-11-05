@@ -1,9 +1,10 @@
 import { render } from "preact";
 import { App } from "./app";
-import { boot } from "./state/sync";
+import { connect } from "./state/synced";
 import "./styles.css";
 
-// Kick off boot (hydrate from cache → load catalog → one reconcile sync) and
-// render immediately; the UI fills in reactively as each step completes.
-void boot();
+// The tab is a view: state streams from the local service (src/server/main.ts),
+// which runs every queue and API call. Render immediately; the UI fills in as
+// the snapshot and the catalog land.
+connect();
 render(<App />, document.getElementById("app")!);

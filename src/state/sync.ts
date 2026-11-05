@@ -4,6 +4,7 @@
 // After that, nothing polls — state stays current from action responses
 // (state/apply.ts). The user can force another sync with reconcile().
 
+import { IS_SERVER, expose, rpc } from "../lib/remote";
 import {
   account,
   achievements,
@@ -24,7 +25,7 @@ import {
 import { loadPersisted, saveState } from "./persist";
 import { resumeHive } from "./hive";
 import { resumeQueue } from "./queue";
-import { api, getAllPages, hasToken } from "../api/client";
+import { api, getAllPages, hasToken, setToken } from "../api/client";
 import { loadCatalog } from "../catalog";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 
@@ -44,6 +45,7 @@ export async function boot(): Promise<void> {
 
 /** One authoritative read of the per-account state. Safe to call on demand. */
 export async function reconcile(): Promise<void> {
+  if (!IS_SERVER) return rpc("reconcile", []);
   if (!hasToken()) return;
   syncing.value = true;
   lastError.value = null;
@@ -93,6 +95,7 @@ async function syncAccount(accountName?: string): Promise<void> {
  * any previously-loaded list visible while refreshing so reopening isn't jarring.
  */
 export async function loadAchievements(): Promise<void> {
+  if (!IS_SERVER) return rpc("loadAchievements", []);
   const acct = Object.values(characters.value)[0]?.account;
   if (!acct) {
     achievementsError.value = "no account found — sync first";
@@ -114,6 +117,7 @@ export async function loadAchievements(): Promise<void> {
  * A single small read — never polled; reconcile() also refreshes it.
  */
 export async function loadPendingRewards(): Promise<void> {
+  if (!IS_SERVER) return rpc("loadPendingRewards", []);
   if (!hasToken()) return;
   try {
     pendingRewards.value = (await getAllPages<PendingItem>("/my/pending_items")).filter((p) => !p.claimed_at);
@@ -125,6 +129,7 @@ export async function loadPendingRewards(): Promise<void> {
 
 /** Called by the token gate once a token has been entered. */
 export async function login(): Promise<void> {
+  if (!IS_SERVER) return rpc("login", []);
   authed.value = hasToken();
   if (authed.value) {
     await reconcile();
@@ -132,3 +137,12 @@ export async function login(): Promise<void> {
     resumeHive();
   }
 }
+
+/** Sign out: forget the server's token (runners then fail their next call and pause). */
+export function logout(): void {
+  if (!IS_SERVER) return rpc("logout", []);
+  setToken("");
+  authed.value = false;
+}
+
+expose({ reconcile, loadAchievements, loadPendingRewards, login, logout });

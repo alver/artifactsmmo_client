@@ -17,6 +17,7 @@
 // Same no-poll contract as every runner: paced purely by action-echo cooldowns.
 
 import { effect, signal } from "@preact/signals";
+import { IS_SERVER, expose, rpc } from "../lib/remote";
 import * as actions from "../api/actions";
 import { ApiError } from "../api/client";
 import { catalog, item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
@@ -63,7 +64,8 @@ function loadStored(): Record<string, QueueState> {
  * queues (and mid-item progress) survive a reload; running ones are re-launched
  * by resumeQueue() after the boot sync.
  */
-export const queues = signal<Record<string, QueueState>>(loadStored());
+// The tab never hydrates or persists: its copy is a mirror fed by state/synced.ts.
+export const queues = signal<Record<string, QueueState>>(IS_SERVER ? loadStored() : {});
 const stopFlags = new Set<string>();
 // Names with a runLoop alive RIGHT NOW (in-memory twin of `running`). The two
 // differ while a stopped loop drains its final action: `running` is already
@@ -72,7 +74,7 @@ const stopFlags = new Set<string>();
 const liveLoops = new Set<string>();
 
 // Mirror to localStorage on every change (edits AND per-action progress).
-effect(() => {
+if (IS_SERVER) effect(() => {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(queues.value));
   } catch {
@@ -103,6 +105,7 @@ const headLocked = (q: QueueState | undefined, id: string): boolean => !!q?.runn
 
 /** Append (or insert at `index`) an item; creates the character's queue lazily. */
 export function addItem(name: string, item: QueueItem, index?: number): void {
+  if (!IS_SERVER) return rpc("addItem", [name, item, index]);
   const cur = queues.value[name] ?? { items: [], running: false };
   const items = [...cur.items];
   const at = index == null ? items.length : Math.max(cur.running ? 1 : 0, Math.min(index, items.length));
@@ -111,6 +114,7 @@ export function addItem(name: string, item: QueueItem, index?: number): void {
 }
 
 export function removeItem(name: string, id: string): void {
+  if (!IS_SERVER) return rpc("removeItem", [name, id]);
   const cur = queues.value[name];
   if (!cur || headLocked(cur, id)) return;
   setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
@@ -125,11 +129,13 @@ export function dropItem(name: string, id: string): void {
 
 /** User edit — clears the item's error (an edited item gets a fresh chance). */
 export function updateItem(name: string, id: string, patch: Partial<QueueItem>): void {
+  if (!IS_SERVER) return rpc("updateItem", [name, id, patch]);
   if (headLocked(queues.value[name], id)) return;
   patchItem(name, id, { ...patch, error: undefined });
 }
 
 export function moveItem(name: string, id: string, dir: -1 | 1): void {
+  if (!IS_SERVER) return rpc("moveItem", [name, id, dir]);
   const cur = queues.value[name];
   if (!cur || headLocked(cur, id)) return;
   const i = cur.items.findIndex((it) => it.id === id);
@@ -142,6 +148,7 @@ export function moveItem(name: string, id: string, dir: -1 | 1): void {
 }
 
 export function clearQueue(name: string): void {
+  if (!IS_SERVER) return rpc("clearQueue", [name]);
   const cur = queues.value[name];
   if (!cur || cur.running) return;
   setQueue(name, { items: [], note: undefined });
@@ -1153,6 +1160,7 @@ async function runLoop(name: string): Promise<void> {
 
 /** 🔁: a finished item goes to the back of the queue (progress wiped) instead of away. */
 export function setRepeat(name: string, on: boolean): void {
+  if (!IS_SERVER) return rpc("setRepeat", [name, on]);
   if (!queues.value[name]) queues.value = { ...queues.value, [name]: { items: [], running: false } };
   setQueue(name, { repeat: on || undefined });
 }
@@ -1163,6 +1171,7 @@ export function setRepeat(name: string, on: boolean): void {
  * with 🔁 on so the rotation never ends. Appends behind whatever is queued.
  */
 export function queuePinTraining(name: string): void {
+  if (!IS_SERVER) return rpc("queuePinTraining", [name]);
   for (const skill of skillPins.value[name] ?? []) {
     addItem(name, withId({ kind: "gear", job: isCraftSkill(skill) ? { kind: "craft", skill } : { kind: "gather", skill }, reset: true }));
     addItem(name, withId({ kind: "train", skill, toLevel: 0, levels: 1, gear: true }));
@@ -1172,6 +1181,7 @@ export function queuePinTraining(name: string): void {
 
 /** Start executing the queue from its head. */
 export function startQueue(name: string): void {
+  if (!IS_SERVER) return rpc("startQueue", [name]);
   const q = queues.value[name];
   if (!q) return;
   // ▶ pressed while the stopped loop is still draining its final action:
@@ -1202,6 +1212,7 @@ export function startQueue(name: string): void {
  * in-flight action, then exits via the flag (liveLoops covers the drain gap).
  */
 export function stopQueue(name: string): void {
+  if (!IS_SERVER) return rpc("stopQueue", [name]);
   if (!queues.value[name]?.running) return;
   stopFlags.add(name);
   setQueue(name, { running: false, note: undefined });
@@ -1231,3 +1242,5 @@ export function resumeQueue(): void {
 // OLD runLoop kept executing against the old objects — a zombie runner the ⏹
 // button can no longer reach. Force a full page reload instead.
 if (import.meta.hot) import.meta.hot.accept(() => location.reload());
+
+expose({ addItem, removeItem, updateItem, moveItem, clearQueue, setRepeat, queuePinTraining, startQueue, stopQueue });

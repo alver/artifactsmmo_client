@@ -6,6 +6,7 @@
 // (code 499), plus pagination. `api()` returns the unwrapped `data` payload.
 
 import { devlog } from "../lib/devlog";
+import { IS_SERVER, expose, rpc } from "../lib/remote";
 import type { Paginated } from "../types/api";
 
 export const API_BASE = "https://api.artifactsmmo.com";
@@ -18,13 +19,15 @@ const short = (v: unknown): string => {
 };
 const TOKEN_KEY = "ammo:v1:token";
 
-let _token = localStorage.getItem(TOKEN_KEY) || import.meta.env.TOKEN || "";
+// Server only (the service seeds it from .env) — the tab never holds the token.
+let _token = IS_SERVER ? localStorage.getItem(TOKEN_KEY) || "" : "";
 
 export function getToken(): string {
   return _token;
 }
 
 export function setToken(t: string): void {
+  if (!IS_SERVER) return rpc("setToken", [t]);
   _token = t.trim();
   if (_token) localStorage.setItem(TOKEN_KEY, _token);
   else localStorage.removeItem(TOKEN_KEY);
@@ -94,6 +97,7 @@ export interface ApiOptions {
  * Returns `payload.data` (or the whole payload if there is no `data`).
  */
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
+  if (!IS_SERVER) throw new Error(`api(${path}) called in the browser — engine calls run on the local server`);
   const { method = "GET", body, retries = 4 } = opts;
   const url = API_BASE + path;
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -138,6 +142,7 @@ export async function getAllPages<T = unknown>(
   path: string,
   params: Record<string, string | number> = {},
 ): Promise<T[]> {
+  if (!IS_SERVER) throw new Error(`getAllPages(${path}) called in the browser — engine calls run on the local server`);
   const all: T[] = [];
   const size = Number(params.size) || 100;
   let page = 1;
@@ -159,3 +164,5 @@ export async function getAllPages<T = unknown>(
     page++;
   }
 }
+
+expose({ setToken });

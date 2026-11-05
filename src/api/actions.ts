@@ -3,6 +3,7 @@
 // extra reads. Throwing on error is left to callers (the UI shows it in the log).
 
 import { api } from "./client";
+import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { applyActionResult } from "../state/apply";
 import { characters, pushLog } from "../state/store";
 import { gateAt } from "../state/access";
@@ -10,6 +11,7 @@ import type { ActionResult } from "../types/api";
 import type { ItemStack } from "../types/catalog";
 
 async function act(name: string, action: string, body?: unknown): Promise<ActionResult> {
+  if (!IS_SERVER) return rpc("act", [name, action, body]); // the echo lands in server state, then streams back
   try {
     const data = await api<ActionResult>(`/my/${name}/action/${action}`, { method: "POST", body });
     applyActionResult(name, action, data);
@@ -21,6 +23,7 @@ async function act(name: string, action: string, body?: unknown): Promise<Action
 }
 
 export const move = async (name: string, x: number, y: number): Promise<ActionResult> => {
+  if (!IS_SERVER) return rpc("move", [name, x, y]);
   try {
     return await act(name, "move", { x, y });
   } catch (e) {
@@ -103,3 +106,5 @@ export const claimItem = (name: string, id: string) => act(name, `claim_item/${i
 // the verified field names are { quantity, character } / { items, character }
 // (NOT character_name), and both data.character and data.receiver_character
 // are echoed (applyActionResult still folds receiver_character).
+
+expose({ act, move });

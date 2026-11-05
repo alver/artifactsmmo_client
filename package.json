@@ -3,11 +3,11 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A from-scratch web client for ArtifactsMMO: sync account state once, track it locally from action responses, no polling.",
+  "description": "A local ArtifactsMMO client: a Node service runs the game (queues, hive, every API call) and serves the browser UI as a view. Sync once, track state from action responses, no polling.",
   "scripts": {
-    "dev": "vite",
+    "dev": "node scripts/serve.mjs --watch",
+    "start": "vite build && node scripts/serve.mjs",
     "build": "vite build",
-    "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "assets": "bash scripts/download-assets.sh"
   },
@@ -18,6 +18,7 @@
   "devDependencies": {
     "@preact/preset-vite": "^2.9.3",
     "@types/node": "^22.10.5",
+    "tsx": "^4.23.15",
     "typescript": "^5.7.2",
     "vite": "^6.0.7"
   }

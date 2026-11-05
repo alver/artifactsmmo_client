@@ -21,8 +21,7 @@ export function PendingRewardsView() {
   const claim = (p: PendingItem) =>
     void ctl.run(async () => {
       if (!actor) return;
-      await actions.claimItem(actor.name, p.id);
-      pendingRewards.value = pendingRewards.value.filter((x) => x.id !== p.id);
+      await actions.claimItem(actor.name, p.id); // the server drops the claimed row (apply.ts)
     });
 
   return (

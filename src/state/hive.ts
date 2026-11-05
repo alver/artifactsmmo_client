@@ -26,6 +26,7 @@
 // items task-loop as a plain user-owned queue item. Stop (⏹) still means stop.
 
 import { batch, effect, signal } from "@preact/signals";
+import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { addItem, dropItem, patchItem, queues, removeItem, setRepeat, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
 import { achievements, bankDetails, bankItems, characterList, characters, craftPins, pushLog } from "./store";
 import { invQty } from "./exec";
@@ -119,12 +120,13 @@ function loadStored(): HiveState {
   }
 }
 
-export const hive = signal<HiveState>(loadStored());
+// The tab never hydrates or persists: its copy is a mirror fed by state/synced.ts.
+export const hive = signal<HiveState>(IS_SERVER ? loadStored() : { run: null, manual: [], history: [], auto: false, backlog: [] });
 
 /** Fresh proposals for the panel — recomputed on demand, never persisted. */
 export const hiveProposals = signal<ScoredGoal[] | null>(null);
 
-effect(() => {
+if (IS_SERVER) effect(() => {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify({ schema: SCHEMA, ...hive.value }));
   } catch {
@@ -216,7 +218,8 @@ function scheduleTick(): void {
 // unless a run is live. tick() runs in a microtask, OUTSIDE the effect, so
 // nothing it reads is tracked and its writes re-fire this effect exactly once
 // each — every write is guarded by a change, so the loop reaches a fixed point.
-effect(() => {
+// Server only — in the tab this observer would dispatch a second copy of every wave.
+if (IS_SERVER) effect(() => {
   queues.value;
   const st = hive.value;
   if (st.run?.status === "running") scheduleTick();
@@ -624,6 +627,7 @@ export function nextGoal(): { picked: { goal: AccountGoal; label: string }; plan
 
 /** ⟳ Continuous mode. Switched on while idle, the fleet moves on right away. */
 export function toggleHiveAuto(): void {
+  if (!IS_SERVER) return rpc("toggleHiveAuto", []);
   const on = !hive.value.auto;
   hive.value = { ...hive.value, auto: on };
   log(`continuous mode ${on ? "on — when a goal ends, the next one launches itself" : "off"}`);
@@ -632,12 +636,14 @@ export function toggleHiveAuto(): void {
 
 /** ＋ Queue a goal for after the current one (launches now when idle). */
 export function queueGoal(picked: { goal: AccountGoal; label: string }): void {
+  if (!IS_SERVER) return rpc("queueGoal", [picked]);
   hive.value = { ...hive.value, backlog: [...hive.value.backlog, { goal: picked.goal, label: picked.label }] };
   log(`queued — ${picked.label}`);
   if (!hive.value.run) setTimeout(moveOn, 100);
 }
 
 export function unqueueGoal(index: number): void {
+  if (!IS_SERVER) return rpc("unqueueGoal", [index]);
   hive.value = { ...hive.value, backlog: hive.value.backlog.filter((_, i) => i !== index) };
 }
 
@@ -666,6 +672,7 @@ export function launchHive(
   plan: HivePlan,
   opts: { keepUserItems?: boolean } = {},
 ): void {
+  if (!IS_SERVER) return rpc("launchHive", [picked, plan, opts]);
   const first = plan.waves[0];
   if (!first) throw new Error("plan has no executable wave");
   for (const a of plan.waves.flatMap((w) => w.assignments)) {
@@ -707,6 +714,7 @@ export function launchHive(
 /** ⏹ Make-stop-stick: persist the stop FIRST, then unwind the queues. Stop
  *  means stop — continuous mode goes off with it. */
 export function stopHive(): void {
+  if (!IS_SERVER) return rpc("stopHive", []);
   const st = hive.value;
   const run = st.run;
   if (!run) return;
@@ -730,6 +738,7 @@ function unwindStop(): void {
 
 /** ▶ a paused/blocked/stopped assignment's queue (startQueue clears the head error). */
 export function retryAssignment(character: string): void {
+  if (!IS_SERVER) return rpc("retryAssignment", [character]);
   startQueue(character);
 }
 
@@ -737,6 +746,7 @@ export function retryAssignment(character: string): void {
  *  skipped. A character can hold TWO assignments (main + filler) — every one
  *  that isn't already finished is skipped; done ones keep their ✓. */
 export function skipAssignment(character: string): void {
+  if (!IS_SERVER) return rpc("skipAssignment", [character]);
   const run = hive.value.run;
   if (!run || !run.wave) return;
   const mine = run.wave.assignments.filter(
@@ -767,6 +777,7 @@ export function skipAssignment(character: string): void {
 /** Toggle a character's manual opt-out. Opting out mid-run abandons its current
  *  assignment; opting back in rejoins from the next dispatched wave. */
 export function toggleHiveManual(name: string): void {
+  if (!IS_SERVER) return rpc("toggleHiveManual", [name]);
   const st = hive.value;
   const wasManual = st.manual.includes(name);
   hive.value = { ...st, manual: wasManual ? st.manual.filter((n) => n !== name) : [...st.manual, name] };
@@ -796,3 +807,5 @@ export function resumeHive(): void {
 // A hot swap would double-register the module-level effects against a fresh
 // signal while the old ones kept firing — reload instead (same as queue.ts).
 if (import.meta.hot) import.meta.hot.accept(() => location.reload());
+
+expose({ toggleHiveAuto, queueGoal, unqueueGoal, launchHive, stopHive, retryAssignment, skipAssignment, toggleHiveManual });

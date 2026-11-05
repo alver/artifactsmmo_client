@@ -10,7 +10,7 @@ export function TokenGate() {
     e.preventDefault();
     if (!val.trim()) return;
     setBusy(true);
-    setToken(val.trim());
+    await setToken(val.trim()); // before login: the two calls are separate requests
     await login();
     setBusy(false);
   };
@@ -19,7 +19,7 @@ export function TokenGate() {
     <div class="gate">
       <form class="gate-card" onSubmit={submit}>
         <h1>ArtifactsMMO</h1>
-        <p class="muted">Paste your API token to connect. It's stored only in this browser.</p>
+        <p class="muted">Paste your API token to connect. It's kept by the local service (in .ammo/), never in the browser.</p>
         <input
           type="password"
           placeholder="JWT token"
