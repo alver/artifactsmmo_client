@@ -42,8 +42,10 @@ export type QueueItem = { id: string; error?: string } & (
   // the character can feed alone. toLevel 0 = forever; `levels` = +N from the
   // level the item STARTED at (`from`, recorded on first run — a 🔁 rotation
   // wipes it so every lap gains the next level). `gear` ⇒ keep the bank
-  // gathering set on while gathering.
-  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; gear?: boolean }
+  // gathering set on while gathering. `for` = HELP that character train the
+  // skill instead: keep the bank stocked with its current recipe's materials
+  // (level target measured on the crafter).
+  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; gear?: boolean; for?: string }
   // Swap to the best job gear from the bank (see plan/jobgear.ts): `desired` =
   // slot map frozen at compile; `job` = live spec recomputed from the bank at
   // run time (hand-added). `reset` ⇒ full bank reset first: deposit EVERYTHING
@@ -105,7 +107,7 @@ export function queueItemText(it: QueueItem): string {
     case "buy": return `Buy ${it.quantity}× ${itemName(it.code)}`;
     case "sell": return `Sell ${it.quantity}× ${itemName(it.code)}`;
     case "recycle": return `Recycle ${it.quantity}× ${itemName(it.code)}`;
-    case "train": return `Train ${titleCase(it.skill)} ${it.levels ? `+${it.levels} level${it.levels === 1 ? "" : "s"}` : it.toLevel > 0 ? `to Lv ${it.toLevel}` : "(∞)"}`;
+    case "train": return `${it.for ? `Help ${it.for} train` : "Train"} ${titleCase(it.skill)} ${it.levels ? `+${it.levels} level${it.levels === 1 ? "" : "s"}` : it.toLevel > 0 ? `to Lv ${it.toLevel}` : "(∞)"}`;
     case "gear": {
       const what = it.job
         ? it.job.kind === "fight"

@@ -126,6 +126,12 @@ export function jobSetFromRecommendation(ch: Character, bank: BankItem[], rec: G
   return out;
 }
 
+/** Whether some set owned right now (bank ∪ bag ∪ worn) wins vs the monster — the reset's own BIS solve. */
+export function canWinWithOwned(ch: Character, bank: BankItem[], monster: string): boolean {
+  const qty = ownedQtyOf(ch, bank);
+  return !!bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false })[0]?.forecast.win;
+}
+
 /**
  * The best gear set for a job from what is owned right now (bank ∪ inventory ∪
  * equipped — nothing is crafted here). Absent slots in the result are

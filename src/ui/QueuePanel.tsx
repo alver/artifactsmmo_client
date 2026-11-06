@@ -6,13 +6,13 @@
 // 4 Hz `now` clock — see the cooldown-clock invariant in store.ts.
 
 import { useState } from "preact/hooks";
-import { armTilePick, bankItems, CRAFT_TRAIN_SKILLS, tilePick } from "../state/store";
+import { armTilePick, bankItems, characters, craftPins, CRAFT_TRAIN_SKILLS, tilePick } from "../state/store";
 import { npcForSell } from "../plan/acquire";
 import { catalog, item as itemOf, itemName } from "../catalog";
 import { pct, titleCase } from "../lib/util";
 import { Bar } from "./DataTable";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
-import { addItem, clearQueue, moveItem, queuePinTraining, queues, removeItem, setRepeat, startQueue, stopQueue, updateItem } from "../state/queue";
+import { addItem, clearQueue, moveItem, queueAssist, queuePinTraining, queues, removeItem, setRepeat, startQueue, stopQueue, updateItem } from "../state/queue";
 import { PIN_SKILLS, skillPins } from "../state/store";
 import { availableMonsters, availableResources } from "../state/events";
 import { offeringSlots, todayOfferings } from "../state/offerings";
@@ -101,6 +101,14 @@ export function QueueSection({ ch }: { ch: Character }) {
             )}
           </>
         )}
+        <button
+          class="cat-btn"
+          disabled={!craftPins()[ch.name]}
+          title="Every other character drops what it is doing and keeps the bank stocked with this character's current recipe materials (gather / smelt / hunt) until this character's train target"
+          onClick={() => { const skill = craftPins()[ch.name]; if (confirm(`Everyone else stops what they're doing and helps ${ch.name} train ${titleCase(skill)}?`)) queueAssist(ch.name, skill); }}
+        >
+          🤝 Fleet helps
+        </button>
       </div>
 
       <AddForm ch={ch} />
@@ -160,9 +168,10 @@ export function itemProgress(ch: Character, it: QueueItem): { pct: number | null
       return slots.length ? { pct: pct(slots.filter((s) => s.status === "done").length, slots.length), label: `${slots.filter((s) => s.status === "done").length}/${slots.length} today` } : null;
     }
     case "train": {
-      const xp = stat[`${it.skill}_xp`] ?? 0;
-      const max = stat[`${it.skill}_max_xp`] ?? 0;
-      return { pct: pct(xp, max), label: `Lv ${stat[`${it.skill}_level`] ?? 0} · ${xp}/${max} xp` };
+      const who = ((it.for ? characters.value[it.for] : undefined) ?? stat) as Record<string, number>; // a helper shows the crafter's progress
+      const xp = who[`${it.skill}_xp`] ?? 0;
+      const max = who[`${it.skill}_max_xp`] ?? 0;
+      return { pct: pct(xp, max), label: `Lv ${who[`${it.skill}_level`] ?? 0} · ${xp}/${max} xp` };
     }
     default:
       return null;
@@ -277,6 +286,7 @@ function AddForm({ ch }: { ch: Character }) {
   const [gearJob, setGearJob] = useState("fight");
   const [gearReset, setGearReset] = useState(false);
   const [taskMaster, setTaskMaster] = useState<"monsters" | "items">("monsters");
+  const [helpFor, setHelpFor] = useState("");
 
   const stats = ch as unknown as Record<string, number>;
   // Only what's reachable RIGHT NOW: static tiles plus active-event spawns
@@ -323,7 +333,7 @@ function AddForm({ ch }: { ch: Character }) {
       }
       // Gathering skills pick their node per tick; workshop skills run the
       // source → craft → recycle loop. gear keeps the bank gathering set on.
-      case "train": return { kind: "train", skill: code || PIN_SKILLS[0][0], toLevel: Math.max(0, times), gear: true };
+      case "train": return { kind: "train", skill: code || PIN_SKILLS[0][0], toLevel: Math.max(0, times), gear: true, ...(helpFor ? { for: helpFor } : {}) };
       case "craft": {
         const rec = recipes.find((o) => o.code === code) ?? recipes[0];
         // quantity 0 = craft forever: bank-withdraw → craft → deposit cycles
@@ -409,11 +419,21 @@ function AddForm({ ch }: { ch: Character }) {
       )}
 
       {kind === "train" && (
-        <select class="cp-refine-select" value={code || PIN_SKILLS[0][0]} onChange={(e) => setCode(sel(e))}>
-          {PIN_SKILLS.map(([k, label]) => (
-            <option key={k} value={k}>{label} · Lv {stats[`${k}_level`] ?? 0}</option>
-          ))}
-        </select>
+        <>
+          <select class="cp-refine-select" value={code || PIN_SKILLS[0][0]} onChange={(e) => setCode(sel(e))}>
+            {PIN_SKILLS.map(([k, label]) => (
+              <option key={k} value={k}>{label} · Lv {stats[`${k}_level`] ?? 0}</option>
+            ))}
+          </select>
+          {CRAFT_TRAIN_SKILLS.some(([k]) => k === (code || PIN_SKILLS[0][0])) && (
+            <select class="cp-refine-select" value={helpFor} title="Help another character train it: keep the bank stocked with its current recipe's materials" onChange={(e) => setHelpFor(sel(e))}>
+              <option value="">train myself</option>
+              {Object.keys(characters.value).filter((n) => n !== ch.name).map((n) => (
+                <option key={n} value={n}>help {n}</option>
+              ))}
+            </select>
+          )}
+        </>
       )}
 
       {kind === "craft" && (
