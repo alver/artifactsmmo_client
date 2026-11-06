@@ -100,6 +100,8 @@ function bestBag(ch: Character, qty: Map<string, number>): string {
 function pinArtifacts(ch: Character, qty: Map<string, number>, desired: Partial<Record<GearSlot, string>>): void {
   for (const code of PINNED_ARTIFACTS) {
     if ((qty.get(code) ?? 0) <= 0) continue; // not owned yet
+    const it = item(code);
+    if (!it || !canEquip(ch, it)) continue; // e.g. novice_guide needs level ≥ 10 (496 otherwise)
     const wornSlot = ARTIFACT_GROUP.find((g) => slotCode(ch, g) === code);
     if (wornSlot) {
       desired[wornSlot] = code;
