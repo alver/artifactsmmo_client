@@ -686,14 +686,19 @@ function batchRuns(ch: Character, recipe: CraftRecipe, by: Character[]): number 
  *  A helper keeps only its tools: everything it gathers is FOR the bank. */
 function trainKeep(ch: Character, it: Extract<QueueItem, { kind: "train" }>): string[] | undefined {
   if (!isCraftSkill(it.skill)) return undefined;
-  const pick = it.for ? undefined : trainPick(ch, it.skill);
+  const by = [ch, ...helpersOf(ch.name, it.skill)];
+  const pick = it.for ? undefined : trainRecipe(ch, it.skill, by);
+  const runs = pick ? batchRuns(ch, pick.recipe, by) : 0;
   // Spare tools ride in the bag (never the product itself — it must recycle/bank)
   // so the gather ↔ craft tool swap never costs a bank trip.
   const tools = it.gear ? (ch.inventory ?? []).filter((s) => s.code && s.code !== pick?.code && itemOf(s.code)?.subtype === "tool").map((s) => s.code) : [];
   return [
     ...(pick?.recipe.items.flatMap((g) => {
       const src = fieldSource(ch, g.code);
-      return [g.code, ...(src?.how === "craft" ? src.recipe.items.map((s) => s.code) : [])];
+      // Sub-materials (ore) are working stock only while the batch's bars aren't
+      // covered by bag + bank — otherwise they're dead weight on a hunt.
+      const covered = invQty(ch, g.code) + bankQty(g.code) >= g.quantity * runs;
+      return [g.code, ...(src?.how === "craft" && !covered ? src.recipe.items.map((s) => s.code) : [])];
     }) ?? []),
     ...tools,
   ];
