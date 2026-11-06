@@ -769,7 +769,13 @@ async function runTrainAssist(name: string, ch: Character, it: Extract<QueueItem
     return invQty(ch, code) > 0 || (src?.how === "craft" && src.recipe.items.some((s) => invQty(ch, s.code) > 0));
   };
   const rows = pick.recipe.items
-    .map((g) => ({ code: g.code, need: g.quantity * runs * 2, load: Math.max(g.quantity * runs, g.quantity * runs * 2 - bankQty(g.code)) }))
+    .map((g) => {
+      // One trip's load: a bagful of raw materials smelted (10 bars), never more
+      // than a batch (14 slimeballs) — a delivery costs ~35 s, an idle crafter hours.
+      const src = fieldSource(ch, g.code);
+      const raw = src?.how === "craft" ? src.recipe.items.reduce((t, s) => t + s.quantity, 0) / Math.max(1, src.recipe.quantity) : 1;
+      return { code: g.code, need: g.quantity * runs * 2, load: Math.max(1, Math.min(g.quantity * runs, Math.floor(ch.inventory_max_items / raw))) };
+    })
     .filter((g) => unitSec([ch], g.code) < Infinity);
   if (!rows.length) throw new Error(`nothing in ${itemName(pick.code)} this character can produce`);
   const g = rows.find((g) => holds(g.code)) ?? rows.sort((a, b) => (bankQty(a.code) + invQty(ch, a.code)) / a.need - (bankQty(b.code) + invQty(ch, b.code)) / b.need)[0];
