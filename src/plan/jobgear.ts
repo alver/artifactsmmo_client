@@ -17,7 +17,7 @@
 // Pure module: catalog lookups only — no signals, no API.
 
 import { item, tileAt } from "../catalog";
-import { bestInSlot, canEquip } from "./bis";
+import { bestInSlot, canEquip, killSeconds } from "./bis";
 import { brewablePotions } from "./consumables";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode, slotQuantity } from "../types/api";
 import type { BankItem, Character, GearSlot } from "../types/api";
@@ -156,9 +156,10 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
     // Brewing escalation: potions the character could BREW (alchemy skill +
     // ingredients stocked or gatherable) join the search as extra candidates,
     // adopted only when they MATERIALLY beat the owned-only set — a win-flip,
-    // a safe-flip, or a real expected-HP gain. The solver's fills-a-slot
-    // tiebreak alone must never send anyone on a brewing expedition; a potion
-    // that never fires in the forecast gains 0 HP and is never adopted.
+    // a safe-flip, or a faster kill (fight + rest seconds). The solver's
+    // fills-a-slot tiebreak alone must never send anyone on a brewing
+    // expedition; a potion that never fires in the forecast saves 0 s and is
+    // never adopted.
     // provisionPotions (exec.ts) produces what the differ can't find.
     const brews = brewablePotions(ch, bank);
     if (brews.length) {
@@ -168,7 +169,7 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
         rec &&
         ((recB.forecast.win && !rec.forecast.win) ||
           (recB.safe && !rec.safe) ||
-          (recB.forecast.win && recB.forecast.hpRemaining > rec.forecast.hpRemaining))
+          (recB.forecast.win && killSeconds(recB.forecast) < killSeconds(rec.forecast)))
       ) {
         return jobSetFromRecommendation(ch, bank, recB);
       }

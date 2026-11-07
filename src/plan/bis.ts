@@ -8,9 +8,11 @@
 // Objective (lexicographic, encoded as one scalar):
 //   1. feasible: EV win AND not a 100-turn timeout            (else the -1e12 tier)
 //   2. safe: the pessimistic pass also wins                   (+1e9)
-//   3. maximize expected HP remaining (rest time dominates grind speed)
-//   4. tie-break: fewer turns
-// So any safe win beats any risky win; within a tier, survivability then speed.
+//   3. minimize seconds per kill: fight cooldown (2 s/turn) + rest back to
+//      full (5 HP/s) — NOT "HP remaining": a restore potion heals every turn
+//      spent under half health, so an HP objective rewards a slow weapon that
+//      drags the fight out (fire staff over iron sword vs a cow).
+// So any safe win beats any risky win; within a tier, the fastest grind.
 // Sets that can't win at all still rank (on a tier no win loses to, by turns
 // survived) — when NOTHING owned beats the monster, the solver still returns
 // the best-effort set, so "equip for a fight" always dresses the character.
@@ -20,6 +22,8 @@ import { catalog, item, monster as monsterOf } from "../catalog";
 import { applyGear, baseStats } from "../sim/stats";
 import type { EffectiveStats } from "../sim/types";
 import { simulate } from "../sim/combat";
+import type { FightForecast } from "../sim/combat";
+import { fightSec } from "./xp";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../types/api";
 import type { Character, GearSlot } from "../types/api";
 import type { Item, Monster } from "../types/catalog";
@@ -53,6 +57,9 @@ export interface BisOptions {
   perSlotCap?: number; // default 12
   weaponCap?: number; // default 10
 }
+
+/** Wall-clock per kill: the fight's cooldown plus resting back to full. */
+export const killSeconds = (f: FightForecast): number => fightSec(f.turns) + f.restSeconds;
 
 const SINGLE_SLOTS: GearSlot[] = ["shield", "helmet", "body_armor", "leg_armor", "boots", "amulet", "rune", "bag"];
 const RING_SLOTS: GearSlot[] = ["ring1", "ring2"];
@@ -197,7 +204,7 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
     // terms are pure functions of the set (+ worn state for `keep`), keeping
     // bestInSlot order-free. Windows: a 1-level gap (5e-4) outranks a filled
     // slot (1e-4) outranks a kept slot (1e-5); totals stay far below any real
-    // forecast difference (1 turn = 1.0) and far above double-precision noise
+    // forecast difference (1 s = 1000) and far above double-precision noise
     // at the 1e9 safe-tier magnitude (ulp ≈ 2.4e-7).
     let tier = 0;
     let filled = 0;
@@ -217,7 +224,7 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
     }
     const worst = simulate(fighter, monster, { pessimistic: true });
     const safe = worst.win;
-    return { score: (safe ? 1e9 : 0) + f.hpRemaining * 1000 - f.turns + tiebreak, f, worst, safe };
+    return { score: (safe ? 1e9 : 0) - killSeconds(f) * 1000 + tiebreak, f, worst, safe };
   };
 }
 

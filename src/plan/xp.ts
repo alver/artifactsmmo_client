@@ -20,5 +20,7 @@ export const recycleReturn = (ingredientCount: number): number => Math.floor((in
 export const gatherSec = (resourceLevel: number): number => 29 + Math.max(1, Math.floor(resourceLevel / 2));
 /** One recipe execution (and the smelt behind it). */
 export const CRAFT_SEC = 5;
+/** Fight cooldown: 2 s per turn, floor 5 s (haste ignored — same set, same discount everywhere). */
+export const fightSec = (turns: number): number => Math.max(5, 2 * turns);
 /** One fight round including the healing it costs, measured. */
 export const FIGHT_SEC = 40;
