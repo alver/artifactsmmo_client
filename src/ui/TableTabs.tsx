@@ -36,6 +36,17 @@ function useBankQty(): Map<string, number> {
   return useMemo(() => new Map(bank.map((b) => [b.code, b.quantity])), [bank]);
 }
 
+/** Everything the account owns by code: bank + every character's bag + worn gear. */
+function useFleetQty(): Map<string, number> {
+  const bank = bankItems.value;
+  const chars = characters.value;
+  return useMemo(() => {
+    const q = new Map(bank.map((b) => [b.code, b.quantity]));
+    for (const c of Object.values(chars)) for (const [code, n] of ownedQtyOf(c, [])) q.set(code, (q.get(code) ?? 0) + n);
+    return q;
+  }, [bank, chars]);
+}
+
 // Static tiles per content ("monster:chicken" → its tiles). The map is static — build once.
 let _tiles: Map<string, GameMap[]> | null = null;
 function tilesOf(type: string, code: string): GameMap[] {
@@ -298,6 +309,7 @@ const SOURCES: [string, string][] = [
 
 export function ItemsTab() {
   const bank = useBankQty();
+  const fleet = useFleetQty();
   const chars = characterList();
   const [type, setType] = useState("");
   const [source, setSource] = useState("");
@@ -327,6 +339,10 @@ export function ItemsTab() {
     { label: "Item", width: "minmax(190px, 1.3fr)", sort: (i) => i.name, cell: (i) => <ItemCell code={i.code} sub={titleCase(i.subtype || i.type)} /> },
     { label: "Lv", width: "44px", align: "right", sort: (i) => i.level, cell: (i) => i.level },
     { label: "In bank", width: "70px", align: "right", sort: (i) => bank.get(i.code) ?? 0, cell: (i) => bank.get(i.code)?.toLocaleString() || <span class="muted">—</span> },
+    {
+      label: "Total", width: "70px", align: "right", sort: (i) => fleet.get(i.code) ?? 0,
+      cell: (i) => <span title="Bank + every character's bag + worn gear">{fleet.get(i.code)?.toLocaleString() || <span class="muted">—</span>}</span>,
+    },
     {
       label: "Recipe (bank stock)", width: "minmax(260px, 2fr)",
       sort: (i) => (i.craft ? `${i.craft.skill}:${String(i.craft.level).padStart(3, "0")}` : "~"),
@@ -406,7 +422,7 @@ export function ItemsTab() {
     <div class="page">
       <div class="page-head">
         <h2>Items</h2>
-        <span class="muted">Every item — how to craft it, who sells and buys it, what the bank holds. Hover an item for its full card.</span>
+        <span class="muted">Every item — how to craft it, who sells and buys it, what the bank holds and what the fleet owns in total. Hover an item for its full card.</span>
       </div>
       <section class="ws-card">
         <DataTable
