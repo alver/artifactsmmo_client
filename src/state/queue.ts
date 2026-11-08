@@ -22,12 +22,13 @@ import * as actions from "../api/actions";
 import { ApiError } from "../api/client";
 import { catalog, item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
 import { npcForSell } from "../plan/acquire";
-import { RESET_UTILITY_STRIP, canWinWithOwned, stripAllMap } from "../plan/jobgear";
+import { RESET_UTILITY_STRIP, ownedFightForecast, stripAllMap } from "../plan/jobgear";
 import { QUEUE_KINDS, queueItemText, withId } from "../plan/queue";
 import { trainingResourceFor } from "../plan/hive/skills";
-import { CRAFT_SEC, FIGHT_SEC, craftXp, gatherSec, recycleReturn } from "../plan/xp";
+import { CRAFT_SEC, FIGHT_SEC, craftXp, fightXp, gatherSec, recycleReturn } from "../plan/xp";
+import { killSeconds } from "../plan/bis";
 import { titleCase } from "../lib/util";
-import { CRAFT_TRAIN_SKILLS, bankItems, characters, pushLog, skillPins } from "./store";
+import { CRAFT_TRAIN_SKILLS, bankItems, characters, pushLog, skillKey, skillPins } from "./store";
 import { devlog } from "../lib/devlog";
 import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
@@ -37,6 +38,7 @@ import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
 import type { BankItem, Character, OfferingFavor } from "../types/api";
 import type { CraftRecipe, DropRate, Monster, Resource } from "../types/catalog";
+import type { FightForecast } from "../sim/combat";
 
 export interface QueueState {
   items: QueueItem[];
@@ -171,7 +173,7 @@ function skipItem(name: string, it: QueueItem, why: string): true {
 }
 
 const skillLevel = (ch: Character, skill: string): number =>
-  (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
+  (ch as unknown as Record<string, number>)[skillKey(skill, "level")] ?? 0;
 
 function keepOf(it: QueueItem, ch: Character): string[] | undefined {
   const base =
@@ -188,7 +190,7 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
     : undefined;
   // Carried between-fight food is working stock too — a loot bank-off or the
   // job-start gear reset must not stash the fighter's rations.
-  if (it.kind === "fight" || it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight")) {
+  if (it.kind === "fight" || it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight") || (it.kind === "train" && it.skill === "combat")) {
     const food = foodInHand(ch)?.code;
     if (food) return [...(base ?? []), food];
   }
@@ -198,7 +200,7 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
 function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
   // Persisted queues from before food became a boolean may carry an old
   // FoodSpec object here — any non-false value means "keep fed".
-  const fed = it.kind === "fight" ? it.food !== false : it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" ? true : undefined;
+  const fed = it.kind === "fight" ? it.food !== false : it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "train" && it.skill === "combat") ? true : undefined;
   return {
     keep: keepOf(it, ch),
     food: fed,
@@ -206,6 +208,7 @@ function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
       it.kind === "fight" ? (it.times > 0 ? Math.max(1, it.times - it.done) : 50)
       : it.kind === "work-task" || it.kind === "task-loop" ? Math.max(1, ch.task_total - ch.task_progress)
       : it.kind === "offering" ? 20 // a handful of drops — sizes one food restock
+      : it.kind === "train" && it.skill === "combat" ? 50
       : undefined,
     note: (text) => setQueue(name, { note: text }),
   };
@@ -398,6 +401,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       const target = it.levels ? (it.from ?? lv) + it.levels : it.toLevel;
       if (target > 0 && lv >= target) return true;
       if (it.for) return runTrainAssist(name, ch, it, who, ctx);
+      if (it.skill === "combat") return runTrainCombat(name, ch, it, ctx);
       if (isCraftSkill(it.skill)) return runTrainCraft(name, ch, it, ctx);
       const node = it.resource ?? trainingResourceFor(it.skill, lv)?.code;
       const tile = it.x != null ? { x: it.x, y: it.y } : node ? nearest("resource", node, ch.x, ch.y) : undefined;
@@ -588,15 +592,55 @@ async function fightGear(name: string, ch: Character, it: Extract<QueueItem, { k
   return !!desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted";
 }
 
-/** Whether the bank's best set lets `ch` win vs the monster — a BIS solve, memoized per bank reference. */
-const winMemo = new Map<string, { bank: BankItem[]; level: number; win: boolean }>();
-function canBeat(ch: Character, monster: string): boolean {
+/** The forecast of the bank's best set vs the monster — a BIS solve, memoized per bank reference. */
+const forecastMemo = new Map<string, { bank: BankItem[]; level: number; forecast?: FightForecast }>();
+function forecastVs(ch: Character, monster: string): FightForecast | undefined {
   const key = `${ch.name}|${monster}`;
-  const m = winMemo.get(key);
-  if (m && m.bank === bankItems.value && m.level === ch.level) return m.win;
-  const win = canWinWithOwned(ch, bankItems.value, monster);
-  winMemo.set(key, { bank: bankItems.value, level: ch.level, win });
-  return win;
+  const m = forecastMemo.get(key);
+  if (m && m.bank === bankItems.value && m.level === ch.level) return m.forecast;
+  const forecast = ownedFightForecast(ch, bankItems.value, monster);
+  forecastMemo.set(key, { bank: bankItems.value, level: ch.level, forecast });
+  return forecast;
+}
+const canBeat = (ch: Character, monster: string): boolean => !!forecastVs(ch, monster)?.win;
+
+/**
+ * The monster to level combat on right now: best XP per second (fight cooldown
+ * + rest to full) among monsters on the map that give XP and that the bank's
+ * best set beats. Memoized per bank reference + level like the forecasts.
+ * shortcut: candidates stop at level + 10 (a BIS solve each), raise if a
+ * character ever beats something further up.
+ */
+const monsterMemo = new Map<string, { bank: BankItem[]; level: number; pick?: Monster }>();
+function trainingMonsterFor(ch: Character): Monster | undefined {
+  const m = monsterMemo.get(ch.name);
+  if (m && m.bank === bankItems.value && m.level === ch.level) return m.pick;
+  let best: { mon: Monster; rate: number } | undefined;
+  for (const mon of catalog().monsters.values()) {
+    const xp = fightXp(mon.level, mon.hp, mon.type, ch.level);
+    if (xp <= 0 || mon.level > ch.level + 10 || !nearest("monster", mon.code, ch.x, ch.y)) continue;
+    const f = forecastVs(ch, mon.code);
+    if (!f?.win) continue;
+    const rate = xp / killSeconds(f);
+    if (!best || rate > best.rate) best = { mon, rate };
+  }
+  monsterMemo.set(ch.name, { bank: bankItems.value, level: ch.level, pick: best?.mon });
+  return best?.mon;
+}
+
+/** Combat training: fight the best-XP-per-second monster, re-picked as the level and bank change. */
+async function runTrainCombat(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, ctx: StepCtx): Promise<boolean> {
+  const mon = trainingMonsterFor(ch);
+  if (!mon) return skipItem(name, it, "no monster worth XP that the bank's gear can beat");
+  const tile = nearest("monster", mon.code, ch.x, ch.y);
+  if (!tile) { monsterMemo.delete(ch.name); return false; } // its event ended — re-pick next tick
+  if (await fightGear(name, ch, it, mon.code, ctx)) return false;
+  ctx.note(`training combat vs ${mon.name}`);
+  const out = await fightRound(name, ch, mon, tile, S(name), ctx);
+  if (out === "no-win") throw new Error(`not a safe win vs ${mon.name}`);
+  if (out === "gave-up") throw new Error("lost 2 fights in a row");
+  if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+  return false;
 }
 
 /** Actions (gathers or fights) per unit dropped: "1 in N" rate ÷ mean quantity. */
@@ -1303,8 +1347,12 @@ export function setRepeat(name: string, on: boolean): void {
  */
 export function queuePinTraining(name: string): void {
   if (!IS_SERVER) return rpc("queuePinTraining", [name]);
+  const ch = characters.value[name];
   for (const skill of skillPins.value[name] ?? []) {
-    addItem(name, withId({ kind: "gear", job: isCraftSkill(skill) ? { kind: "craft", skill } : { kind: "gather", skill }, reset: true }));
+    // Combat resets into the set vs today's pick; the train item re-swaps if the pick moves.
+    const mon = skill === "combat" && ch ? trainingMonsterFor(ch)?.code : undefined;
+    const job: GearJob = skill === "combat" ? (mon ? { kind: "fight", monster: mon } : { kind: "none" }) : isCraftSkill(skill) ? { kind: "craft", skill } : { kind: "gather", skill };
+    addItem(name, withId({ kind: "gear", job, reset: true }));
     addItem(name, withId({ kind: "train", skill, toLevel: 0, levels: 1, gear: true }));
   }
   setRepeat(name, true);

@@ -13,7 +13,7 @@ import { pct, titleCase } from "../lib/util";
 import { Bar } from "./DataTable";
 import { queueItemIcon, queueItemText, withId } from "../plan/queue";
 import { addItem, clearQueue, moveItem, queueAssist, queuePinTraining, queues, removeItem, setRepeat, startQueue, stopQueue, updateItem } from "../state/queue";
-import { PIN_SKILLS, skillPins } from "../state/store";
+import { PIN_SKILLS, skillKey, skillPins } from "../state/store";
 import { availableMonsters, availableResources } from "../state/events";
 import { offeringSlots, todayOfferings } from "../state/offerings";
 import type { JSX } from "preact";
@@ -169,9 +169,9 @@ export function itemProgress(ch: Character, it: QueueItem): { pct: number | null
     }
     case "train": {
       const who = ((it.for ? characters.value[it.for] : undefined) ?? stat) as Record<string, number>; // a helper shows the crafter's progress
-      const xp = who[`${it.skill}_xp`] ?? 0;
-      const max = who[`${it.skill}_max_xp`] ?? 0;
-      return { pct: pct(xp, max), label: `Lv ${who[`${it.skill}_level`] ?? 0} · ${xp}/${max} xp` };
+      const xp = who[skillKey(it.skill, "xp")] ?? 0;
+      const max = who[skillKey(it.skill, "max_xp")] ?? 0;
+      return { pct: pct(xp, max), label: `Lv ${who[skillKey(it.skill, "level")] ?? 0} · ${xp}/${max} xp` };
     }
     default:
       return null;
@@ -422,7 +422,7 @@ function AddForm({ ch }: { ch: Character }) {
         <>
           <select class="cp-refine-select" value={code || PIN_SKILLS[0][0]} onChange={(e) => setCode(sel(e))}>
             {PIN_SKILLS.map(([k, label]) => (
-              <option key={k} value={k}>{label} · Lv {stats[`${k}_level`] ?? 0}</option>
+              <option key={k} value={k}>{label} · Lv {stats[skillKey(k, "level")] ?? 0}</option>
             ))}
           </select>
           {CRAFT_TRAIN_SKILLS.some(([k]) => k === (code || PIN_SKILLS[0][0])) && (

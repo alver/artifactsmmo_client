@@ -7,7 +7,7 @@
 // collapsible sections. Per the cooldown-clock rule, the only 4 Hz
 // readers here are the tiny <CooldownRing> / <EventTimer> leaves.
 
-import { PIN_SKILLS, characterList, focusTile, gearCoverageOpen, go, hiveOpen, offeringsOpen, openCharacter, pendingRewards, skillPins, togglePin } from "../state/store";
+import { PIN_SKILLS, characterList, focusTile, gearCoverageOpen, go, hiveOpen, offeringsOpen, openCharacter, pendingRewards, skillKey, skillPins, togglePin } from "../state/store";
 import type { Signal } from "@preact/signals";
 import type { ComponentChildren } from "preact";
 import { saveState } from "../state/persist";
@@ -205,9 +205,9 @@ function fleetCols(): Col<Character>[] {
             <div key={k} class="fleet-pin">
               <span class="pin-n">{i + 1}</span>
               <span>
-                {PIN_SKILLS.find(([key]) => key === k)?.[1] ?? k} <b>{stat(c, `${k}_level`)}</b>
+                {PIN_SKILLS.find(([key]) => key === k)?.[1] ?? k} <b>{stat(c, skillKey(k, "level"))}</b>
               </span>
-              <Bar pct={pct(stat(c, `${k}_xp`), stat(c, `${k}_max_xp`))} />
+              <Bar pct={pct(stat(c, skillKey(k, "xp")), stat(c, skillKey(k, "max_xp")))} />
             </div>
           ))}
         </div>
@@ -268,9 +268,8 @@ const bagPct = (c: Character): number => pct(bagUsed(c), c.inventory_max_items);
 function SkillGrid({ chars }: { chars: Character[] }) {
   return (
     <div class="dt-scroll">
-      <div class="skill-grid" style={{ gridTemplateColumns: `110px repeat(${PIN_SKILLS.length + 1}, minmax(64px, 1fr))` }}>
+      <div class="skill-grid" style={{ gridTemplateColumns: `110px repeat(${PIN_SKILLS.length}, minmax(64px, 1fr))` }}>
         <span />
-        <span class="skill-head">Combat</span>
         {PIN_SKILLS.map(([k, label]) => (
           <span key={k} class="skill-head">
             {label.replace("crafting", "")}
@@ -280,10 +279,6 @@ function SkillGrid({ chars }: { chars: Character[] }) {
           const pins = skillPins.value[c.name] ?? [];
           return [
             <span key={`${c.name}:n`} class="skill-char">{c.name}</span>,
-            <span key={`${c.name}:c`} class="skill-cell">
-              <b>{c.level}</b>
-              <Bar pct={pct(c.xp, c.max_xp)} />
-            </span>,
             ...PIN_SKILLS.map(([k, label]) => {
               const i = pins.indexOf(k);
               return (
@@ -294,10 +289,10 @@ function SkillGrid({ chars }: { chars: Character[] }) {
                   onClick={() => { togglePin(c.name, k); saveState(); }}
                 >
                   <b>
-                    {stat(c, `${k}_level`)}
+                    {stat(c, skillKey(k, "level"))}
                     {i >= 0 && <sup>{i + 1}</sup>}
                   </b>
-                  <Bar pct={pct(stat(c, `${k}_xp`), stat(c, `${k}_max_xp`))} />
+                  <Bar pct={pct(stat(c, skillKey(k, "xp")), stat(c, skillKey(k, "max_xp")))} />
                 </button>
               );
             }),

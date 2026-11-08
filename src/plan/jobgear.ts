@@ -23,6 +23,7 @@ import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode, slotQuantity } from "../types/api
 import type { BankItem, Character, GearSlot } from "../types/api";
 import type { Item } from "../types/catalog";
 import type { GearJob, GearRecommendation } from "./types";
+import type { FightForecast } from "../sim/combat";
 
 /** The always-managed slots. Utility slots join only when a desired map names them (fight sets). */
 export const MANAGED_SLOTS: GearSlot[] = GEAR_SLOTS.filter((s) => !s.startsWith("utility"));
@@ -128,8 +129,12 @@ export function jobSetFromRecommendation(ch: Character, bank: BankItem[], rec: G
 
 /** Whether some set owned right now (bank ∪ bag ∪ worn) wins vs the monster — the reset's own BIS solve. */
 export function canWinWithOwned(ch: Character, bank: BankItem[], monster: string): boolean {
+  return !!ownedFightForecast(ch, bank, monster)?.win;
+}
+/** The forecast of the best set owned right now vs the monster (undefined = no set at all). */
+export function ownedFightForecast(ch: Character, bank: BankItem[], monster: string): FightForecast | undefined {
   const qty = ownedQtyOf(ch, bank);
-  return !!bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false })[0]?.forecast.win;
+  return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false })[0]?.forecast;
 }
 
 /**

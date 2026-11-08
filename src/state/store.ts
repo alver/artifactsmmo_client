@@ -54,9 +54,10 @@ export const lastError = signal<string | null>(null);
 /** Name of the currently selected character (highlights its card + map marker). */
 export const selectedCharacter = signal<string | null>(null);
 
-/** Every skill a character can pin as a main skill (📌): the workshop skills
- *  train by crafting, the rest by gathering. */
+/** Every skill a character can pin as a main skill (📌): combat trains by
+ *  fighting, the workshop skills by crafting, the rest by gathering. */
 export const PIN_SKILLS: [string, string][] = [
+  ["combat", "Combat"],
   ...CRAFT_TRAIN_SKILLS,
   ["mining", "Mining"],
   ["woodcutting", "Woodcutting"],
@@ -64,6 +65,8 @@ export const PIN_SKILLS: [string, string][] = [
   ["alchemy", "Alchemy"],
 ];
 export const MAX_PINS = 2;
+/** Character field holding a pin skill's level / xp / max_xp (combat's live on the character itself). */
+export const skillKey = (skill: string, what: "level" | "xp" | "max_xp"): string => (skill === "combat" ? what : `${skill}_${what}`);
 /**
  * Per-character main-skill pins (character name → ordered skill keys, at most
  * MAX_PINS; pinning one more replaces the oldest). Persisted via persist.ts;

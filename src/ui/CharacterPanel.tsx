@@ -1,4 +1,4 @@
-import { MAX_PINS, PIN_SKILLS, characterList, characters, focusCharacter, selectedCharacter, skillPins, togglePin } from "../state/store";
+import { MAX_PINS, PIN_SKILLS, characterList, characters, focusCharacter, selectedCharacter, skillKey, skillPins, togglePin } from "../state/store";
 import { saveState } from "../state/persist";
 import { item, monster, npc, resource } from "../catalog";
 import { liveTileAt } from "../state/events";
@@ -31,12 +31,12 @@ function SkillsSection({ ch, stat }: { ch: Character; stat: Record<string, numbe
     <div class="cp-skills">
       {PIN_SKILLS.map(([key, label]) => {
         const idx = pins.indexOf(key);
-        const xp = stat[`${key}_xp`] ?? 0;
-        const max = stat[`${key}_max_xp`] ?? 0;
+        const xp = stat[skillKey(key, "xp")] ?? 0;
+        const max = stat[skillKey(key, "max_xp")] ?? 0;
         return (
           <div key={key} class={"cp-skill" + (idx >= 0 ? " cp-skill-focus" : "")}>
             <span class="cp-skill-name">{label}</span>
-            <b class="cp-skill-lv">{stat[`${key}_level`]}</b>
+            <b class="cp-skill-lv">{stat[skillKey(key, "level")]}</b>
             <Bar pct={pct(xp, max)} />
             <span class="cp-skill-xp">
               {xp}/{max}
