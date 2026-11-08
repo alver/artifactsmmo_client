@@ -28,6 +28,7 @@ export interface FightForecast {
   timedOut: boolean; // hit the 100-turn cap ⇒ player loses
   playerFirst: boolean;
   restSeconds: number; // cost to heal back to full before the next fight
+  hpRestored: number; // HP restored by utility potions mid-fight (each proc burns a potion — not free)
   margin: number; // win ? hpRemaining/maxHp : 0 — used to rank/gate gear sets
   maxHp: number;
 }
@@ -78,6 +79,7 @@ interface Combatant {
   init: number;
   // self regen / buffs
   restore: number;
+  restored: number; // HP restored by potion procs so far
   healing: number; // % max hp / 3 turns
   reconstitution: number; // full heal every N turns
   barrierRegen: number;
@@ -171,7 +173,7 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
     hp: pMaxHp, maxHp: pMaxHp, barrier: pEff.get("barrier") ?? 0, turns: 0,
     hitEV: sumHits(pHits) * (1 + 0.5 * pCrit), hitNormal: sumHits(pHits), hitCrit: sumCrits(pHits),
     dmgMult: 1, totalAtk: pTotalAtk, crit: pCrit, init: player.stats.initiative,
-    restore: pEff.get("restore") ?? 0, healing: pEff.get("healing") ?? 0,
+    restore: pEff.get("restore") ?? 0, restored: 0, healing: pEff.get("healing") ?? 0,
     reconstitution: pEff.get("reconstitution") ?? 0, barrierRegen: pEff.get("barrier") ?? 0,
     berserker: pEff.get("berserker_rage") ?? 0, berserked: false, lifesteal: pEff.get("lifesteal") ?? 0,
     poison: mEff.get("poison") ?? 0,
@@ -181,7 +183,7 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
     hp: monster.hp, maxHp: monster.hp, barrier: mEff.get("barrier") ?? 0, turns: 0,
     hitEV: sumHits(mHits) * (1 + 0.5 * mCrit), hitNormal: sumHits(mHits), hitCrit: sumCrits(mHits),
     dmgMult: 1, totalAtk: mTotalAtk, crit: mCrit, init: monster.initiative,
-    restore: mEff.get("restore") ?? 0, healing: mEff.get("healing") ?? 0,
+    restore: mEff.get("restore") ?? 0, restored: 0, healing: mEff.get("healing") ?? 0,
     reconstitution: mEff.get("reconstitution") ?? 0, barrierRegen: mEff.get("barrier") ?? 0,
     berserker: mEff.get("berserker_rage") ?? 0, berserked: false, lifesteal: mEff.get("lifesteal") ?? 0,
     poison: pEff.get("poison") ?? 0,
@@ -204,7 +206,7 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
     if (c.reconstitution > 0 && c.turns % c.reconstitution === 0) c.hp = c.maxHp;
     if (c.healing > 0 && c.turns % 3 === 0) c.hp = Math.min(c.maxHp, c.hp + (c.maxHp * c.healing) / 100);
     if (c.barrierRegen > 0 && c.turns > 1 && (c.turns - 1) % 5 === 0) c.barrier += c.barrierRegen;
-    if (c.restore > 0 && c.hp < 0.5 * c.maxHp) c.hp = Math.min(c.maxHp, c.hp + c.restore);
+    if (c.restore > 0 && c.hp < 0.5 * c.maxHp) { c.hp = Math.min(c.maxHp, c.hp + c.restore); c.restored += c.restore; }
     if (c.poison > 0) c.hp -= c.poison;
     if (c.burnActive) {
       c.hp -= c.burnCur;
@@ -284,6 +286,7 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
     timedOut,
     playerFirst,
     restSeconds: restSeconds(lost),
+    hpRestored: Math.round(P.restored),
     margin: win && pMaxHp > 0 ? clampedHp / pMaxHp : 0,
     maxHp: pMaxHp,
   };

@@ -8,10 +8,13 @@
 // Objective (lexicographic, encoded as one scalar):
 //   1. feasible: EV win AND not a 100-turn timeout            (else the -1e12 tier)
 //   2. safe: the pessimistic pass also wins                   (+1e9)
-//   3. minimize seconds per kill: fight cooldown (2 s/turn) + rest back to
-//      full (5 HP/s) — NOT "HP remaining": a restore potion heals every turn
-//      spent under half health, so an HP objective rewards a slow weapon that
-//      drags the fight out (fire staff over iron sword vs a cow).
+//   3. minimize seconds per kill: fight cooldown (2 s/turn) + healing back
+//      every HP the fight cost (5 HP/s) — damage taken, INCLUDING what a
+//      restore potion put back: NOT "HP remaining" (a potion heals every turn
+//      under half health, so that rewarded a slow weapon that dragged the
+//      fight out — fire staff over iron sword vs a cow), and NOT rest-to-full
+//      alone (the potion pins end-of-fight HP at half of max, so every +HP
+//      armor read as MORE rest and the solver stripped body armor).
 // So any safe win beats any risky win; within a tier, the fastest grind.
 // Sets that can't win at all still rank (on a tier no win loses to, by turns
 // survived) — when NOTHING owned beats the monster, the solver still returns
@@ -24,6 +27,7 @@ import type { EffectiveStats } from "../sim/types";
 import { simulate } from "../sim/combat";
 import type { FightForecast } from "../sim/combat";
 import { fightSec } from "./xp";
+import { restSeconds } from "../sim/cost";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../types/api";
 import type { Character, GearSlot } from "../types/api";
 import type { Item, Monster } from "../types/catalog";
@@ -58,8 +62,12 @@ export interface BisOptions {
   weaponCap?: number; // default 10
 }
 
-/** Wall-clock per kill: the fight's cooldown plus resting back to full. */
-export const killSeconds = (f: FightForecast): number => fightSec(f.turns) + f.restSeconds;
+/** Wall-clock per kill: the fight's cooldown plus healing back everything it
+ *  cost — rest to full PLUS the HP potions restored mid-fight: each proc burns
+ *  a potion that takes far longer to brew (~40 s for a small health potion)
+ *  than resting those 30 HP (6 s), so it is anything but free healing.
+ *  shortcut: potion heals priced at the 5 HP/s rest rate (a floor), upgrade to the real brew cost per proc if potion burn ever decides a set */
+export const killSeconds = (f: FightForecast): number => fightSec(f.turns) + restSeconds(f.maxHp - f.hpRemaining + f.hpRestored);
 
 const SINGLE_SLOTS: GearSlot[] = ["shield", "helmet", "body_armor", "leg_armor", "boots", "amulet", "rune", "bag"];
 const RING_SLOTS: GearSlot[] = ["ring1", "ring2"];
