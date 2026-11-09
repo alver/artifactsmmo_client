@@ -13,6 +13,7 @@ import { crafterFor, fleetBis, skillLevel } from "./ctx";
 import { ratioOf } from "./objectives";
 import { SCORE, estMinutes, perHour, wallActions } from "./score";
 import { actionsPerTask, taskSuitability } from "./tasks";
+import { autoRecyclable } from "../xp";
 import type { AccountAchievement, AchievementObjectiveProgress } from "../../types/api";
 import type { AccountGoal, Blocker, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "./types";
 
@@ -311,11 +312,12 @@ function compileObjective(o: AchievementObjectiveProgress, remaining: number, ct
       return;
     }
     case "recycling": {
-      // Recycle bank junk: the most-stocked recyclable a crafter can work.
+      // Recycle bank junk: the most-stocked recyclable a crafter can work —
+      // never a rare-ingredient product (autoRecyclable); that is a manual call.
       let pick: { code: string; stock: number; skill: string; who: string } | undefined;
       for (const b of ctx.bank) {
         const it = item(b.code);
-        if (!it?.recyclable || !it.craft) continue;
+        if (!it?.craft || !autoRecyclable(b.code)) continue;
         const crafter = crafterFor(ctx, it.craft.skill);
         if (!crafter || crafter.level < it.craft.level) continue;
         if (!pick || b.quantity > pick.stock) pick = { code: b.code, stock: b.quantity, skill: it.craft.skill, who: crafter.ch.name };

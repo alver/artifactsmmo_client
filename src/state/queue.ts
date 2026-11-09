@@ -25,7 +25,7 @@ import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, ownedFightForecast, stripAllMap } from "../plan/jobgear";
 import { QUEUE_KINDS, queueItemText, withId } from "../plan/queue";
 import { trainingResourceFor } from "../plan/hive/skills";
-import { CRAFT_SEC, FIGHT_SEC, craftXp, fightXp, gatherSec, recycleReturn } from "../plan/xp";
+import { CRAFT_SEC, FIGHT_SEC, autoRecyclable, craftXp, fightXp, gatherSec, recycleReturn } from "../plan/xp";
 import { killSeconds } from "../plan/bis";
 import { titleCase } from "../lib/util";
 import { CRAFT_TRAIN_SKILLS, bankItems, characters, pushLog, skillKey, skillPins } from "./store";
@@ -679,8 +679,10 @@ function unitSec(by: Character[], code: string): number {
  * outleveled by 10+) among recipes `by` (crafter + helpers) can feed in the
  * field; a drop-only or bank-only ingredient counts as free while bag + bank
  * cover a run (batchRuns caps the batch at that stock). Recycling hands back
- * floor((n−1)/5)+1 random units. Re-picked every tick, so stock running out
- * simply moves the loop on to the next recipe.
+ * floor((n−1)/5)+1 random units — only for products of common stuff
+ * (autoRecyclable); a rare-ingredient product is banked at full material cost.
+ * Re-picked every tick, so stock running out simply moves the loop on to the
+ * next recipe.
  */
 export function trainRecipe(ch: Character, skill: string, by: Character[] = [ch]): { code: string; recipe: CraftRecipe; xp: number } | undefined { // exported for the verify probe
   const lv = skillLevel(ch, skill);
@@ -698,7 +700,7 @@ export function trainRecipe(ch: Character, skill: string, by: Character[] = [ch]
       else if (invQty(ch, g.code) + bankQty(g.code) < g.quantity) { mats = Infinity; break; }
     }
     if (mats === Infinity) continue;
-    const sec = CRAFT_SEC + mats * (it.recyclable ? 1 - recycleReturn(n) / n : 1);
+    const sec = CRAFT_SEC + mats * (autoRecyclable(it.code) ? 1 - recycleReturn(n) / n : 1);
     const rate = xp / sec;
     if (!best || rate > best.rate || (rate === best.rate && n < best.n)) best = { code: it.code, recipe: r, xp, rate, n };
   }
@@ -761,10 +763,11 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
   const pick = trainRecipe(ch, it.skill, by);
   if (!pick) throw new Error(`no ${titleCase(it.skill)} recipe this character can feed at Lv ${skillLevel(ch, it.skill)}`);
   const { code, recipe, xp } = pick;
-  // 1. Product in hand → recycle it (materials come back), else bank it.
+  // 1. Product in hand → recycle it (materials come back), else bank it (not
+  //    recyclable, or made of something rare — recycling would mostly lose it).
   const made = invQty(ch, code);
   if (made > 0) {
-    if (!itemOf(code)?.recyclable) { await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return false; }
+    if (!autoRecyclable(code)) { await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return false; }
     const t = nearest("workshop", recipe.skill, ch.x, ch.y);
     if (!t) throw new Error(`no ${recipe.skill} workshop on the map`);
     if (ch.x !== t.x || ch.y !== t.y) { ctx.note("→ workshop"); await moveTo(name, t.x, t.y); return false; }

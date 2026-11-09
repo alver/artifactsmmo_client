@@ -10,6 +10,7 @@ import { titleCase } from "../../lib/util";
 import { acquireWaves, planAcquire } from "./acquire";
 import { GATHER_SKILLS, skillLevel } from "./ctx";
 import { estMinutes, hoursOf, wallActions } from "./score";
+import { autoRecyclable } from "../xp";
 import type { QueueItemInput } from "../queue";
 import type { Character } from "../../types/api";
 import type { AccountGoal, HiveCtx, HivePlan, ScoredGoal } from "./types";
@@ -179,7 +180,7 @@ export function compileSkillGoal(
   }
   const { code, produced, plan } = batch;
   const crafterItems: QueueItemInput[] = [{ kind: "craft", code, quantity: produced, done: 0, wait: true }];
-  if (item(code)?.recyclable) crafterItems.push({ kind: "recycle", code, quantity: produced, done: 0 });
+  if (autoRecyclable(code)) crafterItems.push({ kind: "recycle", code, quantity: produced, done: 0 });
   crafterItems.push({ kind: "deposit-all" });
   // The batch pipelines in wave 0 behind its materials (a `wait` craft holds
   // for the deposits) — appended to the crafter's own production lane.
