@@ -9,6 +9,7 @@ import { bankDetails, bankItems, characters, offerings, pendingRewards, pushLog,
 import { mapAt, monster as monsterOf } from "../catalog";
 import { recordFight } from "../sim/validate";
 import { saveState } from "./persist";
+import { devlog } from "../lib/devlog";
 
 export function applyActionResult(name: string, action: string, data: ActionResult): void {
   // Snapshot the PRE-fight character before we overwrite it — the sim validator
@@ -33,8 +34,12 @@ export function applyActionResult(name: string, action: string, data: ActionResu
   }
   // Passive, zero-cost simulator validation: compare the forecast for this fight
   // against what actually happened. Never throws into the action path.
-  // Group fights are skipped: the sim is 1v1, so it would log a bogus deviation.
-  if (data.fight && prevForFight && (data.fight.characters?.length ?? 1) <= 1) {
+  // Group fights: the 1v1 sim can't check them (a bogus deviation), so keep the game's own turn log instead.
+  if (data.fight && (data.fight.characters?.length ?? 1) > 1) {
+    const f = data.fight;
+    devlog(`group fight ${name} vs ${f.opponent ?? "?"}: ${f.result} in ${f.turns ?? "?"} turns · ${f.characters!.map((c) => `${c.character_name} ${c.final_hp ?? "?"} hp`).join(", ")}`);
+    for (const line of f.logs ?? []) devlog(`  ${line}`);
+  } else if (data.fight && prevForFight) {
     try {
       const mcode = data.fight.opponent || mapAt(prevForFight.x, prevForFight.y)?.interactions.content?.code;
       const m = mcode ? monsterOf(mcode) : undefined;
