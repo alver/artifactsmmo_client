@@ -2711,3 +2711,12 @@ body,
   font-size: 15px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Fleet ⚔ group fight: wrapping rows of controls / character chips */
+.gf-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0;
+}

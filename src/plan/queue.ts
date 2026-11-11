@@ -78,6 +78,11 @@ export type QueueItem = { id: string; error?: string } & (
   // complete it. A category with no way through is skipped for that UTC day
   // (`skip`, valid while `day` matches); done when nothing is left today.
   | { kind: "offering"; day?: string; skip?: string[] }
+  // Boss prep for a manual group fight: one bank reset into the best set vs the
+  // monster (`geared` remembers it; utility potions included, brewed when the
+  // bank has none), walk to it, rest to full — then the queue STOPS (never
+  // re-appended by 🔁) so the character waits on the tile for the group fight.
+  | { kind: "prepare"; monster: string; geared?: boolean }
 );
 
 export type QueueItemKind = QueueItem["kind"];
@@ -126,6 +131,7 @@ export function queueItemText(it: QueueItem): string {
     case "turn-in": return "Turn in the task";
     case "task-loop": return `Complete ${it.times > 0 ? `${it.times}× ` : "(∞) "}tasks (${it.master})`;
     case "offering": return "Today's seasonal offerings";
+    case "prepare": return `Prepare to fight ${monsterOf(it.monster)?.name ?? titleCase(it.monster)} (gear, potions, walk, rest — then stop)`;
   }
 }
 
@@ -133,5 +139,5 @@ export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
   "train": "🎓", "gear": "🧰", "accept-task": "📜", "work-task": "⚒", "deliver": "🤝", "turn-in": "✅",
-  "task-loop": "🔁", "offering": "🛐",
+  "task-loop": "🔁", "offering": "🛐", "prepare": "🛡",
 };

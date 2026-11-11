@@ -33,7 +33,8 @@ export function applyActionResult(name: string, action: string, data: ActionResu
   }
   // Passive, zero-cost simulator validation: compare the forecast for this fight
   // against what actually happened. Never throws into the action path.
-  if (data.fight && prevForFight) {
+  // Group fights are skipped: the sim is 1v1, so it would log a bogus deviation.
+  if (data.fight && prevForFight && (data.fight.characters?.length ?? 1) <= 1) {
     try {
       const mcode = data.fight.opponent || mapAt(prevForFight.x, prevForFight.y)?.interactions.content?.code;
       const m = mcode ? monsterOf(mcode) : undefined;
@@ -84,6 +85,7 @@ export function summarize(name: string, action: string, data: ActionResult): str
   if (action === "fight") {
     const f = data.fight;
     if (!f) return "fight";
+    if ((f.characters?.length ?? 0) > 1) return `group fight ${f.result} · ${f.characters!.map((c) => `${c.character_name} +${c.xp} xp`).join(", ")}`;
     const mine = f.characters?.find((c) => c.character_name === name) ?? f.characters?.[0];
     const xp = mine?.xp ?? 0;
     const gold = mine?.gold ?? 0;

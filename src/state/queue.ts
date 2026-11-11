@@ -452,6 +452,32 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (!desired) return true; // no set for this job (unknown monster / job "none") — keep current
       return (await gearSwapStep(name, ch, desired, ctx)) === "done";
     }
+    case "prepare": {
+      const m = monsterOf(it.monster);
+      const tile = m ? nearest("monster", it.monster, ch.x, ch.y) : undefined;
+      if (!m || !tile) return skipItem(name, it, `no ${it.monster} on the map (event over?)`);
+      const desired = desiredForJob(name, ch, { kind: "fight", monster: it.monster });
+      if (!desired) throw new Error(`can't plan gear vs ${m.name}`);
+      if (!it.geared) {
+        // One full reset (the differ then only tops up — a second reset would walk back to bank).
+        if ((await gearSwapStep(name, ch, { ...RESET_UTILITY_STRIP, ...desired }, ctx, { reset: true })) === "acted") return false;
+        patchItem(name, it.id, { geared: true });
+        return false;
+      }
+      if ((await provisionPotions(name, ch, desired, ctx)) === "acted") return false;
+      if ((await gearSwapStep(name, ch, desired, ctx)) === "acted") return false; // equips what was just brewed
+      if (ch.x !== tile.x || ch.y !== tile.y) {
+        ctx.note(`→ ${m.name}`);
+        await moveTo(name, tile.x, tile.y);
+        return false;
+      }
+      if (ch.hp < ch.max_hp) {
+        ctx.note("resting");
+        await step(name, () => actions.rest(name));
+        return false;
+      }
+      return true;
+    }
     case "work-task":
       return runWorkTask(name, ch, it, ctx);
     case "offering":
@@ -1302,7 +1328,10 @@ async function runLoop(name: string): Promise<void> {
             const rest = cur.items.slice(1);
             // 🔁 wipes progress; done/from/geared don't exist on every kind, hence the double cast.
             const again = { ...item, done: 0, from: undefined, geared: undefined, error: undefined } as unknown as QueueItem;
-            setQueue(name, { items: cur.repeat ? [...rest, again] : rest, note: undefined });
+            // A finished `prepare` stops the queue: the character holds on the boss tile for the group fight.
+            const ready = item.kind === "prepare";
+            setQueue(name, { items: cur.repeat && !ready ? [...rest, again] : rest, note: undefined, ...(ready ? { running: false } : {}) });
+            if (ready) log(name, `ready to fight ${monsterOf(item.monster)?.name ?? item.monster} — queue stopped`, "ok");
           }
           S(name).losses = 0;
         }

@@ -7,7 +7,7 @@
 // collapsible sections. Per the cooldown-clock rule, the only 4 Hz
 // readers here are the tiny <CooldownRing> / <EventTimer> leaves.
 
-import { PIN_SKILLS, characterList, focusTile, gearCoverageOpen, go, hiveOpen, offeringsOpen, openCharacter, pendingRewards, skillKey, skillPins, togglePin } from "../state/store";
+import { PIN_SKILLS, characterList, focusTile, gearCoverageOpen, go, groupFightOpen, hiveOpen, offeringsOpen, openCharacter, pendingRewards, skillKey, skillPins, togglePin } from "../state/store";
 import type { Signal } from "@preact/signals";
 import type { ComponentChildren } from "preact";
 import { saveState } from "../state/persist";
@@ -25,6 +25,7 @@ import { EventTimer, eventLabel } from "./EventsPanel";
 import { HiveSection, HiveStrip } from "./HivePanel";
 import { GearCoverageSection } from "./GearCoveragePanel";
 import { OfferingsSection } from "./OfferingsPanel";
+import { GroupFightSection } from "./GroupFight";
 import type { Character } from "../types/api";
 
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
@@ -331,6 +332,9 @@ export function FleetView() {
       </section>
       <Fold open={offeringsOpen} title="🛐 Seasonal offerings">
         <OfferingsSection />
+      </Fold>
+      <Fold open={groupFightOpen} title="⚔ Group fight (bosses)">
+        <GroupFightSection />
       </Fold>
       <Fold open={hiveOpen} title="🐝 Hive">
         <HiveSection />

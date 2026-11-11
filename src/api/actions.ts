@@ -44,7 +44,9 @@ export const move = async (name: string, x: number, y: number): Promise<ActionRe
 };
 export const rest = (name: string) => act(name, "rest");
 export const gather = (name: string) => act(name, "gathering");
-export const fight = (name: string) => act(name, "fight");
+// `participants`: up to 2 more of your characters on the same tile — boss fights only.
+export const fight = (name: string, participants: string[] = []) =>
+  act(name, "fight", participants.length ? { participants } : undefined);
 
 // Secondary actions (verified array bodies from the original client). Not wired
 // into step-1 buttons beyond "deposit all", but available for the next step.
