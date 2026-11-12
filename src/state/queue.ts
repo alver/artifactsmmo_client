@@ -130,6 +130,13 @@ export function dropItem(name: string, id: string): void {
   if (cur) setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
 }
 
+/** Hive-only: insert even AHEAD of the running head (a starved `wait` craft
+ *  takes on a slice of work, then resumes its hold) — same safety as dropItem. */
+export function insertItem(name: string, item: QueueItem, index: number): void {
+  const cur = queues.value[name];
+  if (cur) setQueue(name, { items: [...cur.items.slice(0, index), item, ...cur.items.slice(index)] });
+}
+
 /** User edit — clears the item's error (an edited item gets a fresh chance). */
 export function updateItem(name: string, id: string, patch: Partial<QueueItem>): void {
   if (!IS_SERVER) return rpc("updateItem", [name, id, patch]);
