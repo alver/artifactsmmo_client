@@ -7,8 +7,10 @@
 // feasible the runner simply heals by rest — food is opportunistic and never
 // blocks a queue.
 
-import { catalog } from "../catalog";
+import { catalog, itemUses } from "../catalog";
 import { canEquip } from "./bis";
+import { gatherSec } from "./xp";
+import { restSeconds } from "../sim/cost";
 import type { BankItem, Character } from "../types/api";
 import type { FoodSpec } from "./types";
 import type { CraftRecipe, Item, Resource } from "../types/catalog";
@@ -30,11 +32,15 @@ const stockOf = (ch: Character, bank: BankItem[], code: string): number => {
   return n;
 };
 
-/** Healing foods the character may use, best heal first (pure catalog scan). */
+/** Healing foods the character may use, best heal first (pure catalog scan).
+ *  A food that is another recipe's ingredient is feedstock, never a snack:
+ *  2 apples + an egg make 640 HP of apple pie instead of 100; coconut and
+ *  lava fish feed potions. */
 function healingFoods(ch: Character, exclude?: string): { it: Item; heal: number }[] {
   const out: { it: Item; heal: number }[] = [];
   for (const it of catalog().items.values()) {
     if (it.type !== "consumable" || it.subtype !== "food" || it.code === exclude) continue;
+    if (itemUses(it.code).recipes.length) continue;
     const heal = effectValue(it, "heal");
     if (heal > 0 && canEquip(ch, it)) out.push({ it, heal });
   }
@@ -89,6 +95,22 @@ export function gatherSourceFor(ch: Character, code: string): Resource | undefin
 }
 
 /**
+ * Whether gathering `short` and cooking one run beats just resting: the run's
+ * healing must be worth 1.25× the rest its gather time would have bought (the
+ * margin pays the walks and the cook). dev.log 2026-11: 1,222 gudgeon/shrimp
+ * gathers for food ≈ 10 h of fishing to save ≈ 9 h of rest. gatherSec ignores
+ * tool bonuses, so this errs toward resting. Passes from bass (fishing 30) up.
+ */
+function gatherPays(ch: Character, heal: number, recipe: CraftRecipe, short: CraftRecipe["items"]): boolean {
+  let sec = 0;
+  for (const g of short) {
+    const r = gatherSourceFor(ch, g.code)!; // caller checked every short code is gatherable
+    sec += g.quantity * (r.drops.find((d) => d.code === g.code)?.rate ?? 1) * gatherSec(r.level);
+  }
+  return restSeconds(heal * Math.max(1, recipe.quantity)) >= 1.25 * sec;
+}
+
+/**
  * Where the next batch of food comes from: "bank" = stocked, withdraw it;
  * "cook" = every ingredient is in stock, cook at the recipe's workshop;
  * "gather" = at least one ingredient must be gathered in the field first
@@ -115,7 +137,7 @@ export function foodPlan(ch: Character, bank: BankItem[], exclude?: string): Foo
         cook ??= { source: "cook", code: it.code, heal, recipe };
         break; // foods come best-heal first — nothing below beats this
       }
-      if (!gather && short.every((g) => gatherSourceFor(ch, g.code))) {
+      if (!gather && short.every((g) => gatherSourceFor(ch, g.code)) && gatherPays(ch, heal, recipe, short)) {
         gather = { source: "gather", code: it.code, heal, recipe };
       }
     }
