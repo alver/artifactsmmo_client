@@ -104,6 +104,8 @@ function events(req: IncomingMessage, res: ServerResponse): void {
   clients.add(res);
   req.on("close", () => clients.delete(res));
 }
+// Heartbeat: an idle fleet sends nothing, so the tab's stale-stream watchdog (connect()) needs this.
+setInterval(() => send({}), 15_000);
 
 // ── POST /rpc {fn, args} → {value} | {error, code} ──────────────────────────
 

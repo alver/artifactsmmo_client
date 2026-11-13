@@ -59,14 +59,29 @@ export function connect(): void {
   let first: () => void;
   const snapshot = new Promise<void>((r) => (first = r));
   // EventSource reconnects by itself after a service restart and gets a fresh snapshot.
-  new EventSource("/events").onmessage = (e) => {
-    const msg = JSON.parse(e.data as string) as Record<string, unknown>;
-    batch(() => {
-      for (const [k, v] of Object.entries(msg)) if (SYNCED[k]) SYNCED[k].value = v;
-    });
-    if (msg._fresh === true) importBrowserState(msg.queues);
-    first();
+  let es: EventSource;
+  let heard = 0;
+  const open = (): void => {
+    es?.close();
+    heard = Date.now();
+    es = new EventSource("/events");
+    es.onmessage = (e) => {
+      heard = Date.now();
+      const msg = JSON.parse(e.data as string) as Record<string, unknown>;
+      batch(() => {
+        for (const [k, v] of Object.entries(msg)) if (SYNCED[k]) SYNCED[k].value = v;
+      });
+      if (msg._fresh === true) importBrowserState(msg.queues);
+      first();
+    };
   };
+  open();
+  // A tab the browser put to sleep can lose the stream for good (CLOSED, or open
+  // but silent) and keep showing frozen state — the service pings every 15 s,
+  // so silence means reopen (the new stream starts with a full snapshot).
+  setInterval(() => {
+    if (es.readyState === EventSource.CLOSED || Date.now() - heard > 45_000) open();
+  }, 5_000);
   // The tab always shows a selected character — default to the first.
   effect(() => {
     const names = Object.keys(characters.value);
