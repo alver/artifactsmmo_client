@@ -47,6 +47,11 @@ function healingFoods(ch: Character, exclude?: string): { it: Item; heal: number
   return out.sort((a, b) => b.heal - a.heal);
 }
 
+/** Feeds a gear recipe: never cooked. 2 mushrooms = 220 HP of soup (44 s of
+ *  rest) but 2/5 of a life ring — fighters cooked a hive order's mushrooms. */
+const gearMaterial = (code: string): boolean =>
+  itemUses(code).recipes.some((r) => !["consumable", "utility"].includes(catalog().items.get(r.code)?.type ?? ""));
+
 /** A food pick: what to eat between fights, and how much of it exists. */
 export interface FoodChoice {
   code: string;
@@ -131,7 +136,7 @@ export function foodPlan(ch: Character, bank: BankItem[], exclude?: string): Foo
     let gather: FoodPlan | undefined;
     for (const { it, heal } of healingFoods(ch, exclude)) {
       const recipe = it.craft;
-      if (!recipe || skillLevel(ch, recipe.skill) < recipe.level) continue;
+      if (!recipe || skillLevel(ch, recipe.skill) < recipe.level || recipe.items.some((g) => gearMaterial(g.code))) continue;
       const short = recipe.items.filter((g) => stockOf(ch, bank, g.code) < g.quantity);
       if (short.length === 0) {
         cook ??= { source: "cook", code: it.code, heal, recipe };

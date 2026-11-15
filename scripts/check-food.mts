@@ -16,6 +16,8 @@ const cases: [string, Character, BankItem[], string | undefined][] = [
   ["apples are apple-pie feedstock, not food", ch(20), bank("apple"), undefined],
   ["lv20 with eggs fries them, never chops ~40 ash trees for pie", ch(20), bank("egg"), "cook:fried_eggs"],
   ["stocked raw fish still gets cooked", ch(20), bank("shrimp"), "cook:cooked_shrimp"],
+  ["mushrooms are gear material (life ring, mushmush gear), never soup", ch(20), bank("mushroom"), undefined],
+  ["stocked mushroom soup still gets eaten", ch(20), bank("mushroom_soup"), "bank:mushroom_soup"],
   ["stocked food still gets eaten", ch(20), bank("cooked_gudgeon"), "bank:cooked_gudgeon"],
 ];
 let bad = 0;
