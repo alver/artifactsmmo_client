@@ -185,10 +185,13 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
   // Gather/craft: per-slot argmax. Gathering wants drops first, XP second;
   // crafting only gains from wisdom. Score 0 ⇒ the slot is stripped (combat
   // gear goes back to the bank for whoever fights next).
+  const toolEffect = job.kind === "gather" ? `${job.skill}_gathering` : job.kind === "craft" && job.skill ? `${job.skill}_crafting` : "";
   const score = (it: Item): number => {
     const w = effectValue(it, "wisdom");
     const p = effectValue(it, "prospecting");
-    return job.kind === "gather" ? p * 1e6 + w : w;
+    // Cooldown cut on a non-tool slot (altar_doll: −10%): 10% faster gathering ≈ 100 PP; a craft's ~5 s only tiebreaks.
+    const fast = toolEffect ? -effectValue(it, toolEffect) : 0;
+    return job.kind === "gather" ? (p + 10 * fast) * 1e6 + w : w + fast;
   };
 
   const bySlot = new Map<GearSlot, { code: string; s: number }[]>();
@@ -212,7 +215,6 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
   // worn, then code) — map order moves with the swap's own actions and must
   // never decide the winner.
   let tool = "";
-  const toolEffect = job.kind === "gather" ? `${job.skill}_gathering` : job.kind === "craft" && job.skill ? `${job.skill}_crafting` : "";
   if (toolEffect) {
     const wornWeapon = slotCode(ch, "weapon");
     const lvl = (code: string): number => item(code)?.level ?? 0;

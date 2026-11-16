@@ -1462,6 +1462,7 @@ export function stopQueue(name: string): void {
  * ITEMS are always kept (the queue is a document, not just a job).
  */
 export function resumeQueue(): void {
+  scheduleOfferings();
   for (const [name, q] of Object.entries(queues.value)) {
     if (!q.running || liveLoops.has(name)) continue;
     if (characters.value[name]) {
@@ -1472,6 +1473,29 @@ export function resumeQueue(): void {
       setQueue(name, { running: false, note: undefined });
     }
   }
+}
+
+// Daily offerings: at 12:05 UTC (just after the ~12:00 rotation) every running
+// queue does today's seasonal offerings first, then its old head resumes. A boot
+// after 12:05 catches up once (the marker persists the last 12:05 handled).
+const OFFERINGS_DAILY_KEY = "ammo:v1:offeringsDaily";
+let offeringsTimer: ReturnType<typeof setTimeout> | undefined;
+function scheduleOfferings(): void {
+  clearTimeout(offeringsTimer);
+  const now = Date.now();
+  const d = new Date(now);
+  const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 5);
+  const last = today <= now ? today : today - 86_400_000; // the most recent 12:05 UTC
+  if (localStorage.getItem(OFFERINGS_DAILY_KEY) !== String(last)) {
+    localStorage.setItem(OFFERINGS_DAILY_KEY, String(last));
+    for (const [name, q] of Object.entries(queues.value)) {
+      if (!q.running || q.items[0]?.kind === "offering") continue;
+      // Ahead of the running head (the loop re-reads it every step); a 🔁-recycled copy further back goes.
+      setQueue(name, { items: [withId({ kind: "offering" }), ...q.items.filter((it) => it.kind !== "offering")] });
+      log(name, "daily seasonal offerings — then back to the queue", "info");
+    }
+  }
+  offeringsTimer = setTimeout(scheduleOfferings, last + 86_400_000 - now);
 }
 
 // Dev-only: this module owns long-lived async runners. A hot swap would
