@@ -1405,7 +1405,9 @@ export function queueAssist(crafter: string, skill: string): void {
   if (!IS_SERVER) return rpc("queueAssist", [crafter, skill]);
   // Helpers end where the crafter's own train item ends (a "to Lv N" target), else never.
   const own = queues.value[crafter]?.items.find((i) => i.kind === "train" && i.skill === skill && !i.for);
-  const toLevel = own?.kind === "train" ? (own.levels ? (own.from ?? 0) + own.levels : own.toLevel) : 0;
+  // A "+N levels" item that hasn't started yet has no `from`: count from the crafter's level now, not 0.
+  const lv = characters.value[crafter] ? skillLevel(characters.value[crafter], skill) : 0;
+  const toLevel = own?.kind === "train" ? (own.levels ? (own.from ?? lv) + own.levels : own.toLevel) : 0;
   for (const name of Object.keys(characters.value)) {
     if (name === crafter) continue;
     stopQueue(name);

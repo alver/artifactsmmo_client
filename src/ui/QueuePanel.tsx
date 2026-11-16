@@ -55,6 +55,9 @@ const ADDABLE: { kind: string; label: string }[] = [
 export function QueueSection({ ch }: { ch: Character }) {
   const q = queues.value[ch.name] ?? { items: [], running: false };
   const pausedError = !q.running ? q.items[0]?.error : undefined;
+  // Help the workshop skill this queue actually trains (a hand-added train item), else the pin.
+  const training = q.items.find((i): i is Extract<QueueItem, { kind: "train" }> => i.kind === "train" && !i.for && CRAFT_TRAIN_SKILLS.some(([k]) => k === i.skill));
+  const helpSkill = training?.skill ?? craftPins()[ch.name];
 
   return (
     <div class="q-panel">
@@ -103,9 +106,11 @@ export function QueueSection({ ch }: { ch: Character }) {
         )}
         <button
           class="cat-btn"
-          disabled={!craftPins()[ch.name]}
-          title="Every other character drops what it is doing and keeps the bank stocked with this character's current recipe materials (gather / smelt / hunt) until this character's train target"
-          onClick={() => { const skill = craftPins()[ch.name]; if (confirm(`Everyone else stops what they're doing and helps ${ch.name} train ${titleCase(skill)}?`)) queueAssist(ch.name, skill); }}
+          disabled={!helpSkill}
+          title={helpSkill
+            ? "Every other character drops what it is doing and keeps the bank stocked with this character's current recipe materials (gather / smelt / hunt) until this character's train target"
+            : "Needs a workshop skill to help with: a Train item in this queue, or a pinned workshop skill (📌 in the Skills card)"}
+          onClick={() => { if (helpSkill && confirm(`Everyone else stops what they're doing and helps ${ch.name} train ${titleCase(helpSkill)}?`)) queueAssist(ch.name, helpSkill); }}
         >
           🤝 Fleet helps
         </button>
