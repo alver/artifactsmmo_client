@@ -1227,6 +1227,21 @@ async function obtainOffering(
   return "acted";
 }
 
+/** Dry run of obtainOffering — same sources, no actions — so an offering is only accepted when it can be completed. */
+export function canObtainOffering(ch: Character, code: string, need: number, favor: OfferingFavor | undefined, depth: number, useBank: boolean): boolean {
+  if (need <= 0 || (useBank && bankQty(code) >= need)) return true;
+  const src = favorSource(ch, code, favor) ?? fieldSource(ch, code);
+  if (!src) return false;
+  if (src.how === "gather") return !!nearest("resource", src.res.code, ch.x, ch.y);
+  if (src.how === "fight") return !!nearest("monster", src.mon.code, ch.x, ch.y) && canBeat(ch, src.mon.code);
+  const r = src.recipe;
+  const runs = Math.ceil(need / Math.max(1, r.quantity));
+  return !!nearest("workshop", r.skill, ch.x, ch.y) && r.items.every((g) => {
+    const short = g.quantity * runs - invQty(ch, g.code);
+    return short <= 0 || (depth > 0 && canObtainOffering(ch, g.code, short, undefined, depth - 1, true));
+  });
+}
+
 /**
  * One action of the offering item. Order: read today's state (once a day) →
  * at the altar, complete what the bag covers, accept every open category →
@@ -1270,6 +1285,12 @@ async function runOffering(name: string, ch: Character, it: OfferingItem, ctx: S
   const ready = work.find((s) => s.status === "accepted" && invQty(ch, s.requirement!.code) >= s.requirement!.quantity);
   const next = ready ?? work.find((s) => s.status === "open");
   if (next) {
+    if (!ready) {
+      const req = next.requirement!;
+      if (!canObtainOffering(ch, req.code, req.quantity - invQty(ch, req.code), next.favor, 2, next.favor?.target_type !== "craft")) {
+        return skipCategory(next.category, `can't get ${req.quantity}× ${itemName(req.code)} — not accepting it`);
+      }
+    }
     const altar = nearest("seasonal_altar", null, ch.x, ch.y);
     if (!altar) return skipItem(name, it, "no seasonal altar on the map");
     if (ch.x !== altar.x || ch.y !== altar.y) { ctx.note("→ seasonal altar"); await moveTo(name, altar.x, altar.y); return false; }
