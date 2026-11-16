@@ -1475,17 +1475,17 @@ export function resumeQueue(): void {
   }
 }
 
-// Daily offerings: at 12:05 UTC (just after the ~12:00 rotation) every running
+// Daily offerings: at 00:05 UTC (just after the midnight-UTC rotation — expires_at) every running
 // queue does today's seasonal offerings first, then its old head resumes. A boot
-// after 12:05 catches up once (the marker persists the last 12:05 handled).
+// after 00:05 catches up once (the marker persists the last 00:05 handled).
 const OFFERINGS_DAILY_KEY = "ammo:v1:offeringsDaily";
 let offeringsTimer: ReturnType<typeof setTimeout> | undefined;
 function scheduleOfferings(): void {
   clearTimeout(offeringsTimer);
   const now = Date.now();
   const d = new Date(now);
-  const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 12, 5);
-  const last = today <= now ? today : today - 86_400_000; // the most recent 12:05 UTC
+  const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 5);
+  const last = today <= now ? today : today - 86_400_000; // the most recent 00:05 UTC
   if (localStorage.getItem(OFFERINGS_DAILY_KEY) !== String(last)) {
     localStorage.setItem(OFFERINGS_DAILY_KEY, String(last));
     for (const [name, q] of Object.entries(queues.value)) {
