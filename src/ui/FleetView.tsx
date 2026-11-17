@@ -14,7 +14,8 @@ import { saveState } from "../state/persist";
 import { queuePinTraining, queues, startQueue } from "../state/queue";
 import type { QueueState } from "../state/queue";
 import { queueItemText } from "../plan/queue";
-import { liveEvents, liveTileAt } from "../state/events";
+import { eventKey, liveEvents, liveTileAt } from "../state/events";
+import { eventPlans } from "../state/eventorders";
 import { asset, assetFallback, pct } from "../lib/util";
 import { CooldownRing } from "./Cooldown";
 import { DataTable, Bar } from "./DataTable";
@@ -110,6 +111,7 @@ function NeedsYou({ chars }: { chars: Character[] }) {
             <div class="muted">
               {eventLabel(e)} · ends in <EventTimer until={Date.parse(e.expiration)} />
             </div>
+            {eventPlans.value[eventKey(e)] && <div class="muted">→ {eventPlans.value[eventKey(e)]}</div>}
           </div>
           <div class="alert-actions">
             <button class="cat-btn" onClick={() => { focusTile(e.map.x, e.map.y, e.map.layer ?? "overworld"); go("map"); }}>

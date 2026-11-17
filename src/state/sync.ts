@@ -1,8 +1,10 @@
 // Boot + reconcile. The whole rate-limit strategy lives here:
 //   boot() → paint instantly from localStorage, load catalogs from bundled files,
 //            then do exactly ONE authoritative sync of the per-account state.
-// After that, nothing polls — state stays current from action responses
-// (state/apply.ts). The user can force another sync with reconcile().
+// After that, nothing polls the account — state stays current from action
+// responses (state/apply.ts). The user can force another sync with reconcile().
+// The one standing read is the map-event poll (refreshEvents): a public DATA
+// endpoint, not the scarce account bucket.
 
 import { IS_SERVER, expose, rpc } from "../lib/remote";
 import {
@@ -18,6 +20,7 @@ import {
   characters,
   lastError,
   pendingRewards,
+  pushLog,
   selectedCharacter,
   syncedAt,
   syncing,
@@ -25,6 +28,8 @@ import {
 import { loadPersisted, saveState } from "./persist";
 import { resumeHive } from "./hive";
 import { resumeQueue } from "./queue";
+import { eventKey } from "./events";
+import { reactToEvents } from "./eventorders";
 import { api, getAllPages, hasToken, setToken } from "../api/client";
 import { loadCatalog } from "../catalog";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
@@ -40,7 +45,44 @@ export async function boot(): Promise<void> {
     await reconcile(); // one authoritative sync before runners act on character state
     resumeQueue(); // re-launch queues saved from a previous session
     resumeHive(); // re-attach the hive AFTER the queues are back (it observes them)
+    watchEvents(); // events already up get their orders; then poll for new ones
   }
+}
+
+/**
+ * Map events can't be seen in action echoes and spawn ~daily for 60–90 min, so
+ * they get the one standing poll: GET /events/active every 5 min. It is a DATA
+ * endpoint (2,000/h per IP) — 12 calls an hour never touch the 300/h account
+ * bucket. (The realtime websocket that pushes event_spawn is members-only.)
+ */
+const EVENTS_POLL_MS = 5 * 60_000;
+let eventsTimer: ReturnType<typeof setTimeout> | undefined;
+
+function watchEvents(): void {
+  clearTimeout(eventsTimer);
+  reactToEvents();
+  eventsTimer = setTimeout(() => void refreshEvents(), EVENTS_POLL_MS);
+}
+
+async function refreshEvents(): Promise<void> {
+  try {
+    setEvents(await getAllPages<ActiveEvent>("/events/active"));
+    saveState();
+  } catch {
+    /* keep the current list — the next poll retries */
+  }
+  watchEvents();
+}
+
+/** Replace the active-event list, logging each spawn not seen before. */
+function setEvents(fresh: ActiveEvent[]): void {
+  const known = new Set(activeEvents.value.map(eventKey));
+  for (const e of fresh) {
+    if (known.has(eventKey(e))) continue;
+    const until = new Date(e.expiration).toISOString().slice(11, 16);
+    pushLog({ ts: Date.now(), character: "event", action: "event", text: `⚡ ${e.name} at (${e.map.x}, ${e.map.y}) until ${until} UTC`, kind: "info" });
+  }
+  activeEvents.value = fresh;
 }
 
 /** One authoritative read of the per-account state. Safe to call on demand. */
@@ -54,14 +96,14 @@ export async function reconcile(): Promise<void> {
       api<Character[]>("/my/characters"),
       api<BankDetails>("/my/bank").catch(() => null),
       getAllPages<BankItem>("/my/bank/items").catch(() => [] as BankItem[]),
-      // Time-limited map events: fetched only here (no polling — expiry is
+      // Time-limited map events (also polled by refreshEvents; expiry is
       // handled locally by the clock in store.ts).
       getAllPages<ActiveEvent>("/events/active").catch(() => activeEvents.value),
       // Unclaimed rewards (achievement payouts) — drives the 🎁 topbar badge.
       getAllPages<PendingItem>("/my/pending_items").catch(() => pendingRewards.value),
     ]);
     characters.value = Object.fromEntries(chars.map((c) => [c.name, c]));
-    activeEvents.value = events;
+    setEvents(events);
     pendingRewards.value = pending.filter((p) => !p.claimed_at);
     // The workspace always shows the selected character — default to the first.
     if (!selectedCharacter.value || !characters.value[selectedCharacter.value]) {
@@ -72,6 +114,7 @@ export async function reconcile(): Promise<void> {
     await syncAccount(chars[0]?.account);
     syncedAt.value = Date.now();
     saveState();
+    reactToEvents(); // a manual Refresh that reveals an event acts on it now
   } catch (e) {
     lastError.value = (e as Error).message;
   } finally {
@@ -135,6 +178,7 @@ export async function login(): Promise<void> {
     await reconcile();
     resumeQueue();
     resumeHive();
+    watchEvents();
   }
 }
 

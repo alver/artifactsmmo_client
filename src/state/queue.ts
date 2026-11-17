@@ -290,6 +290,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(banked, left, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
         return false;
       }
+      if (it.partial) return true;
       throw new Error(`nothing left to sell — no ${itemName(it.code)} in hand or bank`);
     }
     case "recycle": {
@@ -707,6 +708,31 @@ function unitSec(by: Character[], code: string): number {
 }
 
 /**
+ * Units of `code` the team can draw on without field work: bank + every team
+ * bag, plus one-deep raw stock (banked ore → bars) at the recipe's yield when
+ * someone on the team can refine it — the same one level sourceOne crafts.
+ * shortcut: raw shared by two ingredients counts for both; fine for ranking.
+ */
+function stockOf(code: string, team: Character[]): number {
+  const held = (c: string): number => bankQty(c) + team.reduce((t, m) => t + invQty(m, c), 0);
+  const r = itemOf(code)?.craft;
+  const refinable = !!r?.items.length && team.some((m) => skillLevel(m, r.skill) >= r.level);
+  const raw = refinable ? Math.min(...r!.items.map((g) => Math.floor(held(g.code) / g.quantity))) * Math.max(1, r!.quantity) : 0;
+  return held(code) + raw;
+}
+
+/** Whether producing `code` in the field earns `ch` XP in one of its pinned skills.
+ *  shortcut: gathering XP assumed gone 10+ levels above the node, as crafting's is. */
+function levelsPin(ch: Character, code: string): boolean {
+  const pins = skillPins.value[ch.name] ?? [];
+  const src = fieldSource(ch, code);
+  if (src?.how === "gather") return pins.includes(src.res.skill) && skillLevel(ch, src.res.skill) - src.res.level < 10;
+  if (src?.how === "craft") return pins.includes(src.recipe.skill) && skillLevel(ch, src.recipe.skill) - src.recipe.level < 10;
+  if (src?.how === "fight") return pins.includes("combat") && fightXp(src.mon.level, src.mon.hp, src.mon.type, ch.level) > 0;
+  return false;
+}
+
+/**
  * The recipe to train a workshop skill on right now: the best XP per
  * fleet-second (plan/xp.ts — tier base by ITEM level, √ingredients, zero once
  * outleveled by 10+) among recipes `by` (crafter + helpers) can feed in the
@@ -726,10 +752,14 @@ export function trainRecipe(ch: Character, skill: string, by: Character[] = [ch]
     const n = r.items.reduce((s, g) => s + g.quantity, 0);
     const xp = craftXp(r.level, lv, n);
     if (!xp) continue;
+    // Stock on hand is already paid for: over one batch, only the runs it can't
+    // cover cost field time (1,595 banked spruce wood sat idle while the loop
+    // gathered fresh ash for the recipe that was cheapest from scratch).
+    const horizon = Math.max(1, Math.floor(ch.inventory_max_items / 2 / Math.max(1, n)));
     let mats = 0;
     for (const g of r.items) {
       const u = unitSec(by, g.code);
-      if (u < Infinity) mats += u * g.quantity;
+      if (u < Infinity) mats += (u * g.quantity * Math.max(0, horizon - Math.floor(stockOf(g.code, by) / g.quantity))) / horizon;
       else if (invQty(ch, g.code) + bankQty(g.code) < g.quantity) { mats = Infinity; break; }
     }
     if (mats === Infinity) continue;
@@ -840,20 +870,22 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
 }
 
 /**
- * One tick of helping `crafter` train: keep the bank a couple of batches ahead
- * on its current recipe's materials — produce a load of the least-covered
- * ingredient (whatever is already in the bag first, so a half-staged smelt or
- * hunt finishes), deliver it, repeat. Never withdraws: bank stock is the goal.
+ * What helper `ch` produces next for `crafter`'s recipe: whatever is already in
+ * its bag (a half-staged smelt or hunt finishes), else the least-covered
+ * ingredient it can make — counting bank + banked raw + every team bag, plus a
+ * full trip for each OTHER helper already working on it (four helpers used to
+ * pick the same one). Near-ties go to one that levels a pinned skill.
+ * Exported for scripts/check-assist.mts.
  */
-async function runTrainAssist(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, crafter: Character, ctx: StepCtx): Promise<boolean> {
-  const pick = trainPick(crafter, it.skill);
-  if (!pick) throw new Error(`no ${titleCase(it.skill)} recipe ${crafter.name} can be fed at Lv ${skillLevel(crafter, it.skill)}`);
-  const runs = batchRuns(crafter, pick.recipe, [crafter, ...helpersOf(crafter.name, it.skill)]);
-  const holds = (code: string): boolean => {
-    const src = fieldSource(ch, code);
-    return invQty(ch, code) > 0 || (src?.how === "craft" && src.recipe.items.some((s) => invQty(ch, s.code) > 0));
+export function assistPick(ch: Character, crafter: Character, skill: string, recipe: CraftRecipe): { code: string; load: number } | undefined {
+  const by = [crafter, ...helpersOf(crafter.name, skill)];
+  const team = by.some((m) => m.name === ch.name) ? by : [...by, ch];
+  const runs = batchRuns(crafter, recipe, by);
+  const holds = (m: Character, code: string): boolean => {
+    const src = fieldSource(m, code);
+    return invQty(m, code) > 0 || (src?.how === "craft" && src.recipe.items.some((s) => invQty(m, s.code) > 0));
   };
-  const rows = pick.recipe.items
+  const rows = recipe.items
     .map((g) => {
       // One trip's load: a bagful of raw materials smelted (10 bars), never more
       // than a batch (14 slimeballs) — a delivery costs ~35 s, an idle crafter hours.
@@ -862,8 +894,27 @@ async function runTrainAssist(name: string, ch: Character, it: Extract<QueueItem
       return { code: g.code, need: g.quantity * runs * 2, load: Math.max(1, Math.min(g.quantity * runs, Math.floor(ch.inventory_max_items / raw))) };
     })
     .filter((g) => unitSec([ch], g.code) < Infinity);
-  if (!rows.length) throw new Error(`nothing in ${itemName(pick.code)} this character can produce`);
-  const g = rows.find((g) => holds(g.code)) ?? rows.sort((a, b) => (bankQty(a.code) + invQty(ch, a.code)) / a.need - (bankQty(b.code) + invQty(ch, b.code)) / b.need)[0];
+  const mine = rows.find((g) => holds(ch, g.code));
+  if (mine || !rows.length) return mine;
+  const others = by.filter((m) => m.name !== ch.name && m.name !== crafter.name);
+  const ranked = rows
+    .map((g) => ({ g, cover: (stockOf(g.code, team) + others.filter((m) => holds(m, g.code)).length * g.load) / g.need }))
+    .sort((a, b) => a.cover - b.cover);
+  const near = ranked.filter((r) => r.cover <= ranked[0].cover + 0.1);
+  return (near.find((r) => levelsPin(ch, r.g.code)) ?? ranked[0]).g;
+}
+
+/**
+ * One tick of helping `crafter` train: keep the bank a couple of batches ahead
+ * on its current recipe's materials — produce a load of the ingredient
+ * assistPick names, deliver it, repeat. Never withdraws the ingredient itself
+ * (bank stock is the goal), only banked raw to refine.
+ */
+async function runTrainAssist(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, crafter: Character, ctx: StepCtx): Promise<boolean> {
+  const pick = trainPick(crafter, it.skill);
+  if (!pick) throw new Error(`no ${titleCase(it.skill)} recipe ${crafter.name} can be fed at Lv ${skillLevel(crafter, it.skill)}`);
+  const g = assistPick(ch, crafter, it.skill, pick.recipe);
+  if (!g) throw new Error(`nothing in ${itemName(pick.code)} this character can produce`);
   if (invQty(ch, g.code) >= g.load) { ctx.note(`help ${crafter.name}: deliver ${itemName(g.code)}`); await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return false; }
   return sourceOne(name, ch, it, g.code, g.load - invQty(ch, g.code), ctx, true, false);
 }
@@ -871,7 +922,8 @@ async function runTrainAssist(name: string, ch: Character, it: Extract<QueueItem
 /** Get `need` more of `code` into the bag, one action: withdraw bank stock
  *  (unless `fromBank` is off — a helper produces for the bank), else gather it,
  *  else hunt the monster that drops it, else (one level deep) craft it from
- *  gathered/banked materials. */
+ *  gathered/banked materials — raw stock is always fair game, so a helper
+ *  refines banked ore instead of mining more. */
 async function sourceOne(
   name: string,
   ch: Character,
@@ -927,7 +979,7 @@ async function sourceOne(
       return false;
     }
     const short = sub.items.find((g) => invQty(ch, g.code) < g.quantity * runs)!;
-    return sourceOne(name, ch, it, short.code, short.quantity * runs - invQty(ch, short.code), ctx, false, fromBank);
+    return sourceOne(name, ch, it, short.code, short.quantity * runs - invQty(ch, short.code), ctx, false);
   }
   throw new Error(`no way to get ${itemName(code)} (skill too low?)`);
 }
@@ -1358,7 +1410,9 @@ async function runLoop(name: string): Promise<void> {
             const again = { ...item, done: 0, from: undefined, geared: undefined, error: undefined } as unknown as QueueItem;
             // A finished `prepare` stops the queue: the character holds on the boss tile for the group fight.
             const ready = item.kind === "prepare";
-            setQueue(name, { items: cur.repeat && !ready ? [...rest, again] : rest, note: undefined, ...(ready ? { running: false } : {}) });
+            // An event trip (ev:* ids, state/eventorders.ts) is one-off — 🔁 never brings it back.
+            const recycle = cur.repeat && !ready && !item.id.startsWith("ev:");
+            setQueue(name, { items: recycle ? [...rest, again] : rest, note: undefined, ...(ready ? { running: false } : {}) });
             if (ready) log(name, `ready to fight ${monsterOf(item.monster)?.name ?? item.monster} — queue stopped`, "ok");
           }
           S(name).losses = 0;

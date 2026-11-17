@@ -31,8 +31,9 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "deposit-all" }
   | { kind: "buy"; code: string; quantity: number; npc?: string; x?: number; y?: number }
   // Sell to the NPC that buys the item; pulls stock from the BANK bag-sized
-  // piece by piece when the hand is empty (the bank-cleanup action).
-  | { kind: "sell"; code: string; quantity: number; done: number; npc?: string; x?: number; y?: number }
+  // piece by piece when the hand is empty (the bank-cleanup action). `partial`
+  // (event trips): stock running out completes the item instead of pausing.
+  | { kind: "sell"; code: string; quantity: number; done: number; npc?: string; x?: number; y?: number; partial?: boolean }
   // Recycle at the workshop that crafts the item (returns a share of the
   // materials); like sell, pulls bank stock when the hand is empty.
   | { kind: "recycle"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number }

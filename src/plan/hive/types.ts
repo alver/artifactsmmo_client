@@ -34,6 +34,8 @@ export interface HiveCtx {
   achievements: AccountAchievement[] | null;
   /** Per-character craft-specialization pins (store.craftSkillPins). */
   craftPins: Record<string, string>;
+  /** Per-character 📌 main skills (store.skillPins) — what an idle character trains. */
+  pins: Record<string, string[]>;
 }
 
 /** One character's part of a gear-upgrade goal: the slots whose upgraded pick

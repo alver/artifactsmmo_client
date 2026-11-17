@@ -6,7 +6,7 @@
 // nothing left to do mid-wave runs tasks until the barrier.
 
 import { catalog } from "../../catalog";
-import { fleetBis, skillLevel } from "./ctx";
+import { GATHER_SKILLS, bankStock, fleetBis, skillLevel } from "./ctx";
 import { SCORE, estMinutes, perHour } from "./score";
 import type { QueueItemInput } from "../queue";
 import type { Character } from "../../types/api";
@@ -71,6 +71,12 @@ function gateProgress(ctx: HiveCtx): { done: number; total: number; complete: bo
 }
 
 export function proposeTaskGoals(ctx: HiveCtx): ScoredGoal[] {
+  // A full coin reserve makes more coins worthless (526 banked while the fleet
+  // farmed shrimp tasks for them) — then only the trader gate is worth tasks.
+  const gate = gateProgress(ctx);
+  const gateOpen = !gate || gate.complete;
+  const saturated = (bankStock(ctx).get("tasks_coin") ?? 0) >= SCORE.COIN_RESERVE;
+  if (saturated && gateOpen) return [];
   const perCharacter: { character: string; master: "monsters" | "items"; times: number }[] = [];
   const actionsBy: number[] = [];
   for (const ch of ctx.characters) {
@@ -83,8 +89,8 @@ export function proposeTaskGoals(ctx: HiveCtx): ScoredGoal[] {
 
   const totalTasks = perCharacter.reduce((s, p) => s + p.times, 0);
   const coins = totalTasks * (2.5 + SCORE.TASK_BONUS_COINS);
-  const gate = gateProgress(ctx);
-  const gateValue = gate && !gate.complete ? SCORE.GATE_PROGRESS * totalTasks : 0;
+  const gateValue = gateOpen ? 0 : SCORE.GATE_PROGRESS * totalTasks;
+  const coinValue = saturated ? 0 : coins * SCORE.TASK_COIN;
   const estActions = actionsBy.reduce((s, a) => s + a, 0);
   // Tasks paid per character in parallel — wall-clock is the slowest lane.
   const wall = Math.max(...actionsBy);
@@ -93,7 +99,7 @@ export function proposeTaskGoals(ctx: HiveCtx): ScoredGoal[] {
     {
       goal,
       label: `Farm ${totalTasks} tasks (${perCharacter.length} characters)`,
-      score: perHour(coins * SCORE.TASK_COIN + gateValue, wall),
+      score: perHour(coinValue + gateValue, wall),
       rationale:
         `~${Math.round(coins)} task coins across ${perCharacter.length} characters` +
         (gate && !gate.complete ? ` — and advances Tasks Farmer ${gate.done}/${gate.total}` : ""),
@@ -124,14 +130,17 @@ export function compileTaskGoal(goal: Extract<AccountGoal, { kind: "farm-tasks" 
 
 /**
  * The runtime's mid-wave idle filler: what a participant with nothing left to
- * do this wave runs until the barrier — an INFINITE task loop at their
- * best-suited master (always useful: coins + gate progress). The runtime
- * tracks it as a `filler` assignment that never holds the barrier and pulls
- * it only when the run continues to a next wave (a finishing goal leaves it
- * running), so the ∞ is deliberate — no idle gap between tasks.
- * undefined = no suitable master; the character stays genuinely idle.
+ * do this wave runs until the barrier — an INFINITE item: training its pinned
+ * gathering/combat skill (they only ADD to the bank — a workshop pin would
+ * draw on the wave's materials), else a task loop at its best-suited master.
+ * The runtime tracks it as a `filler` assignment that never holds the barrier
+ * and pulls it only when the run continues to a next wave (a finishing goal
+ * leaves it running), so the ∞ is deliberate — no idle gap.
+ * undefined = no such pin and no suitable master; the character stays idle.
  */
 export function fillerItems(ctx: HiveCtx, ch: Character): QueueItemInput[] | undefined {
+  const pin = (ctx.pins[ch.name] ?? []).find((s) => s === "combat" || (GATHER_SKILLS as readonly string[]).includes(s));
+  if (pin) return [{ kind: "train", skill: pin, toLevel: 0, gear: true }];
   const fit = taskSuitability(ctx, ch);
   if (!fit) return undefined;
   return [{ kind: "task-loop", master: fit.master, times: 0, done: 0, gear: true }];

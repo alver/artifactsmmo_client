@@ -27,11 +27,11 @@
 
 import { batch, effect, signal } from "@preact/signals";
 import { IS_SERVER, expose, rpc } from "../lib/remote";
-import { addItem, dropItem, insertItem, patchItem, queues, removeItem, setRepeat, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
-import { achievements, bankDetails, bankItems, characterList, characters, craftPins, pushLog } from "./store";
+import { addItem, dropItem, insertItem, patchItem, queuePinTraining, queues, removeItem, setRepeat, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
+import { achievements, bankDetails, bankItems, characterList, characters, craftPins, pushLog, skillPins } from "./store";
 import { invQty } from "./exec";
 import { bankQty } from "./loopkit";
-import { compileGoal, fillerItems, goalSatisfied, needsAchievements, proposeGoals } from "../plan/hive";
+import { compileGoal, fillerItems, goalSatisfied, needsAchievements, proposeGoals, taskSuitability } from "../plan/hive";
 import type { AccountGoal, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "../plan/hive";
 import { SPLIT_ACTIONS } from "../plan/hive/acquire";
 import { SCORE } from "../plan/hive/score";
@@ -154,6 +154,7 @@ export function buildHiveCtx(): HiveCtx {
     bankGold: bankDetails.value?.gold ?? 0,
     achievements: achievements.value,
     craftPins: craftPins(),
+    pins: skillPins.value,
   };
 }
 
@@ -447,7 +448,7 @@ export function rebalanceWave(run: HiveRun): void {
     const items = fillerItems(ctx, ch);
     added.push({
       character: ch.name,
-      label: items ? "filler: run tasks until the wave ends" : "idle — no suitable tasks master",
+      label: items ? `filler: ${queueItemText({ ...items[0], id: "" } as QueueItem)} until the wave ends` : "idle — no pin to train, no suitable tasks master",
       items: items ?? [],
       dispatched: false,
       skipped: items ? undefined : true,
@@ -497,7 +498,7 @@ function dispatchWave(): void {
       run: { ...hive.value.run!, wave: { ...run.wave!, assignments } },
     };
     if (main) log(`wave ${run.waveSeq + 1} dispatched — ${run.label}`);
-    for (const name of fillers) log(`${name} is idle — running tasks until the wave ends`);
+    for (const name of fillers) log(`${name} is idle — filler until the wave ends`);
     // (a stolen slice logs itself in rebalanceWave — `main` just re-logs the wave)
   });
 }
@@ -574,13 +575,16 @@ async function continueRun(): Promise<void> {
 
 /**
  * A finished goal never parks the fleet: participants whose queue is still
- * running (their wave's filler task-loop, or anything the user started) carry
- * on untouched; everyone whose queue holds nothing but stale hive leftovers
- * gets an infinite items-master task-loop. Pushed as PLAIN items (fresh ids,
- * not hive:*) — the run is over, so the queue belongs to the user again.
+ * running (their wave's filler, or anything the user started) carry on
+ * untouched; everyone whose queue holds nothing but stale hive leftovers goes
+ * back to its 📌 pinned training (the main way to play — the old hard-coded
+ * items task-loop had the fleet fishing shrimp 59% of the time), or, with no
+ * pins, an infinite task-loop at its best-suited master. Pushed as PLAIN items
+ * (fresh ids, not hive:*) — the run is over, so the queue belongs to the user.
  */
 function handOffToTasks(): void {
   const manual = new Set(hive.value.manual);
+  const ctx = buildHiveCtx();
   batch(() => {
     for (const c of characterList()) {
       if (manual.has(c.name)) continue;
@@ -589,9 +593,20 @@ function handOffToTasks(): void {
       const leftovers = (q?.items ?? []).filter((it) => isHiveItemId(it.id));
       if ((q?.items.length ?? 0) > leftovers.length) continue; // user items — user's queue
       for (const it of leftovers) removeItem(c.name, it.id);
-      addItem(c.name, withId({ kind: "task-loop", master: "items", times: 0, done: 0, gear: true }));
+      if ((skillPins.value[c.name] ?? []).length > 0) {
+        queuePinTraining(c.name);
+        startQueue(c.name);
+        log(`${c.name} is idle — back to its pinned training`);
+        continue;
+      }
+      const fit = taskSuitability(ctx, c);
+      if (!fit) {
+        log(`${c.name} is idle — no pins and no suitable tasks master`);
+        continue;
+      }
+      addItem(c.name, withId({ kind: "task-loop", master: fit.master, times: 0, done: 0, gear: true }));
       startQueue(c.name);
-      log(`${c.name} is idle — assigned an items task-loop`);
+      log(`${c.name} is idle — assigned a ${fit.master} task-loop`);
     }
   });
 }

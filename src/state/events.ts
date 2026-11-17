@@ -8,6 +8,9 @@ import { catalog, tileAt } from "../catalog";
 import type { ActiveEvent } from "../types/api";
 import type { GameMap, Monster, Resource } from "../types/catalog";
 
+/** One spawn of an event (the same event code respawns later with a new created_at). */
+export const eventKey = (e: ActiveEvent): string => `${e.code}@${e.created_at}`;
+
 /** The active events that haven't expired yet (live signal read). */
 export function liveEvents(): ActiveEvent[] {
   const t = Date.now();

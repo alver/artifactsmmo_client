@@ -18,6 +18,9 @@ export const SCORE = {
   GATE_PROGRESS: 3,
   /** Rough coin-equivalent of the turn-in bonus roll (task_rewards.json EV). */
   TASK_BONUS_COINS: 1,
+  /** Banked coins past which more are worth nothing: about one tier of crystal
+   *  gear + steel tools. shortcut: flat; upgrade to the reachable gear's demand. */
+  COIN_RESERVE: 300,
 
   /** Seconds per cooldown-paced action. Measured from dev.log medians
    *  (2026-11-04): gather 31 s, fight 39 s, rest 23 s, move 22 s, craft 19 s —

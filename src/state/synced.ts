@@ -26,6 +26,7 @@ import {
 } from "./store";
 import { queues } from "./queue";
 import { hive } from "./hive";
+import { eventPlans } from "./eventorders";
 import { simDeviations } from "../sim/validate";
 import { loadCatalog } from "../catalog";
 import { rpc } from "../lib/remote";
@@ -49,6 +50,7 @@ export const SYNCED: Record<string, Signal<unknown>> = {
   pendingRewards,
   queues,
   hive,
+  eventPlans,
   simDeviations,
 } as Record<string, Signal<unknown>>;
 

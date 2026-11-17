@@ -13,7 +13,7 @@ import { compileTaskGoal, proposeTaskGoals } from "./tasks";
 import type { AccountGoal, HiveCtx, HivePlan, ScoredGoal } from "./types";
 
 export type { AccountGoal, Blocker, HiveAssignment, HiveCtx, HivePlan, HiveWave, ScoredGoal } from "./types";
-export { fillerItems } from "./tasks";
+export { fillerItems, taskSuitability } from "./tasks";
 
 /** Enumerate + score candidate account goals, best first. Blocked goals are
  *  discounted and their prerequisites promoted to standalone goals that carry

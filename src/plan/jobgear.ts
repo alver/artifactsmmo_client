@@ -37,9 +37,10 @@ const isUtility = (g: GearSlot): boolean => g.startsWith("utility");
  * Artifacts pinned to the hero: once owned, every job set includes one and no
  * swap or bank reset ever removes a worn copy (universal xp/drop/hp boosters
  * that are useful on EVERY job, so cycling them through the bank is pure
- * waste). Spare copies still belong in the bank.
+ * waste). Spare copies still belong in the bank. lost_world_map (wisdom +100,
+ * Lv 20) is bought from the Nomadic Merchant event, one per character.
  */
-export const PINNED_ARTIFACTS = new Set(["novice_guide"]);
+export const PINNED_ARTIFACTS = new Set(["novice_guide", "lost_world_map"]);
 
 /** Every gear slot mapped to "" — the desired map for a full strip. */
 export function stripAllMap(): Partial<Record<GearSlot, string>> {
@@ -133,8 +134,12 @@ export function canWinWithOwned(ch: Character, bank: BankItem[], monster: string
 }
 /** The forecast of the best set owned right now vs the monster (undefined = no set at all). */
 export function ownedFightForecast(ch: Character, bank: BankItem[], monster: string): FightForecast | undefined {
+  return ownedFightRec(ch, bank, monster)?.forecast;
+}
+/** The best set owned right now vs the monster, with its `safe` verdict (the pessimistic pass wins too). */
+export function ownedFightRec(ch: Character, bank: BankItem[], monster: string): GearRecommendation | undefined {
   const qty = ownedQtyOf(ch, bank);
-  return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false })[0]?.forecast;
+  return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false })[0];
 }
 
 /**
