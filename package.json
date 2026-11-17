@@ -9,7 +9,8 @@
     "start": "vite build && node scripts/serve.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
-    "assets": "bash scripts/download-assets.sh"
+    "assets": "bash scripts/download-assets.sh",
+    "atlas": "node --import tsx --experimental-webstorage --localstorage-file=.ammo/atlas.db --disable-warning=ExperimentalWarning scripts/atlas.mts"
   },
   "dependencies": {
     "@preact/signals": "^1.3.2",

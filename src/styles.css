@@ -2720,3 +2720,93 @@ body,
   gap: 6px;
   margin: 6px 0;
 }
+
+/* ── Roadmap tab (ui/RoadmapTab.tsx) ───────────────────────── */
+.warn-text {
+  color: var(--gold);
+}
+.road-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 10px;
+}
+.road-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.road-card-title {
+  font-weight: 700;
+}
+.road-step {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.road-step .alert-actions {
+  flex-wrap: wrap;
+}
+.road-wait {
+  font-size: 12px;
+}
+.road-prog {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 1 260px;
+  min-width: 160px;
+  font-size: 12px;
+}
+.road-grid {
+  display: grid;
+  gap: 4px 6px;
+  align-items: center;
+  min-width: max-content;
+  margin-top: 8px;
+}
+.road-label {
+  font-size: 13px;
+}
+.road-cell {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--bg);
+}
+.road-cell .dt-bar {
+  width: 80%;
+}
+.road-cell.done {
+  color: var(--ok);
+}
+.road-item {
+  border-bottom: 1px dotted var(--muted);
+  cursor: help;
+}
+.road-prose {
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 980px;
+}
+.road-prose ul {
+  margin: 4px 0 8px;
+  padding-left: 20px;
+}
+.fold-body h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}

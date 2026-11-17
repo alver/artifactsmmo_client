@@ -14,6 +14,7 @@ import type {
   Task,
 } from "../types/catalog";
 import { loadCatalogFile } from "./load";
+import { loadAtlas } from "./atlas";
 import { titleCase } from "../lib/util";
 
 export interface Catalog {
@@ -44,6 +45,7 @@ export async function loadCatalog(): Promise<Catalog> {
     loadCatalogFile<Achievement>("achievements"),
     loadCatalogFile<Task>("tasks"),
     loadCatalogFile<Npc>("npcs"),
+    loadAtlas(),
   ]);
 
   // Several layers (overworld/underground/interior) share an (x,y). Prefer the

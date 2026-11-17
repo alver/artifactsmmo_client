@@ -18,8 +18,8 @@ export const SCORE = {
   GATE_PROGRESS: 3,
   /** Rough coin-equivalent of the turn-in bonus roll (task_rewards.json EV). */
   TASK_BONUS_COINS: 1,
-  /** Banked coins past which more are worth nothing: about one tier of crystal
-   *  gear + steel tools. shortcut: flat; upgrade to the reachable gear's demand. */
+  /** Fallback coin reserve when public/data/atlas.json is missing; with the atlas
+   *  the reserve is the roadmap's crystal demand (coinDemand in plan/roadmap.ts). */
   COIN_RESERVE: 300,
 
   /** Seconds per cooldown-paced action. Measured from dev.log medians

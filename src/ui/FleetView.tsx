@@ -307,7 +307,7 @@ function SkillGrid({ chars }: { chars: Character[] }) {
 }
 
 /** A Fleet section that mounts its body only while expanded (the hive and coverage bodies aren't free). */
-function Fold({ open, title, children }: { open: Signal<boolean>; title: string; children: ComponentChildren }) {
+export function Fold({ open, title, children }: { open: Signal<boolean>; title: string; children: ComponentChildren }) {
   return (
     <section class="ws-card">
       <button class="fold-toggle" aria-expanded={open.value} onClick={() => (open.value = !open.value)}>

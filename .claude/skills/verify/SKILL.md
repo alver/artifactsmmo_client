@@ -38,6 +38,19 @@ this recipe drives the REAL service against the REAL game API.
   test service (keep `running:false` unless you mean to run them).
 - `confirm()` dialogs (queue clear-all): `page.on("dialog", d => d.accept())`.
 
+## Zero-call mode: the mock-API preload
+
+`mock-api.mjs` (next to this file) patches `fetch` for api.artifactsmmo.com:
+every GET is served from a saved `/events` snapshot (characters, bank, bank
+items; events/pending empty; achievements from an optional `mockAchievements`
+array) and every POST (an action) is refused with a 400. The real service then
+boots with ZERO game calls — ideal for UI checks. Capture a snapshot with
+`curl -s -N --max-time 3 http://127.0.0.1:5173/events` (first `data:` line),
+then:
+`PORT=5199 MOCK_SNAPSHOT=<snap.json> node --import file:///<abs>/mock-api.mjs --import tsx --experimental-webstorage --localstorage-file=<scratch>/test.db --disable-warning=ExperimentalWarning src/server/main.ts`.
+Pins aren't in the snapshot's characters — seed them with `togglePin` rpcs. A
+started queue pauses on its first action ("mock API: actions refused").
+
 ## Observe through the service's state stream (authoritative, no DOM scraping)
 
 - `curl -s -N --max-time 2 http://localhost:5199/events` — the first `data:`

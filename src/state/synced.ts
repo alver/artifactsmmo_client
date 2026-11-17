@@ -27,6 +27,7 @@ import {
 import { queues } from "./queue";
 import { hive } from "./hive";
 import { eventPlans } from "./eventorders";
+import { roadmapAnalysis } from "./roadmap";
 import { simDeviations } from "../sim/validate";
 import { loadCatalog } from "../catalog";
 import { rpc } from "../lib/remote";
@@ -52,6 +53,7 @@ export const SYNCED: Record<string, Signal<unknown>> = {
   hive,
   eventPlans,
   simDeviations,
+  roadmapAnalysis,
 } as Record<string, Signal<unknown>>;
 
 const MIGRATED = "ammo:v1:migrated";

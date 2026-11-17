@@ -6,6 +6,8 @@
 // nothing left to do mid-wave runs tasks until the barrier.
 
 import { catalog } from "../../catalog";
+import { atlas } from "../../catalog/atlas";
+import { coinDemand } from "../roadmap";
 import { GATHER_SKILLS, bankStock, fleetBis, skillLevel } from "./ctx";
 import { SCORE, estMinutes, perHour } from "./score";
 import type { QueueItemInput } from "../queue";
@@ -75,7 +77,10 @@ export function proposeTaskGoals(ctx: HiveCtx): ScoredGoal[] {
   // farmed shrimp tasks for them) — then only the trader gate is worth tasks.
   const gate = gateProgress(ctx);
   const gateOpen = !gate || gate.complete;
-  const saturated = (bankStock(ctx).get("tasks_coin") ?? 0) >= SCORE.COIN_RESERVE;
+  // The reserve = the coins the roadmap's next two band sets still need in crystals.
+  const road = atlas();
+  const reserve = road ? coinDemand({ characters: ctx.characters, bank: ctx.bank, atlas: road }) : SCORE.COIN_RESERVE;
+  const saturated = (bankStock(ctx).get("tasks_coin") ?? 0) >= reserve;
   if (saturated && gateOpen) return [];
   const perCharacter: { character: string; master: "monsters" | "items"; times: number }[] = [];
   const actionsBy: number[] = [];

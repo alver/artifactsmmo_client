@@ -15,6 +15,15 @@ export function setDataReader(fn: (name: CatalogName) => Promise<unknown>): void
   readData = fn;
 }
 
+/** A generated data file with no API counterpart (atlas.json): null when missing. */
+export async function loadOptionalFile<T>(name: string): Promise<T | null> {
+  try {
+    return (await readData(name as CatalogName)) as T;
+  } catch {
+    return null;
+  }
+}
+
 export async function loadCatalogFile<T>(name: CatalogName): Promise<T[]> {
   try {
     return (await readData(name)) as T[];

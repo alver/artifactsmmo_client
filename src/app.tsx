@@ -12,12 +12,14 @@ import { SimPlayground } from "./ui/SimPlayground";
 import { ActivityPanel } from "./ui/ActivityLog";
 import { EventsPanel } from "./ui/EventsPanel";
 import { FleetView } from "./ui/FleetView";
+import { RoadmapTab } from "./ui/RoadmapTab";
 import { BankTab, ItemsTab, MonstersTab } from "./ui/TableTabs";
 import type { JSX } from "preact";
 
 /** Top-bar tabs: hash route → label + page. Unknown routes fall back to Fleet. */
 const TABS: [string, string, () => JSX.Element | null][] = [
   ["fleet", "Fleet", FleetView],
+  ["roadmap", "Roadmap", RoadmapTab],
   ["char", "Character", CharacterPanel],
   ["bank", "Bank", BankTab],
   ["items", "Items", ItemsTab],
