@@ -8,8 +8,9 @@
 
 import type { Atlas } from "../catalog/atlas";
 import { atlasItem } from "../catalog/atlas";
-import { itemName, monster } from "../catalog";
-import { killSeconds } from "./bis";
+import { catalog, item, itemName, monster } from "../catalog";
+import { bestInSlot, canEquip, killSeconds } from "./bis";
+import { brewablePotions } from "./consumables";
 import { fleetBis, fleetOwned, skillLevel } from "./hive/ctx";
 import { bandSet } from "./roadmap";
 import { simulate } from "../sim/combat";
@@ -96,7 +97,25 @@ export function analyzeFleet(chars: Character[], bank: BankItem[], a: Atlas): Ro
   const skillTop = (sk: string) => chars.reduce((m, c) => Math.max(m, skillLevel(c, sk)), 0);
   const coins = bank.find((b) => b.code === "tasks_coin")?.quantity ?? 0;
   const items: ItemBlockers[] = [];
-  const beats = new Map<string, boolean>();
+  // A drop monster counts as farmable when the bank's set wins — with utility
+  // potions the fleet owns or its best alchemist can brew (an antidote makes
+  // spiders a win), as the live gear swap would wear them.
+  const alchemist = chars.reduce<Character | undefined>((b, c) => (!b || skillLevel(c, "alchemy") > skillLevel(b, "alchemy") ? c : b), undefined);
+  const potions = alchemist ? brewablePotions(alchemist, bank) : [];
+  const solve = (ch: Character, m: string, extra: string[]) => {
+    const r = bestInSlot(ch, m, { owned: fleetOwned(ctx).owned, ownedQty, includeCraftable: false, extraCandidates: extra, perSlotCap: 6, weaponCap: 6 })[0];
+    return r?.forecast.win && !r.forecast.timedOut ? r : undefined;
+  };
+  // "" = a win today; else why not — naming the potion that would flip it when one exists.
+  const verdictVs = (ch: Character, m: string): string => {
+    if (fleetBis(ctx, ch, m)?.forecast.win || solve(ch, m, potions)) return "";
+    const any = [...catalog().items.values()].filter((it) => it.type === "utility" && it.craft && canEquip(ch, it)).map((it) => it.code);
+    const flip = solve(ch, m, any);
+    const need = (flip ? [flip.slots.utility1, flip.slots.utility2] : []).filter((c) => c && !potions.includes(c) && !ownedQty.get(c)).map((c) => item(c)!);
+    const lv = Math.max(0, ...need.map((it) => it.craft?.level ?? 0));
+    return `no win vs ${monster(m)?.name ?? m}${need.length ? ` — ${need.map((it) => it.name).join(" + ")} would fix it (alchemy ${lv})` : ""}`;
+  };
+  const beats = new Map<string, string>();
   for (const band of [cur, cur + 1]) {
     if (!a.bands[band]) continue;
     for (const s of bandSet(a, band)) {
@@ -105,8 +124,8 @@ export function analyzeFleet(chars: Character[], bank: BankItem[], a: Atlas): Ro
       const blockers: string[] = [];
       for (const [sk, lv] of Object.entries(ai?.reqSkills ?? {})) if (skillTop(sk) < lv) blockers.push(`${sk} ${skillTop(sk)}/${lv}`);
       for (const m of Object.keys(ai?.reqMonsters ?? {})) {
-        if (!beats.has(m)) beats.set(m, !!strongest && !!monster(m) && (fleetBis(ctx, strongest, m)?.forecast.win ?? false));
-        if (!beats.get(m)) blockers.push(`no win vs ${monster(m)?.name ?? m}`);
+        if (!beats.has(m)) beats.set(m, strongest && monster(m) ? verdictVs(strongest, m) : `no win vs ${m}`);
+        if (beats.get(m)) blockers.push(beats.get(m)!);
       }
       const crystal = ai?.flags.find((f) => f.startsWith("tasks crystal "));
       if (crystal && coins < (a.coinPrices[crystal.slice(14)] ?? 0)) blockers.push(`${itemName(crystal.slice(14))} (coins)`);

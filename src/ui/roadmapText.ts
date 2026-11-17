@@ -63,7 +63,7 @@ export const BAND_TEXT: Record<number, { lede: string; points: string[] }> = {
       "New materials: <b>steel bars</b> (3 iron ore + 7 coal, mining 20), <b>hardwood planks</b> (ash + birch, woodcutting 20), skeleton bones and skulls, pig skin, ogre eyes and skin, spider legs.",
       "Core set: <b>steel battleaxe</b> (earth 40) or <b>battlestaff</b>/<b>skull staff</b> (water / fire 40), steel armor, hard leather pants, steel boots, steel rings (+75 initiative, so you strike first). Plus adds the <b>hard leather helmet</b> (astralyte), <b>skull rings</b> (2 jasper) and the <b>healing rune</b> (10,000 gold).",
       "The <b>dreadful ring</b> is a Lv 20 item that needs Cyclops eyes (Lv 25 monster); a self-sufficient fleet only makes it at about Lv 25–30. The slime shield and the skull/dreadful amulets need king slimeballs (boss).",
-      "Spiders poison for 20 a turn. The small antidote (alchemy 20) cancels it, but the simulator does not model antipoison, so spiders look harder here than they are.",
+      "Spiders poison for 20 a turn. The small antidote (alchemy 20) cancels it completely; fighters wear and brew it when the sim says it pays.",
       "The steel gathering tools (−30%) cost 2 astralyte each, about 24 coins."
     ]
   },
@@ -105,7 +105,7 @@ export const BAND_TEXT: Record<number, { lede: string; points: string[] }> = {
     "lede": "Hell, sand, dragon and adamantite gear, all special. The leveling target is dryads in the Enchanted Forest (5,000 gold per entry), at about 5,000 XP/h with potions; hellhounds without. About 52 h with potions, 76 h without.",
     "points": [
       "Every hell item needs a <b>book from hell</b>: 24 pages from hell (efreet sultan / grimlet events) at the Archaeologist, or the Closing the Gate achievement (500 kills each of demon, imp, efreet sultan and grimlet).",
-      "Sandwhisper Isle (1,000 gold per crossing) holds adamantite, palm wood, sand snakes, sandwardens and desert scorpions. Its gear needs its own drops, and the simulator only wins there with Lv 40+ gear plus potions; antidotes (not modeled) and group fights make it easier than shown.",
+      "Sandwhisper Isle (1,000 gold per crossing) holds adamantite, palm wood, sand snakes, sandwardens and desert scorpions. Its gear needs its own drops, and the simulator only wins there with Lv 40+ gear plus potions; group fights make it easier than shown.",
       "Level 50 rewards: amulet of the grand master (5 copies, Grand Master achievement), and the high-HP bosses (duskworm 25,000 HP, Sandwhisper Empress 13,500) for group fights."
     ]
   }

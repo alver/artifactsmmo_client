@@ -417,7 +417,7 @@ function AtlasNotes() {
         ))}
         <p class="muted">
           Method: hypothetical characters (base HP 115 + 5·L) against every monster with the client's own simulator; an item counts at a level only once
-          the same tier's gear beats every monster its recipe needs drops from. Not modeled: antipoison, corrupted, protective bubble; bosses solo only.
+          the same tier's gear beats every monster its recipe needs drops from. Bosses are simulated solo only; the rarer effects (corrupted, mirror, greed …) follow readings the docs leave open (see sim/effects.ts).
         </p>
       </div>
     </Fold>

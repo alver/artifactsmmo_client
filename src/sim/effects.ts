@@ -18,6 +18,27 @@ import { isCombatEffect } from "./types";
  *  - lifesteal     : heal value% of total attack on a crit (EV)
  *  - boost_hp / boost_dmg_* / boost_res_* : fight-start buffs
  *  - restore       : +value HP at start of turn while below 50% HP
+ *
+ * Added 2026-11-17. The docs give only the one-line descriptions, so each
+ * reading below is an assumption — sim/validate.ts's fight-log check is the
+ * arbiter (a real fight vs one of these monsters that mismatches says which):
+ *  - poison / burn  : applied at the start of the BEARER's first turn (so a
+ *                     faster opponent takes no tick on its own first turn)
+ *  - antipoison     : start of own turn, before the poison tick: poison −= value,
+ *                     permanently (small antidote 20 erases a spider's 20)
+ *  - corrupted      : after each attack taken, res −= value POINTS for every
+ *                     element the attacker has attack in (can go negative)
+ *  - protective_bubble: +value res on one element, re-rolled every fight turn,
+ *                     never the previous one; EV mode = each element ¼ of the time
+ *  - sun_shield     : every hit the bearer takes −value% (solo: each is the turn's first)
+ *  - greed          : +value dmg% (added to dmg, like a stat) per 10% of max HP
+ *                     lost, counted over all damage taken (heals don't undo it)
+ *  - frenzy         : after a crit, +value dmg% on the next attack; EV mode =
+ *                     crit chance × value from the 2nd attack on
+ *  - enchanted_mirror: a hit taken deals value% back to the attacker, at most
+ *                     once per 3 FIGHT turns; attacks only, not DoTs
+ *  - void_drain     : every 4 of the bearer's own turns, value% of the
+ *                     opponent's CURRENT HP moves to the bearer
  */
 export const MODELED = new Set<string>([
   "poison", "burn", "barrier", "healing", "reconstitution", "berserker_rage", "lifesteal",
@@ -25,6 +46,7 @@ export const MODELED = new Set<string>([
   "boost_dmg_fire", "boost_dmg_earth", "boost_dmg_water", "boost_dmg_air",
   "boost_res_fire", "boost_res_earth", "boost_res_water", "boost_res_air",
   "restore",
+  "antipoison", "corrupted", "protective_bubble", "sun_shield", "greed", "frenzy", "enchanted_mirror", "void_drain",
 ]);
 
 /**
