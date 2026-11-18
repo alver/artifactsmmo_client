@@ -3,7 +3,7 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-18, after report 005 was discussed, Alex answered its decisions and task 006 was written.
+Last updated: 2026-11-18, after report 006 was accepted and task 007 was written.
 
 ## The goal (Alex, 2026-11-18)
 - **The client plays the season by itself.** Alex's target is every achievement of the season: 210 achievement
@@ -153,6 +153,30 @@ Last updated: 2026-11-18, after report 005 was discussed, Alex answered its deci
     fights earns about 236 gold against 124 for tasks (design D.2), so less task work is not less gold; only the
     tasks coins slow down (526 in the bank on 2026-11-17).
 
+16. **Report 006 accepted (2026-11-18).** Checked in the chat: both commits in `.git/logs/HEAD` (`425097b` Rework
+    notes, `929017d` 006); `src/plan/route.ts` and `src/state/loopkit.ts` read in full — regions, `route()`, one leg
+    per `moveTo`, `nearest` ranked by `travelSec` through `FREE` are as the report says; `isOutage` and the pause
+    path of `runLoop` (`src/state/queue.ts:1437-1438`, `:1483-1511`); all 30 `nearest(` calls of `queue.ts` pass a
+    character. Not checked there: `npm run check`, the typecheck, the build, `exec.ts` and the UI callers (Claude
+    Code ran them). **Alex restarts the service.** The first live proof is the report's step 8 — a `transition` in
+    `logs/dev.log` with no 598 after it — and it waits for the first character that goes through one.
+    - **One regression, the planning chat's own** (task 006 said "the ordinary error path"): a 598 at action time
+      now pauses the queue. Before 006 it was held for 60 s and the next tick picked again. It still happens
+      honestly when an event tile expires between the look and the action (the local clock against the server's).
+      A paused queue also misses the daily offerings: `scheduleOfferings` skips a queue that is not running. Rare,
+      so no task of its own. Task 008 fixes it on both sides: the runtime never leaves a character paused (design
+      C.4), and in `runLoop` a 598 is a vanished target — look again once, then skip the item, never pause.
+17. **Offerings (report 006, section 7): the gap is structure, not a defect of the item.** 19 of 105 in seven days;
+    75 of the 86 missed had no daily trigger (fixed on 11-16). What is left, a day:
+    - **The combat offering is lost by all five** until its item can be had: the brackets ask for Ogre Eye and Demon
+      Horn, and the ogre is not a safe win. Five quarter-levels of combat a day — the dearest loss on the list.
+      Consequence: "makes today's offering item obtainable" counts as a gate flipped for gear by need (task 010)
+      and for `pickMonster`'s bonus; until then the planner's core reckons with 10 offerings a day, not 15.
+    - **A skill under 10 has no bracket**: gear-, weapon- and jewelrycrafting stand at 1–2 on the four characters
+      that do not craft them, about three offerings a day on average (estimate: three of eight rotating skills).
+      Each would level a skill its character never uses; only the favor is lost, and the 467 favors left fit at 10
+      a day (47 days). Not planned; looked at again if favors become the constraint.
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -161,14 +185,14 @@ Last updated: 2026-11-18, after report 005 was discussed, Alex answered its deci
 | 003 | Runner fixes: `buy` never buys; the gear swap's bank-tile sweep (helper ping-pong); 486 after a 500 | done, `e847b11`. Accepted 2026-11-18; Alex restarted the service that day, so it runs this code. |
 | 004 | The achievement map → `docs/design/achievement-map.md`, `docs/design/snapshot/`, `scripts/design/achievement-map.mts` | done, commit "004: achievement map". Accepted 2026-11-18. No engine change, no restart. |
 | 005 | The planner's design → `docs/design/planner.md`; with it, the map checked against the leaderboard (four public reads) | done, `72b726f`. Accepted 2026-11-18. No engine change, no restart. |
-| 006 | Movement knows layers; free transitions are walked; 598 is an answer; the `train` item's node; the backpack wish dropped; read-only: why offerings run at 8–11 of 15 | written 2026-11-18, `tasks/006-layers-and-transitions.md`; not run yet. **Engine change: Alex restarts the service after it is accepted.** |
-| 007… | The planner, stage 1: core (pure) → runtime → Roadmap as home → gear by need (design I.3), then the order of decision 14 | after 006's report |
+| 006 | Movement knows layers; free transitions are walked; 598 is an answer; the `train` item's node; the backpack wish dropped; read-only: why offerings run at 8–11 of 15 | done, `929017d`. Accepted 2026-11-18. **Engine change: Alex was told to restart the service on 2026-11-18**; the next planning chat asks whether it happened. |
+| 007 | The planner's core, pure: `src/plan/planner/*` and `scripts/check-planner.mts` (first steps, first week, the replay to the deadline) | written 2026-11-18, `tasks/007-planner-core.md`; not run yet. Nothing imports it: no engine change, no restart. |
+| 008… | The runtime (restart; Fifth on; the 598 fix of decision 16) → Roadmap as home, all five on → clean-up → gear by need, then the order of decision 14 | after 007's report |
 
 ## Open questions
 - **What does gear crafting cost this fleet?** The leaderboard shows it for the leader only. The planner's measured
   hours per level at 25–35 answer it; above 100 hours a level the plan falls back to about 100 points.
-- **Why do offerings run at 8–11 of 15 a day?** Each one missed is a quarter of a level and a favor, and the
-  design keeps the `offering` item underneath its interrupt. Task 006 looks, read-only.
+- Answered by 006: why offerings run under 15 a day (decision 17).
 - **The end of the season.** No date is published; 2027-02-24 is the working deadline. The leader's first
   achievement (2026-11-02) fits the announced opening of 2026-10-31 better than the API's 2026-10-24; if the four
   months run from the opening, the end is a week later. An announcement would settle it.
@@ -182,8 +206,8 @@ Last updated: 2026-11-18, after report 005 was discussed, Alex answered its deci
 - `initiative` is on the character in the API; the simulator starts it at 0 (audit, report 002). Possibly wrong
   "who strikes first" against 10 monsters.
 - A fighter that gets one raw chicken walks off to cook it and then rests anyway (report 002).
-- 598 treated as an outage; a failed bank read empties the local bank; the 478 handler drops the whole stack;
-  mining and woodcutting training break at skill 35–39 (audit B.4, D.2, C.3).
+- A failed bank read empties the local bank; the 478 handler drops the whole stack (audit D.2). Closed by 006: 598
+  treated as an outage, gathering training at skill 35–39.
 - The dev log is shared by smoke-test services; the verify skill's `drive.mjs` and `hive-probe.mjs` are stale
   (audit F.3).
 - From report 003, not fixed: a `buy` of more units than the bag holds answers 497 and would walk bank ↔ merchant
@@ -200,11 +224,12 @@ Last updated: 2026-11-18, after report 005 was discussed, Alex answered its deci
 - From report 004, not fixed:
   - **Rest time.** The docs say 1 second per 1% of missing HP, minimum 3 s; the client and `domain-rules.md` use
     5 HP per second. They agree only at 500 max HP; the fleet is at 470–565 and growing.
-  - **Movement** costs 5 seconds per tile crossed (docs); no estimate in the client uses it.
-  - **No `transition` anywhere in the runner.** Mining training loses its node at 30 (gold rocks are underground);
-    the fleet mines at 21–24 today. Rats are behind a transition too. This is stage 2 of decision 9.
-  - **Offerings run at 8–11 a day** against a cap of 15. The 467 favors left need 31 days at the cap, 47 at 10 a
-    day; both fit, the slack is not large.
+  - **Movement** costs 5 seconds per tile crossed (docs). Since 006 `nearest` ranks by it (`travelSec`); no other
+    estimate in the client uses it yet (the hive's lane pace, `trainRecipe`'s field seconds).
+  - Closed by 006: no `transition` anywhere in the runner. Keys, tolls and `has_item` are still out (9 of the 30
+    transitions): the lich, the dryads, the island, the cultists, the priestess, the northern lava cave.
+  - **Offerings run at about 10 a day** against a cap of 15; the causes are in decision 17. The 467 favors left
+    need 31 days at the cap, 47 at 10 a day; both fit, the slack is not large.
   - **The event standing order sends one character per spawn**; no monster or resource order was ever dispatched.
     The Magic and Strange Apparitions need 35 and 30 days of spawns with five characters, five times that with one.
   - **The atlas** has no kill time and no farmable set for nine normal monsters of level 45–51 and five bosses;
@@ -215,6 +240,21 @@ Last updated: 2026-11-18, after report 005 was discussed, Alex answered its deci
     group fight lacks `participants`.
   - Smaller "by hand" gaps on the road: claiming pending achievement rewards, reading achievement progress, buying
     with an item currency (map F).
+
+- From report 006, not fixed:
+  - A 598 at action time pauses the queue (decision 16); fixed in 008.
+  - `route()` takes the first transition found between two regions, not the nearer one (today only the lava cave's
+    two keyed ones), and the fewest transitions, not the least time. Matters with keys and tolls.
+  - The restricted reading is unproven: the Enchanted Forest is taken to be entered and left only through its
+    transitions. Watch the first paid entry.
+  - `trainingMonsterFor`'s memo is per bank and level, not per position: right while everything freely reachable
+    is one connected set, which it is today.
+  - The hive calls `trainingResourceFor` without the reachability filter; the UI pickers (`availableMonsters`,
+    `availableResources`) still list what cannot be reached; a "Move" item from the queue editor and a manual
+    move from the map carry no layer (the editor's now means the overworld). All of it goes with the clean-up.
+  - `runOffering` still catches 598 and 575 itself (redundant, harmless); `src/plan/roadmap.ts:83` still lists the
+    backpack as an event buy (deleted with the Roadmap's suggestions).
+  - In the fake, a lost fight sends the character to (0, 0) on the overworld — a guess, not seen in the game.
 
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
