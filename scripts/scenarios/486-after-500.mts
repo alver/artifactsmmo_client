@@ -1,12 +1,11 @@
 // Audit B.4-8: a server 500 on an action, then 486 "an action is already in
 // progress" on the retry (the first call was still being processed). The 486
 // should be waited out like the 500.
-// Today: the 500 is held for a minute, then the 486 pauses the queue.
+// Before task 003: the 500 was held for a minute, then the 486 paused the queue.
 import { scenario } from "../harness/index.mts";
 
 await scenario(
   {
-    known: "B.4-8",
     characters: [{ name: "Gus", x: 2, y: 0 }], // on the copper rocks
   },
   async (t) => {

@@ -260,11 +260,16 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       return false;
     }
     case "buy": {
+      // Done only once the purchase is recorded on the item (by id, the moment
+      // npc/buy succeeds — see runStep). Checked first: a step result thrown
+      // away because the head changed under it, or a restart before the item
+      // is removed, must not buy twice. One buy call covers the whole quantity.
+      if (it.bought) return true;
       const tile = it.x != null ? { x: it.x, y: it.y } : it.npc ? nearest("npc", it.npc, ch.x, ch.y) : undefined;
       if (!tile || tile.x == null) return skipItem(name, it, "no shop on the map (event over?)");
       const s: AcquisitionStep = { kind: "buy", code: it.code, quantity: it.quantity, npc: it.npc ?? "", cost: 0, x: tile.x, y: tile.y };
-      await runStep(name, ch, s, ctx);
-      return true; // one buy call covers the whole quantity
+      await runStep(name, ch, s, { ...ctx, bought: () => patchItem(name, it.id, { bought: true }) });
+      return false; // this tick may have been the gold withdrawal; the next one sees `bought`
     }
     case "sell": {
       const left = it.quantity - it.done;
@@ -792,7 +797,8 @@ function batchRuns(ch: Character, recipe: CraftRecipe, by: Character[]): number 
 
 /** Working stock of a workshop-skill train: the recipe's materials and their
  *  one-deep sub-materials — never the product, which gets recycled or banked.
- *  A helper keeps only its tools: everything it gathers is FOR the bank. */
+ *  A helper keeps its tools and the raw material it is refining; everything it
+ *  makes is FOR the bank. */
 function trainKeep(ch: Character, it: Extract<QueueItem, { kind: "train" }>): string[] | undefined {
   if (!isCraftSkill(it.skill)) return undefined;
   const by = [ch, ...helpersOf(ch.name, it.skill)];
@@ -801,7 +807,18 @@ function trainKeep(ch: Character, it: Extract<QueueItem, { kind: "train" }>): st
   // Spare tools ride in the bag (never the product itself — it must recycle/bank)
   // so the gather ↔ craft tool swap never costs a bank trip.
   const tools = it.gear ? (ch.inventory ?? []).filter((s) => s.code && s.code !== pick?.code && itemOf(s.code)?.subtype === "tool").map((s) => s.code) : [];
+  // A helper delivers what it makes, but the raw material it refines on the way
+  // (ore → bars) is working stock: a full-bag bank-off must not deposit it only
+  // for the next tick to withdraw it again. Never a code the recipe takes
+  // directly — that one IS the delivery.
+  const crafter = it.for ? characters.value[it.for] : undefined;
+  const direct = (crafter && trainPick(crafter, it.skill)?.recipe.items) || [];
+  const refining = direct.flatMap((g) => {
+    const src = fieldSource(ch, g.code);
+    return src?.how === "craft" ? src.recipe.items.map((s) => s.code).filter((c) => !direct.some((d) => d.code === c)) : [];
+  });
   return [
+    ...refining,
     ...(pick?.recipe.items.flatMap((g) => {
       const src = fieldSource(ch, g.code);
       // Sub-materials (ore) are working stock only while the batch's bars aren't
@@ -1058,7 +1075,7 @@ async function giveUpTask(
   }
   // Coin fetch, walk and cancel in ONE call: a "no-win" verdict only exists on
   // the monster tile, so returning between steps walked straight back there
-  // (and the bank sweep stowed the coin) — a livelock that never cancelled.
+  // (and the swap's bag sweep, since removed, stowed the coin) — a livelock that never cancelled.
   const master = nearest("tasks_master", ch.task_type === "items" ? "items" : "monsters", ch.x, ch.y);
   if (!master) return skipItem(name, it, "no tasks master on the map");
   if (invQty(ch, "tasks_coin") <= 0) {
@@ -1396,9 +1413,17 @@ const S = (name: string): { losses: number } => {
   return s;
 };
 
+// 486 "an action is already in progress": the server is still working on this
+// character's previous call (seen on the retry after a 500). It means "wait,
+// then look again", not "this item is broken" — but only so many times in a
+// row, so a state that is really stuck still pauses.
+const BUSY_RETRIES = 6;
+const BUSY_WAIT_S = 5;
+
 async function runLoop(name: string): Promise<void> {
   if (liveLoops.has(name)) return; // never two loops per character
   liveLoops.add(name);
+  let busy = 0; // 486 answers in a row
   try {
     while (!stopFlags.has(name)) {
       // Yield to the event loop every tick: no buggy path may spin the tab.
@@ -1418,12 +1443,13 @@ async function runLoop(name: string): Promise<void> {
       }
       try {
         const done = await runItem(name, ch, item);
+        busy = 0;
         if (done) {
           const cur = queues.value[name];
           if (cur?.items[0]?.id === item.id) {
             const rest = cur.items.slice(1);
-            // 🔁 wipes progress; done/from/geared don't exist on every kind, hence the double cast.
-            const again = { ...item, done: 0, from: undefined, geared: undefined, error: undefined } as unknown as QueueItem;
+            // 🔁 wipes progress; done/from/geared/bought don't exist on every kind, hence the double cast.
+            const again = { ...item, done: 0, from: undefined, geared: undefined, bought: undefined, error: undefined } as unknown as QueueItem;
             // A finished `prepare` stops the queue: the character holds on the boss tile for the group fight.
             const ready = item.kind === "prepare";
             // An event trip (ev:* ids, state/eventorders.ts) is one-off — 🔁 never brings it back.
@@ -1447,7 +1473,13 @@ async function runLoop(name: string): Promise<void> {
           for (let i = 0; i < 60 && !stopFlags.has(name); i++) await sleep(1000);
           continue;
         }
-        const msg = (e as Error).message;
+        const stillBusy = e instanceof ApiError && e.code === 486;
+        if (stillBusy && ++busy <= BUSY_RETRIES) {
+          setQueue(name, { note: "action in progress — waiting" });
+          for (let i = 0; i < BUSY_WAIT_S && !stopFlags.has(name); i++) await sleep(1000);
+          continue;
+        }
+        const msg = stillBusy ? `${(e as Error).message} (code 486, ${BUSY_RETRIES} retries)` : (e as Error).message;
         patchItem(name, item.id, { error: msg });
         setQueue(name, { running: false, note: undefined });
         log(name, `queue paused — ${queueItemText(item)}: ${msg}`, "bad");

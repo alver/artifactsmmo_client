@@ -29,7 +29,9 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "craft"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number; wait?: boolean }
   | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number }
   | { kind: "deposit-all" }
-  | { kind: "buy"; code: string; quantity: number; npc?: string; x?: number; y?: number }
+  // `bought` is set the moment npc/buy succeeds and checked first on every
+  // tick: the item is done only when the purchase happened, and never twice.
+  | { kind: "buy"; code: string; quantity: number; npc?: string; x?: number; y?: number; bought?: boolean }
   // Sell to the NPC that buys the item; pulls stock from the BANK bag-sized
   // piece by piece when the hand is empty (the bank-cleanup action). `partial`
   // (event trips): stock running out completes the item instead of pausing.

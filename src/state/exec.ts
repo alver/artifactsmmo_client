@@ -42,6 +42,7 @@ export interface StepCtx {
   keep?: string[]; // never auto-deposited when banking off overflow
   food?: boolean; // keep the fighter fed: eat before resting, provision when out (bank → cook → gather)
   fightsLeft?: number; // fights the current item still owes — sizes the food restock
+  bought?: () => void; // called the moment an npc/buy succeeds, before its cooldown is waited out
   note: (text: string) => void; // short human status shown on the card
 }
 
@@ -94,10 +95,11 @@ export async function goToMaster(name: string, ch: Character, type: "monsters" |
  * Working stock of a brew in progress: for each desired utility potion with no
  * supply anywhere (the differ's unavailability guard skips its slot while
  * provisionPotions produces it), the potion code and its recipe ingredients.
- * MUST mirror provisionPotions' pending-brew conditions exactly. Without this
- * the swap ceremony's bank sweep deposits the very ingredients the brewer just
- * withdrew and the two ping-pong the stack forever (the withdraw/deposit
- * livelock caught in logs/dev.log, 2026-07-14).
+ * Mirrors provisionPotions' pending-brew conditions. Used by a RESET's stash
+ * (a job start in the middle of a brew keeps the ingredients) and by a swap
+ * that has to make room at the bank (jobgear roomOf). A plain swap no longer
+ * banks loot, so a mismatch here costs one re-fetch at worst — it used to be
+ * the withdraw/deposit livelock of 2026-07-14, when the swap swept the bag.
  */
 function brewKeep(ch: Character, desired: Partial<Record<GearSlot, string>>): string[] {
   const out: string[] = [];
@@ -114,12 +116,12 @@ function brewKeep(ch: Character, desired: Partial<Record<GearSlot, string>>): st
 
 /**
  * Working stock of a cook in progress — the food-provisioning twin of
- * brewKeep. When the fighter's next meal must be cooked (or gathered+cooked),
+ * brewKeep, with the same two users (a reset's stash, a swap making room).
+ * When the fighter's next meal must be cooked (or gathered+cooked),
  * provisionFood withdraws the recipe's stocked ingredients; raw ingredients
  * are NOT healing food, so keepOf's carried-food protection never covers them
- * and the swap sweep would stash them right back (the raw-beef loop, caught in
- * logs/dev.log 2026-07-14). Recomputes the same deterministic foodPlan the
- * provisioner uses, so the two can't disagree.
+ * (under the old bag sweep that was the raw-beef loop of 2026-07-14).
+ * Recomputes the same deterministic foodPlan the provisioner uses.
  */
 function foodKeep(ch: Character): string[] {
   const plan = foodPlan(ch, bankItems.value, foodExclude(ch));
@@ -131,6 +133,8 @@ function foodKeep(ch: Character): string[] {
 /**
  * One step of the gear-swap ceremony toward `desired`: unequip mismatches →
  * equip from hand → withdraw from bank → stow replaced/junk gear → bag last.
+ * Not a bank-off: outside a reset it never deposits loot beyond the room the
+ * swap itself needs (plan/jobgear.ts roomOf).
  * Batched season-8 equip/unequip calls keep a full swap at ~5 requests.
  * Returns "done" (converged — no action, no cooldown) or "acted".
  */
@@ -141,8 +145,9 @@ export async function gearSwapStep(
   ctx: StepCtx,
   opts?: { junk?: boolean; reset?: boolean },
 ): Promise<"done" | "acted"> {
-  // Provisioning-in-progress stock is working stock — the sweep must not
-  // stash a pending brew's ingredients or the next meal being cooked.
+  // Provisioning-in-progress stock is working stock — neither a reset's stash
+  // nor a make-room deposit may take a pending brew's ingredients or the next
+  // meal being cooked.
   const extra = [...brewKeep(ch, desired), ...(ctx.food ? foodKeep(ch) : [])];
   const keep = extra.length ? [...new Set([...(ctx.keep ?? []), ...extra])] : ctx.keep;
   const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset });
@@ -292,7 +297,10 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       }
       ctx.note(`buy ${itemName(s.code)}`);
       await moveTo(name, t.x, t.y);
-      await step(name, () => actions.npcBuy(name, s.code, s.quantity));
+      await step(name, async () => {
+        await actions.npcBuy(name, s.code, s.quantity);
+        ctx.bought?.(); // recorded before the cooldown: a restart inside it must not buy again
+      });
       return { did: "acted" };
     }
     case "gather":

@@ -389,24 +389,44 @@ function junkOf(inv: Map<string, number>, desired: Partial<Record<GearSlot, stri
 }
 
 /**
- * The WHOLE bag except protected stock and unmet wants — the
- * "deposit all before equipping" rule: a swap ceremony that stands on the
- * bank tile anyway sweeps the loot to the vault instead of leaving it to a
- * later bank-off. Utility wants are protected up to a full stack (a freshly
- * brewed batch must not be deposited out from under its own equip).
+ * What to bank so the swap itself gets `need` more units of bag room (a strip,
+ * a withdrawal or a bag change that would not fit): the junk gear first — it
+ * is bound for the bank anyway — then only as much other stock as is still
+ * missing. Never protected stock, never what an unmet slot is waiting for
+ * (utility wants up to a full stack: a freshly brewed batch must not be
+ * deposited out from under its own equip).
+ *
+ * This is the ONLY way a non-reset swap touches loot. It used to sweep the
+ * whole bag whenever it stood on a bank tile, which made every gear step a
+ * second bank-off: whatever a sourcing path had just withdrawn and its `keep`
+ * list did not name went straight back (raw beef 2026-07-14, the tasks coin
+ * 2026-11-04, a helper's raw material 2026-11-17). Loot leaves the bag through
+ * bankOff when the bag is full, and through resets.
  */
-function sweepOf(ch: Character, inv: Map<string, number>, desired: Partial<Record<GearSlot, string>>, opts: GearActionOpts): { code: string; quantity: number }[] {
+function roomOf(
+  ch: Character,
+  inv: Map<string, number>,
+  desired: Partial<Record<GearSlot, string>>,
+  opts: GearActionOpts,
+  junk: { code: string; quantity: number }[],
+  need: number,
+): { code: string; quantity: number }[] {
   if (opts.junk === false) return [];
-  const keep = new Set(opts.keep ?? []);
+  let short = need - junk.reduce((t, j) => t + j.quantity, 0);
+  if (short <= 0) return junk;
+  const skip = new Set([...(opts.keep ?? []), ...junk.map((j) => j.code)]);
   const wantCount = new Map<string, number>();
   for (const [g, c] of Object.entries(desired) as [GearSlot, string][]) {
     if (c && slotCode(ch, g) !== c) wantCount.set(c, (wantCount.get(c) ?? 0) + (isUtility(g) ? UTILITY_STACK : 1));
   }
-  const out: { code: string; quantity: number }[] = [];
+  const out = [...junk];
   for (const [code, n] of inv) {
-    if (n <= 0 || keep.has(code)) continue;
-    const excess = n - (wantCount.get(code) ?? 0);
-    if (excess > 0) out.push({ code, quantity: excess });
+    if (short <= 0) break;
+    if (skip.has(code)) continue;
+    const q = Math.min(short, n - (wantCount.get(code) ?? 0));
+    if (q <= 0) continue;
+    out.push({ code, quantity: q });
+    short -= q;
   }
   return out;
 }
@@ -415,7 +435,9 @@ function sweepOf(ch: Character, inv: Map<string, number>, desired: Partial<Recor
  * The ONE next action that moves the character toward `desired`, or null when
  * converged. Priority: unequip mismatches → equip from hand → withdraw from
  * bank → stow replaced/junk gear (only at the bank — never a dedicated trip
- * for a stray looted drop) → bag swap last. A desired item that is nowhere to
+ * for a stray looted drop) → bag swap last. Loot is not the swap's business:
+ * outside a reset it banks junk gear and the room it needs itself, nothing
+ * more (roomOf). A desired item that is nowhere to
  * be found (not worn, not in hand, not banked) leaves its slot as-is, so
  * frozen plans containing not-yet-crafted gear are safe.
  */
@@ -508,27 +530,33 @@ export function nextGearAction(
     if (worn) strip.push(g);
   }
 
-  // At the bank the stow list is the WHOLE bag (minus keep + unmet wants) —
-  // deposit all before equipping; in the field it stays junk gear only (a
-  // dedicated trip for loot is the bank-off's call, not the swap's).
+  // A swap is not a bank-off. Outside a reset it deposits two things only: junk
+  // gear (replaced, or wanted by no slot), and — on the bank tile — as much
+  // other stock as the swap itself needs room for (see roomOf). Everything
+  // else stays in the bag until the bag is full or a reset runs.
   const atBank = onBankTile(ch);
-  const stow = atBank ? sweepOf(ch, inv, desired, opts) : junkOf(inv, desired, opts);
+  const junk = junkOf(inv, desired, opts);
+  /** Room for `n` more units. In the field only junk gear earns the trip; null ⇒
+   *  nothing to deposit — yield and let the caller's normal bank-off make room. */
+  const makeRoom = (n: number): GearAction | null => {
+    const items = atBank ? roomOf(ch, inv, desired, opts, junk, n) : junk;
+    return items.length ? { kind: "deposit", items } : null;
+  };
 
-  // 0. Once the ceremony stands on the bank tile with slot work still ahead,
-  //    the loot goes to the vault FIRST — strips get room, and the new set is
-  //    equipped onto a clean bag.
-  if (atBank && stow.length && (strip.length || active.length)) return { kind: "deposit", items: stow };
+  // 0. On the bank tile, a strip that would not fit gets its room first, in
+  //    one deposit (a utility stack costs its whole quantity).
+  const stripQty = strip.reduce((t, g) => t + (isUtility(g) ? Math.max(1, slotQuantity(ch, g)) : 1), 0);
+  if (atBank && stripQty > free) {
+    const room = makeRoom(stripQty - free);
+    if (room) return room;
+  }
 
   // 1. Free the mismatched slots (one batched request). Utility stacks cost
   //    their whole quantity in inventory room, so the batch is capped by
   //    QUANTITY, not slot count — a too-big stack unequips partially and the
-  //    next ticks (reset deposits between them) drain the rest.
+  //    next ticks drain the rest.
   if (strip.length) {
-    if (free === 0) {
-      // No room for the unequipped gear — stow junk first; with nothing
-      // depositable, yield and let the caller's normal bank-off make room.
-      return stow.length ? { kind: "deposit", items: stow } : null;
-    }
+    if (free === 0) return makeRoom(1);
     const batch: { slot: GearSlot; quantity: number }[] = [];
     let room = free;
     for (const g of strip) {
@@ -579,28 +607,29 @@ export function nextGearAction(
       }
     }
     if (items.length) return { kind: "withdraw", items };
-    return stow.length ? { kind: "deposit", items: stow } : null; // no room — stow or yield
+    return makeRoom([...need.values()].reduce((t, n) => t + n, 0)); // no room for the first piece
   }
 
-  // 4. Bag last: swap only at the bank, the bag swept, and only when the load
-  //    survives the capacity shrink of removing the worn bag.
+  // 4. Bag last: swap only at the bank, the junk gear stowed, and only when
+  //    the load survives the capacity shrink of removing the worn bag.
   const wantBag = desired.bag;
   if (wantBag !== undefined && wantBag !== "" && wantBag !== slotCode(ch, "bag") && ((inv.get(wantBag) ?? 0) > 0 || (bankQty.get(wantBag) ?? 0) > 0)) {
     if (!atBank) return { kind: "goto-bank" };
-    if (stow.length) return { kind: "deposit", items: stow };
+    if (junk.length) return { kind: "deposit", items: junk };
     const worn = slotCode(ch, "bag");
     if (worn) {
       const wornIt = item(worn);
       const shrunk = ch.inventory_max_items - (wornIt ? effectValue(wornIt, "inventory_space") : 0);
-      if (load + 1 > shrunk) return null; // too heavy to drop the bag — retry when lighter
+      if (load + 1 > shrunk) return makeRoom(load + 1 - shrunk); // too heavy to drop the bag — lighten it, or retry later
       return { kind: "unequip", slots: [{ slot: "bag", quantity: 1 }] };
     }
     if ((inv.get(wantBag) ?? 0) > 0) return { kind: "equip", items: [{ code: wantBag, slot: "bag", quantity: 1 }] };
     if (free > 0) return { kind: "withdraw", items: [{ code: wantBag, quantity: 1 }] };
-    return null; // no room even for the bag — retry when lighter
+    return makeRoom(1); // no room even for the bag
   }
 
-  // 5. Converged on slots — sweep the bag if we happen to be at the bank.
-  if (atBank && stow.length) return { kind: "deposit", items: stow };
+  // 5. Converged on slots. Junk gear in hand goes to the vault when the
+  //    character stands on it anyway — never a trip of its own, and never loot.
+  if (atBank && junk.length) return { kind: "deposit", items: junk };
   return null;
 }

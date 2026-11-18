@@ -1,11 +1,10 @@
 // Audit B.4-1: a `buy` whose gold is in the bank. Pocket gold is swept into the
 // bank on every deposit, so this is the normal case.
-// Today: the gold is withdrawn, no npc/buy call is made, the item reports done.
+// Before task 003: the gold was withdrawn, no npc/buy call was made, the item reported done.
 import { scenario } from "../harness/index.mts";
 
 await scenario(
   {
-    known: "B.4-1",
     characters: [{ name: "Dan", x: 7, y: 13, gold: 0 }], // on a bank; the rune vendor is next door at (8, 13)
     gold: 25_000,
   },

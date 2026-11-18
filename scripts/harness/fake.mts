@@ -5,8 +5,8 @@
 // task report (tasks/002-runner-harness.report.md, "Fidelity").
 //
 // Not modelled: XP and levels (a level is what the scenario set), bank capacity
-// (462), gated tiles (always locked), task / recycle / use / offering / give /
-// transition / claim actions, group fights, the 20-stack limit of a fight's drops.
+// (462), gated tiles (always locked), task / recycle / offering / give /
+// transition / claim actions, `use` of anything but food, group fights.
 
 import { API_BASE } from "../../src/api/client";
 import { item, monster, npc, resource, tileAt } from "../../src/catalog";
@@ -387,6 +387,19 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
 
   "npc/buy": (d, body: ItemStack) => trade(d, body, "buy_price"),
   "npc/sell": (d, body: ItemStack) => trade(d, body, "sell_price"),
+
+  // Consumables that heal (food) only. Codes and the reply shape are OpenAPI's.
+  use(d, body: ItemStack) {
+    const it = item(body.code);
+    if (!it) throw new GameError(404, "Item not found.");
+    if (it.type !== "consumable") throw new GameError(476, "This item is not a consumable.");
+    if (!canEquip(d.ch, it)) throw new GameError(496, "Conditions not met."); // a food's level condition
+    take(d.ch, body.code, body.quantity);
+    const heal = eff(it, "heal");
+    if (!heal) fatal(`use of ${body.code}: only consumables that heal are implemented`);
+    d.ch.hp = Math.min(d.ch.max_hp, d.ch.hp + heal * body.quantity); // per unit, up to the maximum [1.4]
+    return { seconds: 3, reason: "use", data: { item: it } }; // guess: the minimum cooldown
+  },
 
   fight(d, body: { participants?: string[] } | undefined) {
     if (body?.participants?.length) fatal("group fights are not implemented");

@@ -23,17 +23,20 @@ import { loadCatalog } from "../../src/catalog";
 import { setDataReader } from "../../src/catalog/load";
 import { setDevlogSink } from "../../src/lib/devlog";
 import { queueItemText, withId } from "../../src/plan/queue";
-import { addItem, queues, setRepeat, startQueue } from "../../src/state/queue";
+import { addItem, insertItem, queues, setRepeat, startQueue } from "../../src/state/queue";
 import { bankDetails, bankItems, characters, lastError } from "../../src/state/store";
 import { boot } from "../../src/state/sync";
 import type { QueueItemInput } from "../../src/plan/queue";
 import type { QueueState } from "../../src/state/queue";
+import type { ActiveEvent } from "../../src/types/api";
 import { fakeFetch, held, seedWorld, world } from "./fake.mts";
 import type { Call, WorldInit } from "./fake.mts";
 
 export interface ScenarioDef extends WorldInit {
   /** Audit reference of the defect this scenario reproduces, e.g. "B.4-1". */
   known?: string;
+  /** This scenario expects bounces (see bounces()); without it any bounce fails the scenario. */
+  bounces?: boolean;
   /** Exceeding either fails the scenario. Defaults: 500 actions, 180 virtual minutes. */
   limits?: { actions?: number; minutes?: number };
 }
@@ -99,6 +102,24 @@ function mirror(): string | undefined {
   return undefined;
 }
 
+/**
+ * Bounces: a character withdraws a code and deposits the same code again with
+ * nothing but moves in between — stock fetched and put straight back, the
+ * signature of two parts of the runner disagreeing about what is working stock.
+ */
+function bounces(): string[] {
+  const out: string[] = [];
+  const fresh = new Map<string, Set<string>>(); // per character: codes of its last withdrawal, until it does anything but move
+  for (const c of world.trace) {
+    if (c.code !== 200 || c.action === "move") continue;
+    const codes = c.action.startsWith("bank/") && Array.isArray(c.body) ? (c.body as { code: string }[]).map((s) => s.code) : [];
+    if (c.action === "bank/deposit/item") for (const code of codes) if (fresh.get(c.who)?.has(code)) out.push(`${c.who} ${code} at ${stamp(c.t)}`);
+    if (c.action === "bank/withdraw/item") fresh.set(c.who, new Set(codes));
+    else fresh.delete(c.who);
+  }
+  return out;
+}
+
 function handle(limits: { actions: number; minutes: number }) {
   const ok = (cond: unknown, msg: string): void => {
     if (!cond) throw new Failure(msg);
@@ -111,6 +132,10 @@ function handle(limits: { actions: number; minutes: number }) {
       for (const it of items) addItem(name, withId(it));
       if (opts.repeat) setRepeat(name, true);
       startQueue(name);
+    },
+    /** Put an item at `index` of a queue, even ahead of the running head — what the automatic writers do (insertItem). */
+    insert(name: string, item: QueueItemInput, index = 0): void {
+      insertItem(name, withId(item), index);
     },
     /**
      * Let virtual time pass: until `until()` holds, or for `minutes`, or (neither
@@ -144,6 +169,13 @@ function handle(limits: { actions: number; minutes: number }) {
 }
 export type Scenario = ReturnType<typeof handle>;
 
+/** A merchant event that is up from half an hour before the scenario starts until `minutes` after. */
+export const merchantEvent = (code: string, x: number, y: number, minutes = 60): ActiveEvent => ({
+  name: code, code, duration: minutes + 30, previous_map: null,
+  created_at: new Date(T0 - 30 * 60_000).toISOString(), expiration: new Date(T0 + minutes * 60_000).toISOString(),
+  map: { map_id: 0, name: code, skin: code, x, y, layer: "overworld", access: { type: "standard", conditions: [] }, interactions: { content: { type: "npc", code }, transition: null } },
+});
+
 export async function scenario(def: ScenarioDef, body: (t: Scenario) => Promise<void> | void): Promise<never> {
   world.onFatal = die;
   (globalThis as { fetch: unknown }).fetch = fakeFetch;
@@ -169,7 +201,8 @@ export async function scenario(def: ScenarioDef, body: (t: Scenario) => Promise<
   let failed: string | undefined;
   try {
     await body(handle({ actions: def.limits?.actions ?? 500, minutes: def.limits?.minutes ?? 180 }));
-    failed = mirror();
+    const b = def.bounces ? [] : bounces();
+    failed = mirror() ?? (b.length ? `bounce: ${b.length} withdrawal(s) put straight back, first: ${b[0]}` : undefined);
   } catch (e) {
     if (!(e instanceof Failure)) die((e as Error).stack ?? String(e));
     failed = e.message;
