@@ -32,11 +32,11 @@ import { CRAFT_TRAIN_SKILLS, bankItems, characters, pushLog, skillKey, skillPins
 import { devlog } from "../lib/devlog";
 import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
-import { loadOfferings, offeringSlots, todayOfferings } from "./offerings";
+import { categoryLevel, loadOfferings, offeringSlots, todayOfferings } from "./offerings";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
-import type { BankItem, Character, OfferingFavor } from "../types/api";
+import type { BankItem, Character, CharacterOfferings, OfferingFavor, SeasonalOffering } from "../types/api";
 import type { CraftRecipe, DropRate, Monster, Resource } from "../types/catalog";
 import type { FightForecast } from "../sim/combat";
 
@@ -1203,7 +1203,8 @@ function offeringKeep(ch: Character, it: OfferingItem): string[] {
 function favorSource(ch: Character, code: string, f?: OfferingFavor): FieldSource | undefined {
   if (f?.target_type === "monster") {
     const mon = monsterOf(f.target_code);
-    return mon?.drops.some((d) => d.code === code) ? { how: "fight", mon } : undefined;
+    // Off the map (an event monster that isn't up) ⇒ fall back to another monster with the drop.
+    return mon?.drops.some((d) => d.code === code) && nearest("monster", mon.code, ch.x, ch.y) ? { how: "fight", mon } : undefined;
   }
   if (f?.target_type === "resource") {
     const res = resourceOf(f.target_code);
@@ -1295,6 +1296,19 @@ export function canObtainOffering(ch: Character, code: string, need: number, fav
 }
 
 /**
+ * The bracket to accept in a category: the character's own, else the next
+ * lower one, first that canObtainOffering clears (the reward is a % of the
+ * character's current level either way). Undefined ⇒ nothing completable.
+ */
+export function offeringPick(ch: Character, st: CharacterOfferings, category: string): SeasonalOffering | undefined {
+  const lv = categoryLevel(ch, category);
+  return st.offerings
+    .filter((o) => o.category === category && o.level_min <= lv)
+    .sort((a, b) => b.level_min - a.level_min)
+    .find((o) => canObtainOffering(ch, o.requirement.code, o.requirement.quantity - invQty(ch, o.requirement.code), o.favor, 2, o.favor?.target_type !== "craft"));
+}
+
+/**
  * One action of the offering item. Order: read today's state (once a day) →
  * at the altar, complete what the bag covers, accept every open category →
  * get the first owed requirement → back to the altar. Dead ends skip the
@@ -1337,18 +1351,20 @@ async function runOffering(name: string, ch: Character, it: OfferingItem, ctx: S
   const ready = work.find((s) => s.status === "accepted" && invQty(ch, s.requirement!.code) >= s.requirement!.quantity);
   const next = ready ?? work.find((s) => s.status === "open");
   if (next) {
+    let id = next.id!;
     if (!ready) {
       const req = next.requirement!;
-      if (!canObtainOffering(ch, req.code, req.quantity - invQty(ch, req.code), next.favor, 2, next.favor?.target_type !== "craft")) {
-        return skipCategory(next.category, `can't get ${req.quantity}× ${itemName(req.code)} — not accepting it`);
-      }
+      const pick = offeringPick(ch, st, next.category);
+      if (!pick) return skipCategory(next.category, `can't get ${req.quantity}× ${itemName(req.code)} or any lower bracket's item — not accepting it`);
+      if (pick.id !== id) ctx.note(`${next.category}: can't get ${req.quantity}× ${itemName(req.code)} — taking the ${pick.level_min}–${pick.level_max} bracket (${pick.requirement.quantity}× ${itemName(pick.requirement.code)})`);
+      id = pick.id;
     }
     const altar = nearest("seasonal_altar", null, ch.x, ch.y);
     if (!altar) return skipItem(name, it, "no seasonal altar on the map");
     if (ch.x !== altar.x || ch.y !== altar.y) { ctx.note("→ seasonal altar"); await moveTo(name, altar.x, altar.y); return false; }
     ctx.note(`${ready ? "complete" : "accept"} the ${next.category} offering`);
     try {
-      await step(name, () => (ready ? actions.completeOffering(name, next.id!) : actions.acceptOffering(name, next.id!)));
+      await step(name, () => (ready ? actions.completeOffering(name, id) : actions.acceptOffering(name, id)));
     } catch (e) {
       if (!(e instanceof ApiError)) throw e;
       if (e.code === 575) return skipCategory(next.category, "not available for this character");
@@ -1565,12 +1581,20 @@ function scheduleOfferings(): void {
     localStorage.setItem(OFFERINGS_DAILY_KEY, String(last));
     for (const [name, q] of Object.entries(queues.value)) {
       if (!q.running || q.items[0]?.kind === "offering") continue;
-      // Ahead of the running head (the loop re-reads it every step); a 🔁-recycled copy further back goes.
-      setQueue(name, { items: [withId({ kind: "offering" }), ...q.items.filter((it) => it.kind !== "offering")] });
+      queueOfferings(name);
       log(name, "daily seasonal offerings — then back to the queue", "info");
     }
   }
   offeringsTimer = setTimeout(scheduleOfferings, last + 86_400_000 - now);
+}
+
+/** Today's offerings AHEAD of the head, even a running ∞ one (the loop re-reads it every step); a 🔁-recycled copy further back goes. */
+export function queueOfferings(name: string): void {
+  if (!IS_SERVER) return rpc("queueOfferings", [name]);
+  const q = queues.value[name];
+  if (!q) return addItem(name, withId({ kind: "offering" }));
+  if (q.items[0]?.kind === "offering") return;
+  setQueue(name, { items: [withId({ kind: "offering" }), ...q.items.filter((it) => it.kind !== "offering")] });
 }
 
 // Dev-only: this module owns long-lived async runners. A hot swap would
@@ -1579,4 +1603,4 @@ function scheduleOfferings(): void {
 // button can no longer reach. Force a full page reload instead.
 if (import.meta.hot) import.meta.hot.accept(() => location.reload());
 
-expose({ addItem, removeItem, updateItem, moveItem, clearQueue, setRepeat, queuePinTraining, queueAssist, startQueue, stopQueue });
+expose({ addItem, removeItem, updateItem, moveItem, clearQueue, setRepeat, queuePinTraining, queueAssist, queueOfferings, startQueue, stopQueue });

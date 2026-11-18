@@ -8,8 +8,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { characterList, characters, offerings } from "../state/store";
 import { categoryLevel, loadOfferings, offeringSlots, todayOfferings } from "../state/offerings";
-import { addItem, queues } from "../state/queue";
-import { withId } from "../plan/queue";
+import { queueOfferings, queues } from "../state/queue";
 import { itemName, monster, resource } from "../catalog";
 import { asset, assetFallback, titleCase } from "../lib/util";
 import { itemHover } from "./ItemPopup";
@@ -22,11 +21,6 @@ import type { Character, OfferingFavor } from "../types/api";
 
 const invQty = (c: Character, code: string): number => (c.inventory || []).reduce((s, it) => s + (it.code === code ? it.quantity : 0), 0);
 const hasOfferingItem = (name: string): boolean => !!queues.value[name]?.items.some((it) => it.kind === "offering");
-
-/** Put an offering item next in line (right behind a running head). */
-export function queueOfferings(name: string): void {
-  if (!hasOfferingItem(name)) addItem(name, withId({ kind: "offering" }), 0);
-}
 
 const favorText = (f?: OfferingFavor): string =>
   !f ? "" : `${f.target_type === "monster" ? (monster(f.target_code)?.name ?? titleCase(f.target_code)) : f.target_type === "resource" ? (resource(f.target_code)?.name ?? titleCase(f.target_code)) : `crafting ${itemName(f.target_code)}`} ×${f.xp_multiplier} xp${f.drop_multiplier > 1 ? ` ×${f.drop_multiplier} drops` : ""}`;
