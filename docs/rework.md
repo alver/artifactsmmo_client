@@ -3,7 +3,7 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-18, after report 006 was accepted and task 007 was written.
+Last updated: 2026-11-18, after report 007 was accepted and task 008 was written.
 
 ## The goal (Alex, 2026-11-18)
 - **The client plays the season by itself.** Alex's target is every achievement of the season: 210 achievement
@@ -22,6 +22,13 @@ Last updated: 2026-11-18, after report 006 was accepted and task 007 was written
   120**: bronze (105) likely, silver (158) only if everything goes right, gold (210) not this season — 27 points
   need raids, the Corrupted Portal alone takes 89 days from combat 45, and the leader holds 59 after a fifth of the
   season. The working target does not change: the most points by the season's end.
+- **What task 007 found (2026-11-18).** The rule, run for the first time: the first week 15 → 31 points (the
+  design expected 27). To the deadline **54 in all three rows, not 68–87**. The cause is not the rule: no gear is
+  made, and the bank's gear gives no safe XP monster above combat 25 (First 29), so from about day 20 half or more
+  of all hours are the fallback gather. The design's 68 came from a scratch model that fought with the atlas's
+  plus set — gear nobody makes in stage 1. **The planner without gear by need is a gathering planner.** 54 is
+  still nearly twice what the client reaches as it is (about 30). The expectation of 105–135 stands on the
+  abilities to come and has no replay behind it until gear is in the core (task 009).
 - **One planner decides what the fleet does next and moves on by itself** — "the roadmap". Alex at most adjusts
   priorities, and doubts there is much to adjust.
 - **No manual queues in the UI.** Alex hardly used them; if something has to be done by hand, the planner is wrong
@@ -177,6 +184,51 @@ Last updated: 2026-11-18, after report 006 was accepted and task 007 was written
       Each would level a skill its character never uses; only the favor is lost, and the 467 favors left fit at 10
       a day (47 days). Not planned; looked at again if favors become the constraint.
 
+18. **Report 007 accepted (2026-11-18).** Checked in the chat: both commits in `.git/logs/HEAD` (`abccb85` Rework
+    notes, `13ac755` 007); `decide.ts`, `pick.ts`, `cost.ts`, `roles.ts`, `forward.ts`, `compile.ts`, `stock.ts`,
+    `types.ts`, `config.ts`, `xp.ts` read in full — rules 1–5, the four answers, the chunk, rule 3's bundle (only
+    achievements whose every missing gate is a level of that lane), the +10%, at most four items with `pl:` ids
+    are as the report says. Not checked there: `targets.ts`, `reach.ts`, the check runs, the typecheck, the build
+    (Claude Code ran them). No engine change, no restart. What it found is under "The goal". "Spine or greedy" is
+    not shown: no crafting lane ever has a bundle, so the three crafting prices give the same 54.
+19. **Gear by need moves up; the order of decision 14 changes.** Was: 008 runtime → 009 Roadmap and all five →
+    clean-up → 010 gear. Now: **008 the runtime, Fifth on** (Fifth's first week needs no gear: highwaymen to 25,
+    coal, steel, mining 30, gold) → **009 the core's second round, pure, no restart, written and run while Fifth's
+    trial day runs** (decision 20) → 010 the Roadmap as home, the outlook, all five on → 011 the clean-up → keys
+    and tolls → the fleet on events → group boss fights → `use`. Reason: with all five on and the hive gone nobody
+    makes gear, and combat stops on day 2.3; the season's critical path is gear → combat → events (decision 11).
+    The runtime does not wait for it: a gear piece is bank stock, and a gear step compiles to today's items.
+20. **What 009 holds** (from report 007's replay; settled when 009 is written):
+    - `gear:` targets by need — a piece that makes the next XP monster or a gate's monster a safe win; the
+      crafter's level becomes a gate the fighters' points wait behind; the forward model makes gear. This is where
+      rule 3 gets its crafting bundles and "spine or greedy" shows.
+    - First: what stops combat at 25 — the gear, or the word "safe"? (`ownedFightRec`, `src/plan/jobgear.ts`: the
+      pessimistic pass wins too.) Second–Fourth win pigs, not safely. A loss costs a walk from (0, 0); if "safe" is
+      the wall, it becomes a price. The replay prints per fighter at 25 the next monsters with win, safe and kill
+      seconds, from the bank and with craftable gear. Fifth's kills and losses in the trial are evidence.
+    - A level gate is priced by what the character can do, not by the atlas's plus set; no XP source up to the
+      gate → it waits for gear. (First's 96 hours on pigs toward combat 32.)
+    - A material made by another craft is a target of its own, with the bank as the buffer (strangold, palm
+      planks, mithril bars, the potion brewer's four inputs; the diamonds' 71-hour step becomes source chunks);
+      the forward model deposits what is gathered. Today 18 points on 6 achievements are "unhandled".
+    - Alchemy 12–19 is levelled by crafting potions, as a craft step with gathered inputs; no engine change if
+      today's items carry it (4 points behind it).
+    - Roles hold still: the crafting roles pinned to today's crafters (Second weapons, Third gear, Fourth
+      jewelry, First cooking), the gathering specialists as design B.3; objective work and the recycling filler do
+      not move a role, and the filler trains the role's own skill (in the replay First took weaponcrafting to 31
+      by recycling while Second stayed at 20).
+    - The gear pool: two fighters do not plan with the same single piece.
+    - Left until the replay with gear: five characters on one objective (coal on day 2.3). With nothing else to
+      do it is not wrong.
+21. **Task 008, settled in the chat on top of the design** (in the task file as "What is settled"): one character
+    on by default; Alex's config stored as a patch over the defaults; no outlook yet (a forward run is 8–14 s on
+    the service's one thread); a step that ends with no unit done is blocked like a stall; an interrupt that
+    pauses is removed, the step stays; a 598 is a vanished target for every queue (look again once, then skip);
+    a brake at six step starts in ten minutes; each chunk keeps its bank reset; the smallest UI — a switch per
+    character and the step's `why` in the queue panel — so Alex can see what Fifth does and hand it back. Found
+    while reading `runLoop`: a start issued from inside an effect on `queues` is lost (`startQueue` returns while
+    the ending loop is still in `liveLoops`, and the loop's `finally` drops `running`); the task names the trap.
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -186,12 +238,19 @@ Last updated: 2026-11-18, after report 006 was accepted and task 007 was written
 | 004 | The achievement map → `docs/design/achievement-map.md`, `docs/design/snapshot/`, `scripts/design/achievement-map.mts` | done, commit "004: achievement map". Accepted 2026-11-18. No engine change, no restart. |
 | 005 | The planner's design → `docs/design/planner.md`; with it, the map checked against the leaderboard (four public reads) | done, `72b726f`. Accepted 2026-11-18. No engine change, no restart. |
 | 006 | Movement knows layers; free transitions are walked; 598 is an answer; the `train` item's node; the backpack wish dropped; read-only: why offerings run at 8–11 of 15 | done, `929017d`. Accepted 2026-11-18. **Engine change: Alex was told to restart the service on 2026-11-18**; the next planning chat asks whether it happened. |
-| 007 | The planner's core, pure: `src/plan/planner/*` and `scripts/check-planner.mts` (first steps, first week, the replay to the deadline) | written 2026-11-18, `tasks/007-planner-core.md`; not run yet. Nothing imports it: no engine change, no restart. |
-| 008… | The runtime (restart; Fifth on; the 598 fix of decision 16) → Roadmap as home, all five on → clean-up → gear by need, then the order of decision 14 | after 007's report |
+| 007 | The planner's core, pure: `src/plan/planner/*` and `scripts/check-planner.mts` (first steps, first week, the replay to the deadline) | done, `13ac755`. Accepted 2026-11-18. Nothing imports it: no engine change, no restart. |
+| 008 | The runtime: `src/state/planner.ts`, the step loop, blocks and stalls, `interrupt()` (offering, merchant, event, claim), the `claim` item, the guards, 598 as a vanished target, the smallest UI; Fifth on by default | written 2026-11-18, `tasks/008-planner-runtime.md`; not run yet. **Engine change: Alex restarts the service after its report is accepted**; from then on Fifth is the planner's. |
+| 009 | The core's second round, pure (decision 20): gear by need, materials made by another craft, alchemy, the price of a level gate, roles; the replay again | after 008's report, during Fifth's trial; no restart |
+| 010 | The Roadmap as home, the outlook, all five on | restart |
+| 011… | The clean-up → keys and tolls → the fleet on events → group boss fights → `use` | |
 
 ## Open questions
 - **What does gear crafting cost this fleet?** The leaderboard shows it for the leader only. The planner's measured
   hours per level at 25–35 answer it; above 100 hours a level the plan falls back to about 100 points.
+- **Does the rule behave as a spine?** Not shown by 007 (decision 18); the replay of 009, with gear, answers it.
+- **Is "safe" the wall at combat 25, or the gear?** Decision 20; 009 and Fifth's trial.
+- **Was the service restarted after 006?** Asked again in the chat on report 007 (2026-11-18); not answered when
+  this was written. Until it is, the miners' 598 loop at mining 30 is still possible (Fourth and Fifth stand at 24).
 - Answered by 006: why offerings run under 15 a day (decision 17).
 - **The end of the season.** No date is published; 2027-02-24 is the working deadline. The leader's first
   achievement (2026-11-02) fits the announced opening of 2026-10-31 better than the API's 2026-10-24; if the four
@@ -255,6 +314,22 @@ Last updated: 2026-11-18, after report 006 was accepted and task 007 was written
   - `runOffering` still catches 598 and 575 itself (redundant, harmless); `src/plan/roadmap.ts:83` still lists the
     backpack as an event buy (deleted with the Roadmap's suggestions).
   - In the fake, a lost fight sends the character to (0, 0) on the overworld — a guess, not seen in the game.
+
+- From report 007, not fixed (the core's second round, task 009, unless said otherwise):
+  - Alchemy 12–19 has no way to level: sunflowers give no XP from 12, nettle needs 20, the `train` item does not
+    craft alchemy (`src/state/store.ts:13-18`).
+  - Pigs are a safe win only with First's own mushstaff, which is not in the bank.
+  - The forward model deposits nothing that is gathered or dropped, makes no gear and simulates no event; a full
+    run to the deadline is 8–14 s (the outlook of task 010 must not run it on the service's thread as it is).
+  - Five pairs of functions exist twice, the planner's and the old one (`pickMonster` / `trainingMonsterFor`,
+    `pickNode` / `trainingResourceFor`, `nearestSpot` and `travel` / `nearest` and `nearestBank`, `fightRec` /
+    `forecastVs`, `craftsPerLevel` / `trainRecipe`); the clean-up decides which survive.
+  - `events.json` is not loaded by `loadCatalog`; the core takes event codes from the atlas.
+  - Every 90-minute chunk starts with a full bank reset, also when it continues the same target; kept on purpose
+    in 008 (it brings a fighter's drops to the bank), looked at again with measured costs.
+  - Guesses in the core's numbers, most doubtful first: combat hours to a gate from the atlas's plus set; the
+    bundle level of a kill from the atlas's safe level; 1.5× actions for a rare drop; the log factors 1.3 and
+    1.05; offerings at 10 a day and 20 minutes; 1.95 h a task; `craftK` 0.1 and 60 h above 40.
 
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
