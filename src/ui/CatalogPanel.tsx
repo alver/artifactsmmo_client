@@ -6,7 +6,7 @@ import { catalog, item, itemName, npc, tileAt } from "../catalog";
 import { tileGate } from "../state/access";
 import { npcForSell } from "../plan/acquire";
 import { withId } from "../plan/queue";
-import { bankQty, moveTo, nearestBank, step } from "../state/loopkit";
+import { bankQty, nearestBank, placeOf, step, walkTo } from "../state/loopkit";
 import { addItem, startQueue } from "../state/queue";
 import { asset, assetFallback, pct, titleCase } from "../lib/util";
 import { loadAchievements, reconcile } from "../state/sync";
@@ -497,12 +497,12 @@ function NpcRow({ trade: t, curLabel, actor, ctl }: { trade: NpcTrade; curLabel:
 async function cancelTaskWithFee(actor: Character): Promise<void> {
   const name = actor.name;
   if (invQty(actor, "tasks_coin") < 1) {
-    const home = { x: actor.x, y: actor.y };
-    const bank = nearestBank(actor.x, actor.y);
+    const home = placeOf(actor);
+    const bank = nearestBank(actor);
     if (!bank) return;
-    await moveTo(name, bank.x, bank.y);
+    await walkTo(name, bank);
     await step(name, () => actions.withdrawItems(name, [{ code: "tasks_coin", quantity: 1 }]));
-    await moveTo(name, home.x, home.y);
+    await walkTo(name, home);
   }
   await actions.taskCancel(name);
 }

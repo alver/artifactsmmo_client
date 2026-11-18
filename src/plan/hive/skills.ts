@@ -42,13 +42,15 @@ function trainingBatch(ctx: HiveCtx, ch: Character, skill: string, have: number)
 /**
  * Best node to TRAIN a gathering skill on at the current level: the
  * highest-level node already gatherable (more level ≈ more XP); nodes 10+
- * levels below yield no XP and never qualify. (Rebuilt from the deleted
- * resolver's trainingResource.)
+ * levels below yield no XP and never qualify. `reach` (the `train` item's)
+ * keeps only nodes the character can walk to now — an event node only while
+ * it is up, an underground one through a free transition. (Rebuilt from the
+ * deleted resolver's trainingResource.)
  */
-export function trainingResourceFor(skill: string, atLevel: number): { code: string; level: number } | undefined {
+export function trainingResourceFor(skill: string, atLevel: number, reach?: (code: string) => boolean): { code: string; level: number } | undefined {
   let best: { code: string; level: number } | undefined;
   for (const r of catalog().resources.values()) {
-    if (r.skill !== skill || r.level > atLevel || r.level <= atLevel - 10) continue;
+    if (r.skill !== skill || r.level > atLevel || r.level <= atLevel - 10 || (reach && !reach(r.code))) continue;
     if (!best || r.level > best.level) best = { code: r.code, level: r.level };
   }
   return best;

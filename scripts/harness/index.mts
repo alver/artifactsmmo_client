@@ -9,8 +9,10 @@
 //   });
 //
 // Every scenario also gets the mirror check (the engine's characters and bank
-// equal the fake's world) and the `known` marker (a scenario that reproduces a
-// recorded defect must FAIL; when it passes, the run fails until the marker goes).
+// equal the fake's world), the bounce check, the layer check (no action answered
+// 598 unless the scenario says `expect598`) and the `known` marker (a scenario
+// that reproduces a recorded defect must FAIL; when it passes, the run fails
+// until the marker goes).
 // Exit codes for the runner: 0 pass · 1 fail · 2 harness error · 3 known defect reproduced.
 
 import "./guard.mts"; // first: refuses to run outside the runner's scratch storage
@@ -37,6 +39,8 @@ export interface ScenarioDef extends WorldInit {
   known?: string;
   /** This scenario expects bounces (see bounces()); without it any bounce fails the scenario. */
   bounces?: boolean;
+  /** This scenario expects a 598 (see the layer check); without it any 598 fails the scenario. */
+  expect598?: boolean;
   /** Exceeding either fails the scenario. Defaults: 500 actions, 180 virtual minutes. */
   limits?: { actions?: number; minutes?: number };
 }
@@ -202,7 +206,12 @@ export async function scenario(def: ScenarioDef, body: (t: Scenario) => Promise<
   try {
     await body(handle({ actions: def.limits?.actions ?? 500, minutes: def.limits?.minutes ?? 180 }));
     const b = def.bounces ? [] : bounces();
-    failed = mirror() ?? (b.length ? `bounce: ${b.length} withdrawal(s) put straight back, first: ${b[0]}` : undefined);
+    // Layer check: 598 "… not found on this map" = an action on the right x, y of the wrong layer (or the wrong tile).
+    const wrong = def.expect598 ? [] : world.trace.filter((c) => c.code === 598);
+    failed =
+      mirror() ??
+      (b.length ? `bounce: ${b.length} withdrawal(s) put straight back, first: ${b[0]}` : undefined) ??
+      (wrong.length ? `layer: ${wrong.length} action(s) answered 598, first: ${showCall(wrong[0]).trim()}` : undefined);
   } catch (e) {
     if (!(e instanceof Failure)) die((e as Error).stack ?? String(e));
     failed = e.message;

@@ -3,6 +3,7 @@
 
 import type { GearSlot } from "../types/api";
 import type { FightForecast } from "../sim/combat";
+import type { Place } from "./route";
 
 /** A concrete gear set the BIS solver recommends for a target monster. */
 export interface GearRecommendation {
@@ -17,11 +18,11 @@ export interface GearRecommendation {
 /** One executable acquisition action (the exec.ts runStep vocabulary).
  *  Gear is NEVER acquired — the bank swap (jobgear.ts) equips what the bank holds. */
 export type AcquisitionStep =
-  | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number }
-  | { kind: "buy"; code: string; quantity: number; npc: string; x?: number; y?: number; cost: number }
-  | { kind: "gather"; code: string; quantity: number; resource: string; level: number; x?: number; y?: number }
-  | { kind: "craft"; code: string; quantity: number; skill: string; level: number; x?: number; y?: number }
-  | { kind: "train"; skill: string; toLevel: number; resource: string; level: number; x?: number; y?: number };
+  | { kind: "withdraw"; code: string; quantity: number; at: Place }
+  | { kind: "buy"; code: string; quantity: number; npc: string; at: Place; cost: number }
+  | { kind: "gather"; code: string; quantity: number; resource: string; level: number; at: Place }
+  | { kind: "craft"; code: string; quantity: number; skill: string; level: number; at: Place }
+  | { kind: "train"; skill: string; toLevel: number; resource: string; level: number; at: Place };
 
 /** Between-fight healing food the runner should eat via the `use` action.
  *  Picked live from what is in hand (see plan/consumables.ts carriedFood). */

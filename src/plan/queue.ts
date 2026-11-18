@@ -11,8 +11,9 @@ import { titleCase } from "../lib/util";
 import type { GearJob } from "./types";
 import type { GearSlot } from "../types/api";
 
+// An x, y saved without `layer` is on the overworld (queues saved before layers were stored).
 export type QueueItem = { id: string; error?: string } & (
-  | { kind: "move"; x: number; y: number }
+  | { kind: "move"; x: number; y: number; layer?: string }
   | { kind: "rest" }
   // times 0 = infinite (fight until stopped / paused). `gear` ⇒ re-derive the
   // best bank set vs the monster each round and swap when it improves.
@@ -20,25 +21,25 @@ export type QueueItem = { id: string; error?: string } & (
   // when the hand runs dry — bank stock, else cook from stock, else gather.
   | { kind: "fight"; monster: string; times: number; done: number; food?: boolean; keep?: string[]; gear?: boolean }
   // times 0 = infinite. `gear` ⇒ keep the bank gathering set for the resource's skill on.
-  | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; gear?: boolean }
+  | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; layer?: string; gear?: boolean }
   // quantity 0 = infinite: withdraw a bagful of materials from the bank, craft,
   // deposit, repeat — completes when the bank can no longer feed the recipe.
   // `wait` (hive pipelining): when bag + bank can't feed one run, hold and look
   // again instead of pausing — producers are still depositing; the hive drops
   // the item once nobody is left to feed it.
-  | { kind: "craft"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number; wait?: boolean }
-  | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number }
+  | { kind: "craft"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number; layer?: string; wait?: boolean }
+  | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number; layer?: string }
   | { kind: "deposit-all" }
   // `bought` is set the moment npc/buy succeeds and checked first on every
   // tick: the item is done only when the purchase happened, and never twice.
-  | { kind: "buy"; code: string; quantity: number; npc?: string; x?: number; y?: number; bought?: boolean }
+  | { kind: "buy"; code: string; quantity: number; npc?: string; x?: number; y?: number; layer?: string; bought?: boolean }
   // Sell to the NPC that buys the item; pulls stock from the BANK bag-sized
   // piece by piece when the hand is empty (the bank-cleanup action). `partial`
   // (event trips): stock running out completes the item instead of pausing.
-  | { kind: "sell"; code: string; quantity: number; done: number; npc?: string; x?: number; y?: number; partial?: boolean }
+  | { kind: "sell"; code: string; quantity: number; done: number; npc?: string; x?: number; y?: number; layer?: string; partial?: boolean }
   // Recycle at the workshop that crafts the item (returns a share of the
   // materials); like sell, pulls bank stock when the hand is empty.
-  | { kind: "recycle"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number }
+  | { kind: "recycle"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number; layer?: string }
   // Level a skill. Gathering skills work the best node for the current level
   // (re-picked per tick; `resource` pins one); workshop skills loop source
   // materials → craft a batch → recycle → repeat on the best in-window recipe
@@ -48,7 +49,7 @@ export type QueueItem = { id: string; error?: string } & (
   // gathering set on while gathering. `for` = HELP that character train the
   // skill instead: keep the bank stocked with its current recipe's materials
   // (level target measured on the crafter).
-  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; gear?: boolean; for?: string }
+  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; layer?: string; gear?: boolean; for?: string }
   // Swap to the best job gear from the bank (see plan/jobgear.ts): `desired` =
   // slot map frozen at compile; `job` = live spec recomputed from the bank at
   // run time (hand-added). `reset` ⇒ full bank reset first: deposit EVERYTHING

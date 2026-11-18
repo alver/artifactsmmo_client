@@ -101,7 +101,16 @@ export interface GameMap {
   y: number;
   layer: "overworld" | "underground" | "interior" | (string & {});
   access: { type: string; conditions: unknown[] };
-  interactions: { content: MapContent | null; transition: unknown | null };
+  interactions: { content: MapContent | null; transition: Transition | null };
+}
+
+/** A tile's way to another layer (or into an area only a transition enters). `cost` is consumed, `has_item` carried. */
+export interface Transition {
+  map_id: number;
+  x: number;
+  y: number;
+  layer: string;
+  conditions: { code: string; operator: string; value: number }[] | null;
 }
 
 export interface Effect {

@@ -5,11 +5,12 @@
 // task report (tasks/002-runner-harness.report.md, "Fidelity").
 //
 // Not modelled: XP and levels (a level is what the scenario set), bank capacity
-// (462), gated tiles (always locked), task / recycle / offering / give /
-// transition / claim actions, `use` of anything but food, group fights.
+// (462), gated tiles (always locked), achievement conditions of transitions
+// (always unmet), task / recycle / offering / give / claim actions, `use` of
+// anything but food, group fights.
 
 import { API_BASE } from "../../src/api/client";
-import { item, monster, npc, resource, tileAt } from "../../src/catalog";
+import { catalog, item, monster, npc, resource, tileAt } from "../../src/catalog";
 import { canEquip } from "../../src/plan/bis";
 import { fightSec, gatherSec } from "../../src/plan/xp";
 import { simulate } from "../../src/sim/combat";
@@ -17,11 +18,11 @@ import { restSeconds } from "../../src/sim/cost";
 import { currentFighter } from "../../src/sim/stats";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../src/types/api";
 import type { ActiveEvent, Character, GearSlot } from "../../src/types/api";
-import type { DropRate, Item, ItemStack, MapContent } from "../../src/types/catalog";
+import type { DropRate, GameMap, Item, ItemStack, MapContent } from "../../src/types/catalog";
 import { T0 } from "./clock.mts";
 
-/** A character of the world: any Character field, plus `bag` as a readable inventory. */
-export type CharInit = Partial<Character> & { name: string; bag?: Record<string, number> };
+/** A character of the world: any Character field, plus `bag` as a readable inventory and the `layer` it stands on. */
+export type CharInit = Partial<Character> & { name: string; bag?: Record<string, number>; layer?: string };
 export interface WorldInit {
   characters: CharInit[];
   bank?: Record<string, number>;
@@ -193,6 +194,35 @@ const liveEvent = (e: ActiveEvent): boolean => Date.parse(e.expiration) > Date.n
 const tileOf = (x: number, y: number, layer: string) =>
   world.events.find((e) => liveEvent(e) && e.map.x === x && e.map.y === y && e.map.layer === layer)?.map ?? tileAt(x, y, layer);
 
+/**
+ * Maps crossed by the shortest walk from the character's tile to `to` on its
+ * layer, or undefined = no path. guess: the game's path-finding as the docs
+ * describe `move` — four-neighbour steps around blocked tiles, one layer; a
+ * restricted tile only from another one (the Enchanted Forest is entered by its
+ * transition); never through a conditional tile, only onto it. Written apart
+ * from src/plan/route.ts on purpose: a region the engine gets wrong answers 595 here.
+ */
+let tiles: Map<string, GameMap> | undefined;
+function pathLength(ch: Char, to: GameMap): number | undefined {
+  tiles ??= new Map(catalog().maps.map((m) => [`${m.layer}:${m.x},${m.y}`, m]));
+  const at = (x: number, y: number): GameMap | undefined => tiles!.get(`${ch.layer}:${x},${y}`);
+  const start = at(ch.x, ch.y);
+  const dist = new Map<GameMap, number>(start ? [[start, 0]] : []);
+  const queue = start ? [start] : [];
+  for (let i = 0; i < queue.length; i++) {
+    const t = queue[i];
+    if (t.x === to.x && t.y === to.y) return dist.get(t);
+    if (i > 0 && t.access?.type === "conditional") continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const n = at(t.x + dx, t.y + dy);
+      if (!n || dist.has(n) || n.access?.type === "blocked" || (n.access?.type === "restricted") !== (t.access?.type === "restricted")) continue;
+      dist.set(n, dist.get(t)! + 1);
+      queue.push(n);
+    }
+  }
+  return undefined;
+}
+
 function standingOn(ch: Char, type: string, what: string, code?: string): MapContent {
   const c = tileOf(ch.x, ch.y, ch.layer)?.interactions.content;
   if (!c || c.type !== type || (code != null && c.code !== code)) throw new GameError(598, `${what} not found on this map.`);
@@ -262,11 +292,32 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
     const tile = tileOf(body.x, body.y, d.ch.layer);
     if (!tile) throw new GameError(404, "Map not found.");
     if (d.ch.x === body.x && d.ch.y === body.y) throw new GameError(490, "The character is already at the destination.");
+    if (tileAt(body.x, body.y, d.ch.layer)?.access?.type === "blocked") throw new GameError(596, "The map is blocked and cannot be accessed.");
     // guess: achievements are not modelled, so a gated tile is always locked [3.2].
     if (tile.access?.type === "conditional") throw new GameError(496, "Conditions not met.");
-    const dist = Math.abs(body.x - d.ch.x) + Math.abs(body.y - d.ch.y);
+    const dist = pathLength(d.ch, tile);
+    if (dist == null) throw new GameError(595, "No path available to the destination map.");
     Object.assign(d.ch, { x: body.x, y: body.y, map_id: tile.map_id });
-    return { seconds: 5 * dist, reason: "movement", data: { destination: tile, path: [] } }; // guess: 5 s per tile
+    return { seconds: 5 * dist, reason: "movement", data: { destination: tile, path: [] } }; // 5 s per map crossed (docs)
+  },
+
+  // On a tile with a transition: to its other end, 5 s (docs). Conditions as
+  // the OpenAPI codes: no transition 404, an item cost or carried item missing
+  // 478, gold 492, anything else (achievements) 496.
+  transition(d) {
+    const tr = tileOf(d.ch.x, d.ch.y, d.ch.layer)?.interactions.transition;
+    if (!tr) throw new GameError(404, "Transition not found.");
+    for (const c of tr.conditions ?? []) {
+      if (c.operator === "cost" && c.code === "gold") {
+        if (d.ch.gold < c.value) throw new GameError(492, "Insufficient gold for this transition.");
+        d.ch.gold -= c.value;
+      } else if (c.operator === "cost") take(d.ch, c.code, c.value);
+      else if (c.operator === "has_item") {
+        if (held(d.ch, c.code) < c.value) throw new GameError(478, MISSING);
+      } else throw new GameError(496, "Conditions not met.");
+    }
+    Object.assign(d.ch, { x: tr.x, y: tr.y, layer: tr.layer, map_id: tr.map_id });
+    return { seconds: 5, reason: "transition", data: { destination: tileAt(tr.x, tr.y, tr.layer), transition: tr } };
   },
 
   rest(d) {
@@ -428,8 +479,8 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
       d.ch.gold += gold;
       for (const s of drops) give(d.ch, s.code, s.quantity);
     } else {
-      // A loss: back at the spawn tile (exec.ts "walks back from spawn"). guess: with 1 HP.
-      Object.assign(d.ch, { hp: 1, x: 0, y: 0, map_id: tileAt(0, 0, d.ch.layer)?.map_id ?? 0 });
+      // A loss: back at the spawn tile (exec.ts "walks back from spawn"). guess: with 1 HP, on the overworld.
+      Object.assign(d.ch, { hp: 1, x: 0, y: 0, layer: "overworld", map_id: tileAt(0, 0)?.map_id ?? 0 });
     }
     const mine = { character_name: d.ch.name, xp: 0, gold, drops, final_hp: win ? hp : 0 };
     return {

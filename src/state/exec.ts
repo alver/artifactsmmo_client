@@ -16,9 +16,10 @@ import { simulate } from "../sim/combat";
 import { jobGear, nextGearAction } from "../plan/jobgear";
 import { carriedFood, foodPlan, foodQuantity, gatherSourceFor } from "../plan/consumables";
 import { bankDetails, bankItems, characters } from "./store";
-import { bankQty, depositAll, moveTo, nearest, nearestBank, step } from "./loopkit";
+import { bankQty, depositAll, isAt, moveTo, nearest, nearestBank, step } from "./loopkit";
 import { slotCode } from "../types/api";
 import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
+import type { Place } from "../plan/route";
 import type { Character, GearSlot } from "../types/api";
 import type { CraftRecipe, Monster } from "../types/catalog";
 
@@ -49,18 +50,19 @@ export interface StepCtx {
 /**
  * Move to the nearest bank and deposit everything but the protected working
  * stock. Throws when depositing would free nothing (the whole bag is
- * protected) — a clean stop beats a bank↔tile livelock.
+ * protected) — a clean stop beats a bank↔tile livelock. A bank more than one
+ * leg away takes several calls: each walks one leg, the one that arrives
+ * deposits (callers re-check the full bag first thing every tick).
  */
-export async function bankOff(name: string, fromX: number, fromY: number, keep: string[] | undefined, note: StepCtx["note"]): Promise<void> {
-  const bank = nearestBank(fromX, fromY);
-  if (!bank) throw new Error("inventory full and no bank found on the map");
+export async function bankOff(name: string, keep: string[] | undefined, note: StepCtx["note"]): Promise<void> {
   const ch = characters.value[name];
-  if (keep?.length && ch && !(ch.inventory || []).some((it) => it.code && it.quantity > 0 && !keep.includes(it.code))) {
+  const bank = ch && nearestBank(ch);
+  if (!bank) throw new Error("inventory full and no bank found on the map");
+  if (keep?.length && !(ch.inventory || []).some((it) => it.code && it.quantity > 0 && !keep.includes(it.code))) {
     throw new Error("inventory full of protected working stock");
   }
   note("→ bank (full)");
-  await moveTo(name, bank.x, bank.y);
-  await depositAll(name, keep?.length ? new Set(keep) : undefined);
+  if (await moveTo(name, bank)) await depositAll(name, keep?.length ? new Set(keep) : undefined);
 }
 
 /** One healing action: eat the given food when it covers the deficit, else rest. */
@@ -81,11 +83,11 @@ export async function healOnce(name: string, ch: Character, food: FoodSpec | und
 
 /** Walk to the given Tasks Master. "there" ⇒ standing on it; "moving" ⇒ a move was issued. */
 export async function goToMaster(name: string, ch: Character, type: "monsters" | "items", note: StepCtx["note"]): Promise<"missing" | "moving" | "there"> {
-  const master = nearest("tasks_master", type, ch.x, ch.y);
+  const master = nearest("tasks_master", type, ch);
   if (!master) return "missing";
-  if (ch.x === master.x && ch.y === master.y) return "there";
+  if (isAt(ch, master)) return "there";
   note("→ tasks master");
-  await moveTo(name, master.x, master.y);
+  await moveTo(name, master);
   return "moving";
 }
 
@@ -154,11 +156,11 @@ export async function gearSwapStep(
   if (!act) return "done";
 
   const toBank = async (): Promise<boolean> => {
-    const bank = nearestBank(ch.x, ch.y);
+    const bank = nearestBank(ch);
     if (!bank) throw new Error("no bank found on the map");
-    if (ch.x === bank.x && ch.y === bank.y) return false;
+    if (isAt(ch, bank)) return false;
     ctx.note("→ bank (gear)");
-    await moveTo(name, bank.x, bank.y);
+    await moveTo(name, bank);
     return true;
   };
 
@@ -242,26 +244,22 @@ export function desiredForJob(name: string, ch: Character, job: GearJob): Partia
 
 /** What one runStep call actually did — the queue counts it toward the item's progress. */
 export type StepResult =
-  | { did: "acted" } // moved / withdrew / bought / gathered
+  | { did: "acted" } // withdrew / bought / gathered (or withdrew the gold for a buy)
+  | { did: "moved" } // walked one leg of a longer route; the action comes on a later tick
   | { did: "banked" } // a bank-off ran instead of the action
   | { did: "crafted"; produced: number }; // items produced this call (times × recipe.quantity)
 
 /** Execute one acquisition step (one cooldown action). Throws on failure (caller decides). */
 export async function runStep(name: string, ch: Character, s: AcquisitionStep, ctx: StepCtx): Promise<StepResult> {
   const keep = ctx.keep;
-  const needTile = (): { x: number; y: number } => {
-    if ((s as { x?: number }).x == null) throw new Error(`no map tile for ${s.kind} ${(s as { code?: string }).code ?? ""}`);
-    return { x: (s as { x: number }).x, y: (s as { y: number }).y };
-  };
 
   switch (s.kind) {
     case "withdraw": {
-      const t = needTile();
       ctx.note(`withdraw ${itemName(s.code)}`);
-      await moveTo(name, t.x, t.y);
+      if (!(await moveTo(name, s.at))) return { did: "moved" };
       const cur = characters.value[name] ?? ch;
       const qty = Math.min(s.quantity, freeSpace(cur));
-      if (qty <= 0) { await bankOff(name, t.x, t.y, keep, ctx.note); return { did: "banked" }; } // make room (throws if all-protected)
+      if (qty <= 0) { await bankOff(name, keep, ctx.note); return { did: "banked" }; } // make room (throws if all-protected)
       try {
         await step(name, () => actions.withdrawItems(name, [{ code: s.code, quantity: qty }]));
       } catch (e) {
@@ -279,7 +277,6 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       return { did: "acted" };
     }
     case "buy": {
-      const t = needTile();
       // Pocket gold is swept into the bank on every deposit (see depositAll),
       // so a buy self-funds: withdraw the shortfall from the vault first.
       const unit = npcOf(s.npc)?.items?.find((i) => i.code === s.code && i.currency === "gold")?.buy_price;
@@ -288,15 +285,15 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       if (cost > 0 && cur0.gold < cost) {
         const missing = cost - cur0.gold;
         if ((bankDetails.value?.gold ?? 0) < missing) throw new Error(`not enough gold for ${s.quantity}× ${itemName(s.code)} (need ${cost.toLocaleString()}g)`);
-        const bank = nearestBank(cur0.x, cur0.y);
+        const bank = nearestBank(cur0);
         if (!bank) throw new Error("no bank found on the map");
         ctx.note("withdraw gold");
-        await moveTo(name, bank.x, bank.y);
+        if (!(await moveTo(name, bank))) return { did: "moved" };
         await step(name, () => actions.withdrawGold(name, missing));
         return { did: "acted" };
       }
       ctx.note(`buy ${itemName(s.code)}`);
-      await moveTo(name, t.x, t.y);
+      if (!(await moveTo(name, s.at))) return { did: "moved" };
       await step(name, async () => {
         await actions.npcBuy(name, s.code, s.quantity);
         ctx.bought?.(); // recorded before the cooldown: a restart inside it must not buy again
@@ -307,17 +304,16 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
     case "train": {
       // For "train": one gather per tick; the caller notices the level echo
       // and drops the step by itself (no polling).
-      const t = needTile();
+      // The full bag first: a bank trip of several legs must not turn back toward the node between them.
+      if (invCount(characters.value[name] ?? ch) >= ch.inventory_max_items) { await bankOff(name, keep, ctx.note); return { did: "banked" }; }
       ctx.note(s.kind === "train" ? `train ${s.skill}${s.toLevel > 0 ? ` → Lv ${s.toLevel}` : ""}` : `gather ${itemName(s.code)}`);
-      await moveTo(name, t.x, t.y);
-      if (invCount(characters.value[name] ?? ch) >= ch.inventory_max_items) { await bankOff(name, t.x, t.y, keep, ctx.note); return { did: "banked" }; }
+      if (!(await moveTo(name, s.at))) return { did: "moved" };
       await step(name, () => actions.gather(name));
       return { did: "acted" };
     }
     case "craft": {
-      const t = needTile();
       ctx.note(`craft ${itemName(s.code)}`);
-      await moveTo(name, t.x, t.y);
+      if (!(await moveTo(name, s.at))) return { did: "moved" };
       const recipe = item(s.code)?.craft;
       if (recipe) {
         // The step's quantity counts items PRODUCED; the API's counts recipe
@@ -373,12 +369,12 @@ export async function provisionFood(name: string, ch: Character, m: Monster, ctx
   const want = foodQuantity({ code: plan.code, heal: plan.heal, stock }, perFight, fights, ch);
 
   if (plan.source === "bank") {
-    const bank = nearestBank(ch.x, ch.y);
+    const bank = nearestBank(ch);
     if (!bank) return "none";
     // The food is working stock while provisioning runs.
     const kctx: StepCtx = { ...ctx, keep: [...new Set([...(ctx.keep ?? []), plan.code])] };
     ctx.note(`restock ${itemName(plan.code)}`);
-    await runStep(name, ch, { kind: "withdraw", code: plan.code, quantity: want, x: bank.x, y: bank.y }, kctx);
+    await runStep(name, ch, { kind: "withdraw", code: plan.code, quantity: want, at: bank }, kctx);
     return "acted";
   }
   return produceOnce(name, ch, plan.code, plan.recipe, want, ctx);
@@ -413,26 +409,26 @@ async function produceOnce(
   const batch = Math.max(1, Math.min(Math.ceil(want / per), Math.floor((freeSpace(ch) + matsHeld) / matsPerRun), runsCap));
   const missing = recipe.items.find((g) => invQty(ch, g.code) < g.quantity * batch);
   if (!missing) {
-    const tile = nearest("workshop", recipe.skill, ch.x, ch.y);
+    const tile = nearest("workshop", recipe.skill, ch);
     if (!tile) return "none";
     ctx.note(`craft ${itemName(code)}`);
-    await runStep(name, ch, { kind: "craft", code, quantity: batch * per, skill: recipe.skill, level: 0, x: tile.x, y: tile.y }, kctx);
+    await runStep(name, ch, { kind: "craft", code, quantity: batch * per, skill: recipe.skill, level: 0, at: tile }, kctx);
     return "acted";
   }
   if (bankQty(missing.code) > 0) {
-    const bank = nearestBank(ch.x, ch.y);
+    const bank = nearestBank(ch);
     if (!bank) return "none";
     const short = missing.quantity * batch - invQty(ch, missing.code);
     ctx.note(`withdraw ${itemName(missing.code)}`);
-    await runStep(name, ch, { kind: "withdraw", code: missing.code, quantity: Math.min(short, bankQty(missing.code)), x: bank.x, y: bank.y }, kctx);
+    await runStep(name, ch, { kind: "withdraw", code: missing.code, quantity: Math.min(short, bankQty(missing.code)), at: bank }, kctx);
     return "acted";
   }
   const res = gatherSourceFor(ch, missing.code);
-  const tile = res ? nearest("resource", res.code, ch.x, ch.y) : undefined;
+  const tile = res ? nearest("resource", res.code, ch) : undefined;
   if (!res || !tile) return "none";
-  if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, keep, ctx.note); return "acted"; }
+  if (freeSpace(ch) === 0) { await bankOff(name, keep, ctx.note); return "acted"; }
   ctx.note(`gather ${itemName(missing.code)} ${invQty(ch, missing.code)}/${missing.quantity * batch}`);
-  await runStep(name, ch, { kind: "gather", code: missing.code, quantity: 1, resource: res.code, level: 0, x: tile.x, y: tile.y }, kctx);
+  await runStep(name, ch, { kind: "gather", code: missing.code, quantity: 1, resource: res.code, level: 0, at: tile }, kctx);
   return "acted";
 }
 
@@ -474,16 +470,17 @@ export async function provisionPotions(
 export type FightOutcome = "acted" | "won" | "lost" | "no-win" | "gave-up";
 
 /**
- * One combat-phase action: walk to the tile, heal (food first — provisioning
- * more when the hand is empty and ctx.food is on), re-gate on a fresh
- * forecast, bank off overflow, then fight once. All the combat safety rules
- * in one place.
+ * One combat-phase action: heal (food first — provisioning more when the hand
+ * is empty and ctx.food is on), bank off overflow, walk to the tile, re-gate
+ * on a fresh forecast, then fight once. All the combat safety rules in one
+ * place. The full bag comes before the walk: a bank trip of several legs must
+ * not turn back toward the monster between them.
  */
 export async function fightRound(
   name: string,
   ch: Character,
   m: Monster,
-  tile: { x: number; y: number },
+  tile: Place,
   S: { losses: number },
   ctx: StepCtx,
 ): Promise<FightOutcome> {
@@ -493,10 +490,10 @@ export async function fightRound(
     await healOnce(name, ch, food, ctx.note);
     return "acted";
   }
-  if (ch.x !== tile.x || ch.y !== tile.y) { ctx.note("→ monster"); await moveTo(name, tile.x, tile.y); return "acted"; }
+  if (invCount(ch) >= ch.inventory_max_items) { await bankOff(name, ctx.keep, ctx.note); return "acted"; }
+  if (!isAt(ch, tile)) { ctx.note("→ monster"); await moveTo(name, tile); return "acted"; }
   // Re-forecast with actual current gear; refuse a fight that isn't a win.
   if (!simulate(currentFighter(ch), m).win) return "no-win";
-  if (invCount(ch) >= ch.inventory_max_items) { await bankOff(name, tile.x, tile.y, ctx.keep, ctx.note); return "acted"; }
 
   const r = await actions.fight(name);
   const won = r.fight?.result === "win";

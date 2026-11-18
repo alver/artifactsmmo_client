@@ -30,12 +30,13 @@ import { killSeconds } from "../plan/bis";
 import { titleCase } from "../lib/util";
 import { CRAFT_TRAIN_SKILLS, bankItems, characters, pushLog, skillKey, skillPins } from "./store";
 import { devlog } from "../lib/devlog";
-import { bankQty, isInventoryFull, moveTo, nearest, nearestBank, sleep, step } from "./loopkit";
+import { NoRouteError, bankQty, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, sleep, step, walkTo } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
 import { categoryLevel, loadOfferings, offeringSlots, todayOfferings } from "./offerings";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
+import type { Place } from "../plan/route";
 import type { BankItem, Character, CharacterOfferings, OfferingFavor, SeasonalOffering } from "../types/api";
 import type { CraftRecipe, DropRate, Monster, Resource } from "../types/catalog";
 import type { FightForecast } from "../sim/combat";
@@ -182,6 +183,10 @@ function skipItem(name: string, it: QueueItem, why: string): true {
 const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[skillKey(skill, "level")] ?? 0;
 
+/** The place an item pins (x, y): a pair saved before layers were stored is on the overworld. */
+const pinnedAt = (it: { x?: number; y?: number; layer?: string }): Place | undefined =>
+  it.x != null && it.y != null ? { x: it.x, y: it.y, layer: it.layer ?? "overworld" } : undefined;
+
 function keepOf(it: QueueItem, ch: Character): string[] | undefined {
   const base =
     it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
@@ -231,9 +236,10 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
   const ctx = ctxOf(name, ch, it);
   switch (it.kind) {
     case "move": {
-      if (ch.x === it.x && ch.y === it.y) return true;
-      ctx.note(`→ (${it.x}, ${it.y})`);
-      await moveTo(name, it.x, it.y);
+      const to = pinnedAt(it)!;
+      if (isAt(ch, to)) return true;
+      ctx.note(`→ (${it.x}, ${it.y})${to.layer === "overworld" ? "" : ` ${to.layer}`}`);
+      await moveTo(name, to);
       return false;
     }
     case "rest": {
@@ -254,9 +260,9 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // raced withdrawal, so an empty read here is authoritative, not stale.
       const banked = bankQty(it.code);
       if (banked <= 0) throw new Error(`bank has no ${itemName(it.code)} left`);
-      const bank = it.x != null ? { x: it.x, y: it.y! } : nearestBank(ch.x, ch.y);
+      const bank = pinnedAt(it) ?? nearestBank(ch);
       if (!bank) return skipItem(name, it, "no bank on the map");
-      await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(missing, banked), x: bank.x, y: bank.y }, ctx);
+      await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(missing, banked), at: bank }, ctx);
       return false;
     }
     case "buy": {
@@ -265,9 +271,9 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // away because the head changed under it, or a restart before the item
       // is removed, must not buy twice. One buy call covers the whole quantity.
       if (it.bought) return true;
-      const tile = it.x != null ? { x: it.x, y: it.y } : it.npc ? nearest("npc", it.npc, ch.x, ch.y) : undefined;
-      if (!tile || tile.x == null) return skipItem(name, it, "no shop on the map (event over?)");
-      const s: AcquisitionStep = { kind: "buy", code: it.code, quantity: it.quantity, npc: it.npc ?? "", cost: 0, x: tile.x, y: tile.y };
+      const tile = pinnedAt(it) ?? (it.npc ? nearest("npc", it.npc, ch) : undefined);
+      if (!tile) return skipItem(name, it, it.npc ? missingText("npc", it.npc, ch) : "no shop on the map (event over?)");
+      const s: AcquisitionStep = { kind: "buy", code: it.code, quantity: it.quantity, npc: it.npc ?? "", cost: 0, at: tile };
       await runStep(name, ch, s, { ...ctx, bought: () => patchItem(name, it.id, { bought: true }) });
       return false; // this tick may have been the gold withdrawal; the next one sees `bought`
     }
@@ -277,9 +283,9 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       const held = invQty(ch, it.code);
       if (held > 0) {
         const seller = it.npc ?? npcForSell(it.code)?.code;
-        const tile = it.x != null ? { x: it.x, y: it.y! } : seller ? nearest("npc", seller, ch.x, ch.y) : undefined;
-        if (!tile || tile.x == null) return skipItem(name, it, `no merchant buys ${itemName(it.code)} (event over?)`);
-        if (ch.x !== tile.x || ch.y !== tile.y) { ctx.note("→ merchant"); await moveTo(name, tile.x, tile.y); return false; }
+        const tile = pinnedAt(it) ?? (seller ? nearest("npc", seller, ch) : undefined);
+        if (!tile) return skipItem(name, it, seller ? missingText("npc", seller, ch) : `no merchant buys ${itemName(it.code)}`);
+        if (!isAt(ch, tile)) { ctx.note("→ merchant"); await moveTo(name, tile); return false; }
         const qty = Math.min(held, left);
         ctx.note(`sell ${itemName(it.code)}`);
         await step(name, () => actions.npcSell(name, it.code, qty));
@@ -289,10 +295,10 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // Hand empty — pull more stock from the bank, one bag-sized piece at a time.
       const banked = bankQty(it.code);
       if (banked > 0) {
-        if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, [it.code], ctx.note); return false; } // bag full of other stuff
-        const bank = nearestBank(ch.x, ch.y);
+        if (freeSpace(ch) === 0) { await bankOff(name, [it.code], ctx.note); return false; } // bag full of other stuff
+        const bank = nearestBank(ch);
         if (!bank) return skipItem(name, it, "no bank on the map");
-        await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(banked, left, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
+        await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(banked, left, freeSpace(ch)), at: bank }, ctx);
         return false;
       }
       if (it.partial) return true;
@@ -304,9 +310,9 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       const held = invQty(ch, it.code);
       if (held > 0) {
         const skill = it.skill ?? itemOf(it.code)?.craft?.skill;
-        const tile = it.x != null ? { x: it.x, y: it.y! } : skill ? nearest("workshop", skill, ch.x, ch.y) : undefined;
-        if (!tile || tile.x == null) return skipItem(name, it, `no workshop recycles ${itemName(it.code)}`);
-        if (ch.x !== tile.x || ch.y !== tile.y) { ctx.note("→ workshop"); await moveTo(name, tile.x, tile.y); return false; }
+        const tile = pinnedAt(it) ?? (skill ? nearest("workshop", skill, ch) : undefined);
+        if (!tile) return skipItem(name, it, `no workshop recycles ${itemName(it.code)}`);
+        if (!isAt(ch, tile)) { ctx.note("→ workshop"); await moveTo(name, tile); return false; }
         const qty = Math.min(held, left);
         ctx.note(`recycle ${itemName(it.code)}`);
         await step(name, () => actions.recycle(name, it.code, qty));
@@ -316,18 +322,18 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // Hand empty — pull more stock from the bank, one bag-sized piece at a time.
       const banked = bankQty(it.code);
       if (banked > 0) {
-        if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, [it.code], ctx.note); return false; } // bag full of other stuff
-        const bank = nearestBank(ch.x, ch.y);
+        if (freeSpace(ch) === 0) { await bankOff(name, [it.code], ctx.note); return false; } // bag full of other stuff
+        const bank = nearestBank(ch);
         if (!bank) return skipItem(name, it, "no bank on the map");
-        await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(banked, left, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
+        await runStep(name, ch, { kind: "withdraw", code: it.code, quantity: Math.min(banked, left, freeSpace(ch)), at: bank }, ctx);
         return false;
       }
       throw new Error(`nothing left to recycle — no ${itemName(it.code)} in hand or bank`);
     }
     case "gather": {
       if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
-      const tile = it.x != null ? { x: it.x, y: it.y } : nearest("resource", it.resource, ch.x, ch.y);
-      if (!tile || tile.x == null) return skipItem(name, it, `no ${it.resource} on the map (event over?)`);
+      const tile = pinnedAt(it) ?? nearest("resource", it.resource, ch);
+      if (!tile) return skipItem(name, it, missingText("resource", it.resource, ch));
       // Bank-gear self-heal: keep the best gathering set the bank holds on
       // (memoized per bank reference — free when nothing changed).
       if (it.gear) {
@@ -335,7 +341,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         const desired = skill ? desiredForJob(name, ch, { kind: "gather", skill }) : undefined;
         if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return false;
       }
-      const s: AcquisitionStep = { kind: "gather", code: it.code, quantity: Math.max(1, it.times - it.done), resource: it.resource, level: 0, x: tile.x, y: tile.y };
+      const s: AcquisitionStep = { kind: "gather", code: it.code, quantity: Math.max(1, it.times - it.done), resource: it.resource, level: 0, at: tile };
       const r = await runStep(name, ch, s, ctx);
       if (r.did === "acted") patchItem(name, it.id, { done: it.done + 1 });
       return false;
@@ -360,7 +366,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         const supplyTimes = Math.min(wantTimes, ...recipe.items.map((g) => Math.floor((invQty(ch, g.code) + bankQty(g.code)) / g.quantity)));
         if (infinite && supplyTimes <= 0) {
           if (it.done <= 0) throw new Error(`no materials for ${itemName(it.code)} in the bank`);
-          if (invCount(ch) > 0) { await bankOff(name, ch.x, ch.y, undefined, ctx.note); return false; }
+          if (invCount(ch) > 0) { await bankOff(name, undefined, ctx.note); return false; }
           return true;
         }
         // A finite order with zero feasible runs: fail NOW, naming the missing
@@ -388,20 +394,20 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
           const needTotal = recipe.items.reduce((sum, g) => sum + Math.max(0, g.quantity * batch - invQty(ch, g.code)), 0);
           if (needTotal > freeSpace(ch)) {
             if (invCount(ch) === 0) throw new Error(`one ${itemName(it.code)} batch doesn't fit the bag`);
-            await bankOff(name, ch.x, ch.y, undefined, ctx.note);
+            await bankOff(name, undefined, ctx.note);
             return false;
           }
-          const bank = nearestBank(ch.x, ch.y);
+          const bank = nearestBank(ch);
           if (!bank) return skipItem(name, it, "no bank on the map");
           const qty = Math.min(ing.quantity * batch - invQty(ch, ing.code), bankQty(ing.code));
-          await runStep(name, ch, { kind: "withdraw", code: ing.code, quantity: qty, x: bank.x, y: bank.y }, ctx);
+          await runStep(name, ch, { kind: "withdraw", code: ing.code, quantity: qty, at: bank }, ctx);
           return false;
         }
       }
       const skill = it.skill ?? recipe?.skill;
-      const tile = it.x != null ? { x: it.x, y: it.y } : skill ? nearest("workshop", skill, ch.x, ch.y) : undefined;
-      if (!tile || tile.x == null) return skipItem(name, it, `no workshop for ${itemName(it.code)}`);
-      const s: AcquisitionStep = { kind: "craft", code: it.code, quantity: left, skill: skill ?? "", level: 0, x: tile.x, y: tile.y };
+      const tile = pinnedAt(it) ?? (skill ? nearest("workshop", skill, ch) : undefined);
+      if (!tile) return skipItem(name, it, `no workshop for ${itemName(it.code)}`);
+      const s: AcquisitionStep = { kind: "craft", code: it.code, quantity: left, skill: skill ?? "", level: 0, at: tile };
       const r = await runStep(name, ch, s, ctx);
       if (r.did === "crafted") patchItem(name, it.id, { done: it.done + r.produced });
       return false;
@@ -416,18 +422,20 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (it.for) return runTrainAssist(name, ch, it, who, ctx);
       if (it.skill === "combat") return runTrainCombat(name, ch, it, ctx);
       if (isCraftSkill(it.skill)) return runTrainCraft(name, ch, it, ctx);
-      const node = it.resource ?? trainingResourceFor(it.skill, lv)?.code;
-      const tile = it.x != null ? { x: it.x, y: it.y } : node ? nearest("resource", node, ch.x, ch.y) : undefined;
-      if (!node || !tile || tile.x == null) return skipItem(name, it, `no ${titleCase(it.skill)} node to train on (event over?)`);
+      // The highest node that still gives XP AND that this character reaches now (event nodes while they are up).
+      const node = it.resource ?? trainingResourceFor(it.skill, lv, (code) => !!nearest("resource", code, ch))?.code;
+      if (!node) return skipItem(name, it, `no ${titleCase(it.skill)} node this character can reach gives XP at Lv ${lv}`);
+      const tile = pinnedAt(it) ?? nearest("resource", node, ch);
+      if (!tile) return skipItem(name, it, missingText("resource", node, ch));
       if (await gatherGear(name, ch, it, it.skill, ctx)) return false;
-      await runStep(name, ch, { kind: "train", skill: it.skill, toLevel: target, resource: node, level: 0, x: tile.x, y: tile.y }, ctx);
+      await runStep(name, ch, { kind: "train", skill: it.skill, toLevel: target, resource: node, level: 0, at: tile }, ctx);
       return false;
     }
     case "fight": {
       if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
       const m = monsterOf(it.monster);
-      const tile = m ? nearest("monster", it.monster, ch.x, ch.y) : undefined;
-      if (!m || !tile) return skipItem(name, it, `no ${it.monster} on the map (event over?)`);
+      const tile = m ? nearest("monster", it.monster, ch) : undefined;
+      if (!m || !tile) return skipItem(name, it, missingText("monster", it.monster, ch));
       // Bank-gear self-heal: when something better landed in the bank, detour
       // and swap (memoized per bank reference — free when nothing changed).
       // Planned-but-unowned utility potions get brewed (provisionPotions).
@@ -446,7 +454,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     }
     case "deposit-all": {
       if (invCount(ch) === 0 && ch.gold === 0) return true; // bag empty AND pockets empty
-      await bankOff(name, ch.x, ch.y, undefined, ctx.note);
+      await bankOff(name, undefined, ctx.note);
       return false;
     }
     case "gear": {
@@ -467,8 +475,8 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     }
     case "prepare": {
       const m = monsterOf(it.monster);
-      const tile = m ? nearest("monster", it.monster, ch.x, ch.y) : undefined;
-      if (!m || !tile) return skipItem(name, it, `no ${it.monster} on the map (event over?)`);
+      const tile = m ? nearest("monster", it.monster, ch) : undefined;
+      if (!m || !tile) return skipItem(name, it, missingText("monster", it.monster, ch));
       const desired = desiredForJob(name, ch, { kind: "fight", monster: it.monster });
       if (!desired) throw new Error(`can't plan gear vs ${m.name}`);
       if (!it.geared) {
@@ -479,9 +487,9 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       }
       if ((await provisionPotions(name, ch, desired, ctx)) === "acted") return false;
       if ((await gearSwapStep(name, ch, desired, ctx)) === "acted") return false; // equips what was just brewed
-      if (ch.x !== tile.x || ch.y !== tile.y) {
+      if (!isAt(ch, tile)) {
         ctx.note(`→ ${m.name}`);
-        await moveTo(name, tile.x, tile.y);
+        await moveTo(name, tile);
         return false;
       }
       if (ch.hp < ch.max_hp) {
@@ -549,10 +557,10 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // piece is traded before the next withdrawal, so the bag is the pace).
       const banked = bankQty(ch.task);
       if (banked > 0) {
-        if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, it.keep, ctx.note); return false; } // bag full of other stuff
-        const bank = nearestBank(ch.x, ch.y);
+        if (freeSpace(ch) === 0) { await bankOff(name, it.keep, ctx.note); return false; } // bag full of other stuff
+        const bank = nearestBank(ch);
         if (!bank) return skipItem(name, it, "no bank on the map");
-        const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining, freeSpace(ch)), x: bank.x, y: bank.y };
+        const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining, freeSpace(ch)), at: bank };
         await runStep(name, ch, s, ctx);
         return false;
       }
@@ -657,7 +665,7 @@ function trainingMonsterFor(ch: Character): Monster | undefined {
   let best: { mon: Monster; rate: number } | undefined;
   for (const mon of catalog().monsters.values()) {
     const xp = fightXp(mon.level, mon.hp, mon.type, ch.level);
-    if (xp <= 0 || mon.level > ch.level + 10 || !nearest("monster", mon.code, ch.x, ch.y)) continue;
+    if (xp <= 0 || mon.level > ch.level + 10 || !nearest("monster", mon.code, ch)) continue;
     const f = forecastVs(ch, mon.code);
     if (!f?.win) continue;
     const rate = xp / killSeconds(f);
@@ -671,8 +679,8 @@ function trainingMonsterFor(ch: Character): Monster | undefined {
 async function runTrainCombat(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, ctx: StepCtx): Promise<boolean> {
   const mon = trainingMonsterFor(ch);
   if (!mon) return skipItem(name, it, "no monster worth XP that the bank's gear can beat");
-  const tile = nearest("monster", mon.code, ch.x, ch.y);
-  if (!tile) { monsterMemo.delete(ch.name); return false; } // its event ended — re-pick next tick
+  const tile = nearest("monster", mon.code, ch);
+  if (!tile) { monsterMemo.delete(ch.name); return false; } // its event ended (or out of reach from here) — re-pick next tick
   if (await fightGear(name, ch, it, mon.code, ctx)) return false;
   ctx.note(`training combat vs ${mon.name}`);
   const out = await fightRound(name, ch, mon, tile, S(name), ctx);
@@ -847,10 +855,10 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
   //    recyclable, or made of something rare — recycling would mostly lose it).
   const made = invQty(ch, code);
   if (made > 0) {
-    if (!autoRecyclable(code)) { await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return false; }
-    const t = nearest("workshop", recipe.skill, ch.x, ch.y);
+    if (!autoRecyclable(code)) { await bankOff(name, ctx.keep, ctx.note); return false; }
+    const t = nearest("workshop", recipe.skill, ch);
     if (!t) throw new Error(`no ${recipe.skill} workshop on the map`);
-    if (ch.x !== t.x || ch.y !== t.y) { ctx.note("→ workshop"); await moveTo(name, t.x, t.y); return false; }
+    if (!isAt(ch, t)) { ctx.note("→ workshop"); await moveTo(name, t); return false; }
     ctx.note(`train ${titleCase(it.skill)}: recycle ${itemName(code)}`);
     await step(name, () => actions.recycle(name, code, made));
     return false;
@@ -860,11 +868,11 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
   const runs = batchRuns(ch, recipe, by);
   const can = craftableTimes(ch, code, runs * per);
   if (can >= runs || (can > 0 && freeSpace(ch) === 0)) {
-    const t = nearest("workshop", recipe.skill, ch.x, ch.y);
+    const t = nearest("workshop", recipe.skill, ch);
     if (!t) throw new Error(`no ${recipe.skill} workshop on the map`);
     if (await craftGear(name, ch, it, recipe.skill, ctx)) return false;
     ctx.note(`train ${titleCase(it.skill)}: craft ${itemName(code)} ×${can} (+${xp} xp each)`);
-    await runStep(name, ch, { kind: "craft", code, quantity: can * per, skill: recipe.skill, level: 0, x: t.x, y: t.y }, ctx);
+    await runStep(name, ch, { kind: "craft", code, quantity: can * per, skill: recipe.skill, level: 0, at: t }, ctx);
     return false;
   }
   // 3. Source a short ingredient — one this character can get itself first (a
@@ -872,7 +880,7 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
   //    materials goes on to the sub-craft); helper-only ones are waited for.
   const keep = new Set(ctx.keep ?? []);
   if (freeSpace(ch) === 0 && (ch.inventory ?? []).some((s) => s.code && s.quantity > 0 && !keep.has(s.code))) {
-    await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note);
+    await bankOff(name, ctx.keep, ctx.note);
     return false;
   }
   const shorts = recipe.items.filter((g) => invQty(ch, g.code) < g.quantity * runs);
@@ -932,7 +940,7 @@ async function runTrainAssist(name: string, ch: Character, it: Extract<QueueItem
   if (!pick) throw new Error(`no ${titleCase(it.skill)} recipe ${crafter.name} can be fed at Lv ${skillLevel(crafter, it.skill)}`);
   const g = assistPick(ch, crafter, it.skill, pick.recipe);
   if (!g) throw new Error(`nothing in ${itemName(pick.code)} this character can produce`);
-  if (invQty(ch, g.code) >= g.load) { ctx.note(`help ${crafter.name}: deliver ${itemName(g.code)}`); await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return false; }
+  if (invQty(ch, g.code) >= g.load) { ctx.note(`help ${crafter.name}: deliver ${itemName(g.code)}`); await bankOff(name, ctx.keep, ctx.note); return false; }
   return sourceOne(name, ch, it, g.code, g.load - invQty(ch, g.code), ctx, true, false);
 }
 
@@ -954,23 +962,23 @@ async function sourceOne(
   const label = it.for ? `help ${it.for}` : `train ${titleCase(it.skill)}`;
   const banked = fromBank ? bankQty(code) : 0;
   if (banked > 0 && freeSpace(ch) > 0) {
-    const bank = nearestBank(ch.x, ch.y);
+    const bank = nearestBank(ch);
     if (!bank) return skipItem(name, it, "no bank on the map");
-    await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(need, banked, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
+    await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(need, banked, freeSpace(ch)), at: bank }, ctx);
     return false;
   }
   const src = fieldSource(ch, code);
   if (src?.how === "gather") {
-    const tile = nearest("resource", src.res.code, ch.x, ch.y);
-    if (!tile) return skipItem(name, it, `no ${src.res.name} on the map (event over?)`);
+    const tile = nearest("resource", src.res.code, ch);
+    if (!tile) return skipItem(name, it, missingText("resource", src.res.code, ch));
     if (await gatherGear(name, ch, it, src.res.skill, ctx)) return false;
     ctx.note(`${label}: gather ${itemName(code)} ${invQty(ch, code)}/${invQty(ch, code) + need}`);
-    await runStep(name, ch, { kind: "gather", code, quantity: 1, resource: src.res.code, level: 0, x: tile.x, y: tile.y }, ctx);
+    await runStep(name, ch, { kind: "gather", code, quantity: 1, resource: src.res.code, level: 0, at: tile }, ctx);
     return false;
   }
   if (src?.how === "fight") {
-    const tile = nearest("monster", src.mon.code, ch.x, ch.y);
-    if (!tile) return skipItem(name, it, `no ${src.mon.name} on the map (event over?)`);
+    const tile = nearest("monster", src.mon.code, ch);
+    if (!tile) return skipItem(name, it, missingText("monster", src.mon.code, ch));
     if (await fightGear(name, ch, it, src.mon.code, ctx)) return false;
     ctx.note(`${label}: hunt ${src.mon.name} for ${itemName(code)} ${invQty(ch, code)}/${invQty(ch, code) + need}`);
     const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
@@ -988,11 +996,11 @@ async function sourceOne(
     while (runs > 1 && missing(runs) > freeSpace(ch)) runs--;
     const can = craftableTimes(ch, code, need);
     if (can >= runs || (can > 0 && freeSpace(ch) === 0)) {
-      const t = nearest("workshop", sub.skill, ch.x, ch.y);
+      const t = nearest("workshop", sub.skill, ch);
       if (!t) throw new Error(`no ${sub.skill} workshop on the map`);
       if (await craftGear(name, ch, it, sub.skill, ctx)) return false;
       ctx.note(`${label}: craft ${itemName(code)}`);
-      await runStep(name, ch, { kind: "craft", code, quantity: need, skill: sub.skill, level: 0, x: t.x, y: t.y }, ctx);
+      await runStep(name, ch, { kind: "craft", code, quantity: need, skill: sub.skill, level: 0, at: t }, ctx);
       return false;
     }
     const short = sub.items.find((g) => invQty(ch, g.code) < g.quantity * runs)!;
@@ -1064,29 +1072,31 @@ async function giveUpTask(
     const banked = bankQty(ch.task);
     if (held > 0 && (banked === 0 || freeSpace(ch) === 0)) return handOver(name, ch, it, ctx);
     if (banked > 0) {
-      if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note); return false; }
-      const bank = nearestBank(ch.x, ch.y);
+      if (freeSpace(ch) === 0) { await bankOff(name, keepOf(it, ch), ctx.note); return false; }
+      const bank = nearestBank(ch);
       if (!bank) return skipItem(name, it, "no bank on the map");
       ctx.note(`${itemName(ch.task)}: not producible in the field — using bank stock`);
-      const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining - held, freeSpace(ch)), x: bank.x, y: bank.y };
+      const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining - held, freeSpace(ch)), at: bank };
       await runStep(name, ch, s, ctx);
       return false;
     }
   }
-  // Coin fetch, walk and cancel in ONE call: a "no-win" verdict only exists on
-  // the monster tile, so returning between steps walked straight back there
-  // (and the swap's bag sweep, since removed, stowed the coin) — a livelock that never cancelled.
-  const master = nearest("tasks_master", ch.task_type === "items" ? "items" : "monsters", ch.x, ch.y);
+  // Coin fetch, walk and cancel in ONE call — every leg of both walks too: a
+  // "no-win" verdict only exists on the monster tile, so returning between steps
+  // walked straight back there (and the swap's bag sweep, since removed, stowed
+  // the coin) — a livelock that never cancelled.
+  const master = nearest("tasks_master", ch.task_type === "items" ? "items" : "monsters", ch);
   if (!master) return skipItem(name, it, "no tasks master on the map");
   if (invQty(ch, "tasks_coin") <= 0) {
     if (bankQty("tasks_coin") <= 0) throw new Error(`${why} — and no tasks coin to cancel the task`);
-    const bank = nearestBank(ch.x, ch.y);
+    const bank = nearestBank(ch);
     if (!bank) throw new Error(`${why} — and no bank to fetch a tasks coin from`);
     ctx.note("fetching a tasks coin to cancel the task");
-    await runStep(name, ch, { kind: "withdraw", code: "tasks_coin", quantity: 1, x: bank.x, y: bank.y }, ctx);
+    await walkTo(name, bank);
+    await runStep(name, ch, { kind: "withdraw", code: "tasks_coin", quantity: 1, at: bank }, ctx);
   }
   ctx.note("→ tasks master");
-  await moveTo(name, master.x, master.y);
+  await walkTo(name, master);
   ctx.note("cancelling the task");
   await step(name, () => actions.taskCancel(name));
   log(name, `task cancelled for a tasks coin — ${why}`, "bad");
@@ -1112,8 +1122,8 @@ async function runWorkTask(
 
   if (ch.task_type === "monsters") {
     const m = monsterOf(ch.task);
-    const tile = m ? nearest("monster", ch.task, ch.x, ch.y) : undefined;
-    if (!m || !tile) throw new Error(`no ${m?.name ?? ch.task} on the map (event over?)`);
+    const tile = m ? nearest("monster", ch.task, ch) : undefined;
+    if (!m || !tile) throw new Error(missingText("monster", ch.task, ch));
     if (await taskGear(name, ch, it, { kind: "fight", monster: ch.task }, ctx)) return false;
     ctx.note(`task ${ch.task_progress + 1}/${ch.task_total}: fight ${m.name}`);
     const out = await fightRound(name, ch, m, tile, S(name), ctx);
@@ -1134,19 +1144,19 @@ async function runWorkTask(
     // A full bag first hands over what it holds, then (all junk) banks off.
     if (freeSpace(ch) === 0) {
       if (held > 0) return handOver(name, ch, it, ctx);
-      await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note);
+      await bankOff(name, keepOf(it, ch), ctx.note);
       return false;
     }
     if (src.how === "gather") {
-      const tile = nearest("resource", src.res.code, ch.x, ch.y);
-      if (!tile) throw new Error(`no ${src.res.name} on the map (event over?)`);
+      const tile = nearest("resource", src.res.code, ch);
+      if (!tile) throw new Error(missingText("resource", src.res.code, ch));
       if (await taskGear(name, ch, it, { kind: "gather", skill: src.res.skill }, ctx)) return false;
       ctx.note(`task ${held + ch.task_progress}/${ch.task_total}: gather ${itemName(ch.task)}`);
-      await runStep(name, ch, { kind: "gather", code: ch.task, quantity: remaining - held, resource: src.res.code, level: 0, x: tile.x, y: tile.y }, ctx);
+      await runStep(name, ch, { kind: "gather", code: ch.task, quantity: remaining - held, resource: src.res.code, level: 0, at: tile }, ctx);
       return false;
     }
-    const tile = nearest("monster", src.mon.code, ch.x, ch.y);
-    if (!tile) throw new Error(`no ${src.mon.name} on the map (event over?)`);
+    const tile = nearest("monster", src.mon.code, ch);
+    if (!tile) throw new Error(missingText("monster", src.mon.code, ch));
     if (await taskGear(name, ch, it, { kind: "fight", monster: src.mon.code }, ctx)) return false;
     ctx.note(`task ${held + ch.task_progress}/${ch.task_total}: hunt ${src.mon.name}`);
     const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
@@ -1170,23 +1180,23 @@ async function runWorkTask(
   if (missing && freeSpace(ch) > 0) {
     const mat = fieldSource(ch, missing.code);
     if (mat?.how !== "gather") return giveUpTask(name, ch, it, ctx, `no way to gather ${itemName(missing.code)} (skill too low?)`);
-    const tile = nearest("resource", mat.res.code, ch.x, ch.y);
-    if (!tile) throw new Error(`no ${mat.res.name} on the map (event over?)`);
+    const tile = nearest("resource", mat.res.code, ch);
+    if (!tile) throw new Error(missingText("resource", mat.res.code, ch));
     if (await taskGear(name, ch, it, { kind: "gather", skill: mat.res.skill }, ctx)) return false;
     ctx.note(`task: gather ${itemName(missing.code)} ${invQty(ch, missing.code)}/${missing.quantity * batch}`);
-    await runStep(name, ch, { kind: "gather", code: missing.code, quantity: 1, resource: mat.res.code, level: 0, x: tile.x, y: tile.y }, ctx);
+    await runStep(name, ch, { kind: "gather", code: missing.code, quantity: 1, resource: mat.res.code, level: 0, at: tile }, ctx);
     return false;
   }
   if (craftableTimes(ch, ch.task, remaining - held) > 0) {
-    const tile = nearest("workshop", recipe.skill, ch.x, ch.y);
+    const tile = nearest("workshop", recipe.skill, ch);
     if (!tile) throw new Error(`no ${recipe.skill} workshop on the map`);
     ctx.note(`task: craft ${itemName(ch.task)}`);
-    await runStep(name, ch, { kind: "craft", code: ch.task, quantity: remaining - held, skill: recipe.skill, level: 0, x: tile.x, y: tile.y }, ctx);
+    await runStep(name, ch, { kind: "craft", code: ch.task, quantity: remaining - held, skill: recipe.skill, level: 0, at: tile }, ctx);
     return false;
   }
   // Bag jammed with nothing craftable — deliver what's done, or dump the junk.
   if (held > 0) return handOver(name, ch, it, ctx);
-  await bankOff(name, ch.x, ch.y, keepOf(it, ch), ctx.note);
+  await bankOff(name, keepOf(it, ch), ctx.note);
   return false;
 }
 
@@ -1221,7 +1231,7 @@ function favorSource(ch: Character, code: string, f?: OfferingFavor): FieldSourc
   if (f?.target_type === "monster") {
     const mon = monsterOf(f.target_code);
     // Off the map (an event monster that isn't up) ⇒ fall back to another monster with the drop.
-    return mon?.drops.some((d) => d.code === code) && nearest("monster", mon.code, ch.x, ch.y) ? { how: "fight", mon } : undefined;
+    return mon?.drops.some((d) => d.code === code) && nearest("monster", mon.code, ch) ? { how: "fight", mon } : undefined;
   }
   if (f?.target_type === "resource") {
     const res = resourceOf(f.target_code);
@@ -1250,10 +1260,10 @@ async function obtainOffering(
 ): Promise<"acted" | "dead"> {
   const banked = useBank ? bankQty(code) : 0;
   if (banked > 0) {
-    if (freeSpace(ch) === 0) { await bankOff(name, ch.x, ch.y, ctx.keep, ctx.note); return "acted"; }
-    const bank = nearestBank(ch.x, ch.y);
+    if (freeSpace(ch) === 0) { await bankOff(name, ctx.keep, ctx.note); return "acted"; }
+    const bank = nearestBank(ch);
     if (!bank) return "dead";
-    await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(need, banked, freeSpace(ch)), x: bank.x, y: bank.y }, ctx);
+    await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(need, banked, freeSpace(ch)), at: bank }, ctx);
     return "acted";
   }
   const src = favorSource(ch, code, favor) ?? fieldSource(ch, code);
@@ -1264,10 +1274,10 @@ async function obtainOffering(
     const can = craftableTimes(ch, code, need);
     // Everything in hand — or a full bag holding at least one run (stage it through).
     if (can >= runs || (can > 0 && freeSpace(ch) === 0)) {
-      const t = nearest("workshop", r.skill, ch.x, ch.y);
+      const t = nearest("workshop", r.skill, ch);
       if (!t) return "dead";
       ctx.note(`offering: craft ${itemName(code)}`);
-      await runStep(name, ch, { kind: "craft", code, quantity: need, skill: r.skill, level: 0, x: t.x, y: t.y }, ctx);
+      await runStep(name, ch, { kind: "craft", code, quantity: need, skill: r.skill, level: 0, at: t }, ctx);
       return "acted";
     }
     if (depth <= 0) return "dead";
@@ -1276,15 +1286,15 @@ async function obtainOffering(
   }
   const have = invQty(ch, code);
   if (src.how === "gather") {
-    const tile = nearest("resource", src.res.code, ch.x, ch.y);
+    const tile = nearest("resource", src.res.code, ch);
     if (!tile) return "dead";
     const desired = desiredForJob(name, ch, { kind: "gather", skill: src.res.skill });
     if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return "acted";
     ctx.note(`offering: gather ${itemName(code)} ${have}/${have + need}`);
-    await runStep(name, ch, { kind: "gather", code, quantity: need, resource: src.res.code, level: 0, x: tile.x, y: tile.y }, ctx);
+    await runStep(name, ch, { kind: "gather", code, quantity: need, resource: src.res.code, level: 0, at: tile }, ctx);
     return "acted";
   }
-  const tile = nearest("monster", src.mon.code, ch.x, ch.y);
+  const tile = nearest("monster", src.mon.code, ch);
   if (!tile) return "dead";
   const desired = desiredForJob(name, ch, { kind: "fight", monster: src.mon.code });
   if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return "acted";
@@ -1302,11 +1312,11 @@ export function canObtainOffering(ch: Character, code: string, need: number, fav
   if (need <= 0 || (useBank && bankQty(code) >= need)) return true;
   const src = favorSource(ch, code, favor) ?? fieldSource(ch, code);
   if (!src) return false;
-  if (src.how === "gather") return !!nearest("resource", src.res.code, ch.x, ch.y);
-  if (src.how === "fight") return !!nearest("monster", src.mon.code, ch.x, ch.y) && canBeat(ch, src.mon.code);
+  if (src.how === "gather") return !!nearest("resource", src.res.code, ch);
+  if (src.how === "fight") return !!nearest("monster", src.mon.code, ch) && canBeat(ch, src.mon.code);
   const r = src.recipe;
   const runs = Math.ceil(need / Math.max(1, r.quantity));
-  return !!nearest("workshop", r.skill, ch.x, ch.y) && r.items.every((g) => {
+  return !!nearest("workshop", r.skill, ch) && r.items.every((g) => {
     const short = g.quantity * runs - invQty(ch, g.code);
     return short <= 0 || (depth > 0 && canObtainOffering(ch, g.code, short, undefined, depth - 1, true));
   });
@@ -1376,9 +1386,9 @@ async function runOffering(name: string, ch: Character, it: OfferingItem, ctx: S
       if (pick.id !== id) ctx.note(`${next.category}: can't get ${req.quantity}× ${itemName(req.code)} — taking the ${pick.level_min}–${pick.level_max} bracket (${pick.requirement.quantity}× ${itemName(pick.requirement.code)})`);
       id = pick.id;
     }
-    const altar = nearest("seasonal_altar", null, ch.x, ch.y);
+    const altar = nearest("seasonal_altar", null, ch);
     if (!altar) return skipItem(name, it, "no seasonal altar on the map");
-    if (ch.x !== altar.x || ch.y !== altar.y) { ctx.note("→ seasonal altar"); await moveTo(name, altar.x, altar.y); return false; }
+    if (!isAt(ch, altar)) { ctx.note("→ seasonal altar"); await moveTo(name, altar); return false; }
     ctx.note(`${ready ? "complete" : "accept"} the ${next.category} offering`);
     try {
       await step(name, () => (ready ? actions.completeOffering(name, id) : actions.acceptOffering(name, id)));
@@ -1420,6 +1430,13 @@ const S = (name: string): { losses: number } => {
 const BUSY_RETRIES = 6;
 const BUSY_WAIT_S = 5;
 
+// The codes ≥ 500 that docs/api/openapi.json defines are the game's answers
+// (598 "… not found on this map", 595 no path, 596 blocked, 574–577 offerings,
+// 550–573 skins/gems/events/subscriptions): the ordinary error path. Anything
+// else ≥ 500 (500 "Fatal error", 502, 503 …) and code 0 (transport) is an outage.
+const GAME_CODES = new Set([550, 551, 552, 560, 561, 562, 563, 564, 565, 566, 567, 570, 571, 572, 573, 574, 575, 576, 577, 595, 596, 598]);
+const isOutage = (e: unknown): boolean => e instanceof ApiError && (e.code === 0 || (e.code >= 500 && !GAME_CODES.has(e.code)));
+
 async function runLoop(name: string): Promise<void> {
   if (liveLoops.has(name)) return; // never two loops per character
   liveLoops.add(name);
@@ -1442,7 +1459,8 @@ async function runLoop(name: string): Promise<void> {
         devlog(`head ${name}: [${item.id}] ${queueItemText(item)}`);
       }
       try {
-        const done = await runItem(name, ch, item);
+        // No route to the item's place (a pinned x, y on a layer this character cannot reach): skipped like a vanished target.
+        const done = await runItem(name, ch, item).catch((e) => (e instanceof NoRouteError ? skipItem(name, item, e.message) : Promise.reject(e)));
         busy = 0;
         if (done) {
           const cur = queues.value[name];
@@ -1461,13 +1479,13 @@ async function runLoop(name: string): Promise<void> {
         }
       } catch (e) {
         if (isInventoryFull(e)) {
-          try { await bankOff(name, ch.x, ch.y, keepOf(item, ch), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
+          try { await bankOff(name, keepOf(item, ch), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
         }
         // Transient transport trouble (code 0: fetch kept failing / 429 storm
-        // exhausted its retries) or a server-side 5xx outage (e.g. 500 "Fatal
+        // exhausted its retries) or a server-side outage (e.g. 500 "Fatal
         // error (Get User)"): never pause — hold a minute and try again, so a
         // blip doesn't strand the character. ⏹ stays responsive.
-        if (e instanceof ApiError && (e.code === 0 || e.code >= 500)) {
+        if (isOutage(e)) {
           log(name, `network trouble — retrying in 60s (${(e as Error).message})`, "bad");
           setQueue(name, { note: "network trouble — waiting" });
           for (let i = 0; i < 60 && !stopFlags.has(name); i++) await sleep(1000);
@@ -1479,7 +1497,7 @@ async function runLoop(name: string): Promise<void> {
           for (let i = 0; i < BUSY_WAIT_S && !stopFlags.has(name); i++) await sleep(1000);
           continue;
         }
-        const msg = stillBusy ? `${(e as Error).message} (code 486, ${BUSY_RETRIES} retries)` : (e as Error).message;
+        const msg = stillBusy ? `${(e as Error).message} (code 486, ${BUSY_RETRIES} retries)` : e instanceof ApiError ? `${e.message} (code ${e.code})` : (e as Error).message;
         patchItem(name, item.id, { error: msg });
         setQueue(name, { running: false, note: undefined });
         log(name, `queue paused — ${queueItemText(item)}: ${msg}`, "bad");

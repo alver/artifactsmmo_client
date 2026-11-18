@@ -24,12 +24,11 @@ const canWear = (ch: Character, code: string): boolean => {
   return !!it && canEquip(ch, it);
 };
 
-/** Event-merchant buys in priority order, as copies the fleet should own. */
+/** Event-merchant buys in priority order, as copies the fleet should own. Backpacks are no longer
+ *  bought (report 005, decision 2): the gold is kept for boat and forest fares. */
 const WISHLIST: { code: string; want: (fleet: Character[]) => number }[] = [
   // Artifacts are distinct per wearer: one each, kept worn by PINNED_ARTIFACTS.
   { code: "lost_world_map", want: (f) => f.filter((c) => canWear(c, "lost_world_map")).length },
-  // +35 bag space; jobgear's bestBag equips it at the next gear swap.
-  { code: "backpack", want: (f) => f.filter((c) => canWear(c, "backpack")).length },
 ];
 
 /** Copies of `code` the account owns: bank + every bag + every worn slot. */

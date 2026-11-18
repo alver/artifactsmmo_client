@@ -22,16 +22,16 @@ const want = (why: string, got: string | undefined, exp: string | undefined) => 
 want("timber", merchantOrder("timber_merchant", bank, 107_469, fleet)?.text, "sell 2613 Sap");
 want("fish", merchantOrder("fish_merchant", bank, 107_469, fleet)?.text, "sell 6 Golden Shrimp · sell 167 Shell");
 want("gemstone", merchantOrder("gemstone_merchant", bank, 107_469, fleet)?.text, undefined);
-// 107k + 3k eggs − 20k floor buys the 5 maps; the backpack's 50k waits.
+// 107k + 3k eggs − 20k floor buys the 5 maps.
 want("nomadic", merchantOrder("nomadic_merchant", bank, 107_469, fleet)?.text, "sell 3 Golden Egg · buy 5 Lost World Map");
 // One map worn, one in the bank → 3 more.
 const worn = [mk("A", 0, { artifact2_slot: "lost_world_map" }), ...fleet.slice(1)];
 want("owned maps", merchantOrder("nomadic_merchant", [...bank, { code: "lost_world_map", quantity: 1 }], 107_469, worn)?.text, "sell 3 Golden Egg · buy 3 Lost World Map");
 // Short on gold: no map, and the gold is NOT spent on the next wish.
 want("poor", merchantOrder("nomadic_merchant", bank, 30_000, fleet)?.text, "sell 3 Golden Egg");
-// All maps owned: the backpacks are next.
+// All maps owned: nothing else is bought — backpacks are no longer wished for (report 005, decision 2).
 const mapped = fleet.map((c) => ({ ...c, artifact2_slot: "lost_world_map" }) as Character);
-want("backpacks", merchantOrder("nomadic_merchant", bank, 200_000, mapped)?.text, "sell 3 Golden Egg · buy 3 Backpack");
+want("no backpacks", merchantOrder("nomadic_merchant", bank, 200_000, mapped)?.text, "sell 3 Golden Egg");
 
 // Resource event: only a character with the skill for the node goes.
 const ev = (code: string, type: string, content: string, x = 3): ActiveEvent =>

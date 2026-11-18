@@ -31,7 +31,7 @@ export function GroupFightSection() {
   const all = characters.value;
   const sel = picked.map((n) => all[n]).filter(Boolean);
   const leader = sel[0];
-  const tile = leader && code ? nearest("monster", code, leader.x, leader.y) : undefined;
+  const tile = leader && code ? nearest("monster", code, leader) : undefined;
   const isHere = (c: Character) => !!tile && c.x === tile.x && c.y === tile.y && layerOf(c) === (tile.layer ?? "overworld");
   const away = sel.filter((c) => !isHere(c));
   const headOf = (c: Character) => queues.value[c.name]?.items[0];
