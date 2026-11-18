@@ -6,8 +6,11 @@
 //
 // Not modelled: XP and levels (a level is what the scenario set), bank capacity
 // (462), gated tiles (always locked), achievement conditions of transitions
-// (always unmet), task / recycle / offering / give / claim actions, `use` of
-// anything but food, group fights.
+// (always unmet), task / recycle / give actions, `use` of anything but food,
+// group fights. Achievements are what the scenario wrote (`world.achievements`;
+// it moves progress by hand — nothing the fake does counts toward them).
+// The altar knows only what the scenario's `offerings` list holds: no favor
+// effects, no XP reward, no daily rotation.
 
 import { API_BASE } from "../../src/api/client";
 import { catalog, item, monster, npc, resource, tileAt } from "../../src/catalog";
@@ -17,7 +20,7 @@ import { simulate } from "../../src/sim/combat";
 import { restSeconds } from "../../src/sim/cost";
 import { currentFighter } from "../../src/sim/stats";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../src/types/api";
-import type { ActiveEvent, Character, GearSlot } from "../../src/types/api";
+import type { AccountAchievement, ActiveEvent, Character, GearSlot, PendingItem, SeasonalOffering, SelectedOffering } from "../../src/types/api";
 import type { DropRate, GameMap, Item, ItemStack, MapContent } from "../../src/types/catalog";
 import { T0 } from "./clock.mts";
 
@@ -28,6 +31,12 @@ export interface WorldInit {
   bank?: Record<string, number>;
   gold?: number;
   events?: ActiveEvent[];
+  /** The account's achievements as GET /accounts/{a}/achievements answers them. */
+  achievements?: AccountAchievement[];
+  /** Unclaimed rewards (GET /my/pending_items; POST claim_item/{id}). */
+  pending?: PendingItem[];
+  /** Today's offerings at the seasonal altar, the same for every character. */
+  offerings?: SeasonalOffering[];
 }
 /** One action call as the game saw it. `code` 200 = ok; "network" = an injected transport failure. */
 export interface Call {
@@ -60,6 +69,11 @@ export const world = {
   bank: new Map<string, number>(),
   gold: 0,
   events: [] as ActiveEvent[],
+  achievements: [] as AccountAchievement[],
+  pending: [] as PendingItem[],
+  offerings: [] as SeasonalOffering[],
+  /** Per character: today's accepted / completed offerings. */
+  altar: new Map<string, SelectedOffering[]>(),
   trace: [] as Call[],
   reads: [] as string[],
   ended: false,
@@ -155,6 +169,20 @@ export function seedWorld(init: WorldInit): void {
   for (const [code, n] of Object.entries(init.bank ?? {})) if (n > 0) world.bank.set(code, n);
   world.gold = init.gold ?? 0;
   world.events = init.events ?? [];
+  world.achievements = init.achievements ?? [];
+  world.pending = init.pending ?? [];
+  world.offerings = init.offerings ?? [];
+}
+
+/** The world as JSON, for a second boot of the engine in a new process (index.mts restart()). Pending faults and
+ *  forced fights stay behind. */
+export const saveWorld = (): unknown => ({
+  chars: [...world.chars], bank: [...world.bank], gold: world.gold, events: world.events, achievements: world.achievements,
+  pending: world.pending, offerings: world.offerings, altar: [...world.altar], trace: world.trace, counts: [...counts],
+});
+export function loadWorld(s: ReturnType<typeof JSON.parse>): void {
+  Object.assign(world, { chars: new Map(s.chars), bank: new Map(s.bank), gold: s.gold, events: s.events, achievements: s.achievements, pending: s.pending, offerings: s.offerings, altar: new Map(s.altar), trace: s.trace });
+  for (const [k, v] of s.counts as [string, number][]) counts.set(k, v);
 }
 
 // ── inventory ────────────────────────────────────────────────────────────────
@@ -452,6 +480,27 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
     return { seconds: 3, reason: "use", data: { item: it } }; // guess: the minimum cooldown
   },
 
+  // The seasonal altar, the least the `offering` item needs: accept an offering of the scenario's list, then
+  // complete it with the requirement in the bag. guess: the codes (404 unknown, 576 already chosen, 577 not
+  // accepted), 3 s cooldowns, no XP reward.
+  "offering/accept"(d, body: { offering_id: string }) {
+    standingOn(d.ch, "seasonal_altar", "Seasonal altar");
+    const o = world.offerings.find((x) => x.id === body.offering_id) ?? fatal(`offering ${body.offering_id} is not in the scenario's list`);
+    const mine = world.altar.get(d.ch.name) ?? [];
+    if (mine.some((s) => s.category === o.category)) throw new GameError(576, "An offering of this category is already chosen.");
+    const expires = new Date(new Date(Date.now()).setUTCHours(24, 0, 0, 0)).toISOString();
+    world.altar.set(d.ch.name, [...mine, { offering_id: o.id, category: o.category, status: "accepted", accepted_at: new Date().toISOString(), requirement: o.requirement, favor: o.favor, expires_at: expires }]);
+    return { seconds: 3, reason: "offering", data: { offering: o, favor_expires_at: expires } };
+  },
+  offering(d, body: { offering_id: string }) {
+    standingOn(d.ch, "seasonal_altar", "Seasonal altar");
+    const sel = world.altar.get(d.ch.name)?.find((s) => s.offering_id === body.offering_id && s.status === "accepted");
+    if (!sel) throw new GameError(577, "This offering is not accepted.");
+    take(d.ch, sel.requirement.code, sel.requirement.quantity);
+    sel.status = "completed";
+    return { seconds: 3, reason: "offering", data: { offering: world.offerings.find((x) => x.id === sel.offering_id), reward: { category: sel.category, xp: 0 } } };
+  },
+
   fight(d, body: { participants?: string[] } | undefined) {
     if (body?.participants?.length) fatal("group fights are not implemented");
     const m = monster(standingOn(d.ch, "monster", "Monster").code)!;
@@ -492,13 +541,25 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
   },
 };
 
+/** POST claim_item/{id}: a pending reward's items into the bag, its gold into the pocket (guess: the pocket, as a
+ *  fight's gold; 404 for an id that is not pending; 497 when it does not fit; 3 s). */
+function claim(d: Draft, id: string): Done {
+  const p = world.pending.find((x) => x.id === id && !x.claimed_at);
+  if (!p) throw new GameError(404, "Pending item not found.");
+  fits(d.ch, p.items.reduce((s, x) => s + x.quantity, 0));
+  for (const x of p.items) give(d.ch, x.code, x.quantity);
+  d.ch.gold += p.gold;
+  world.pending = world.pending.filter((x) => x !== p);
+  return { seconds: 3, reason: "claim_item", data: { item: { ...p, claimed_at: new Date().toISOString() } } };
+}
+
 function act(call: Call): unknown {
   const { who, action, body } = call;
   const cur = world.chars.get(who);
   if (!cur) throw new GameError(498, "Character not found.");
   const left = (Date.parse(cur.cooldown_expiration ?? "") - Date.now()) / 1000;
   if (left > 0) throw new GameError(499, `The character is in cooldown: ${left.toFixed(2)} seconds left.`);
-  const run = ACTIONS[action] ?? fatal(`action ${action} is not implemented`);
+  const run = ACTIONS[action] ?? (action.startsWith("claim_item/") ? (d: Draft) => claim(d, action.slice("claim_item/".length)) : undefined) ?? fatal(`action ${action} is not implemented`);
   // The action runs on a copy and is committed whole: a refusal changes nothing.
   const d: Draft = { ch: structuredClone(cur), bank: new Map(world.bank), gold: world.gold };
   const done = run(d, body as never);
@@ -531,13 +592,20 @@ function read(url: URL): unknown {
   if (p === "/my/bank") return { data: { slots: 50, expansions: 0, next_expansion_cost: 4500, gold: world.gold } };
   if (p === "/my/bank/items") return page(bankList(world.bank));
   if (p === "/events/active") return page(world.events.filter(liveEvent));
-  // The engine may ask these in a scenario; none is a scenario subject: empty and well-formed.
-  if (p === "/my/pending_items") return page([]);
-  if (/^\/accounts\/[^/]+\/achievements$/.test(p)) return page([]);
+  // The scenario's achievements, pending rewards and offerings (empty unless it gave some).
+  if (p === "/my/pending_items") return page(world.pending);
+  if (/^\/accounts\/[^/]+\/achievements$/.test(p)) return page(world.achievements);
   if (/^\/accounts\/[^/]+$/.test(p)) return { data: { username: "harness", member: false, status: "standard", badges: [], skins: [], achievements_points: 0, banned: false } };
-  if (/^\/my\/[^/]+\/offerings$/.test(p)) {
+  const off = /^\/my\/([^/]+)\/offerings$/.exec(p);
+  if (off) {
     const midnight = new Date(Date.now()).setUTCHours(24, 0, 0, 0);
-    return { data: { date: new Date().toISOString().slice(0, 10), expires_at: new Date(midnight).toISOString(), skills: [], xp_reward_percent: 0, offerings: [], selected_offerings: [], completed_categories: [], active_favors: [] } };
+    const mine = world.altar.get(off[1]) ?? [];
+    return {
+      data: {
+        date: new Date().toISOString().slice(0, 10), expires_at: new Date(midnight).toISOString(), skills: [], xp_reward_percent: 0, offerings: world.offerings,
+        selected_offerings: mine, completed_categories: mine.filter((s) => s.status === "completed").map((s) => s.category), active_favors: mine.map((s) => s.favor),
+      },
+    };
   }
   return fatal(`GET ${p} is not implemented`);
 }

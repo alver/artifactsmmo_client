@@ -26,6 +26,7 @@ import {
 } from "./store";
 import { queues } from "./queue";
 import { hive } from "./hive";
+import { planner } from "./planner";
 import { eventPlans } from "./eventorders";
 import { roadmapAnalysis } from "./roadmap";
 import { simDeviations } from "../sim/validate";
@@ -51,6 +52,7 @@ export const SYNCED: Record<string, Signal<unknown>> = {
   pendingRewards,
   queues,
   hive,
+  planner,
   eventPlans,
   simDeviations,
   roadmapAnalysis,

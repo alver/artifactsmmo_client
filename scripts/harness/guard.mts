@@ -16,8 +16,8 @@ if (!fromRunner) {
   console.error("harness: a scenario only runs through the runner — npm run check -- <name>");
   process.exit(2);
 }
-// A fresh file holds nothing: no token, no queues.
-if (localStorage.length !== 0) {
+// A fresh file holds nothing: no token, no queues. A second boot (index.mts restart()) runs on the first one's file.
+if (localStorage.length !== 0 && !process.env.AMMO_CHECK_RESTART) {
   console.error(`harness: scratch storage ${db} is not empty (${localStorage.length} keys) — refusing to run`);
   process.exit(2);
 }

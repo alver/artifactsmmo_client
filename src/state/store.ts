@@ -213,6 +213,13 @@ export const achievements = signal<AccountAchievement[] | null>(null);
 export const achievementsLoading = signal(false);
 export const achievementsError = signal<string | null>(null);
 
+/**
+ * Who the planner owns (config `on`, merged over its defaults). state/planner.ts keeps it; queue.ts, hive.ts and
+ * eventorders.ts read it here, because planner.ts imports them (no import cycle).
+ */
+export const plannerOn = signal<Record<string, boolean>>({});
+export const isOwned = (name: string): boolean => !!plannerOn.value[name];
+
 /** Whether the Fleet tab's Hive section (account-goal coordinator) is expanded. */
 export const hiveOpen = signal(false);
 

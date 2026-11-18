@@ -28,6 +28,7 @@ import {
 import { loadPersisted, saveState } from "./persist";
 import { resumeHive } from "./hive";
 import { resumeQueue } from "./queue";
+import { resumePlanner } from "./planner";
 import { eventKey } from "./events";
 import { reactToEvents } from "./eventorders";
 import { api, getAllPages, hasToken, setToken } from "../api/client";
@@ -44,6 +45,7 @@ export async function boot(): Promise<void> {
   if (authed.value) {
     await reconcile(); // one authoritative sync before runners act on character state
     resumeQueue(); // re-launch queues saved from a previous session
+    resumePlanner({ loadAchievements, loadPendingRewards }); // the planner's characters: re-attach, take over, or decide after its first read
     resumeHive(); // re-attach the hive AFTER the queues are back (it observes them)
     watchEvents(); // events already up get their orders; then poll for new ones
   }
@@ -177,6 +179,7 @@ export async function login(): Promise<void> {
   if (authed.value) {
     await reconcile();
     resumeQueue();
+    resumePlanner({ loadAchievements, loadPendingRewards });
     resumeHive();
     watchEvents();
   }

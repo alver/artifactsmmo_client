@@ -1,5 +1,5 @@
 // The planner's data (docs/design/planner.md B.1). Pure: no signals, no API.
-// Nothing in the running client imports src/plan/planner/ yet (task 008 will).
+// The runtime that uses it is src/state/planner.ts (task 008).
 
 import type { AccountAchievement, ActiveEvent, BankItem, Character } from "../../types/api";
 
@@ -91,17 +91,35 @@ export interface World {  // everything decide() reads — a snapshot, so it run
   /** What the others are on. For the deciding character: the step it just finished (its +10%). */
   current: Record<string, Step | undefined>;
   costs: Costs;
-  blocked: Record<string, { until: number; why: string }>; // key "<target key>@<character>"
+  /** Key "<target key>@<character>". `levels`: a long block (three strikes) also ends when one of these lanes passes its level. */
+  blocked: Record<string, { until: number; why: string; levels?: Record<string, number> }>;
   config: PlannerConfig;
   /** Forward model only: when each character is free (ms). Missing = `now`. */
   clock?: Record<string, number>;
 }
 
+/** A character's step as the runtime (src/state/planner.ts) tracks it. Kept after the step ends until the next
+ *  decision, so `world.current[name]` of the deciding character is the step it just finished (the +10% of B.4). */
+export interface Running {
+  step: Step;
+  startedAt: number;      // ms
+  n: number;              // queue items the step compiled to (ids pl:<key>:0 … n−1)
+  run: number;            // running seconds: one of the step's own items the head and the queue running (no interrupt, pause, outage hold, stopped service)
+  progress: number;       // the step's counter (stall check)
+  movedAt: number;        // `run` when the counter last moved
+  units: number;          // units done (the last item's `done`; a buy's quantity once bought; a train step's level-up), the highest seen
+  from?: number;          // a train step: the lane's level when it started
+  lv?: { lane: Lane; level: number; run: number; full: boolean }; // a level step: running seconds into `level`; `full` = it began at an observed level-up
+  over?: boolean;         // the step ended and was sampled or blocked; the next decision is due
+}
+
 export interface PlannerState {  // the synced, persisted signal of task 008 — key ammo:v1:planner
-  current: Record<string, { step: Step; startedAt: number; progress: number; progressAt: number } | undefined>;
-  costs: Costs;
+  current: Record<string, Running | undefined>;
+  costs: Costs;                 // `level:<lane>:<L>` holds hours (cost.ts hoursToLevel), every other key seconds
   blocked: World["blocked"];
-  config: PlannerConfig;
-  achievementsAt: number;
+  strikes: Record<string, number>; // consecutive blocks of a target, any character; reset by a step of it that did units
+  config: Partial<PlannerConfig>;  // Alex's patch over DEFAULTS (a later change of the defaults reaches a running installation)
+  optedOut: string[];           // characters the planner put on the hive's opt-out list
+  achievementsAt: number;       // the last successful achievements read
   outlook?: { at: number; next: Step[]; blocked: { target: string; why: string }[]; expected: number };
 }

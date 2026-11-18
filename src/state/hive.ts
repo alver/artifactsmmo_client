@@ -28,7 +28,7 @@
 import { batch, effect, signal } from "@preact/signals";
 import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { addItem, dropItem, insertItem, patchItem, queuePinTraining, queues, removeItem, setRepeat, startQueue, stopQueue, clearQueue, type QueueState } from "./queue";
-import { achievements, bankDetails, bankItems, characterList, characters, craftPins, pushLog, skillPins } from "./store";
+import { achievements, bankDetails, bankItems, characterList, characters, craftPins, isOwned, pushLog, skillPins } from "./store";
 import { invQty } from "./exec";
 import { bankQty } from "./loopkit";
 import { compileGoal, fillerItems, goalSatisfied, needsAchievements, proposeGoals, taskSuitability } from "../plan/hive";
@@ -823,10 +823,17 @@ export function skipAssignment(character: string): void {
  *  assignment; opting back in rejoins from the next dispatched wave. */
 export function toggleHiveManual(name: string): void {
   if (!IS_SERVER) return rpc("toggleHiveManual", [name]);
+  if (isOwned(name)) return log(`${name}: the planner owns this character — the opt-out stays`, "bad");
+  setHiveManual(name, !hive.value.manual.includes(name));
+}
+
+/** On or off the opt-out list, toggleHiveManual's rule: joining it mid-run abandons the character's assignment.
+ *  The planner's way in (state/planner.ts) for a character it takes over or hands back. Not exposed. */
+export function setHiveManual(name: string, on: boolean): void {
   const st = hive.value;
-  const wasManual = st.manual.includes(name);
-  hive.value = { ...st, manual: wasManual ? st.manual.filter((n) => n !== name) : [...st.manual, name] };
-  if (!wasManual && st.run && st.run.status !== "stopped") skipAssignment(name);
+  if (st.manual.includes(name) === on) return;
+  hive.value = { ...st, manual: on ? [...st.manual, name] : st.manual.filter((n) => n !== name) };
+  if (on && st.run && st.run.status !== "stopped") skipAssignment(name);
 }
 
 // ── reload-resume ────────────────────────────────────────────────────────────

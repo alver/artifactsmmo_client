@@ -22,7 +22,7 @@ export const DEFAULTS: PlannerConfig = {
   weight: {},
   filler: FILLER,
   roles: {},
-  on: {},
+  on: { Fifth: true }, // task 008: one character for a day of real play; 010 turns the other four on
   offeringsPerDay: 10, // measured 2026-11-17 and 11-18 (report 006); the cap is 15
   offeringMin: 20,
   craftK: 0.1,

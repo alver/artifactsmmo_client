@@ -6,7 +6,8 @@
 // 4 Hz `now` clock — see the cooldown-clock invariant in store.ts.
 
 import { useState } from "preact/hooks";
-import { armTilePick, bankItems, characters, craftPins, CRAFT_TRAIN_SKILLS, tilePick } from "../state/store";
+import { armTilePick, bankItems, characters, craftPins, CRAFT_TRAIN_SKILLS, isOwned, tilePick } from "../state/store";
+import { planner, setPlannerConfig } from "../state/planner";
 import { npcForSell } from "../plan/acquire";
 import { catalog, item as itemOf, itemName } from "../catalog";
 import { pct, titleCase } from "../lib/util";
@@ -58,11 +59,17 @@ export function QueueSection({ ch }: { ch: Character }) {
   // Help the workshop skill this queue actually trains (a hand-added train item), else the pin.
   const training = q.items.find((i): i is Extract<QueueItem, { kind: "train" }> => i.kind === "train" && !i.for && CRAFT_TRAIN_SKILLS.some(([k]) => k === i.skill));
   const helpSkill = training?.skill ?? craftPins()[ch.name];
+  const owned = isOwned(ch.name); // the planner's queue: read-only here
 
   return (
     <div class="q-panel">
       <div class="q-head">
-        {q.running ? (
+        {owned ? (
+          <>
+            {q.running ? <span class="gather-tag banking"><span class="spinner" />running</span> : <span class="q-paused">⏸ not running</span>}
+            <span class="q-count muted">{q.items.length} left</span>
+          </>
+        ) : q.running ? (
           <>
             <span class="gather-tag banking">
               <span class="spinner" />
@@ -104,7 +111,8 @@ export function QueueSection({ ch }: { ch: Character }) {
             )}
           </>
         )}
-        <button
+        <PlannerSwitch name={ch.name} on={owned} />
+        {!owned && <button
           class="cat-btn"
           disabled={!helpSkill}
           title={helpSkill
@@ -113,13 +121,13 @@ export function QueueSection({ ch }: { ch: Character }) {
           onClick={() => { if (helpSkill && confirm(`Everyone else stops what they're doing and helps ${ch.name} train ${titleCase(helpSkill)}?`)) queueAssist(ch.name, helpSkill); }}
         >
           🤝 Fleet helps
-        </button>
+        </button>}
       </div>
 
-      <AddForm ch={ch} />
+      {owned ? <PlannerLine name={ch.name} /> : <AddForm ch={ch} />}
 
       {q.items.length === 0 && (
-        <div class="muted" style={{ fontSize: 12 }}>Empty — add a step above.</div>
+        <div class="muted" style={{ fontSize: 12 }}>{owned ? "Empty — the planner decides the next step." : "Empty — add a step above."}</div>
       )}
 
       {q.items.length > 0 && (
@@ -131,10 +139,36 @@ export function QueueSection({ ch }: { ch: Character }) {
             <span />
           </div>
           {q.items.map((it, i) => (
-            <QueueRow key={it.id} ch={ch} it={it} index={i} running={q.running} count={q.items.length} note={i === 0 && q.running ? q.note : undefined} />
+            <QueueRow key={it.id} ch={ch} it={it} index={i} running={q.running} count={q.items.length} note={i === 0 && q.running ? q.note : undefined} readOnly={owned} />
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/** Hands the character to the planner (its queue is dropped) or back to Alex (an empty, stopped queue). */
+function PlannerSwitch({ name, on }: { name: string; on: boolean }) {
+  const flip = (): void => {
+    if (on || confirm(`Hand ${name} to the planner? Its queue is dropped and the planner decides from now on.`)) void setPlannerConfig({ on: { [name]: !on } });
+  };
+  return (
+    <button class={"cat-btn" + (on ? " buy" : "")} title={on ? "The planner owns this queue — click to hand it back (empty, stopped)" : "Hand this character to the planner"} onClick={flip}>
+      🧭 planner {on ? "on" : "off"}
+    </button>
+  );
+}
+
+/** The current step's reason, and what is blocked for this character and until when (UTC). */
+function PlannerLine({ name }: { name: string }) {
+  const st = planner.value;
+  const t = Date.now();
+  const blocked = Object.entries(st.blocked).filter(([k, b]) => k.endsWith(`@${name}`) && b.until > t);
+  const hhmm = (ms: number): string => new Date(ms).toISOString().slice(11, 16);
+  return (
+    <div class="muted" style={{ fontSize: 12, margin: "4px 0" }}>
+      <div>🧭 {st.current[name]?.step.why ?? "waiting for the first decision"}</div>
+      {blocked.length > 0 && <div>⛔ blocked: {blocked.map(([k, b]) => `${k.slice(0, k.lastIndexOf("@"))} until ${hhmm(b.until)} (${b.why})`).join(" · ")}</div>}
     </div>
   );
 }
@@ -183,7 +217,7 @@ export function itemProgress(ch: Character, it: QueueItem): { pct: number | null
   }
 }
 
-function QueueRow({ ch, it, index, running, count, note }: { ch: Character; it: QueueItem; index: number; running: boolean; count: number; note?: string }) {
+function QueueRow({ ch, it, index, running, count, note, readOnly }: { ch: Character; it: QueueItem; index: number; running: boolean; count: number; note?: string; readOnly?: boolean }) {
   const [editing, setEditing] = useState(false);
   const isHead = index === 0;
   const locked = running && isHead; // the executing item can't be touched
@@ -202,14 +236,16 @@ function QueueRow({ ch, it, index, running, count, note }: { ch: Character; it: 
           {progress && <span class="q-progress">{progress.label}</span>}
         </span>
         <span class="q-actions">
-          <button disabled={locked || index <= (running ? 1 : 0)} title="Move up" onClick={() => moveItem(ch.name, it.id, -1)}>↑</button>
-          <button disabled={locked || index >= count - 1} title="Move down" onClick={() => moveItem(ch.name, it.id, 1)}>↓</button>
-          <button disabled={locked} title="Edit" onClick={() => setEditing(!editing)}>✎</button>
-          <button disabled={locked} title="Remove" onClick={() => removeItem(ch.name, it.id)}>✕</button>
+          {!readOnly && <>
+            <button disabled={locked || index <= (running ? 1 : 0)} title="Move up" onClick={() => moveItem(ch.name, it.id, -1)}>↑</button>
+            <button disabled={locked || index >= count - 1} title="Move down" onClick={() => moveItem(ch.name, it.id, 1)}>↓</button>
+            <button disabled={locked} title="Edit" onClick={() => setEditing(!editing)}>✎</button>
+            <button disabled={locked} title="Remove" onClick={() => removeItem(ch.name, it.id)}>✕</button>
+          </>}
         </span>
       </div>
       {it.error && <div class="q-error">⛔ {it.error}</div>}
-      {editing && !locked && <EditForm ch={ch} it={it} onDone={() => setEditing(false)} />}
+      {editing && !locked && !readOnly && <EditForm ch={ch} it={it} onDone={() => setEditing(false)} />}
     </div>
   );
 }

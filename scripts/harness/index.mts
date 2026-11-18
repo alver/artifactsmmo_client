@@ -17,6 +17,8 @@
 
 import "./guard.mts"; // first: refuses to run outside the runner's scratch storage
 import { T0, advance, drain } from "./clock.mts"; // second: the engine must load on the virtual clock
+import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { effect } from "@preact/signals";
@@ -25,13 +27,15 @@ import { loadCatalog } from "../../src/catalog";
 import { setDataReader } from "../../src/catalog/load";
 import { setDevlogSink } from "../../src/lib/devlog";
 import { queueItemText, withId } from "../../src/plan/queue";
+import { setPlannerConfig } from "../../src/state/planner";
 import { addItem, insertItem, queues, setRepeat, startQueue } from "../../src/state/queue";
 import { bankDetails, bankItems, characters, lastError } from "../../src/state/store";
 import { boot } from "../../src/state/sync";
+import type { PlannerConfig } from "../../src/plan/planner/types";
 import type { QueueItemInput } from "../../src/plan/queue";
 import type { QueueState } from "../../src/state/queue";
-import type { ActiveEvent } from "../../src/types/api";
-import { fakeFetch, held, seedWorld, world } from "./fake.mts";
+import type { AccountAchievement, ActiveEvent } from "../../src/types/api";
+import { fakeFetch, held, loadWorld, saveWorld, seedWorld, world } from "./fake.mts";
 import type { Call, WorldInit } from "./fake.mts";
 
 export interface ScenarioDef extends WorldInit {
@@ -43,6 +47,10 @@ export interface ScenarioDef extends WorldInit {
   expect598?: boolean;
   /** Exceeding either fails the scenario. Defaults: 500 actions, 180 virtual minutes. */
   limits?: { actions?: number; minutes?: number };
+  /** The planner's config patch (setPlannerConfig before boot), e.g. { on: { Pia: true } }. */
+  planner?: Partial<PlannerConfig>;
+  /** Runs after the world is seeded, before boot (the first boot only). */
+  setup?: () => void;
 }
 
 /** An expectation that did not hold (as opposed to a broken harness). */
@@ -50,6 +58,8 @@ class Failure extends Error {}
 
 const NAME = path.basename(process.argv[1] ?? "scenario").replace(/\.mts$/, "");
 const VERBOSE = !!process.env.AMMO_CHECK_VERBOSE;
+/** Set in the second process of restart(): the file with the first one's world and what it carried over. */
+const RESTART = process.env.AMMO_CHECK_RESTART;
 const devlines: string[] = [];
 let queueWrites = 0;
 
@@ -124,13 +134,34 @@ function bounces(): string[] {
   return out;
 }
 
-function handle(limits: { actions: number; minutes: number }) {
+function handle(limits: { actions: number; minutes: number }, carried: unknown) {
   const ok = (cond: unknown, msg: string): void => {
     if (!cond) throw new Failure(msg);
   };
   return {
     /** The fake's truth, plus fault injection: world.fault(), world.forceFight(), world.yields. */
     world,
+    /** 1, or 2 in the process restart() started. */
+    boot: RESTART ? 2 : 1,
+    /** What the first boot passed to restart(). */
+    carried,
+    /** The dev log so far (this process's boot only). */
+    devlog: (): string[] => devlines,
+    /**
+     * Stop this engine where it stands — as a killed service would, mid-action, nothing unwound — and boot a
+     * second one in a new process on the same storage, the fake's world and the clock. The scenario's body runs
+     * again there with `boot` 2 and `carried`; its verdict is the scenario's. Never returns.
+     */
+    async restart(carry: unknown = null): Promise<never> {
+      const file = path.join(path.dirname(process.env.AMMO_CHECK_DB!), `${NAME}.restart.json`);
+      writeFileSync(file, JSON.stringify({ world: saveWorld(), carry }));
+      const child = spawn(process.execPath, [...process.execArgv, process.argv[1]], {
+        env: { ...process.env, AMMO_CHECK_RESTART: file, AMMO_CHECK_NOW: String(Date.now()) },
+        stdio: "inherit",
+      });
+      const code = await new Promise<number>((r) => child.on("close", (c) => r(c ?? 2)));
+      process.exit(code);
+    },
     /** Append items to a character's queue and start it. */
     queue(name: string, items: QueueItemInput[], opts: { repeat?: boolean } = {}): void {
       for (const it of items) addItem(name, withId(it));
@@ -173,6 +204,15 @@ function handle(limits: { actions: number; minutes: number }) {
 }
 export type Scenario = ReturnType<typeof handle>;
 
+/** A made-up achievement of the account: one objective per [type, target, total, progress = 0]. */
+export const achievement = (code: string, points: number, ...objectives: [type: string, target: string | null, total: number, progress?: number][]): AccountAchievement => ({
+  code, name: code, description: "", points, completed_at: null, objectives: objectives.map(([type, target, total, progress = 0]) => ({ type, target, total, progress })),
+});
+
+/** The planner's dev-log lines of one character (`plan <name>: …`), without the prefix. */
+export const planLines = (t: Scenario, name: string): string[] =>
+  t.devlog().flatMap((l) => (l.includes(` plan ${name}: `) ? [l.slice(l.indexOf(` plan ${name}: `) + ` plan ${name}: `.length)] : []));
+
 /** A merchant event that is up from half an hour before the scenario starts until `minutes` after. */
 export const merchantEvent = (code: string, x: number, y: number, minutes = 60): ActiveEvent => ({
   name: code, code, duration: minutes + 30, previous_map: null,
@@ -196,7 +236,13 @@ export async function scenario(def: ScenarioDef, body: (t: Scenario) => Promise<
   });
   setToken("harness"); // boot() only syncs with a token; this one never leaves the process
   await loadCatalog(); // before the world: worn gear is read from the catalog (boot() finds it loaded)
-  seedWorld(def);
+  const second = RESTART ? (JSON.parse(readFileSync(RESTART, "utf8")) as { world: unknown; carry: unknown }) : undefined;
+  if (second) loadWorld(second.world);
+  else {
+    seedWorld(def);
+    def.setup?.();
+    if (def.planner) setPlannerConfig(def.planner); // no characters yet: only the patch is stored; boot() takes them
+  }
   await boot();
   if (lastError.value) die(`boot sync failed: ${lastError.value}`);
   effect(() => void (queues.value, queueWrites++));
@@ -204,7 +250,7 @@ export async function scenario(def: ScenarioDef, body: (t: Scenario) => Promise<
 
   let failed: string | undefined;
   try {
-    await body(handle({ actions: def.limits?.actions ?? 500, minutes: def.limits?.minutes ?? 180 }));
+    await body(handle({ actions: def.limits?.actions ?? 500, minutes: def.limits?.minutes ?? 180 }, second?.carry));
     const b = def.bounces ? [] : bounces();
     // Layer check: 598 "… not found on this map" = an action on the right x, y of the wrong layer (or the wrong tile).
     const wrong = def.expect598 ? [] : world.trace.filter((c) => c.code === 598);

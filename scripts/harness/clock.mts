@@ -24,7 +24,7 @@ interface Timer {
   args: unknown[];
 }
 const timers = new Map<number, Timer>();
-let now = T0;
+let now = Number(process.env.AMMO_CHECK_NOW) || T0; // a second boot (index.mts restart()) goes on from the first one's time
 let seq = 0;
 
 function arm(fn: (...args: unknown[]) => void, ms: unknown, args: unknown[], repeat: boolean): number {

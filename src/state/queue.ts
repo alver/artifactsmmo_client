@@ -28,7 +28,7 @@ import { trainingResourceFor } from "../plan/hive/skills";
 import { CRAFT_SEC, FIGHT_SEC, autoRecyclable, craftXp, fightXp, gatherSec, recycleReturn } from "../plan/xp";
 import { killSeconds } from "../plan/bis";
 import { titleCase } from "../lib/util";
-import { CRAFT_TRAIN_SKILLS, bankItems, characters, pushLog, skillKey, skillPins } from "./store";
+import { CRAFT_TRAIN_SKILLS, bankItems, characters, isOwned, pendingRewards, pushLog, skillKey, skillPins } from "./store";
 import { devlog } from "../lib/devlog";
 import { NoRouteError, bankQty, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, sleep, step, walkTo } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
@@ -107,9 +107,18 @@ export function patchItem(name: string, id: string, patch: Partial<QueueItem>): 
 
 const headLocked = (q: QueueState | undefined, id: string): boolean => !!q?.running && q.items[0]?.id === id;
 
+/** The tab's ops refuse a character the planner owns; the planner writes through insertItem, dropItem,
+ *  runQueue, haltQueue and resetQueue, which are not exposed. */
+function refused(name: string): boolean {
+  if (!isOwned(name)) return false;
+  pushLog({ ts: Date.now(), character: name, action: "queue", text: "the planner owns this queue — not changed", kind: "bad" });
+  return true;
+}
+
 /** Append (or insert at `index`) an item; creates the character's queue lazily. */
 export function addItem(name: string, item: QueueItem, index?: number): void {
   if (!IS_SERVER) return rpc("addItem", [name, item, index]);
+  if (refused(name)) return;
   const cur = queues.value[name] ?? { items: [], running: false };
   const items = [...cur.items];
   const at = index == null ? items.length : Math.max(cur.running ? 1 : 0, Math.min(index, items.length));
@@ -119,6 +128,7 @@ export function addItem(name: string, item: QueueItem, index?: number): void {
 
 export function removeItem(name: string, id: string): void {
   if (!IS_SERVER) return rpc("removeItem", [name, id]);
+  if (refused(name)) return;
   const cur = queues.value[name];
   if (!cur || headLocked(cur, id)) return;
   setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
@@ -131,22 +141,24 @@ export function dropItem(name: string, id: string): void {
   if (cur) setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
 }
 
-/** Hive-only: insert even AHEAD of the running head (a starved `wait` craft
- *  takes on a slice of work, then resumes its hold) — same safety as dropItem. */
+/** The automatic writers' insert, even AHEAD of the running head (a starved `wait` craft takes on a slice of
+ *  work; an event trip; the planner's steps and interrupts) — same safety as dropItem. Creates the queue lazily. */
 export function insertItem(name: string, item: QueueItem, index: number): void {
-  const cur = queues.value[name];
-  if (cur) setQueue(name, { items: [...cur.items.slice(0, index), item, ...cur.items.slice(index)] });
+  const cur = queues.value[name] ?? { items: [], running: false };
+  queues.value = { ...queues.value, [name]: { ...cur, items: [...cur.items.slice(0, index), item, ...cur.items.slice(index)] } };
 }
 
 /** User edit — clears the item's error (an edited item gets a fresh chance). */
 export function updateItem(name: string, id: string, patch: Partial<QueueItem>): void {
   if (!IS_SERVER) return rpc("updateItem", [name, id, patch]);
+  if (refused(name)) return;
   if (headLocked(queues.value[name], id)) return;
   patchItem(name, id, { ...patch, error: undefined });
 }
 
 export function moveItem(name: string, id: string, dir: -1 | 1): void {
   if (!IS_SERVER) return rpc("moveItem", [name, id, dir]);
+  if (refused(name)) return;
   const cur = queues.value[name];
   if (!cur || headLocked(cur, id)) return;
   const i = cur.items.findIndex((it) => it.id === id);
@@ -160,9 +172,16 @@ export function moveItem(name: string, id: string, dir: -1 | 1): void {
 
 export function clearQueue(name: string): void {
   if (!IS_SERVER) return rpc("clearQueue", [name]);
+  if (refused(name)) return;
   const cur = queues.value[name];
   if (!cur || cur.running) return;
   setQueue(name, { items: [], note: undefined });
+}
+
+/** The planner's take-over and hand-back (state/planner.ts): keep only the items `keep` accepts, 🔁 off. Not exposed. */
+export function resetQueue(name: string, keep: (it: QueueItem) => boolean): void {
+  const cur = queues.value[name];
+  if (cur) setQueue(name, { items: cur.items.filter(keep), repeat: undefined, note: undefined });
 }
 
 // ── The runner ───────────────────────────────────────────────────────────────
@@ -498,6 +517,28 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         return false;
       }
       return true;
+    }
+    case "claim": {
+      // A reward that does not fit the bag answers 497: runLoop's full-bag path banks the bag, then this goes on.
+      const row = pendingRewards.value[0];
+      const got = (it.got ?? []).filter((c) => (c === "gold" ? ch.gold : invQty(ch, c)) > 0);
+      if (!row && !got.length) return true;
+      const bank = nearestBank(ch);
+      if (!bank) return skipItem(name, it, "no bank on the map");
+      if (!isAt(ch, bank)) { ctx.note("→ bank to claim rewards"); await moveTo(name, bank); return false; }
+      if (row) {
+        ctx.note(`claim: ${row.description}`);
+        await step(name, () => actions.claimItem(name, row.id));
+        patchItem(name, it.id, { got: [...new Set([...(it.got ?? []), ...row.items.map((x) => x.code), ...(row.gold ? ["gold"] : [])])] });
+        const what = row.items.map((x) => `${x.quantity}× ${x.code}${itemOf(x.code)?.subtype === "bag" ? ` (${(itemOf(x.code)?.effects ?? []).map((e) => `${e.code} ${e.value} each`).join(", ")})` : ""}`);
+        devlog(`claim ${name}: ${row.description} — ${[...what, ...(row.gold ? [`${row.gold} gold`] : [])].join(", ") || "nothing"}`);
+        log(name, `claimed ${row.description}`, "ok");
+        return false;
+      }
+      const items = got.filter((c) => c !== "gold").map((code) => ({ code, quantity: invQty(ch, code) }));
+      ctx.note("deposit what was claimed");
+      await step(name, () => (items.length ? actions.depositItems(name, items) : actions.depositGold(name, ch.gold)));
+      return false;
     }
     case "work-task":
       return runWorkTask(name, ch, it, ctx);
@@ -1437,10 +1478,14 @@ const BUSY_WAIT_S = 5;
 const GAME_CODES = new Set([550, 551, 552, 560, 561, 562, 563, 564, 565, 566, 567, 570, 571, 572, 573, 574, 575, 576, 577, 595, 596, 598]);
 const isOutage = (e: unknown): boolean => e instanceof ApiError && (e.code === 0 || (e.code >= 500 && !GAME_CODES.has(e.code)));
 
+/** The note of an outage hold — the planner does not count its time as the step's running seconds. */
+export const OUTAGE_NOTE = "network trouble — waiting";
+
 async function runLoop(name: string): Promise<void> {
   if (liveLoops.has(name)) return; // never two loops per character
   liveLoops.add(name);
   let busy = 0; // 486 answers in a row
+  let lost: string | undefined; // the item whose last action answered 598
   try {
     while (!stopFlags.has(name)) {
       // Yield to the event loop every tick: no buggy path may spin the tab.
@@ -1460,7 +1505,19 @@ async function runLoop(name: string): Promise<void> {
       }
       try {
         // No route to the item's place (a pinned x, y on a layer this character cannot reach): skipped like a vanished target.
-        const done = await runItem(name, ch, item).catch((e) => (e instanceof NoRouteError ? skipItem(name, item, e.message) : Promise.reject(e)));
+        // 598 "… not found on this map" at action time is a vanished target too (an event tile gone between the look
+        // and the action): the item runs once more and picks its tile again; a second 598 in a row skips it.
+        let vanished = false;
+        const done = await runItem(name, ch, item).catch((e) => {
+          if (e instanceof NoRouteError) return skipItem(name, item, e.message);
+          if (!(e instanceof ApiError) || e.code !== 598) return Promise.reject(e);
+          vanished = true;
+          if (lost === item.id) return skipItem(name, item, `${e.message} — twice in a row (code 598)`);
+          lost = item.id;
+          log(name, `${queueItemText(item)}: ${e.message} (code 598) — looking again`, "info");
+          return false;
+        });
+        if (!vanished) lost = undefined;
         busy = 0;
         if (done) {
           const cur = queues.value[name];
@@ -1487,7 +1544,7 @@ async function runLoop(name: string): Promise<void> {
         // blip doesn't strand the character. ⏹ stays responsive.
         if (isOutage(e)) {
           log(name, `network trouble — retrying in 60s (${(e as Error).message})`, "bad");
-          setQueue(name, { note: "network trouble — waiting" });
+          setQueue(name, { note: OUTAGE_NOTE });
           for (let i = 0; i < 60 && !stopFlags.has(name); i++) await sleep(1000);
           continue;
         }
@@ -1516,6 +1573,7 @@ async function runLoop(name: string): Promise<void> {
 /** 🔁: a finished item goes to the back of the queue (progress wiped) instead of away. */
 export function setRepeat(name: string, on: boolean): void {
   if (!IS_SERVER) return rpc("setRepeat", [name, on]);
+  if (refused(name)) return;
   if (!queues.value[name]) queues.value = { ...queues.value, [name]: { items: [], running: false } };
   setQueue(name, { repeat: on || undefined });
 }
@@ -1527,6 +1585,7 @@ export function setRepeat(name: string, on: boolean): void {
  */
 export function queuePinTraining(name: string): void {
   if (!IS_SERVER) return rpc("queuePinTraining", [name]);
+  if (refused(name)) return;
   const ch = characters.value[name];
   for (const skill of skillPins.value[name] ?? []) {
     // Combat resets into the set vs today's pick; the train item re-swaps if the pick moves.
@@ -1544,13 +1603,14 @@ export function queuePinTraining(name: string): void {
  *  old items wait behind the infinite helper until the user removes it). */
 export function queueAssist(crafter: string, skill: string): void {
   if (!IS_SERVER) return rpc("queueAssist", [crafter, skill]);
+  if (refused(crafter)) return;
   // Helpers end where the crafter's own train item ends (a "to Lv N" target), else never.
   const own = queues.value[crafter]?.items.find((i) => i.kind === "train" && i.skill === skill && !i.for);
   // A "+N levels" item that hasn't started yet has no `from`: count from the crafter's level now, not 0.
   const lv = characters.value[crafter] ? skillLevel(characters.value[crafter], skill) : 0;
   const toLevel = own?.kind === "train" ? (own.levels ? (own.from ?? lv) + own.levels : own.toLevel) : 0;
   for (const name of Object.keys(characters.value)) {
-    if (name === crafter) continue;
+    if (name === crafter || isOwned(name)) continue; // a character the planner owns is nobody's helper
     stopQueue(name);
     addItem(name, withId({ kind: "train", skill, toLevel, gear: true, for: crafter }), 0);
     startQueue(name);
@@ -1560,6 +1620,11 @@ export function queueAssist(crafter: string, skill: string): void {
 /** Start executing the queue from its head. */
 export function startQueue(name: string): void {
   if (!IS_SERVER) return rpc("startQueue", [name]);
+  if (!refused(name)) runQueue(name);
+}
+
+/** startQueue without the owned-queue guard: the planner's own start (state/planner.ts). Not exposed. */
+export function runQueue(name: string): void {
   const q = queues.value[name];
   if (!q) return;
   // ▶ pressed while the stopped loop is still draining its final action:
@@ -1591,6 +1656,11 @@ export function startQueue(name: string): void {
  */
 export function stopQueue(name: string): void {
   if (!IS_SERVER) return rpc("stopQueue", [name]);
+  if (!refused(name)) haltQueue(name);
+}
+
+/** stopQueue without the owned-queue guard: the planner's take-over and hand-back. Not exposed. */
+export function haltQueue(name: string): void {
   if (!queues.value[name]?.running) return;
   stopFlags.add(name);
   setQueue(name, { running: false, note: undefined });
@@ -1619,8 +1689,12 @@ export function resumeQueue(): void {
 // Daily offerings: at 00:05 UTC (just after the midnight-UTC rotation — expires_at) every running
 // queue does today's seasonal offerings first, then its old head resumes. A boot
 // after 00:05 catches up once (the marker persists the last 00:05 handled).
+// A character the planner owns gets the planner's `offering` interrupt instead (set by state/planner.ts, which
+// queue.ts must not import).
 const OFFERINGS_DAILY_KEY = "ammo:v1:offeringsDaily";
 let offeringsTimer: ReturnType<typeof setTimeout> | undefined;
+let ownedOfferings: ((name: string) => void) | undefined;
+export const setOwnedOfferings = (fn: (name: string) => void): void => void (ownedOfferings = fn);
 function scheduleOfferings(): void {
   clearTimeout(offeringsTimer);
   const now = Date.now();
@@ -1629,8 +1703,9 @@ function scheduleOfferings(): void {
   const last = today <= now ? today : today - 86_400_000; // the most recent 00:05 UTC
   if (localStorage.getItem(OFFERINGS_DAILY_KEY) !== String(last)) {
     localStorage.setItem(OFFERINGS_DAILY_KEY, String(last));
+    for (const name of Object.keys(characters.value)) if (isOwned(name)) ownedOfferings?.(name);
     for (const [name, q] of Object.entries(queues.value)) {
-      if (!q.running || q.items[0]?.kind === "offering") continue;
+      if (isOwned(name) || !q.running || q.items[0]?.kind === "offering") continue;
       queueOfferings(name);
       log(name, "daily seasonal offerings — then back to the queue", "info");
     }
@@ -1641,6 +1716,7 @@ function scheduleOfferings(): void {
 /** Today's offerings AHEAD of the head, even a running ∞ one (the loop re-reads it every step); a 🔁-recycled copy further back goes. */
 export function queueOfferings(name: string): void {
   if (!IS_SERVER) return rpc("queueOfferings", [name]);
+  if (refused(name)) return;
   const q = queues.value[name];
   if (!q) return addItem(name, withId({ kind: "offering" }));
   if (q.items[0]?.kind === "offering") return;
