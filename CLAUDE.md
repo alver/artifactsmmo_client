@@ -12,14 +12,15 @@ A local client for [ArtifactsMMO](https://play.artifactsmmo.com/) (TypeScript + 
 npm start          # vite build, then scripts/serve.mjs runs the service on http://localhost:5173/ (serves dist/)
 npm run dev        # serve.mjs --watch: Vite (HMR) inside the service; engine .ts edits restart the service
 npm run build      # UI production build → dist/
-npm run typecheck  # tsc --noEmit
+npm run typecheck  # tsc --noEmit (src/ and scripts/)
+npm run check      # every scripts/check-*.mts + every runner scenario, offline, ~3 s; `npm run check -- <name>` runs one and prints its action trace
 npm run assets     # bash scripts/download-assets.sh — re-download public/assets/ icons+tiles
 node scripts/fetch-data.mjs       # new season: re-snapshot public/data/*.json from the live API
 node scripts/fetch-map-assets.mjs # then fetch new map tiles (+ npm run assets for new icons)
 npm run atlas      # ~5 min offline sim sweep → public/data/atlas.json (the Roadmap tab's data); re-run after fetch-data or a sim/BIS change
 ```
 
-There is **no test runner** in this project. Use `npm run typecheck` + `npm run build` as the correctness gate. To smoke-test the service without disturbing the real one, run it on a spare port with throwaway storage: `PORT=5199 node --import tsx --experimental-webstorage --localstorage-file=<scratch>/test.db --disable-warning=ExperimentalWarning src/server/main.ts` (it syncs once with the `.env` token; with no queues it makes no actions), then curl `/events` + `/rpc` or drive it with puppeteer-core.
+There is no test framework. The correctness gate is `npm run typecheck` + `npm run check` (+ `npm run build` for UI changes). `npm run check` (`scripts/check.mts`) runs each check in its own Node process with fresh scratch storage in the temp dir — never `.ammo/`. **Runner scenarios** (`scripts/scenarios/*.mts`, API in `scripts/harness/index.mts`) boot the real engine through `boot()` against a fake game behind `fetch` (`scripts/harness/fake.mts`: a world of characters + bank, actions with the game's response shapes and error codes, fault injection) on a virtual clock (`scripts/harness/clock.mts`), run queues to the end and assert on the world, the action trace and the queue; every scenario ends with a mirror check (engine state = the fake's world). A scenario marked `known: "<audit ref>"` reproduces a recorded defect: it must fail ("known defect reproduced"), and the run fails once it passes until the marker is removed. The fake has no XP/levels and no task / recycle / use / offering actions — an unimplemented call ends the scenario with an error. To smoke-test the service without disturbing the real one, run it on a spare port with throwaway storage: `PORT=5199 node --import tsx --experimental-webstorage --localstorage-file=<scratch>/test.db --disable-warning=ExperimentalWarning src/server/main.ts` (it syncs once with the `.env` token; with no queues it makes no actions), then curl `/events` + `/rpc` or drive it with puppeteer-core.
 
 **Dev forensics**: the service appends a trace of every API action (method, path, body, status), queue note change, head-item transition, activity-log entry, service start and failed rpc to `logs/dev.log` (gitignored; `src/lib/devlog.ts`, sink installed by `server/main.ts`; a per-process tag distinguishes service starts). Read it to debug runner behavior post-hoc — it is how the potion-brew bank livelock was caught.
 

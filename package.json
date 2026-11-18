@@ -9,6 +9,7 @@
     "start": "vite build && node scripts/serve.mjs",
     "build": "vite build",
     "typecheck": "tsc --noEmit",
+    "check": "node --import tsx scripts/check.mts",
     "assets": "bash scripts/download-assets.sh",
     "atlas": "node --import tsx --experimental-webstorage --localstorage-file=.ammo/atlas.db --disable-warning=ExperimentalWarning scripts/atlas.mts"
   },
