@@ -115,7 +115,7 @@ function start(name: string): void {
       plog(name, `flapping — ${recent.map((s) => s.key).join(", ")}`);
       const r = rank(name, worldOf(now));
       const blocked = { ...planner.value.blocked };
-      for (const c of [...r.objectives, ...r.levels, ...r.fillers]) blocked[`${c.target.key}@${name}`] = { until: now + BRAKE_HOLD, why: "flapping" };
+      for (const c of [...r.objectives, ...r.levels, ...r.supply, ...r.fillers]) blocked[`${c.target.key}@${name}`] = { until: now + BRAKE_HOLD, why: "flapping" };
       put({ blocked });
       recent.length = 0;
     }
@@ -150,7 +150,9 @@ function measure(r: Running, ch: Character): { counter: number; units: number } 
   for (const it of mine) counter += ("done" in it ? it.done : 0) + (it.kind === "buy" && it.bought ? 1 : 0);
   // A train step: every XP of the character, not only the lane's — sourcing a batch's materials gathers or hunts first.
   if (w.kind === "train") for (const [k, v] of Object.entries(ch)) if (k.endsWith("xp") && !k.endsWith("max_xp") && typeof v === "number") counter += v;
-  const last = mine.find((it) => it.id === `pl:${r.step.key}:${r.n - 1}`);
+  // the step's last item that counts: a supply step ends in a deposit-all, which has none (task 009)
+  const counts = itemsOf(r.step, ch).filter((it) => it.kind !== "deposit-all").pop()?.id;
+  const last = mine.find((it) => it.id === counts);
   const units =
     w.kind === "train" ? (levelOf(ch, w.lane) > (r.from ?? Infinity) ? 1 : 0)
     : !last ? r.units
@@ -176,7 +178,7 @@ function observe(name: string, r: Running, now: number): Running {
     const L = levelOf(ch, lv.lane);
     if (L > lv.level) {
       if (lv.full && L === lv.level + 1) {
-        const est = levelHoursEstimate(lv.lane, lv.level, worldOf(now));
+        const est = levelHoursEstimate(lv.lane, lv.level, worldOf(now), ch); // task 009: combat is priced per character
         addSample(name, `level:${lv.lane}:${lv.level}`, lv.run / 3600, 5, est, 3600); // one level is one whole sample
       }
       lv = { lane: lv.lane, level: L, run: 0, full: L === lv.level + 1 };

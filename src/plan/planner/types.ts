@@ -29,12 +29,12 @@ export type Work =
 export interface Input {
   code: string;
   per: number;
-  source: Work; // a gather or a kill; anything else counts as "stock only"
+  source: Work; // a gather or a kill; a craft = made by another recipe (supply.ts opens it)
   gates: Gate[];
 }
 
 export interface Target {
-  key: string;            // "ach:<code>:<objective index>" | "lvl:<lane>:<to>"
+  key: string;            // "ach:<code>:<objective index>" | "lvl:<lane>:<to>" | "src:<code>" | "mat:<code>" | "gear:<code>"
   achievement?: string;
   objective?: number;
   points: number;         // 0 for a level target
@@ -45,7 +45,8 @@ export interface Target {
   filler: boolean;
 }
 
-export type Answer = "objective" | "level" | "filler" | "fallback";
+/** "supply": a `src:` / `mat:` / `gear:` step — material or a gear piece for an open parent (task 009). */
+export type Answer = "objective" | "level" | "filler" | "fallback" | "supply";
 
 export interface Place { x: number; y: number; layer: string }
 
@@ -66,6 +67,9 @@ export interface Step {
   sources?: Source[];     // field work before a craft or a buy
   withdraw?: Record<string, number>; // bank stock the step's items will take (reservations, stock.ts)
   until?: number;         // the work is on an event tile that expires then
+  wear?: Record<string, string>; // slot → code: the set its job wears, out of the others' pool while it is not on yet (stock.ts)
+  parent?: string;        // a supply step: the key of the parent it is for (the best-scoring one)
+  for?: string;           // a gear step: the character the piece is made for
 }
 
 export interface PlannerConfig {
@@ -80,6 +84,7 @@ export interface PlannerConfig {
   offeringMin: number;                    // minutes one offering takes (design A.3, a guess)
   craftK: number;                         // × the atlas's craftTrain hours for the three gear crafting skills, up to 40
   craftAbove40: number;                   // hours a level of those skills above 40 (guess, design A.5)
+  risk: "safe" | "win";                   // a planned fight: a safe win (default), or any win (task 009's replay row D only)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;

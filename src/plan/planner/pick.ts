@@ -5,12 +5,14 @@
 // questions (win instead of safe win; the highest node instead of XP per hour).
 
 import { catalog, monster as monsterOf } from "../../catalog";
-import { fightXp } from "../xp";
-import { actionSec } from "./cost";
+import { CRAFT_SEC, fightXp } from "../xp";
+import { actionSec, levelOf, perOf } from "./cost";
 import { nearestSpot, placeOf, safeWin } from "./reach";
-import { gatherXp } from "./xp";
+import { available } from "./stock";
+import { inputsOf } from "./targets";
+import { craftXpOf, gatherXp } from "./xp";
 import type { Character } from "../../types/api";
-import type { Place, World } from "./types";
+import type { Input, Lane, Place, World } from "./types";
 
 export interface MonsterPick { monster: string; xp: number; sec: number; rate: number; place: Place; until?: number }
 
@@ -55,6 +57,37 @@ export function pickNode(skill: string, level: number, ch: Character, world: Wor
     const xph = (xp / sec) * 3600 + (any ? r.level / 1000 : 0); // the fallback: XP first, then the highest node
     const drop = [...r.drops].sort((a, b) => a.rate - b.rate)[0]?.code ?? r.code;
     if (!best || xph > best.xph || (xph === best.xph && r.code < best.resource)) best = { resource: r.code, drop, xp, sec, xph, place: spot.place, until: spot.until };
+  }
+  return best;
+}
+
+export interface RecipePick { code: string; inputs: Input[]; xp: number; sec: number; xph: number }
+
+/**
+ * Section 5 (task 009): the recipe of a gathering skill with the best XP per hour that the character can feed —
+ * every input from the bank it may plan with, or from a field source whose gates it meets (one level deep, gathered
+ * inside the step). Seconds per run: 5 s plus each input's field seconds, nothing for what the bank holds for
+ * about a chunk of runs. For a lane whose nodes give no XP (alchemy 12–19).
+ */
+export function pickRecipe(lane: Lane, ch: Character, world: World): RecipePick | undefined {
+  const S = levelOf(ch, lane);
+  let best: RecipePick | undefined;
+  for (const it of catalog().items.values()) {
+    const r = it.craft;
+    if (!r || r.skill !== lane || r.level > S) continue;
+    const xp = craftXpOf(it.code, S);
+    const inputs = xp > 0 ? inputsOf(it.code) : undefined;
+    if (!inputs || typeof inputs === "string" || !nearestSpot(placeOf(ch), "workshop", lane, world)) continue;
+    let sec = CRAFT_SEC;
+    for (const i of inputs) {
+      // shortcut: an input counts as paid for when the bank holds 100 runs of it; upgrade if a pick flips on stock
+      const bank = available(i.code, world, ch.name) >= i.per * 100;
+      const field = i.source.kind !== "craft" && i.gates.every((g) => g.kind === "level" ? levelOf(ch, g.lane) >= g.level : g.kind === "win" ? safeWin(ch, world, g.monster) : false);
+      if (!bank && !field) { sec = Infinity; break; }
+      if (!bank) sec += i.per * actionSec(i.source, ch, world) * perOf(i.source);
+    }
+    const xph = (xp / sec) * 3600;
+    if (xph > 0 && (!best || xph > best.xph || (xph === best.xph && it.code < best.code))) best = { code: it.code, inputs, xp, sec, xph };
   }
   return best;
 }

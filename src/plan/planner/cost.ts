@@ -5,13 +5,15 @@
 // craftAbove40 above for the three gear crafting skills). Pure.
 
 import { atlas } from "../../catalog/atlas";
-import { item, monster as monsterOf, resource as resourceOf } from "../../catalog";
+import { catalog, item, monster as monsterOf, resource as resourceOf } from "../../catalog";
 import { killSeconds } from "../bis";
-import { CRAFT_SEC, autoRecyclable, gatherSec } from "../xp";
-import { GATHER_LOG, GEAR_CRAFT, KILL_LOG, TASK_SEC } from "./config";
+import { CRAFT_SEC, autoRecyclable, fightXp, gatherSec } from "../xp";
+import { GATHER_LANES, GATHER_LOG, GEAR_CRAFT, KILL_LOG, TASK_SEC } from "./config";
 import { craftXpOf } from "./xp";
-import { CITY, bankSec, fightRec, gatherCut, nearestSpot, placeOf } from "./reach";
-import { atlasKillSec, perUnit } from "./targets";
+import { CITY, bankSec, chAt, fightRec, firstWin, gatherCut, nearestSpot, placeOf, planRec } from "./reach";
+import { pickMonster, pickNode, pickRecipe } from "./pick";
+import { rolesFor } from "./roles";
+import { atlasKillSec, perUnit, sourceFor } from "./targets";
 import type { Character } from "../../types/api";
 import type { Costs, Lane, Target, Work, World } from "./types";
 
@@ -54,6 +56,10 @@ function walkPerAction(ch: Character, world: World, type: string, code: string, 
   return Number.isFinite(bank) ? (2 * bank) / perBag : 0;
 }
 
+/** The bank trips' share of one kill of this monster. */
+export const killWalk = (ch: Character, world: World, monster: string): number =>
+  walkPerAction(ch, world, "monster", monster, monsterOf(monster)?.drops ?? []);
+
 /** Seconds one kill or one gather takes (measured, else the estimate). Infinity = not a work of actions. */
 export function actionSec(w: Work, ch: Character, world: World): number {
   const m = measured(world.costs, costKey(w));
@@ -61,7 +67,7 @@ export function actionSec(w: Work, ch: Character, world: World): number {
   if (w.kind === "kill") {
     const mon = monsterOf(w.monster);
     if (!mon) return Infinity;
-    const f = fightRec(ch, world, w.monster)?.forecast;
+    const f = planRec(ch, world, w.monster)?.forecast.win ? fightRec(ch, world, w.monster)?.forecast : undefined; // reach.ts safeWin's first look
     const fight = f?.win ? killSeconds(f) : atlasKillSec(w.monster);
     return fight * KILL_LOG + walkPerAction(ch, world, "monster", w.monster, mon.drops);
   }
@@ -80,8 +86,18 @@ export function perOf(w: Work): number {
   return 1;
 }
 
+/** Seconds for one unit of `code` from scratch by this character: its field source, else its recipe opened
+ *  (5 s a run plus the inputs), as deep as the recipes go. Infinity: no field source and no recipe (gold, coins). */
+export function codeSec(code: string, ch: Character, world: World, depth = 0): number {
+  const s = sourceFor(code);
+  if (typeof s !== "string") return actionSec(s.work, ch, world) * perOf(s.work);
+  const r = item(code)?.craft;
+  if (!r || depth > 4) return Infinity;
+  return (CRAFT_SEC + r.items.reduce((t, g) => t + g.quantity * codeSec(g.code, ch, world, depth + 1), 0)) / Math.max(1, r.quantity);
+}
+
 /** Seconds per unit of a target's work by this character, with no stock counted: a craft or a buy sources
- *  every material in the field through its input's source. */
+ *  every material in the field through its input's source (a material made by a craft: its recipe opened). */
 export function unitSec(t: Pick<Target, "work" | "inputs">, ch: Character, world: World): number {
   const w = t.work;
   switch (w.kind) {
@@ -90,14 +106,16 @@ export function unitSec(t: Pick<Target, "work" | "inputs">, ch: Character, world
       const m = measured(world.costs, costKey(w));
       if (m != null) return m;
       let s = w.kind === "craft" ? CRAFT_SEC / Math.max(1, item(w.code)?.craft?.quantity ?? 1) : 5;
-      for (const i of t.inputs ?? []) s += i.per * actionSec(i.source, ch, world) * perOf(i.source);
+      for (const i of t.inputs ?? []) s += i.per * (i.source.kind === "craft" ? codeSec(i.code, ch, world) : actionSec(i.source, ch, world) * perOf(i.source));
       return s;
     }
     case "task": return measured(world.costs, "task") ?? TASK_SEC;
     case "recycle": {
-      const lane = recycleLane(ch), L = levelOf(ch, lane);
+      const lane = recycleLane(ch, world);
+      if (!lane) return Infinity;
+      const L = levelOf(ch, lane);
       const { recycled } = craftsPerLevel(lane, L);
-      return recycled ? (hoursToLevel(lane, L, L + 1, world) * 3600) / recycled : Infinity;
+      return recycled ? (hoursToLevel(lane, L, L + 1, world, ch) * 3600) / recycled : Infinity;
     }
     case "favor": return world.config.offeringMin * 60;
     case "sell": return 60;
@@ -105,12 +123,10 @@ export function unitSec(t: Pick<Target, "work" | "inputs">, ch: Character, world
   }
 }
 
-/** The gear crafting skill whose training recycles for this character: its highest one whose training recipe
- *  automation recycles (cooking's food is not recyclable); GEAR_CRAFT order on a tie. */
-export const recycleLane = (ch: Character): Lane => {
-  const by = [...GEAR_CRAFT].sort((a, b) => levelOf(ch, b) - levelOf(ch, a));
-  return by.find((l) => craftsPerLevel(l, levelOf(ch, l)).recycled > 0) ?? by[0];
-};
+/** Task 009: the recycling filler trains the character's own gear crafting role, and only when its training
+ *  recipe is one automation recycles; a character without one of the three roles has no recycling filler. */
+export const recycleLane = (ch: Character, world: World): Lane | undefined =>
+  (rolesFor(world)[ch.name] ?? []).find((l) => GEAR_CRAFT.includes(l) && craftsPerLevel(l, levelOf(ch, l)).recycled > 0);
 
 /** Recipe runs one level of craft training takes (the atlas's training recipe), and how many automation recycles. */
 export function craftsPerLevel(lane: Lane, L: number): { crafts: number; recycled: number; code?: string } {
@@ -122,31 +138,89 @@ export function craftsPerLevel(lane: Lane, L: number): { crafts: number; recycle
   return { crafts, recycled: autoRecyclable(row.code) ? crafts : 0, code: row.code };
 }
 
-/** Estimated hours for one level of a lane at level L (the atlas). */
-export function levelHoursEstimate(lane: Lane, L: number, world: World): number {
+/**
+ * Estimated hours for one level of a lane at level L, for this character (task 009 section 2):
+ * - combat: the XP that level needs over the XP per hour of the monster pickMonster gives the character at that
+ *   level (+5 max HP a level, the gear the level allows) with the pool it has now; no safe XP monster → ∞;
+ * - a gathering lane: the atlas; ∞ where no reachable node gives XP and no recipe of the skill does (section 5);
+ * - the three gear crafting skills: craftTrain × craftK up to 40, craftAbove40 above; cooking: the atlas.
+ */
+export function levelHoursEstimate(lane: Lane, L: number, world: World, ch: Character): number {
   const a = atlas();
   if (!a || L >= 50) return Infinity;
   if (lane === "combat") {
-    const t = a.path[L - 1]?.t;
-    return t?.[1]?.hours ?? t?.[2]?.hours ?? t?.[0]?.hours ?? Infinity;
+    const own = (c: Character): number => ((p) => (p ? p.xp / p.sec : 0))(pickMonster(c, world, NO_BONUS));
+    const rate = L === ch.level ? own(ch) : L < ch.level ? own(chAt(ch, L)) : roadRate(ch, world, L);
+    return rate > 0 ? (a.xpNeeded[L] ?? Infinity) / (rate * 3600) : Infinity;
   }
   if (GEAR_CRAFT.includes(lane)) {
     if (L >= 40) return world.config.craftAbove40;
     const c = a.craftTrain[lane]?.[L - 1];
     return c ? c.hours * world.config.craftK : Infinity;
   }
+  if (GATHER_LANES.includes(lane)) {
+    const at = { ...ch, [`${lane}_level`]: L } as Character;
+    if (!pickNode(lane, L, at, world) && !pickRecipe(lane, at, world)) return Infinity;
+  }
   return a.gatherTrain[lane]?.[L - 1]?.hours ?? a.craftTrain[lane]?.[L - 1]?.hours ?? Infinity;
 }
+const NO_BONUS = new Set<string>();
 
-/** Hours to bring a lane from `from` to `to`: measured `level:<lane>:<L>` where there are 3 samples, else the atlas. */
-export function hoursToLevel(lane: Lane, from: number, to: number, world: World): number {
-  let h = 0;
-  for (let L = from; L < to; L++) h += measured(world.costs, `level:${lane}:${L}`) ?? levelHoursEstimate(lane, L, world);
+const ROAD = 10; // the levels above its own a character's road is priced for: as far as winLevel looks
+const roadMemo = new WeakMap<World, Map<string, { code: string; at: number; sec: number }[]>>();
+/**
+ * pickMonster's XP per second at a level L above the character's own, with the pool it has now: the same candidates
+ * and price, the planning-grade solve (reach.ts planRec) — the level is priced, nothing is worn for it. Per monster
+ * the level at which it becomes a win (winLevel's bisection over the next ROAD levels) and the kill seconds solved
+ * there; at L the best of the monsters won by then.
+ * shortcut: the kill seconds of the first winning level hold for the levels above it (+5 HP a level); upgrade when a
+ * measured level sample says the road is priced far off
+ */
+function roadRate(ch: Character, world: World, L: number): number {
+  let byName = roadMemo.get(world);
+  if (!byName) roadMemo.set(world, (byName = new Map()));
+  const k = `${ch.name}|${ch.level}`;
+  let road = byName.get(k);
+  if (!road) {
+    road = [];
+    const top = Math.min(50, ch.level + ROAD);
+    for (const m of catalog().monsters.values()) {
+      // shortcut: a monster above the road's top level is not looked at; upgrade if a fighter ever farms one 10 levels up
+      if (m.type === "boss" || m.type === "raid_boss" || m.level > top || fightXp(m.level, m.hp, m.type, ch.level + 1) <= 0) continue;
+      if (!nearestSpot(placeOf(ch), "monster", m.code, world)) continue;
+      const at = firstWin(ch, world, m.code);
+      if (at == null) continue;
+      const sec = measured(world.costs, `kill:${m.code}`) ?? killSeconds(planRec(chAt(ch, at), world, m.code)!.forecast) * KILL_LOG + killWalk(ch, world, m.code);
+      road.push({ code: m.code, at, sec });
+    }
+    byName.set(k, road);
+  }
+  let best = 0;
+  for (const r of road) {
+    const m = monsterOf(r.code)!;
+    if (r.at > L || m.level > L + 10) continue;
+    best = Math.max(best, fightXp(m.level, m.hp, m.type, L) / r.sec);
+  }
+  return best;
+}
+
+const lvMemo = new WeakMap<World, Map<string, number>>();
+/** Hours to bring a lane from `from` to `to`: measured `level:<lane>:<L>` where there are 3 samples, else the estimate. */
+export function hoursToLevel(lane: Lane, from: number, to: number, world: World, ch: Character): number {
+  let byKey = lvMemo.get(world);
+  if (!byKey) lvMemo.set(world, (byKey = new Map()));
+  const k = `${lane}|${ch.name}|${from}|${to}`;
+  let h = byKey.get(k);
+  if (h == null) {
+    h = 0;
+    for (let L = from; L < to && Number.isFinite(h); L++) h += measured(world.costs, `level:${lane}:${L}`) ?? levelHoursEstimate(lane, L, world, ch);
+    byKey.set(k, h);
+  }
   return h;
 }
 
 /** Character-hours a target still needs from this character at today's unit costs (no stock counted). */
 export function hoursOf(t: Target, ch: Character, world: World): number {
-  if (t.work.kind === "level") return hoursToLevel(t.work.lane, levelOf(ch, t.work.lane), t.work.to, world);
+  if (t.work.kind === "level") return hoursToLevel(t.work.lane, levelOf(ch, t.work.lane), t.work.to, world, ch);
   return (t.left * unitSec(t, ch, world)) / 3600;
 }

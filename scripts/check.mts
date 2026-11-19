@@ -13,7 +13,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const TIMEOUT_MS = 110_000; // real time, a backstop only — a livelock ends on a scenario's virtual limits
+// real time, a backstop only — a livelock ends on a scenario's virtual limits. Task 009: the planner's first week takes
+// about two minutes, its four replay rows (`npm run check -- planner`) several more.
+const TIMEOUT_MS = process.argv[2] ? 1_800_000 : 300_000;
 const PARALLEL = 4;
 
 const list = (dir: string, re: RegExp): string[] => readdirSync(path.join(ROOT, dir)).filter((f) => re.test(f)).sort().map((f) => `${dir}/${f}`);

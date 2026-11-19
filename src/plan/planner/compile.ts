@@ -27,16 +27,28 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
   const reset = (x: Work): QueueItemInput => ({ kind: "gear", job: jobOf(x), reset: true });
   const sources = (step.sources ?? []).map((s) => fieldItem(s.work, s.times));
   let out: QueueItemInput[];
+  // Task 009: a supply step (src:, mat:, gear:) is [gear reset, the field item or the craft, deposit-all] — what it
+  // makes is in the bank when it ends; a src: step's units are actions. The craft item takes its materials from the
+  // bank. A mat: step that is a trade (hard leather for cowhide) is [withdraw the currency, buy, deposit-all].
+  const supply = step.as === "supply";
   switch (w.kind) {
     case "kill": case "gather":
-      out = [reset(w), fieldItem(w, Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9)))];
+      out = [reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9))), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
       break;
     case "craft": {
+      if (supply) {
+        out = [reset(w), { kind: "craft", code: w.code, quantity: step.units, done: 0 }, { kind: "deposit-all" }];
+        break;
+      }
       const tail: QueueItemInput[] = [...sources, { kind: "craft", code: w.code, quantity: step.units, done: 0 }];
       out = tail.length < 4 ? [reset(step.sources?.[0]?.work ?? w), ...tail] : tail;
       break;
     }
     case "buy": {
+      if (supply) { // a trade for a material: withdraw the currency, buy, bank what was bought
+        out = [{ kind: "withdraw", code: w.currency, quantity: w.price * step.units }, { kind: "buy", code: w.code, quantity: step.units, npc: w.npc }, { kind: "deposit-all" }];
+        break;
+      }
       const tail: QueueItemInput[] = [...sources, { kind: "withdraw", code: w.currency, quantity: w.price * step.units }, { kind: "buy", code: w.code, quantity: step.units, npc: w.npc }];
       out = sources.length && tail.length < 4 ? [reset(step.sources![0].work), ...tail] : tail;
       break;

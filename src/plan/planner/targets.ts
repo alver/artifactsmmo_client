@@ -54,8 +54,15 @@ function killGates(code: string): Gate[] | string {
 
 const staticOnly = (g: Gate[]): boolean => g.every((x) => x.kind === "level" || x.kind === "win");
 
-/** Where more of a material comes from in the field: a gather or a kill (one level; never a craft, never gold). */
-function sourceFor(code: string): { work: Work; gates: Gate[] } | string {
+const sourceMemo = new Map<string, { work: Work; gates: Gate[] } | string>();
+/** Where more of a material comes from in the field: a gather or a kill (one level; never a craft, never gold).
+ *  A string: none, with the reason. Static per catalog, so memoised for good (bounded by the item catalog). */
+export function sourceFor(code: string): { work: Work; gates: Gate[] } | string {
+  let s = sourceMemo.get(code);
+  if (s === undefined) sourceMemo.set(code, (s = fieldSource(code)));
+  return s;
+}
+function fieldSource(code: string): { work: Work; gates: Gate[] } | string {
   const opts: { work: Work; gates: Gate[]; est: number }[] = [];
   for (const r of catalog().resources.values()) {
     if (!r.drops.some((d) => d.code === code)) continue;
@@ -74,6 +81,21 @@ function sourceFor(code: string): { work: Work; gates: Gate[] } | string {
   if (opts[0]) return opts[0];
   if (code === "tasks_coin") return "tasks coins come from tasks";
   return item(code)?.craft ? `${code} is made by another craft` : `no field source for ${code}`;
+}
+
+/** A recipe's inputs: each material with its field source, or — made by another craft — `source` a craft work
+ *  (supply.ts opens it through the bank, task 009 section 3). A string: a material with neither, and why. */
+export function inputsOf(code: string): Input[] | string {
+  const r = item(code)?.craft;
+  if (!r) return `${code} has no recipe`;
+  const inputs: Input[] = [];
+  for (const ing of r.items) {
+    const s = sourceFor(ing.code);
+    if (typeof s !== "string") inputs.push({ code: ing.code, per: ing.quantity / r.quantity, source: s.work, gates: s.gates });
+    else if (item(ing.code)?.craft) inputs.push({ code: ing.code, per: ing.quantity / r.quantity, source: { kind: "craft", code: ing.code }, gates: [] });
+    else return `material ${ing.code}: ${s}`;
+  }
+  return inputs;
 }
 
 interface Static { work: Work; gates: Gate[]; inputs?: Input[] }
@@ -113,13 +135,8 @@ function staticOf(o: AchievementObjectiveProgress): Static | string {
       if (!r) return `${t} has no recipe`;
       const g = placeGates("workshop", r.skill);
       if (typeof g === "string") return g;
-      const inputs: Input[] = [];
-      for (const ing of r.items) {
-        const s = sourceFor(ing.code);
-        if (typeof s === "string") return `material ${ing.code}: ${s}`;
-        inputs.push({ code: ing.code, per: ing.quantity / r.quantity, source: s.work, gates: s.gates });
-      }
-      if (inputs.length > 3) return `${inputs.length} materials to source — more than a step of four items holds`;
+      const inputs = inputsOf(t);
+      if (typeof inputs === "string") return inputs;
       return { work: { kind: "craft", code: t }, gates: [{ kind: "level", lane: r.skill as Lane, level: r.level }, ...g], inputs };
     }
     case "npc_buy": {

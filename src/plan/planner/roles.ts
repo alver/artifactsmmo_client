@@ -7,10 +7,26 @@
 //     woodcutting 35: the Strange and Magic Apparitions).
 //   - config.roles pins a specialist; a pinned skill is not computed.
 
+//   - Task 009: DEFAULTS.roles pins every role of this fleet (config.ts), so nothing here moves with levels for it;
+//     the rule stays for a fleet without pins (the made-up worlds).
+
 import { CRAFT_LANES, GATHER_LANES } from "./config";
 import { levelOf } from "./cost";
+import { targetsOf } from "./targets";
 import type { Character } from "../../types/api";
-import type { Lane, PlannerConfig, Target } from "./types";
+import type { Lane, PlannerConfig, Target, World } from "./types";
+
+const memo = new WeakMap<World, Record<string, Lane[]>>();
+/** rolesOf for a world, once per world. */
+export function rolesFor(world: World): Record<string, Lane[]> {
+  let r = memo.get(world);
+  if (!r) memo.set(world, (r = rolesOf(world.characters, world.config, targetsOf(world))));
+  return r;
+}
+
+/** The holder of a crafting skill (the first character whose roles carry it). */
+export const crafterOf = (lane: string, world: World): string | undefined =>
+  world.characters.find((c) => rolesFor(world)[c.name]?.includes(lane as Lane))?.name;
 
 export function rolesOf(characters: Character[], config: PlannerConfig, targets: Target[]): Record<string, Lane[]> {
   const out: Record<string, Lane[]> = Object.fromEntries(characters.map((c) => [c.name, ["combat"] as Lane[]]));

@@ -21,13 +21,26 @@ export const DEFAULTS: PlannerConfig = {
   first: [],
   weight: {},
   filler: FILLER,
-  roles: {},
+  // Task 009: every role pinned, so roles never follow levels. The crafters as they are; the gathering specialists of
+  // design B.3; the third miner and the second and third woodcutter chosen once from the 2026-11-18 snapshot by
+  // rolesOf's rule (level, then fewer lanes, then account order) — scripts/check-planner.mts prints that choice.
+  roles: {
+    First: { craft: ["cooking"], gather: ["fishing", "mining", "woodcutting"] },
+    Second: { craft: ["weaponcrafting"], gather: ["woodcutting"] },
+    Third: { craft: ["gearcrafting"], gather: ["alchemy"] },
+    Fourth: { craft: ["jewelrycrafting"], gather: ["mining", "woodcutting"] },
+    Fifth: { gather: ["mining"] },
+  },
   on: { Fifth: true }, // task 008: one character for a day of real play; 010 turns the other four on
   offeringsPerDay: 10, // measured 2026-11-17 and 11-18 (report 006); the cap is 15
   offeringMin: 20,
   craftK: 0.1,
   craftAbove40: 60,
+  risk: "safe",
 };
+
+/** Gear by need (task 009 section 4): make it, then do the work, in at most this share of the work's hours without it. */
+export const NEED_RATIO = 0.85;
 
 /** Log factors on the simulator's and the docs' unit times (design A.3, map E). */
 export const KILL_LOG = 1.3; // 51.9 s a fight with rest, food and bank trips against the 40 s the client assumes

@@ -1,19 +1,63 @@
 // The same rule played forward (design B.4, task 007 section 9): advance() applies a finished step by the
 // estimates, forward() runs decide/advance until a time, outlook() is what the Roadmap will show. Pure.
 //
-// What the forward model leaves out, on purpose: the XP of offerings (conservative); events (none spawn);
-// bank stock other than what a step withdraws (gathered and dropped items are not deposited); gear (none is
-// made — the fighters level on what the bank holds, task 010). A level-up adds 5 max HP (the atlas's 115 + 5·L).
+// Task 009 section 8: gear is worn — when a step starts, its set (Step.wear) leaves the bank and what the character
+// wore before goes back (a step with no set — craft, train, task, buy — returns it all); what a step gathers, drops
+// and crafts is in the bank when it ends, at the expected quantities (fractions kept); a craft takes its materials
+// from the bank, a buy its currency; a crafted gear piece is bank stock.
+// Left out, on purpose: the XP of offerings (conservative); events (none spawn); what a `train` step sources and
+// recycles inside its item; utility potions, runes, artifacts and bags (not worn by the model). A level-up adds 5 max
+// HP (the atlas's 115 + 5·L).
 
 import { atlas } from "../../catalog/atlas";
 import { item, monster as monsterOf, resource as resourceOf } from "../../catalog";
+import { STAT_CODES } from "../../sim/types";
+import { GEAR_SLOTS, slotCode } from "../../types/api";
 import { fightXp } from "../xp";
-import { craftsPerLevel, levelOf, perOf } from "./cost";
+import { craftsPerLevel, hoursToLevel, levelOf, perOf } from "./cost";
 import { decide, met } from "./decide";
+import { winLevel } from "./reach";
 import { isDone, targetsOf, unhandledOf } from "./targets";
 import { craftXpOf, gatherXp } from "./xp";
-import type { AccountAchievement, Character } from "../../types/api";
+import type { AccountAchievement, BankItem, Character, GearSlot } from "../../types/api";
 import type { Lane, Step, Work, World } from "./types";
+
+/** The slots the model wears (runes, artifacts, utilities and bags stay as they are). */
+const WORN: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag" && g !== "rune");
+
+/** A bank with `delta` added (code → quantity, may be fractional or negative). */
+export function bankPlus(bank: BankItem[], delta: Map<string, number>): BankItem[] {
+  if (!delta.size) return bank;
+  const out = bank.map((b) => (delta.has(b.code) ? { ...b, quantity: b.quantity + delta.get(b.code)! } : b));
+  for (const [code, q] of delta) if (!bank.some((b) => b.code === code)) out.push({ code, quantity: q });
+  return out.filter((b) => Math.abs(b.quantity) > 1e-9);
+}
+
+/** Section 6: the step's set goes on at its start, what was worn before goes back to the bank; stats follow the gear. */
+export function wear(world: World, step: Step): World {
+  const idx = world.characters.findIndex((c) => c.name === step.character);
+  if (idx < 0) return world;
+  const ch = { ...world.characters[idx] } as Character & Record<string, number | string>;
+  const delta = new Map<string, number>();
+  const add = (code: string, q: number): void => void delta.set(code, (delta.get(code) ?? 0) + q);
+  const stats = (code: string, sign: number): void => {
+    for (const e of item(code)?.effects ?? []) {
+      if (!STAT_CODES.has(e.code) || e.code === "initiative") continue;
+      const f = e.code === "hp" ? "max_hp" : e.code;
+      ch[f] = ((ch[f] as number) ?? 0) + sign * e.value;
+    }
+  };
+  for (const g of WORN) {
+    const now = slotCode(ch, g), want = step.wear?.[g] ?? "";
+    if (now === want) continue;
+    if (now) { add(now, 1); stats(now, -1); }
+    if (want) { add(want, -1); stats(want, 1); }
+    ch[`${g}_slot`] = want;
+  }
+  if (!delta.size) return world;
+  ch.hp = ch.max_hp as number;
+  return { ...world, characters: world.characters.map((c, i) => (i === idx ? (ch as Character) : c)), bank: bankPlus(world.bank, delta) };
+}
 
 const DAY = 864e5;
 
@@ -45,29 +89,36 @@ export function advance(world: World, step: Step): World {
   const xp = new Map<Lane, number>();
   const gain = (lane: Lane, n: number): void => void xp.set(lane, (xp.get(lane) ?? 0) + n);
   const odds = (d: { rate: number; min_quantity: number; max_quantity: number }): number => (d.min_quantity + d.max_quantity) / 2 / d.rate;
+  const delta = new Map<string, number>(); // the bank at the step's end
+  const put = (code: string, q: number): void => void delta.set(code, (delta.get(code) ?? 0) + q);
   const field = (w: Work, actions: number): void => {
     if (w.kind === "kill") {
       const m = monsterOf(w.monster);
       if (!m) return;
       add(`combat_kill:${m.code}`, actions);
-      for (const d of m.drops) add(`combat_drop:${d.code}`, actions * odds(d));
+      for (const d of m.drops) { add(`combat_drop:${d.code}`, actions * odds(d)); put(d.code, actions * odds(d)); }
       gain("combat", actions * fightXp(m.level, m.hp, m.type, ch.level));
     } else if (w.kind === "gather") {
       const r = resourceOf(w.resource);
       if (!r) return;
-      for (const d of r.drops) add(`gathering:${d.code}`, actions * odds(d));
+      for (const d of r.drops) { add(`gathering:${d.code}`, actions * odds(d)); put(d.code, actions * odds(d)); }
       gain(r.skill as Lane, actions * gatherXp(r.level, levelOf(ch, r.skill as Lane)));
     }
   };
   const w = step.work;
-  if (w.kind === "kill" || w.kind === "gather") field(w, step.units * perOf(w));
+  if (w.kind === "kill" || w.kind === "gather") field(w, step.as === "supply" ? step.units : step.units * perOf(w));
   for (const s of step.sources ?? []) field(s.work, s.times);
   if (w.kind === "craft") {
     const r = item(w.code)?.craft;
     add(`crafting:${w.code}`, step.units);
-    if (r) gain(r.skill as Lane, (step.units / Math.max(1, r.quantity)) * craftXpOf(w.code, levelOf(ch, r.skill as Lane)));
+    put(w.code, step.units);
+    if (r) {
+      const runs = step.units / Math.max(1, r.quantity);
+      for (const g of r.items) put(g.code, -g.quantity * runs);
+      gain(r.skill as Lane, runs * craftXpOf(w.code, levelOf(ch, r.skill as Lane)));
+    }
   }
-  if (w.kind === "buy") add(`npc_buy:${w.code}`, step.units);
+  if (w.kind === "buy") { add(`npc_buy:${w.code}`, step.units); put(w.code, step.units); put(w.currency, -w.price * step.units); }
   if (w.kind === "task") add("task:", step.units);
   add("favor:", offerings);
 
@@ -104,22 +155,18 @@ export function advance(world: World, step: Step): World {
     const b = { ...a, objectives };
     return isDone(b) ? { ...b, completed_at: new Date(end).toISOString() } : b;
   });
-  let bank = world.bank;
-  if (step.withdraw && Object.keys(step.withdraw).length) {
-    bank = bank.map((x) => (step.withdraw![x.code] ? { ...x, quantity: Math.max(0, x.quantity - step.withdraw![x.code]) } : x));
-  }
-  return { ...world, characters, achievements, bank, clock: { ...world.clock, [ch.name]: end } };
+  return { ...world, characters, achievements, bank: bankPlus(world.bank, delta), clock: { ...world.clock, [ch.name]: end } };
 }
 
 export interface Played { at: number; step: Step }
 export interface Forward { world: World; played: Played[]; completed: { code: string; points: number; at: number }[] }
 
 /**
- * decide → advance until `until`: the character free first decides next (ties in account order), seeing the
- * others' running steps as `current` and its own last one; a step is applied when it ends. Steps still running
- * at `until` are not counted.
+ * decide → wear → advance until `until`: the character free first decides next (ties in account order), seeing the
+ * others' running steps as `current` and its own last one; its set goes on at once; a step is applied when it ends.
+ * Steps still running at `until` are not counted. `onEnd` sees the world just after a step was applied.
  */
-export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void): Forward {
+export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void): Forward {
   const names = world.characters.map((c) => c.name);
   let w: World = { ...world, clock: { ...world.clock } };
   const free: Record<string, number> = Object.fromEntries(names.map((n) => [n, w.clock![n] ?? w.now]));
@@ -134,13 +181,16 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
     if (t >= until) break;
     if (pending[name]) {
       const before = new Set(w.achievements.filter(isDone).map((a) => a.code));
+      const prev = w;
       w = advance(w, pending[name]!);
+      onEnd?.(w, pending[name]!, prev);
       for (const a of w.achievements) if (isDone(a) && !before.has(a.code)) completed.push({ code: a.code, points: a.points, at: t });
     }
     const current = Object.fromEntries(names.map((n) => [n, n === name ? last[n] : pending[n]]));
     w = { ...w, now: t, current, clock: { ...w.clock, [name]: t } };
     const step = decide(name, w);
     onDecide?.(w, step);
+    w = wear(w, step);
     played.push({ at: t, step });
     last[name] = pending[name] = step;
     free[name] = finish(t, step.hours, w).end;
@@ -165,11 +215,17 @@ export function waitingOf(world: World): { achievement: string; points: number; 
     const ts = targets.filter((t) => t.achievement === a.code);
     const gs = ts.flatMap((t) => [...t.gates, ...(t.inputs ?? []).flatMap((i) => i.gates)]).filter((g) => !world.characters.some((c) => met(g, c, world)));
     const has = (k: string): boolean => gs.some((g) => g.kind === k);
+    // Section 2: a combat gate nobody can price (no safe XP monster on the way) and a win nobody reaches within ten
+    // levels wait for gear, not for a level.
+    const combatGear = gs.some((g) =>
+      (g.kind === "level" && g.lane === "combat" && g.level > top("combat") && !world.characters.some((c) => Number.isFinite(hoursToLevel("combat", c.level, g.level, world, c))))
+      || (g.kind === "win" && !world.characters.some((c) => winLevel(c, world, g.monster) != null)));
     const waits =
       has("layer") ? "another layer" : has("event") ? "an event" : has("group") ? "a group"
       : ts.some((t) => t.work.kind === "use") ? "use" : ts.every((t) => t.work.kind === "favor") ? "offerings"
-      : gs.some((g) => (g.kind === "level" && g.level > top(g.lane)) || (g.kind === "win" && g.level > top("combat"))) ? "a level"
-      : has("win") ? "gear (no safe win from the bank)" : ts.some((t) => t.filler) ? "filler not reached" : "does not fit";
+      : combatGear ? "gear (no safe win within ten levels)"
+      : gs.some((g) => g.kind === "level" && g.level > top(g.lane)) || has("win") ? "a level"
+      : ts.some((t) => t.filler) ? "filler not reached" : "does not fit";
     out.push({ achievement: a.code, points: a.points, waits });
   }
   return out;
@@ -184,6 +240,10 @@ export function outlook(world: World, n: number): Outlook {
   for (const p of r.played) if ((next[p.step.character] ??= []).length < n) next[p.step.character].push(p.step);
   return {
     next, expected: pointsOf(r.world), completed: r.completed,
-    notes: ["offerings count their favors and their time, not their XP", "events are not simulated", "no gear is made: the fighters level on what the bank holds"],
+    notes: [
+      "offerings count their favors and their time, not their XP",
+      "events are not simulated",
+      "gear is made by need and worn; what a step gathers, drops and crafts is in the bank when it ends (expected quantities)",
+    ],
   };
 }
