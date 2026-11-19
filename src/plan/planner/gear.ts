@@ -34,11 +34,11 @@ import { ownedQtyOf } from "../jobgear";
 import { CRAFT_SEC, fightXp } from "../xp";
 import { atlas } from "../../catalog/atlas";
 import { GATHER_LANES, KILL_LOG, NEED_RATIO } from "./config";
-import { actionSec, hoursOf, hoursToLevel, killWalk, levelHoursEstimate, levelOf, perOf } from "./cost";
+import { actionSec, hoursOf, hoursToLevel, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { isOn, met } from "./gates";
 import { pickMonster } from "./pick";
-import { gatherCut, nearestSpot, placeOf, planRec, potionPrice, safeWin, toolCut, wins } from "./reach";
+import { gatherCut, nearestSpot, placeOf, planRec, potionPrice, safeWin, setWisdom, toolCut, wins } from "./reach";
 import { crafterOf, rolesFor } from "./roles";
 import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
@@ -69,7 +69,7 @@ const solve = planRec;
 
 /** Seconds per kill as cost.ts prices it, for a solved set: the fight and the rest × the log, plus the bank trips. */
 const killSec = (ch: Character, world: World, monster: string, r: GearRecommendation): number =>
-  killSeconds(r.forecast, potionPrice(world)) * KILL_LOG + killWalk(ch, world, monster);
+  killSeconds(r.forecast, potionPrice(world, ch.name).price) * KILL_LOG + killWalk(ch, world, monster);
 
 interface Cands { fight: string[]; tools: string[]; rejected: Rejected[] }
 const candMemo = new WeakMap<World, Map<string, Cands>>();
@@ -94,7 +94,8 @@ export function candidatesOf(ch: Character, world: World): Cands {
     if (bill.out.length) { rejected.push({ for: ch.name, piece: it.code, why: bill.out.join("; ") }); continue; }
     if (!Number.isFinite(bill.hours)) {
       const who = [...bill.leaves.values()].filter((l) => l.kind === "src" && !Number.isFinite(fleetSec(l.work, l.gates, world))).map((l) => itemName(l.code));
-      rejected.push({ for: ch.name, piece: it.code, why: `nobody that is on sources ${who.join(", ")} yet` });
+      const road = bill.gated.filter((g) => !Number.isFinite(g.hours)).map((g) => `${g.lane} ${g.level} for ${itemName(g.code)}`); // task 012
+      rejected.push({ for: ch.name, piece: it.code, why: [who.length ? `nobody that is on sources ${who.join(", ")} yet` : "", road.length ? `no XP source on the way to ${road.join(", ")}` : ""].filter(Boolean).join("; ") });
       continue;
     }
     if (it.subtype === "tool") tools.push(it.code);
@@ -114,7 +115,7 @@ function makeHours(pieces: Map<string, number>, ch: Character, world: World): { 
   for (const [code, n] of pieces) {
     const r = item(code)!.craft!;
     demand.push(...recipeDemand(code, n));
-    crafts += (n * CRAFT_SEC) / 3600;
+    crafts += (n * CRAFT_SEC + stepSec(makePlace({ kind: "craft", code }, world))) / 3600; // task 012: once per piece code
     const who = crafterOf(r.skill, world)!;
     if (!isOn(who, world)) offered = false;
     const k = `${who}|${r.skill}`;
@@ -225,10 +226,10 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
         // H1: per level to the gate, the better of the pool's own pick and this monster with the new set
         const h1 = (r: GearRecommendation): number => {
           if (!wins(r, world)) return Infinity;
-          const sec = killSec(ch, world, m, r);
+          const sec = killSec(ch, world, m, r), wis = setWisdom(ch, r); // task 012: XP with the new set's wisdom
           let h = 0;
           for (let l = L; l < end; l++) {
-            const xp = fightXp(mon.level, mon.hp, mon.type, l);
+            const xp = fightXp(mon.level, mon.hp, mon.type, l, wis);
             h += Math.min(own(l), xp > 0 ? (xpNeeded[l] ?? Infinity) / ((xp / sec) * 3600) : Infinity);
           }
           return h;

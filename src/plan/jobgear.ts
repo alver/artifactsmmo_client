@@ -19,6 +19,7 @@
 import { item, tileAt } from "../catalog";
 import { bestInSlot, canEquip, killSeconds } from "./bis";
 import { brewablePotions } from "./consumables";
+import { potionPriceOf } from "./xp";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode, slotQuantity } from "../types/api";
 import type { BankItem, Character, GearSlot } from "../types/api";
 import type { Item } from "../types/catalog";
@@ -139,8 +140,12 @@ export function ownedFightForecast(ch: Character, bank: BankItem[], monster: str
 /** The best set owned right now vs the monster, with its `safe` verdict (the pessimistic pass wins too). */
 export function ownedFightRec(ch: Character, bank: BankItem[], monster: string): GearRecommendation | undefined {
   const qty = ownedQtyOf(ch, bank);
-  return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false })[0];
+  return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, potionPrice: potionPrice(bank) })[0];
 }
+/** Task 012: the price of a potion a fight drinks in the executor's solves — xp.ts potionPriceOf over the bank given
+ *  (an ingredient it holds for 100 runs is free), as the planner's core prices it. */
+const potionPrice = (bank: BankItem[]): ((code: string) => number) =>
+  potionPriceOf((c) => bank.reduce((t, b) => t + (b.code === c ? b.quantity : 0), 0)).price;
 
 /**
  * The best gear set for a job from what is owned right now (bank ∪ inventory ∪
@@ -161,7 +166,8 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
     // them, so the forecast counting them stays honest — fightRound's live
     // gate sees the worn stacks via currentFighter. ownedQty lets the ring
     // pair use two copies of the same ring.
-    const opts = { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false };
+    const price = potionPrice(bank);
+    const opts = { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, potionPrice: price };
     const rec = bestInSlot(ch, job.monster, opts)[0];
     // Brewing escalation: potions the character could BREW (alchemy skill +
     // ingredients stocked or gatherable) join the search as extra candidates,
@@ -179,7 +185,7 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<
         rec &&
         ((recB.forecast.win && !rec.forecast.win) ||
           (recB.safe && !rec.safe) ||
-          (recB.forecast.win && killSeconds(recB.forecast) < killSeconds(rec.forecast)))
+          (recB.forecast.win && killSeconds(recB.forecast, price) < killSeconds(rec.forecast, price)))
       ) {
         return jobSetFromRecommendation(ch, bank, recB);
       }

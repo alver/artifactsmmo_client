@@ -7,8 +7,9 @@
 // from the bank, a buy its currency; a crafted gear piece is bank stock.
 // Left out, on purpose: the XP of offerings and of an active favor (conservative; the favors are dropped from the
 // World); events (none spawn); what a `train` step sources and recycles inside its item; utility potions, runes,
-// artifacts and bags (not worn by the model; a potion's stock is not kept — the kill's price carries what drinking it
-// costs, task 010). A level-up adds 5 max HP (the atlas's 115 + 5·L).
+// artifacts and bags (not worn by the model). Task 012: a kill step's potions leave the bank when it ends (drinksOf:
+// the brewed potion first, then its ingredients), so a covered ingredient's stock runs out as in play; a combat XP gain
+// counts the worn set's wisdom. A level-up adds 5 max HP (the atlas's 115 + 5·L).
 
 import { atlas } from "../../catalog/atlas";
 import { item, monster as monsterOf, resource as resourceOf } from "../../catalog";
@@ -17,11 +18,13 @@ import { GEAR_SLOTS, slotCode } from "../../types/api";
 import { fightXp } from "../xp";
 import { craftsPerLevel, hoursToLevel, levelOf, perOf } from "./cost";
 import { decide, met } from "./decide";
-import { winLevel } from "./reach";
+import { fightRec, winLevel } from "./reach";
+import { available } from "./stock";
+import { billOf } from "./supply";
 import { isDone, targetsOf, unhandledOf } from "./targets";
 import { craftXpOf, gatherXp } from "./xp";
 import type { AccountAchievement, BankItem, Character, GearSlot } from "../../types/api";
-import type { Lane, Step, Work, World } from "./types";
+import type { Gate, Lane, Step, Work, World } from "./types";
 
 /** The slots the model wears (runes, artifacts, utilities and bags stay as they are). */
 const WORN: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag" && g !== "rune");
@@ -78,6 +81,38 @@ export function finish(start: number, hours: number, world: World): { end: numbe
 /** Achievement points of the account: every achievement with all objectives done. */
 export const pointsOf = (world: World): number => world.achievements.reduce((t, a) => t + (isDone(a) ? a.points : 0), 0);
 
+/**
+ * Task 012, settled point 6: what a step's fights drink, leaving the bank when it ends — per kill work (the step's own
+ * and its sources'), the potions the forecast of the set it is planned with drinks (reach.ts fightRec, `used`) × the
+ * kills: the brewed potion first while the bank holds it (down to one unit), then its recipe's ingredients for the rest;
+ * never below zero, a floor or what the others' running steps reserved. So the stock runs out as it will in play, and
+ * the price (reach.ts potionPrice) returns to the field's.
+ */
+export function drinksOf(world: World, step: Step): Map<string, number> {
+  const out = new Map<string, number>();
+  const ch = world.characters.find((c) => c.name === step.character);
+  if (!ch) return out;
+  const kills: [string, number][] = [];
+  if (step.work.kind === "kill") kills.push([step.work.monster, step.as === "supply" ? step.units : step.units * perOf(step.work)]);
+  for (const s of step.sources ?? []) if (s.work.kind === "kill") kills.push([s.work.monster, s.times]);
+  // what no running step reserved — the others' (stock.ts available, less the floor) and this one's own withdrawal (an
+  // alchemy step that hunts its slimeballs drinks while it brews: the slimeballs it withdrew are the brew's)
+  const left = (code: string): number => Math.max(0, available(code, world, step.character) - (step.withdraw?.[code] ?? 0) - (out.get(code) ?? 0));
+  const take = (code: string, q: number, keep = 0): number => { const n = Math.min(q, Math.max(0, left(code) - keep)); if (n > 0) out.set(code, (out.get(code) ?? 0) + n); return n; };
+  for (const [monster, n] of kills) {
+    for (const [potion, k] of Object.entries(fightRec(ch, world, monster)?.forecast.used ?? {})) {
+      // shortcut: a brewed stack is drunk down to one unit, not to none — the model plans a potion only while the pool holds
+      // one, and in play the executor brews more from the bank (exec.ts provisionPotions); the rest comes from the
+      // ingredients, and once they are gone the price is the field's. Upgrade with potions as supply through the bank.
+      const rest = k * n - take(potion, k * n, 1);
+      const r = item(potion)?.craft;
+      if (rest <= 1e-9 || !r) continue;
+      for (const g of r.items) take(g.code, (g.quantity * rest) / Math.max(1, r.quantity));
+    }
+  }
+  return out;
+}
+
 /** The world after a step has finished, by the estimates. */
 export function advance(world: World, step: Step): World {
   const idx = world.characters.findIndex((c) => c.name === step.character);
@@ -98,7 +133,7 @@ export function advance(world: World, step: Step): World {
       if (!m) return;
       add(`combat_kill:${m.code}`, actions);
       for (const d of m.drops) { add(`combat_drop:${d.code}`, actions * odds(d)); put(d.code, actions * odds(d)); }
-      gain("combat", actions * fightXp(m.level, m.hp, m.type, ch.level));
+      gain("combat", actions * fightXp(m.level, m.hp, m.type, ch.level, ch.wisdom ?? 0)); // task 012: the worn set's wisdom (wear keeps the stat)
     } else if (w.kind === "gather") {
       const r = resourceOf(w.resource);
       if (!r) return;
@@ -122,6 +157,7 @@ export function advance(world: World, step: Step): World {
   if (w.kind === "buy") { add(`npc_buy:${w.code}`, step.units); put(w.code, step.units); put(w.currency, -w.price * step.units); }
   if (w.kind === "task") add("task:", step.units);
   add("favor:", offerings);
+  for (const [code, q] of drinksOf(world, step)) put(code, -q); // task 012, settled point 6: the fights drank
 
   const need = atlas()?.xpNeeded ?? [];
   for (const [lane, n] of xp) {
@@ -182,8 +218,9 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
     if (t >= until) break;
     if (pending[name]) {
       const before = new Set(w.achievements.filter(isDone).map((a) => a.code));
-      const prev = w;
-      w = advance(w, pending[name]!);
+      // task 012: every running step as `current`, so what a step's fights drink leaves the others' reservations alone
+      const prev: World = { ...w, current: { ...pending } };
+      w = advance(prev, pending[name]!);
       onEnd?.(w, pending[name]!, prev);
       for (const a of w.achievements) if (isDone(a) && !before.has(a.code)) completed.push({ code: a.code, points: a.points, at: t });
     }
@@ -214,8 +251,12 @@ export function waitingOf(world: World): { achievement: string; points: number; 
     const u = unhandled.find((x) => x.achievement === a.code);
     if (u) { out.push({ achievement: a.code, points: a.points, waits: u.why.includes("raid") ? "a raid" : "unhandled", why: u.why }); continue; }
     const ts = targets.filter((t) => t.achievement === a.code);
-    const gs = ts.flatMap((t) => [...t.gates, ...(t.inputs ?? []).flatMap((i) => i.gates)]).filter((g) => !world.characters.some((c) => met(g, c, world)));
+    // task 012: a material made by another craft adds the gates of its bill (a craft gated at a level, settled point 8)
+    const chain = (t: (typeof ts)[number]): Gate[] => (t.inputs ?? []).flatMap((i) => (i.source.kind === "craft" ? [...billOf(world, "", [[i.code, i.per * t.left]], undefined, false).leaves.values()].flatMap((l) => l.gates) : i.gates));
+    const gs = ts.flatMap((t) => [...t.gates, ...chain(t)]).filter((g) => !world.characters.some((c) => met(g, c, world)));
     const has = (k: string): boolean => gs.some((g) => g.kind === k);
+    // a gathering or crafting level nobody has an XP source on the way to
+    const noRoad = gs.some((g) => g.kind === "level" && g.lane !== "combat" && g.level > top(g.lane) && !world.characters.some((c) => Number.isFinite(hoursToLevel(g.lane, levelOf(c, g.lane), g.level, world, c))));
     // Section 2: a combat gate nobody can price (no safe XP monster on the way) and a win nobody reaches within ten
     // levels wait for gear, not for a level.
     const combatGear = gs.some((g) =>
@@ -225,6 +266,7 @@ export function waitingOf(world: World): { achievement: string; points: number; 
       has("layer") ? "another layer" : has("event") ? "an event" : has("group") ? "a group"
       : ts.some((t) => t.work.kind === "use") ? "use" : ts.every((t) => t.work.kind === "favor") ? "offerings"
       : combatGear ? "gear (no safe win within ten levels)"
+      : noRoad ? "a level with no XP source on the way"
       : gs.some((g) => g.kind === "level" && g.level > top(g.lane)) || has("win") ? "a level"
       : ts.some((t) => t.filler) ? "filler not reached" : "does not fit";
     out.push({ achievement: a.code, points: a.points, waits });
@@ -244,7 +286,7 @@ export function outlook(world: World, n: number): Outlook {
     notes: [
       "offerings count their favors and their time, not their XP; an active favor's XP is not counted",
       "events are not simulated",
-      "utility potions are not kept as stock: a potion a fight drinks is priced in its kill seconds at what making another takes (xp.ts potionSec)",
+      "a potion a fight drinks is priced at what making another takes, an ingredient the bank covers for 100 runs free (xp.ts potionPriceOf); a kill step's potions leave the bank when it ends — the brewed potion first, then its ingredients",
       "gear is made by need and worn; what a step gathers, drops and crafts is in the bank when it ends (expected quantities)",
     ],
   };

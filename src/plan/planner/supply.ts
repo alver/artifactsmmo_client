@@ -6,12 +6,17 @@
 //   mat:<code>  its craft, from the bank; its inputs are demand in turn
 // and the gear piece itself is gear:<code>, made by its crafter. What a step produces is in the bank when it ends.
 // Supply is made for open demand only: when the parent closes its supply targets are gone. Pure.
+// Task 012: a craft or trade step has its fixed seconds (cost.ts stepSec: the reset, the walks, the deposit), once a
+// mat leaf in a bill; a craft of the chain — a mat leaf or the objective's own — whose level nobody that may craft it
+// meets puts the road to that level (the one who gets there first, cost.ts hoursToLevel) into the parent's hours, and
+// the parent waits when there is no road (settled point 8); decide.ts makes the level a candidate of the lane's role
+// holders with the parent's score.
 
 import { catalog, item, itemName } from "../../catalog";
 import { killSeconds } from "../bis";
 import { CRAFT_SEC } from "../xp";
 import { CHUNK_SEC, CRAFT_LANES, GEAR_CRAFT, KILL_LOG } from "./config";
-import { actionSec, killWalk, levelOf, perOf } from "./cost";
+import { actionSec, hoursToLevel, killWalk, levelOf, makePlace, perOf, stepSec } from "./cost";
 import { isOn, met, outOfReach } from "./gates";
 import { planRec, potionPrice, wins } from "./reach";
 import { crafterOf } from "./roles";
@@ -20,11 +25,45 @@ import { placeGates, sourceFor, targetsOf } from "./targets";
 import type { Gate, Lane, Target, Work, World } from "./types";
 
 export interface Leaf { key: string; code: string; kind: "src" | "mat"; qty: number; work: Work; gates: Gate[] }
+/** Task 012, settled point 8: a craft of the chain whose level nobody that may craft it meets — the road to it for the
+ *  character that gets there first (∞: nobody has an XP source on the way). */
+export interface Gated { code: string; lane: Lane; level: number; who?: string; hours: number }
 export interface Bill {
   leaves: Map<string, Leaf>; // by key; src qty = items short, mat qty = products short
   out: string[];             // what is out of reach, with its price
-  hours: number;             // field hours of the src leaves (the fleet's quickest character) + 5 s a mat run
-  crafts: number;            // the mat runs' share of `hours`
+  hours: number;             // field hours of the src leaves (the fleet's quickest character) + 5 s a mat run + each mat leaf's fixed step seconds + the gated roads
+  crafts: number;            // the mat runs' share of `hours` (their fixed step seconds included)
+  gated: Gated[];            // per lane the highest gated level of the chain, with its road (in `hours` when finite)
+}
+
+/** Who may craft a recipe of `lane` once the level is there (mayCraft without the level): anyone for a gathering
+ *  skill's recipe, the role holder for a gear crafting skill or cooking. */
+const mayHold = (lane: Lane, name: string, world: World): boolean =>
+  !(GEAR_CRAFT.includes(lane) || CRAFT_LANES.includes(lane)) || crafterOf(lane, world) === name;
+
+/** Settled point 8: a craft at `level` of `lane` that nobody who is on and may craft it meets yet → the road for the
+ *  one who gets there first (undefined: someone meets it). */
+const roadMemo = new Map<string, Omit<Gated, "code">>();
+export function gateRoad(lane: Lane, level: number, world: World): Omit<Gated, "code"> | undefined {
+  // whoever may craft it and meets the level, on or not, is no gate (a crafter not on is section 7's business); the road
+  // is walked by the ones that are on
+  if (world.characters.some((c) => mayHold(lane, c.name, world) && levelOf(c, lane) >= level)) return undefined;
+  const may = world.characters.filter((c) => isOn(c.name, world) && mayHold(lane, c.name, world));
+  // shortcut: a road is taken to turn on the levels, the measured level hours and the layer they stand on only (cost.ts:
+  // the atlas's hours once a node or a recipe gives XP; what is reached freely is one connected set per layer), not on
+  // the pool — every decision is a new World, and walking five characters' roads per decision doubled the first week;
+  // upgrade if a road ever turns on gear or on where in a layer a character stands
+  const k = `${lane}|${level}|${may.map((c) => `${c.name}:${levelOf(c, lane)}:${(c as { layer?: string }).layer ?? ""}`).join(";")}|${Object.entries(world.costs).filter(([key, v]) => key.startsWith(`level:${lane}:`) && v.n >= 3).map(([key, v]) => `${key}=${v.sec}`).join(";")}`;
+  const hit = roadMemo.get(k);
+  if (hit) return hit;
+  let best: Omit<Gated, "code"> = { lane, level, hours: Infinity };
+  for (const c of may) {
+    const h = hoursToLevel(lane, levelOf(c, lane), level, world, c);
+    if (h < best.hours) best = { lane, level, who: c.name, hours: h };
+  }
+  if (roadMemo.size >= 5000) roadMemo.clear();
+  roadMemo.set(k, best);
+  return best;
 }
 
 const secMemo = new WeakMap<World, Map<string, number>>();
@@ -44,7 +83,7 @@ export function fleetSec(work: Work, gates: Gate[], world: World): number {
       if (!isOn(c.name, world) || !gates.every((g) => (g.kind === "win" ? true : met(g, c, world)))) continue;
       if (work.kind !== "kill") { s = Math.min(s, actionSec(work, c, world)); continue; }
       const r = planRec(c, world, work.monster);
-      if (wins(r, world)) { s = killSeconds(r!.forecast, potionPrice(world)) * KILL_LOG + killWalk(c, world, work.monster); break; }
+      if (wins(r, world)) { s = killSeconds(r!.forecast, potionPrice(world, c.name).price) * KILL_LOG + killWalk(c, world, work.monster); break; }
     }
     m.set(k, s);
   }
@@ -90,12 +129,16 @@ export function priceOf(code: string, qty: number): string {
  * turn); fresh when omitted.
  */
 export function billOf(world: World, name: string, demand: [string, number][], vb = new Map<string, number>(), price = true): Bill {
-  const bill: Bill = { leaves: new Map(), out: [], hours: 0, crafts: 0 };
-  const leaf = (key: string, code: string, kind: Leaf["kind"], work: Work, gates: Gate[], q: number): void => {
+  const bill: Bill = { leaves: new Map(), out: [], hours: 0, crafts: 0, gated: [] };
+  const laneTop = new Map<Lane, { code: string; level: number }>(); // settled point 8: per lane the highest craft level of the chain
+  /** A new leaf: true. Task 012, settled point 4: a mat leaf's step has its fixed seconds, once a leaf. */
+  const leaf = (key: string, code: string, kind: Leaf["kind"], work: Work, gates: Gate[], q: number): boolean => {
     const l = bill.leaves.get(key);
     if (l) l.qty += q;
     else bill.leaves.set(key, { key, code, kind, qty: q, work, gates });
+    return !l;
   };
+  const fixed = (w: Work): number => stepSec(makePlace(w, world)) / 3600;
   const need = (code: string, q: number, depth: number): void => {
     if (q <= 1e-9) return;
     const have = vb.has(code) ? vb.get(code)! : available(code, world, name);
@@ -114,9 +157,12 @@ export function billOf(world: World, name: string, demand: [string, number][], v
     const r = item(code)?.craft;
     if (r && depth < 6) {
       const runs = Math.ceil(q / Math.max(1, r.quantity) - 1e-9);
-      leaf(`mat:${code}`, code, "mat", { kind: "craft", code }, [{ kind: "level", lane: r.skill as Lane, level: r.level }], runs * Math.max(1, r.quantity));
-      bill.hours += (runs * CRAFT_SEC) / 3600;
-      bill.crafts += (runs * CRAFT_SEC) / 3600;
+      const w: Work = { kind: "craft", code };
+      const s = (runs * CRAFT_SEC) / 3600 + (leaf(`mat:${code}`, code, "mat", w, [{ kind: "level", lane: r.skill as Lane, level: r.level }], runs * Math.max(1, r.quantity)) ? fixed(w) : 0);
+      bill.hours += s;
+      bill.crafts += s;
+      const lane = r.skill as Lane;
+      if ((laneTop.get(lane)?.level ?? 0) < r.level) laneTop.set(lane, { code, level: r.level });
       for (const g of r.items) need(g.code, g.quantity * runs, depth + 1);
       return;
     }
@@ -127,14 +173,22 @@ export function billOf(world: World, name: string, demand: [string, number][], v
       const why = outOfReach(t.gates, world);
       if (why) return void bill.out.push(`${itemName(code)}: the trader is behind ${why}`);
       const n = Math.ceil(q - 1e-9);
-      leaf(`mat:${code}`, code, "mat", t.work, t.gates, n);
-      bill.hours += (5 * Math.ceil(n / 50)) / 3600; // a buy of up to a bagful is one action
+      const isNew = leaf(`mat:${code}`, code, "mat", t.work, t.gates, n);
+      bill.hours += (5 * Math.ceil(n / 50)) / 3600 + (isNew ? fixed(t.work) : 0); // a buy of up to a bagful is one action
       need(t.work.currency, t.work.price * n, depth + 1);
       return;
     }
     bill.out.push(priceOf(code, q));
   };
   for (const [code, q] of demand) need(code, q, 0);
+  if (!price) return bill; // only the leaves wanted (bundle.ts unmetOf): no roads
+  // settled point 8: a gated craft of the chain — the road to its level for whoever gets there first is in the hours
+  for (const [lane, g] of laneTop) {
+    const road = gateRoad(lane, g.level, world);
+    if (!road) continue;
+    bill.gated.push({ code: g.code, ...road });
+    if (price) bill.hours += road.hours;
+  }
   return bill;
 }
 
@@ -150,6 +204,7 @@ export interface Parent {
   any: number;            // points ÷ hours
   hours: number;          // its whole remaining chain
   demand: [string, number][];
+  gated?: Gated[];        // task 012: the chain's crafts whose level nobody that may craft them meets (finite roads)
 }
 
 /** One unit of an objective, with nothing in the bank, is all field work the fleet can do, at most three sources,
@@ -171,10 +226,22 @@ export function objectiveParents(world: World, name: string, calH: number): Pare
     const demand: [string, number][] = (t.inputs ?? []).map((i) => [i.code, i.per * t.left]);
     const bill = billOf(world, name, demand);
     if (bill.out.length) continue; // waits: waitingOf names it
-    const own = (t.left * (t.work.kind === "craft" ? CRAFT_SEC / Math.max(1, item(t.work.code)?.craft?.quantity ?? 1) : 5)) / 3600;
-    const hours = Math.max(0.01, bill.hours + own);
+    // Task 012, settled point 8: the objective's own craft gated too (diamond_in_the_sky: mining 35) — per lane the road
+    // to the highest gated level of the chain; ∞ (no XP source on the way): the parent waits, waitingOf names it.
+    const r = t.work.kind === "craft" ? item(t.work.code)?.craft : undefined;
+    const self = r && gateRoad(r.skill as Lane, r.level, world);
+    const gated = [...bill.gated];
+    if (self && t.work.kind === "craft") {
+      const i = gated.findIndex((g) => g.lane === self.lane);
+      if (i < 0) gated.push({ code: t.work.code, ...self });
+      else if (gated[i].level < self.level) gated[i] = { code: t.work.code, ...self };
+    }
+    const road = gated.reduce((s, g) => s + g.hours, 0);
+    if (!Number.isFinite(road) || !Number.isFinite(bill.hours)) continue;
+    const own = (t.left * (t.work.kind === "craft" ? CRAFT_SEC / Math.max(1, r?.quantity ?? 1) : 5) + stepSec(makePlace(t.work, world))) / 3600;
+    const hours = Math.max(0.01, bill.hours - bill.gated.reduce((s, g) => s + g.hours, 0) + road + own);
     const points = t.points * (world.config.weight[t.achievement] ?? 1);
-    out.push({ key: t.key, label: t.achievement, points, fit: hours <= calH ? points / hours : 0, any: points / hours, hours, demand });
+    out.push({ key: t.key, label: t.achievement, points, fit: hours <= calH ? points / hours : 0, any: points / hours, hours, demand, gated });
   }
   return out;
 }
@@ -188,7 +255,7 @@ export function supplyNeeds(world: World, name: string, parents: Parent[], inFli
   const vb = new Map<string, number>();
   const out = new Map<string, SupplyNeed>();
   for (const p of [...parents].sort((a, b) => b.fit - a.fit || b.any - a.any || (a.key < b.key ? -1 : 1))) {
-    for (const l of billOf(world, name, p.demand, vb).leaves.values()) {
+    for (const l of billOf(world, name, p.demand, vb, false).leaves.values()) {
       const qty = l.kind === "src" ? l.qty * perOf(l.work) : l.qty;
       const s = out.get(l.key);
       if (s) s.short += qty;

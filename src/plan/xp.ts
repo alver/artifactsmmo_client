@@ -56,14 +56,26 @@ export const gatherSec = (resourceLevel: number): number => 29 + Math.max(1, Mat
 /** One recipe execution (and the smelt behind it). */
 export const CRAFT_SEC = 5;
 /** Combat XP of one won fight (docs: Combat & Stats): a level ratio plus an HP
- *  term, ×0.7 once the character is 5+ levels above the monster, zero at 10+,
- *  ×1.4 elite / ×2 boss. */
+ *  term, ×0.7 once the character is MORE than 5 levels above the monster, zero
+ *  more than 10 above, ×1.4 elite / ×2 boss, + 0.1% a point of wisdom of the
+ *  set worn (docs/api/openapi.json, CharacterSchema.wisdom: "1% extra per 10
+ *  wisdom"). Task 012, the 1,232 won fights of logs/dev.log on 11-19: a
+ *  highwayman at a gap of 5 gave 33 (the old "5+" rule: 21), a flying snake at
+ *  a gap of 10 gave 19 (the old "10+": 0), a blue slime at 17 gave 0, and every
+ *  fight sits 4–17% above the formula without wisdom — the novice guide's 25
+ *  and the set's 15–140. */
 export function fightXp(monsterLevel: number, monsterHp: number, type: string, playerLevel: number, wisdom = 0): number {
   const gap = playerLevel - monsterLevel;
-  const penalty = gap >= 10 ? 0 : gap >= 5 ? 0.7 : 1;
+  const penalty = gap > 10 ? 0 : gap > 5 ? 0.7 : 1;
   const mult = type === "elite" ? 1.4 : type === "boss" || type === "raid_boss" ? 2 : 1;
   return Math.round(((monsterLevel / Math.max(1, playerLevel)) * 20 + monsterHp * 0.04) * penalty * mult * (1 + wisdom * 0.001));
 }
+/** The wisdom of a set: the sum of its pieces' `wisdom` effects (what fightXp multiplies by). */
+export const wisdomOf = (codes: Iterable<string>): number => {
+  let w = 0;
+  for (const c of codes) for (const e of item(c)?.effects ?? []) if (e.code === "wisdom") w += e.value;
+  return w;
+};
 /** Fight cooldown: 2 s per turn, floor 5 s (haste ignored — same set, same discount everywhere). */
 export const fightSec = (turns: number): number => Math.max(5, 2 * turns);
 
@@ -109,4 +121,40 @@ export function potionSec(code: string): number {
     potionMemo.set(code, s);
   }
   return s;
+}
+
+/** Runs of a recipe the stock must hold for an ingredient to count as free (pick.ts pickRecipe's shortcut). */
+export const COVER_RUNS = 100;
+let potionRecipes: { code: string; items: { code: string; quantity: number }[] }[] | undefined;
+const coverMemo = new Map<string, (code: string) => number>();
+/**
+ * Task 012: what one more potion costs given what the stock covers — stock is free, what it does not cover costs the
+ * field price. Per recipe and ingredient, all or nothing: an ingredient the stock holds for COVER_RUNS runs of that
+ * recipe costs nothing (nobody gathers an ingredient for stock: what is in the bank is spent already, by-product or
+ * not), any other one its field seconds as in potionSec; plus the craft, over the recipe's quantity. `have(code)` is
+ * the stock the caller may count: the planner's `available` (the bank less the others' reservations and the floors,
+ * reach.ts potionPrice), the executor's bank as given (jobgear.ts). The one price of the solver's objective, the
+ * planner's prices and the executor's solves. `key` names what is covered ("<potion>.<ingredient>" in `covered`; the
+ * planner's solve caches are keyed on the part of it that names a potion the pool holds); one price function per key.
+ */
+export function potionPriceOf(have: (code: string) => number): { key: string; covered: string[]; price: (code: string) => number } {
+  potionRecipes ??= [...catalog().items.values()].filter((it) => it.type === "utility" && it.craft).map((it) => ({ code: it.code, items: it.craft!.items }));
+  const covered: string[] = [];
+  for (const r of potionRecipes) for (const g of r.items) if (have(g.code) >= COVER_RUNS * g.quantity) covered.push(`${r.code}.${g.code}`);
+  const key = covered.join(",");
+  let price = coverMemo.get(key);
+  if (!price) {
+    const free = new Set(covered), memo = new Map<string, number>();
+    price = (code) => {
+      let s = memo.get(code);
+      if (s == null) {
+        const r = item(code)?.craft;
+        s = r && free.size ? (CRAFT_SEC + r.items.reduce((t, g) => t + (free.has(`${code}.${g.code}`) ? 0 : g.quantity * fieldSec(g.code, true)), 0)) / Math.max(1, r.quantity) : potionSec(code);
+        memo.set(code, s);
+      }
+      return s;
+    };
+    coverMemo.set(key, price);
+  }
+  return { key, covered, price };
 }

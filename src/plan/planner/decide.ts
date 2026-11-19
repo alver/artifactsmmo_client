@@ -21,16 +21,16 @@ import { achievement as achievementOf, item, itemName, resource as resourceOf } 
 import { CRAFT_SEC } from "../xp";
 import { jobGear } from "../jobgear";
 import { CHUNK_SEC, GATHER_LANES, TRAIN_LANES } from "./config";
-import { actionSec, craftsPerLevel, hoursToLevel, levelOf, perOf, recycleLane, unitSec } from "./cost";
+import { actionSec, craftsPerLevel, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { met } from "./gates";
 import { gearNeeds } from "./gear";
-import { monsterName, pickMonster, pickNode, pickRecipe } from "./pick";
+import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
 import { fightRec, nearestSpot, placeOf } from "./reach";
 import { crafterOf, rolesFor } from "./roles";
 import { available, poolBank } from "./stock";
-import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
-import { targetsOf } from "./targets";
+import { billOf, feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
+import { sourceFor, targetsOf } from "./targets";
 import { GEAR_SLOTS } from "../../types/api";
 import type { Parent } from "./supply";
 import type { Character, GearSlot } from "../../types/api";
@@ -72,7 +72,8 @@ function planMake(w: Work & { kind: "craft" | "buy" }, inputs: Input[], ch: Char
   if (max < 1) return undefined;
   // shortcut: a drop or a rare gather is sourced at 1.5 × its expected actions, so a step rarely comes up short
   const times = (x: (typeof ins)[number], n: number): number => Math.ceil(Math.max(0, n * x.i.per - x.avail) * x.per * x.margin - 1e-9);
-  const sec = (n: number): number => ins.reduce((s, x) => s + (times(x, n) ? times(x, n) * x.act : 0), 0) + n * own;
+  const fixed = stepSec(spot.place, here); // task 012: the reset, the walks and the deposit, once a step
+  const sec = (n: number): number => ins.reduce((s, x) => s + (times(x, n) ? times(x, n) * x.act : 0), 0) + n * own + fixed;
   if (!(sec(1) <= 2 * CHUNK_SEC)) return undefined; // one unit longer than two chunks: supply targets carry it
   let lo = 1, hi = sec(1) > CHUNK_SEC ? 1 : max;
   while (lo < hi) { const mid = Math.ceil((lo + hi) / 2); if (sec(mid) <= CHUNK_SEC) lo = mid; else hi = mid - 1; }
@@ -167,6 +168,13 @@ export function rank(name: string, world: World): Ranking {
   const last = world.current[name];
   const others = Object.entries(world.current).filter(([n, s]) => n !== name && s).map(([, s]) => s!);
   const inFlight = (key: string): number => others.reduce((t, s) => t + (s.target === key && s.as !== "level" && s.as !== "fallback" ? s.units : 0), 0);
+  /** Task 012: the others' src: steps in flight in actions of the static source (supplyNeeds' unit) — each at its own
+   *  node, so its actions are items at that node's rate first. */
+  const srcInFlight = (key: string): number => {
+    const st = key.startsWith("src:") ? sourceFor(key.slice(4)) : undefined;
+    if (!st || typeof st === "string") return inFlight(key);
+    return others.reduce((t, s) => t + (s.target === key && s.as !== "level" && s.as !== "fallback" ? (s.units / perOf(s.work)) * perOf(st.work) : 0), 0);
+  };
   const bonus = new Set(targets.flatMap((t) => (t.work.kind === "kill" ? [t.work.monster] : [])));
   const blocked = (key: string): boolean => (world.blocked[`${key}@${name}`]?.until ?? 0) > world.now;
   const pts = (code: string, p: number): number => p * (cfg.weight[code] ?? 1);
@@ -238,7 +246,8 @@ export function rank(name: string, world: World): Ranking {
     const r = item(code)!.craft!;
     const qty = [...copies.values()].reduce((s, x) => s + x, 0) - inFlight(`gear:${code}`);
     if (qty <= 0) continue;
-    parents.push({ key: `gear:${code}`, label: `${itemName(code)} for ${n.for} (${n.work})`, points: n.points, fit: n.fit, any: n.any, hours: n.hours, demand: recipeDemand(code, qty) });
+    const demand = recipeDemand(code, qty);
+    parents.push({ key: `gear:${code}`, label: `${itemName(code)} for ${n.for} (${n.work})`, points: n.points, fit: n.fit, any: n.any, hours: n.hours, demand, gated: billOf(world, name, demand).gated });
     if (crafterOf(r.skill, world) !== name) continue;
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
@@ -250,36 +259,46 @@ export function rank(name: string, world: World): Ranking {
     const runs = Math.min(qty, feedable(code, world, name));
     if (blocked(key) || !spot || runs < 1) continue;
     const t: Target = { key, points: 0, work: { kind: "craft", code }, left: qty, gates: [], filler: false };
-    const p: Plan = { work: t.work, units: runs, hours: (runs * CRAFT_SEC) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(code, runs)) };
+    const p: Plan = { work: t.work, units: runs, hours: (runs * CRAFT_SEC + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(code, runs)) };
     supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }), fit: n.fit * boost(key), any: n.any * boost(key) });
   }
-  for (const s of supplyNeeds(world, name, parents, inFlight)) {
+  for (const s of supplyNeeds(world, name, parents, srcInFlight)) {
     if (blocked(s.key)) continue;
     const par = s.parent;
     const t: Target = { key: s.key, points: 0, work: s.work, left: s.short, gates: s.gates, filler: false };
-    let p: Plan | undefined;
+    let p: Plan | undefined, node = "";
     if (s.kind === "src") {
-      if (!s.gates.every((g) => met(g, ch, world)) || (s.work.kind !== "kill" && s.work.kind !== "gather")) continue;
-      const spot = s.work.kind === "kill" ? nearestSpot(placeOf(ch), "monster", s.work.monster, world) : nearestSpot(placeOf(ch), "resource", s.work.resource, world);
-      p = spot && chunk(s.work, actionSec(s.work, ch, world), Math.ceil(s.short - 1e-9), world, spot);
+      // task 012, settled point 7: the node (or monster) is this character's — the least net seconds an item
+      const src = pickSource(s.code, ch, world);
+      if (!src) continue;
+      const items = s.short / perOf(s.work); // short is in actions of the static source (supplyNeeds)
+      p = chunk(src.work, src.sec, Math.ceil(items * src.per - 1e-9), world, src);
+      const what = src.work.kind === "gather" ? resourceOf(src.work.resource)?.name ?? src.work.resource : monsterName(src.work.monster);
+      node = `; ${what}: ${Math.round(src.xp)} ${src.lane} XP ${src.work.kind === "gather" ? "a gather" : "a kill"}${src.share >= 1 ? ", the lane's best" : src.share > 0 ? `, ${Math.round(100 * src.share)}% of the lane's best` : ""}${src.over ? ` (over ${src.over}: the XP share decided)` : ""}`;
     } else if (s.work.kind === "buy") {
       // a trade (hard leather for cowhide): the currency from the bank, a bagful at most
       const w = s.work;
       const spot = nearestSpot(placeOf(ch), "npc", w.npc, world);
       const n = Math.min(Math.ceil(s.short - 1e-9), feedable(s.code, world, name), Math.floor(ch.inventory_max_items / (w.price + 1)));
-      if (spot && n >= 1) p = { work: w, units: n, hours: 5 / 3600, place: spot.place, withdraw: { [w.currency]: n * w.price } };
+      if (spot && n >= 1) p = { work: w, units: n, hours: (5 + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: { [w.currency]: n * w.price } };
     } else {
       const r = item(s.code)?.craft;
       const spot = r && nearestSpot(placeOf(ch), "workshop", r.skill, world);
       if (!r || !spot || !mayCraft(r.skill as Lane, r.level, name, world)) continue;
       const q = Math.max(1, r.quantity);
       const runs = Math.min(Math.ceil(s.short / q - 1e-9), feedable(s.code, world, name), Math.floor(CHUNK_SEC / CRAFT_SEC));
-      if (runs >= 1) p = { work: s.work, units: runs * q, hours: (runs * CRAFT_SEC) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(s.code, runs)) };
+      if (runs >= 1) p = { work: s.work, units: runs * q, hours: (runs * CRAFT_SEC + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(s.code, runs)) };
     }
     if (!p) continue;
     const unit = s.kind === "src" ? (p.work.kind === "kill" ? "kills" : "gathers") : "made";
-    const why = `${itemName(s.code)}: ${fmt(s.short)} ${s.kind === "src" ? "actions" : ""} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h); ${p.units} ${unit} now (${fmt(p.hours)} h)`;
+    const why = `${itemName(s.code)}: ${fmt(s.short)} ${s.kind === "src" ? "actions" : ""} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h)${node}; ${p.units} ${unit} now (${fmt(p.hours)} h)`;
     supply.push({ target: t, step: stepOf(t, p, "supply", par.fit * boost(s.key), `supply: ${why.replace("  ", " ")}`, { parent: par.key }), fit: par.fit * boost(s.key), any: par.any * boost(s.key) });
+  }
+  // Task 012, settled point 8: a craft of a parent's chain gated at a level nobody that may craft it has — the level is
+  // a candidate for this lane's role holders, carrying the parent's score (as a crafter's missing level for gear).
+  for (const par of parents) for (const g of par.gated ?? []) {
+    if (!Number.isFinite(g.hours) || !lanes.includes(g.lane)) continue;
+    levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`);
   }
 
   const byScore = (k: "fit" | "any") => (a: Candidate, b: Candidate): number => b[k] - a[k] || (a.target.key < b.target.key ? -1 : a.target.key > b.target.key ? 1 : 0);

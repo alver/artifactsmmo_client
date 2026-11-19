@@ -9,11 +9,13 @@
 //   1. feasible: EV win AND not a 100-turn timeout            (else the -1e12 tier)
 //   2. safe: the pessimistic pass also wins                   (+1e9)
 //   3. minimize seconds per kill (killSeconds): the fight's cooldown (2 s/turn)
-//      + resting back the HP really missing at its end (5 HP/s) + every potion
-//      the fight drinks at what making another costs (xp.ts potionSec: a small
-//      health potion 47.5 s, not the 6 s of rest its 30 HP buy — task 010; a
-//      restore potion fires every own turn under half HP, a boost once a
-//      fight, FightForecast.used). Two traps of earlier objectives stay shut:
+//      + resting back the HP really missing at its end (1 s per 1% of max HP,
+//      the docs — task 012; it was 5 HP/s) + every potion the fight drinks at
+//      what making another costs (xp.ts potionSec: a small health potion
+//      47.5 s, not the 6 s of rest its 30 HP buy — task 010; task 012: an
+//      ingredient the stock covers is free, xp.ts potionPriceOf, passed in as
+//      potionPrice; a restore potion fires every own turn under half HP, a
+//      boost once a fight, FightForecast.used). Two traps of earlier objectives stay shut:
 //      NOT "HP remaining" (a potion heals every turn under half health, so
 //      that rewarded a slow weapon that dragged the fight out — fire staff
 //      over iron sword vs a cow, 2026-11-07: here a longer fight drinks more
@@ -64,17 +66,18 @@ export interface BisOptions {
    * normally include them).
    */
   noUtilities?: boolean;
-  /** The price of a potion a fight drinks, for killSeconds. Default potionSec; only scripts/check-planner.mts passes another. */
+  /** The price of a potion a fight drinks, for killSeconds. Default potionSec (the field price); the planner's core and
+   *  the executor's solves pass xp.ts potionPriceOf's (task 012: stock is free), the check script others. */
   potionPrice?: (code: string) => number;
   perSlotCap?: number; // default 12
   weaponCap?: number; // default 10
 }
 
-/** Wall-clock per kill: the fight's cooldown, the rest back from the HP missing at its end, and each potion it drinks
- *  (FightForecast.used) at what making another takes (xp.ts potionSec). `price` is for scripts/check-planner.mts
- *  only: its "before" column prices a potion at the rest its heal buys, the objective of tasks 008–009. */
+/** Wall-clock per kill: the fight's cooldown, the rest back from the HP missing at its end (1 s per 1% of max HP, task
+ *  012), and each potion it drinks (FightForecast.used) at `price` — default what making another takes in the field
+ *  (xp.ts potionSec); xp.ts potionPriceOf's when the stock is counted (task 012). */
 export function killSeconds(f: FightForecast, price: (code: string) => number = potionSec): number {
-  let s = fightSec(f.turns) + restSeconds(f.maxHp - f.hpRemaining);
+  let s = fightSec(f.turns) + restSeconds(f.maxHp - f.hpRemaining, f.maxHp);
   for (const code in f.used) if (f.used[code] > 0) s += f.used[code] * price(code);
   return s;
 }

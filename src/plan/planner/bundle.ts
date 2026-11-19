@@ -72,7 +72,7 @@ export function unmetOf(name: string, world: World): Map<string, Gate[]> {
         const short = t.left * i.per - available(i.code, world, name);
         if (short <= 0) continue;
         if (i.source.kind !== "craft") gs.push(...unmetGates(i.gates, c.ch, world));
-        else for (const l of billOf(world, name, [[i.code, short]]).leaves.values()) gs.push(...unmetGates(l.gates, c.ch, world));
+        else for (const l of billOf(world, name, [[i.code, short]], undefined, false).leaves.values()) gs.push(...unmetGates(l.gates, c.ch, world));
       }
     }
     out.set(code, gs);

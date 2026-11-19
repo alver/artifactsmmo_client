@@ -8,9 +8,9 @@
 import { catalog, item } from "../../catalog";
 import { FREE, route, travelSec } from "../route";
 import { bestInSlot, canEquip } from "../bis";
-import { potionSec } from "../xp";
-import { jobGear, ownedQtyOf } from "../jobgear";
-import { poolBank } from "./stock";
+import { potionPriceOf, potionSec, wisdomOf } from "../xp";
+import { PINNED_ARTIFACTS, jobGear, ownedQtyOf } from "../jobgear";
+import { available, poolBank } from "./stock";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../types/api";
 import type { BankItem, Character } from "../../types/api";
 import type { GameMap } from "../../types/catalog";
@@ -194,15 +194,39 @@ export function chAt(ch: Character, level: number): Character {
   return c;
 }
 
-const priceMemo = new Map<number, (code: string) => number>();
-/** The price of a potion a fight drinks in the core (task 011): config.potionK × potionSec — undefined at 1, so every
- *  solve and every killSeconds of the core takes bis.ts's own default, as the executor does. */
-export function potionPrice(world: World): ((code: string) => number) | undefined {
+export interface Price { key: string; price: (code: string) => number; covered: string[]; tag: string }
+const FIELD: Price = { key: "field", price: potionSec, covered: [], tag: "field" };
+const scaledMemo = new Map<string, (code: string) => number>();
+const priceMemo = new WeakMap<World, Map<string, Price>>();
+/**
+ * The price of a potion a fight drinks in the core (task 012): xp.ts potionPriceOf over what this character may plan
+ * with (stock.ts available — the bank less the others' reservations and the floors: an ingredient covered for 100 runs
+ * is free, the rest at the field price), the same function the executor's solves call with their bank. × config.potionK
+ * (the replay's row B: 0); config.potionStock 0 = the field price always (row C). `key` names what is covered: the
+ * solve caches below are keyed on it. Memoised per World and name.
+ */
+export function potionPrice(world: World, name: string): Price {
+  let byName = priceMemo.get(world);
+  if (!byName) priceMemo.set(world, (byName = new Map()));
+  let p = byName.get(name);
+  if (p) return p;
+  const base: Price = (world.config.potionStock ?? 1) ? { ...potionPriceOf((c) => available(c, world, name)), tag: "stock" } : FIELD;
   const k = world.config.potionK ?? 1;
-  if (k === 1) return undefined;
-  let p = priceMemo.get(k);
-  if (!p) priceMemo.set(k, (p = (code) => potionSec(code) * k));
+  if (k === 1) p = base;
+  else {
+    const key = `${base.key}×${k}`;
+    let f = scaledMemo.get(key);
+    if (!f) scaledMemo.set(key, (f = (code) => base.price(code) * k));
+    p = { key, price: f, covered: base.covered, tag: `${base.tag}×${k}` };
+  }
+  byName.set(name, p);
   return p;
+}
+/** The part of a price a solve of this character's pool depends on: the covered ingredients of the potions the pool
+ *  holds (bestInSlot sees owned potions only) — a stock crossing its line for a potion nobody holds changes no solve. */
+function solveKey(p: Price, ch: Character, world: World): string {
+  const pool = poolOf(ch, world).qty;
+  return `${p.tag}:${p.covered.filter((e) => pool.has(e.slice(0, e.indexOf(".")))).join(",")}`;
 }
 
 const fightMemo = new Map<string, Solved[]>();
@@ -212,10 +236,18 @@ const fightMemo = new Map<string, Solved[]>();
  * search the dearest part of a decision. Cached per the name, the level and the base max HP (see `cached`).
  */
 export function fightRec(ch: Character, world: World, monster: string): GearRecommendation | undefined {
-  return cached(fightMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${world.config.potionK ?? 1}`, ch, world, () => {
+  const p = potionPrice(world, ch.name);
+  return cached(fightMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${solveKey(p, ch, world)}`, ch, world, () => {
     const qty = ownedQtyOf(ch, poolBank(world, ch.name));
-    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world) })[0];
+    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, perSlotCap: 6, weaponCap: 6, potionPrice: p.price })[0];
   });
+}
+/** Task 012: the wisdom of the set a fight is planned with (xp.ts fightXp's last argument): the solved set's pieces,
+ *  plus a pinned artifact the character wears that the set left out (the executor never takes one off). */
+export function setWisdom(ch: Character, r: GearRecommendation | undefined): number {
+  const codes = [...(r?.codes ?? [])];
+  for (const g of GEAR_SLOTS) { const c = slotCode(ch, g); if (c && PINNED_ARTIFACTS.has(c) && !codes.includes(c)) codes.push(c); }
+  return wisdomOf(codes);
 }
 /** A solved set the planner may plan a fight with: a safe win (the pessimistic pass wins too), or any win when
  *  config.risk is "win". */
@@ -235,9 +267,10 @@ const planMemo = new Map<string, Solved[]>();
  * made (section 4), and the first look at a monster before a full solve.
  */
 export function planRec(ch: Character, world: World, monster: string, extra: string[] = []): GearRecommendation | undefined {
-  return cached(planMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${[...extra].sort().join(",")}|${world.config.potionK ?? 1}`, ch, world, () => {
+  const p = potionPrice(world, ch.name);
+  return cached(planMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${[...extra].sort().join(",")}|${solveKey(p, ch, world)}`, ch, world, () => {
     const qty = ownedQtyOf(ch, poolBank(world, ch.name));
-    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: extra, perSlotCap: 3, weaponCap: 3, potionPrice: potionPrice(world) })[0];
+    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: extra, perSlotCap: 3, weaponCap: 3, potionPrice: p.price })[0];
   }, extra);
 }
 

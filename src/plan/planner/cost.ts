@@ -8,14 +8,14 @@ import { atlas } from "../../catalog/atlas";
 import { catalog, item, monster as monsterOf, resource as resourceOf } from "../../catalog";
 import { killSeconds } from "../bis";
 import { CRAFT_SEC, autoRecyclable, fightXp, gatherSec } from "../xp";
-import { GATHER_LANES, GATHER_LOG, GEAR_CRAFT, KILL_LOG, TASK_SEC } from "./config";
+import { GATHER_LANES, GATHER_LOG, GEAR_CRAFT, KILL_LOG, STEP_BANK_SEC, TASK_SEC } from "./config";
 import { craftXpOf } from "./xp";
-import { CITY, bankSec, chAt, fightRec, firstWin, gatherCut, nearestSpot, placeOf, planRec, potionPrice } from "./reach";
+import { CITY, bankSec, chAt, fightRec, firstWin, gatherCut, nearestSpot, placeOf, planRec, potionPrice, setWisdom } from "./reach";
 import { pickMonster, pickNode, pickRecipe } from "./pick";
 import { rolesFor } from "./roles";
 import { atlasKillSec, perUnit, sourceFor } from "./targets";
 import type { Character } from "../../types/api";
-import type { Costs, Lane, Target, Work, World } from "./types";
+import type { Costs, Lane, Place, Target, Work, World } from "./types";
 
 export const levelOf = (ch: Character, lane: Lane): number =>
   lane === "combat" ? ch.level : ((ch as unknown as Record<string, number>)[`${lane}_level`] ?? 0);
@@ -56,6 +56,22 @@ function walkPerAction(ch: Character, world: World, type: string, code: string, 
   return Number.isFinite(bank) ? (2 * bank) / perBag : 0;
 }
 
+/**
+ * Task 012, settled point 4: the fixed seconds of a craft, trade or gear step, once a step, before any run — its bank
+ * reset (the walk from `from` to the nearest bank), the walk to the workshop or the trader at `place` and back for the
+ * deposit (2 × bankSec), and the bank actions of the reset, the withdrawal and the deposit (STEP_BANK_SEC, measured).
+ * `from` undefined: a bill's price, where nobody stands anywhere yet — the walk to the reset is left out.
+ */
+export function stepSec(place: Place | undefined, from?: Place): number {
+  const fin = (s: number): number => (Number.isFinite(s) ? s : 0);
+  return (from ? fin(bankSec(from)) : 0) + (place ? 2 * fin(bankSec(place)) : 0) + STEP_BANK_SEC;
+}
+/** The tile a craft or a trade is done on, as a bill prices it (from the city). */
+export const makePlace = (w: Work, world: World): Place | undefined =>
+  w.kind === "craft" ? nearestSpot(CITY, "workshop", item(w.code)?.craft?.skill ?? "", world)?.place
+  : w.kind === "buy" ? nearestSpot(CITY, "npc", w.npc, world)?.place
+  : undefined;
+
 /** The bank trips' share of one kill of this monster. */
 export const killWalk = (ch: Character, world: World, monster: string): number =>
   walkPerAction(ch, world, "monster", monster, monsterOf(monster)?.drops ?? []);
@@ -68,7 +84,7 @@ export function actionSec(w: Work, ch: Character, world: World): number {
     const mon = monsterOf(w.monster);
     if (!mon) return Infinity;
     const f = planRec(ch, world, w.monster)?.forecast.win ? fightRec(ch, world, w.monster)?.forecast : undefined; // reach.ts safeWin's first look
-    const fight = f?.win ? killSeconds(f, potionPrice(world)) : atlasKillSec(w.monster);
+    const fight = f?.win ? killSeconds(f, potionPrice(world, ch.name).price) : atlasKillSec(w.monster);
     return fight * KILL_LOG + walkPerAction(ch, world, "monster", w.monster, mon.drops);
   }
   if (w.kind === "gather") {
@@ -167,7 +183,7 @@ export function levelHoursEstimate(lane: Lane, L: number, world: World, ch: Char
 const NO_BONUS = new Set<string>();
 
 const ROAD = 10; // the levels above its own a character's road is priced for: as far as winLevel looks
-const roadMemo = new WeakMap<World, Map<string, { code: string; at: number; sec: number }[]>>();
+const roadMemo = new WeakMap<World, Map<string, { code: string; at: number; sec: number; wis: number }[]>>();
 /**
  * pickMonster's XP per second at a level L above the character's own, with the pool it has now: the same candidates
  * and price, the planning-grade solve (reach.ts planRec) — the level is priced, nothing is worn for it. Per monster
@@ -190,8 +206,9 @@ function roadRate(ch: Character, world: World, L: number): number {
       if (!nearestSpot(placeOf(ch), "monster", m.code, world)) continue;
       const at = firstWin(ch, world, m.code);
       if (at == null) continue;
-      const sec = measured(world.costs, `kill:${m.code}`) ?? killSeconds(planRec(chAt(ch, at), world, m.code)!.forecast, potionPrice(world)) * KILL_LOG + killWalk(ch, world, m.code);
-      road.push({ code: m.code, at, sec });
+      const r = planRec(chAt(ch, at), world, m.code)!;
+      const sec = measured(world.costs, `kill:${m.code}`) ?? killSeconds(r.forecast, potionPrice(world, ch.name).price) * KILL_LOG + killWalk(ch, world, m.code);
+      road.push({ code: m.code, at, sec, wis: setWisdom(chAt(ch, at), r) }); // task 012: the XP with the wisdom of that set
     }
     byName.set(k, road);
   }
@@ -199,7 +216,7 @@ function roadRate(ch: Character, world: World, L: number): number {
   for (const r of road) {
     const m = monsterOf(r.code)!;
     if (r.at > L || m.level > L + 10) continue;
-    best = Math.max(best, fightXp(m.level, m.hp, m.type, L) / r.sec);
+    best = Math.max(best, fightXp(m.level, m.hp, m.type, L, r.wis) / r.sec);
   }
   return best;
 }

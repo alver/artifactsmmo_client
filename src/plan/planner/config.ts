@@ -37,17 +37,30 @@ export const DEFAULTS: PlannerConfig = {
   craftK: 0.1,
   craftAbove40: 60,
   risk: "safe",
-  // Task 011: the price factor of a potion a fight drinks, × potionSec, in every solve and price of the core
-  // (reach.ts potionPrice). For the replay's rows B (0.5) and C (0) only: the UI does not show it, the executor's
-  // own solves (jobgear.ts) keep 1, and a patch over it is never written.
+  // Task 011: the price factor of a potion a fight drinks, in every solve and price of the core (reach.ts potionPrice).
+  // For the replay's row B (0: potions free) only: the UI does not show it, the executor's own solves (jobgear.ts)
+  // keep 1, and a patch over it is never written.
   potionK: 1,
+  // Task 012: 1 = an ingredient the stock covers for 100 runs is free (xp.ts potionPriceOf, reach.ts potionPrice); 0 =
+  // the field price always — the replay's row C only, with the same rules as potionK.
+  potionStock: 1,
 };
+
+/** Task 012, settled point 4: the bank actions of a craft, trade or gear step (the reset's deposit and swap, the
+ *  withdrawal, the closing deposit) — the median of the 13 `mat:` / `gear:` steps of logs/dev.log on 11-19 (12–165 s;
+ *  scripts/check-planner.mts prints them). The walks come from the routes (cost.ts stepSec). */
+export const STEP_BANK_SEC = 42;
 
 /** Gear by need (task 009 section 4): make it, then do the work, in at most this share of the work's hours without it. */
 export const NEED_RATIO = 0.85;
 
 /** Log factors on the simulator's and the docs' unit times (design A.3, map E). */
-export const KILL_LOG = 1.3; // 51.9 s a fight with rest, food and bank trips against the 40 s the client assumes
+// Task 012: measured ÷ estimate (killSeconds with the docs' rest + the bank trips, in the sets the log shows with the
+// pieces made by then) over every kill step of the planner's era (logs/dev.log 11-19, 23 samples; scripts/check-planner.mts
+// prints them): the median, kept outside 0.9–1.1. Below 1 because most steps eat: food heals faster than rest (food is
+// not modelled, task 012 settled point 3). It was 1.3 (map E: 51.9 s a fight against the 40 s the client assumed), on
+// rest at 5 HP a second.
+export const KILL_LOG = 0.88;
 export const GATHER_LOG = 1.05; // 30.6 s against the formula's 30–39 s
 export const TASK_SEC = 1.95 * 3600; // log: hours per task
 export const GUESS_KILL = 300; // seconds a kill with no forecast and no atlas time (the map's guess)

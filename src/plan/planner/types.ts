@@ -85,7 +85,8 @@ export interface PlannerConfig {
   craftK: number;                         // × the atlas's craftTrain hours for the three gear crafting skills, up to 40
   craftAbove40: number;                   // hours a level of those skills above 40 (guess, design A.5)
   risk: "safe" | "win";                   // a planned fight: a safe win (default), or any win (task 009's replay row D only)
-  potionK: number;                        // × xp.ts potionSec for a potion a fight drinks, in the core's solves and prices (task 011's replay rows B and C only; 1)
+  potionK: number;                        // × the price of a potion a fight drinks, in the core's solves and prices (the replay's row B only; 1)
+  potionStock: number;                    // task 012: 1 = an ingredient the stock covers is free (reach.ts potionPrice); 0 = the field price always (row C only)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;
