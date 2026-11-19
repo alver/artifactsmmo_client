@@ -8,6 +8,7 @@
 import { catalog, item } from "../../catalog";
 import { FREE, route, travelSec } from "../route";
 import { bestInSlot, canEquip } from "../bis";
+import { potionSec } from "../xp";
 import { jobGear, ownedQtyOf } from "../jobgear";
 import { poolBank } from "./stock";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../types/api";
@@ -193,6 +194,17 @@ export function chAt(ch: Character, level: number): Character {
   return c;
 }
 
+const priceMemo = new Map<number, (code: string) => number>();
+/** The price of a potion a fight drinks in the core (task 011): config.potionK × potionSec — undefined at 1, so every
+ *  solve and every killSeconds of the core takes bis.ts's own default, as the executor does. */
+export function potionPrice(world: World): ((code: string) => number) | undefined {
+  const k = world.config.potionK ?? 1;
+  if (k === 1) return undefined;
+  let p = priceMemo.get(k);
+  if (!p) priceMemo.set(k, (p = (code) => potionSec(code) * k));
+  return p;
+}
+
 const fightMemo = new Map<string, Solved[]>();
 /**
  * The best set of the character's pool vs a monster — `ownedFightRec`'s solve over poolBank (utility potions in), with
@@ -200,9 +212,9 @@ const fightMemo = new Map<string, Solved[]>();
  * search the dearest part of a decision. Cached per the name, the level and the base max HP (see `cached`).
  */
 export function fightRec(ch: Character, world: World, monster: string): GearRecommendation | undefined {
-  return cached(fightMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}`, ch, world, () => {
+  return cached(fightMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${world.config.potionK ?? 1}`, ch, world, () => {
     const qty = ownedQtyOf(ch, poolBank(world, ch.name));
-    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, perSlotCap: 6, weaponCap: 6 })[0];
+    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world) })[0];
   });
 }
 /** A solved set the planner may plan a fight with: a safe win (the pessimistic pass wins too), or any win when
@@ -223,9 +235,9 @@ const planMemo = new Map<string, Solved[]>();
  * made (section 4), and the first look at a monster before a full solve.
  */
 export function planRec(ch: Character, world: World, monster: string, extra: string[] = []): GearRecommendation | undefined {
-  return cached(planMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${[...extra].sort().join(",")}`, ch, world, () => {
+  return cached(planMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${[...extra].sort().join(",")}|${world.config.potionK ?? 1}`, ch, world, () => {
     const qty = ownedQtyOf(ch, poolBank(world, ch.name));
-    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: extra, perSlotCap: 3, weaponCap: 3 })[0];
+    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: extra, perSlotCap: 3, weaponCap: 3, potionPrice: potionPrice(world) })[0];
   }, extra);
 }
 

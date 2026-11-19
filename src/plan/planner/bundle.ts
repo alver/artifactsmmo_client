@@ -94,7 +94,7 @@ export function bundleOf(lane: Lane, name: string, world: World): Bundle | undef
   };
   const behind: { code: string; at: number; points: number }[] = [];
   for (const [code, gs] of unmetOf(name, world)) {
-    // filler is scored only when nothing else scores (rule 4): its hours do not drag a bundle down, its points do not pull one
+    // filler is ranked on its own tiers (rule 4, decide.ts): its hours do not drag a bundle down, its points do not pull one
     if (world.config.filler.includes(code)) continue;
     // a win gate is looked at only when every other missing gate is a level of this lane (the solves are dear)
     if (!gs.length || !gs.every((g) => (g.kind === "level" && g.lane === lane) || (g.kind === "win" && lane === "combat"))) continue;

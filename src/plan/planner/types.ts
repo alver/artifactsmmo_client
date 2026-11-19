@@ -77,7 +77,7 @@ export interface PlannerConfig {
   exclude: string[];                      // achievement codes the planner never works on
   first: string[];                        // achievement codes taken first whenever they are in reach
   weight: Record<string, number>;         // multiplies an achievement's points in the score (default 1)
-  filler: string[];                       // scored only when nothing else scores (rule 4)
+  filler: string[];                       // ranked after the real candidates of its tier (rule 4: fits, then points per hour)
   roles: Record<string, { gather?: string[]; craft?: string[] }>; // pins a specialist; default: computed (B.3)
   on: Record<string, boolean>;            // which characters the planner owns (I.2; used by 008)
   offeringsPerDay: number;                // fleet-wide offerings a day the forward model counts (report 006: 10 of 15)
@@ -85,6 +85,7 @@ export interface PlannerConfig {
   craftK: number;                         // × the atlas's craftTrain hours for the three gear crafting skills, up to 40
   craftAbove40: number;                   // hours a level of those skills above 40 (guess, design A.5)
   risk: "safe" | "win";                   // a planned fight: a safe win (default), or any win (task 009's replay row D only)
+  potionK: number;                        // × xp.ts potionSec for a potion a fight drinks, in the core's solves and prices (task 011's replay rows B and C only; 1)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;

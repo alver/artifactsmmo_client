@@ -13,7 +13,7 @@ import { CRAFT_SEC } from "../xp";
 import { CHUNK_SEC, CRAFT_LANES, GEAR_CRAFT, KILL_LOG } from "./config";
 import { actionSec, killWalk, levelOf, perOf } from "./cost";
 import { isOn, met, outOfReach } from "./gates";
-import { planRec, wins } from "./reach";
+import { planRec, potionPrice, wins } from "./reach";
 import { crafterOf } from "./roles";
 import { available } from "./stock";
 import { placeGates, sourceFor, targetsOf } from "./targets";
@@ -44,7 +44,7 @@ export function fleetSec(work: Work, gates: Gate[], world: World): number {
       if (!isOn(c.name, world) || !gates.every((g) => (g.kind === "win" ? true : met(g, c, world)))) continue;
       if (work.kind !== "kill") { s = Math.min(s, actionSec(work, c, world)); continue; }
       const r = planRec(c, world, work.monster);
-      if (wins(r, world)) { s = killSeconds(r!.forecast) * KILL_LOG + killWalk(c, world, work.monster); break; }
+      if (wins(r, world)) { s = killSeconds(r!.forecast, potionPrice(world)) * KILL_LOG + killWalk(c, world, work.monster); break; }
     }
     m.set(k, s);
   }

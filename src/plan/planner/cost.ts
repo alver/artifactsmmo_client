@@ -10,7 +10,7 @@ import { killSeconds } from "../bis";
 import { CRAFT_SEC, autoRecyclable, fightXp, gatherSec } from "../xp";
 import { GATHER_LANES, GATHER_LOG, GEAR_CRAFT, KILL_LOG, TASK_SEC } from "./config";
 import { craftXpOf } from "./xp";
-import { CITY, bankSec, chAt, fightRec, firstWin, gatherCut, nearestSpot, placeOf, planRec } from "./reach";
+import { CITY, bankSec, chAt, fightRec, firstWin, gatherCut, nearestSpot, placeOf, planRec, potionPrice } from "./reach";
 import { pickMonster, pickNode, pickRecipe } from "./pick";
 import { rolesFor } from "./roles";
 import { atlasKillSec, perUnit, sourceFor } from "./targets";
@@ -68,7 +68,7 @@ export function actionSec(w: Work, ch: Character, world: World): number {
     const mon = monsterOf(w.monster);
     if (!mon) return Infinity;
     const f = planRec(ch, world, w.monster)?.forecast.win ? fightRec(ch, world, w.monster)?.forecast : undefined; // reach.ts safeWin's first look
-    const fight = f?.win ? killSeconds(f) : atlasKillSec(w.monster);
+    const fight = f?.win ? killSeconds(f, potionPrice(world)) : atlasKillSec(w.monster);
     return fight * KILL_LOG + walkPerAction(ch, world, "monster", w.monster, mon.drops);
   }
   if (w.kind === "gather") {
@@ -190,7 +190,7 @@ function roadRate(ch: Character, world: World, L: number): number {
       if (!nearestSpot(placeOf(ch), "monster", m.code, world)) continue;
       const at = firstWin(ch, world, m.code);
       if (at == null) continue;
-      const sec = measured(world.costs, `kill:${m.code}`) ?? killSeconds(planRec(chAt(ch, at), world, m.code)!.forecast) * KILL_LOG + killWalk(ch, world, m.code);
+      const sec = measured(world.costs, `kill:${m.code}`) ?? killSeconds(planRec(chAt(ch, at), world, m.code)!.forecast, potionPrice(world)) * KILL_LOG + killWalk(ch, world, m.code);
       road.push({ code: m.code, at, sec });
     }
     byName.set(k, road);

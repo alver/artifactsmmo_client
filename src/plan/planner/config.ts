@@ -37,6 +37,10 @@ export const DEFAULTS: PlannerConfig = {
   craftK: 0.1,
   craftAbove40: 60,
   risk: "safe",
+  // Task 011: the price factor of a potion a fight drinks, × potionSec, in every solve and price of the core
+  // (reach.ts potionPrice). For the replay's rows B (0.5) and C (0) only: the UI does not show it, the executor's
+  // own solves (jobgear.ts) keep 1, and a patch over it is never written.
+  potionK: 1,
 };
 
 /** Gear by need (task 009 section 4): make it, then do the work, in at most this share of the work's hours without it. */

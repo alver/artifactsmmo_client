@@ -39,6 +39,11 @@ export interface Deviation {
   hitsChecked?: number;
   hitsMatched?: number;
   mismatch?: string; // first mismatching hit, for diagnosis
+  // Task 011: utility potions, per code — what the forecast drinks (FightForecast.used) and what the fight really took
+  // (the worn stacks before minus after, from the fight's own echo). Absent on entries stored before, and on fights
+  // with no potion worn.
+  predPotions?: Record<string, number>;
+  actualPotions?: Record<string, number>;
 }
 
 const STORE_KEY = "ammo:v1:simdev";
@@ -66,9 +71,10 @@ if (IS_SERVER) effect(() => {
 /**
  * Compare the forecast for a just-resolved fight against the real outcome.
  * `prev` is the PRE-fight character (correct position + max HP for reconstructing
- * the fighter); `monster` is the tile monster it fought.
+ * the fighter); `monster` is the tile monster it fought; `after` the character the
+ * fight echoed (its utility stacks give the potions really drunk).
  */
-export function recordFight(prev: Character, monster: Monster, fight: FightResult): void {
+export function recordFight(prev: Character, monster: Monster, fight: FightResult, after?: Character): void {
   const fighter = currentFighter(prev);
   const f = simulate(fighter, monster);
   const mine = fight.characters?.find((c) => c.character_name === prev.name) ?? fight.characters?.[0];
@@ -90,6 +96,8 @@ export function recordFight(prev: Character, monster: Monster, fight: FightResul
     actualHp,
     hpErr: actualHp == null ? null : f.hpRemaining - actualHp,
   };
+  const drunk = potionsDrunk(prev, after);
+  if (drunk) { dev.predPotions = { ...f.used }; dev.actualPotions = drunk; }
 
   // Exact per-hit formula check against the turn-by-turn log, when present.
   if (fight.logs?.length) {
@@ -105,6 +113,20 @@ export function recordFight(prev: Character, monster: Monster, fight: FightResul
   simDeviations.value = [dev, ...simDeviations.value].slice(0, WINDOW);
 }
 
+/** Units of each worn utility potion the fight took: the stack before minus the stack the echo shows (an emptied slot
+ *  drank it all). Undefined when no potion was worn or the echo is missing. */
+function potionsDrunk(prev: Character, after: Character | undefined): Record<string, number> | undefined {
+  if (!after) return undefined;
+  let out: Record<string, number> | undefined;
+  for (const s of ["utility1", "utility2"] as const) {
+    const code = prev[`${s}_slot`], q0 = prev[`${s}_slot_quantity`] ?? 0;
+    if (!code || q0 <= 0) continue;
+    const q1 = after[`${s}_slot`] === code ? (after[`${s}_slot_quantity`] ?? 0) : 0;
+    (out ??= {})[code] = (out[code] ?? 0) + Math.max(0, q0 - q1);
+  }
+  return out;
+}
+
 export interface SimAccuracy {
   n: number;
   winMispredicts: number;
@@ -118,6 +140,10 @@ export interface SimAccuracy {
   /** ≥30 hits checked and every single one matched the formula exactly. */
   formulaExact: boolean;
   lastMismatch?: string;
+  /** Task 011: fights recorded with a potion worn, and the median of (units the forecast drinks − units really drunk)
+   *  over them, all potions of a fight summed — signed, so a forecast that drinks too much reads positive. */
+  potionFights: number;
+  medianPotionErr: number | null;
 }
 
 function median(xs: number[]): number | null {
@@ -136,6 +162,8 @@ export function simAccuracy(devs: Deviation[] = simDeviations.value): SimAccurac
   const medTurn = median(turnErrs);
   const hitsChecked = devs.reduce((s, d) => s + (d.hitsChecked ?? 0), 0);
   const hitsMatched = devs.reduce((s, d) => s + (d.hitsMatched ?? 0), 0);
+  const sum = (r: Record<string, number> = {}): number => Object.values(r).reduce((s, x) => s + x, 0);
+  const potionErrs = devs.filter((d) => d.actualPotions).map((d) => sum(d.predPotions) - sum(d.actualPotions));
   return {
     n,
     winMispredicts,
@@ -147,5 +175,7 @@ export function simAccuracy(devs: Deviation[] = simDeviations.value): SimAccurac
     hitsMatched,
     formulaExact: hitsChecked >= 30 && hitsMatched === hitsChecked,
     lastMismatch: devs.find((d) => d.mismatch)?.mismatch,
+    potionFights: potionErrs.length,
+    medianPotionErr: median(potionErrs),
   };
 }

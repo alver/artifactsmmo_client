@@ -2,10 +2,15 @@
 // for a work when making them and then doing the work takes at most NEED_RATIO of the work's hours without them
 // (G + H1 ≤ 0.85 × H0; a win that is not there is ∞ hours, so a flip always qualifies).
 //
-// The work a piece can serve, per character that is on:
-//   (a) its road to its next combat gate (rule 3's bundle) — the XP monster;
-//   (b) an open kill or drop objective whose other gates it meets;
-//   (c) per gathering role, the road to that lane's next gate or an open gathering objective of the lane — a tool.
+// The work a piece can serve:
+//   (a) per character that is on, its road to its next combat gate (rule 3's bundle) — the XP monster;
+//   (b) task 011: an open kill or drop objective is the fleet's work, not each fighter's — what is left of it less the
+//       units of the others' running steps on it, done by whoever is best placed: H0 is the least hours among the
+//       characters that are on, meet its other gates and win the monster as config.risk asks with their own pool (∞
+//       only when none does); a need of X holds when G + H1(X) ≤ NEED_RATIO × that H0, and an objective has at most
+//       one need — the character with the least G + H1, ties to the name;
+//   (c) per gathering role, the road to that lane's next gate or an open gathering objective of the lane — a tool
+//       (still per role holder: one objective can ask a tool of each, report 011).
 // Candidates: pieces with a recipe the character can equip now (a piece its pool already holds is simply not new),
 // no rune, artifact, utility or bag, at most ten levels below it, whose bill of materials is in reach (bank stock
 // counts), that someone who is on can source and that have a crafter; the rest are listed as rejected, with why.
@@ -33,7 +38,7 @@ import { actionSec, hoursOf, hoursToLevel, killWalk, levelHoursEstimate, levelOf
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { isOn, met } from "./gates";
 import { pickMonster } from "./pick";
-import { gatherCut, nearestSpot, placeOf, planRec, safeWin, toolCut, wins } from "./reach";
+import { gatherCut, nearestSpot, placeOf, planRec, potionPrice, safeWin, toolCut, wins } from "./reach";
 import { crafterOf, rolesFor } from "./roles";
 import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
@@ -64,7 +69,7 @@ const solve = planRec;
 
 /** Seconds per kill as cost.ts prices it, for a solved set: the fight and the rest × the log, plus the bank trips. */
 const killSec = (ch: Character, world: World, monster: string, r: GearRecommendation): number =>
-  killSeconds(r.forecast) * KILL_LOG + killWalk(ch, world, monster);
+  killSeconds(r.forecast, potionPrice(world)) * KILL_LOG + killWalk(ch, world, monster);
 
 interface Cands { fight: string[]; tools: string[]; rejected: Rejected[] }
 const candMemo = new WeakMap<World, Map<string, Cands>>();
@@ -164,15 +169,25 @@ export function piecesFor(ch: Character, world: World, monster: string): { piece
   return n && { pieces: n.pieces, G: n.mk.G };
 }
 
-const needMemo = new WeakMap<World, { needs: Need[]; rejected: Rejected[] }>();
-/** Every character's gear needs (characters that are on), and the candidates rejected. Memoised per World. */
-export function gearNeeds(world: World): { needs: Need[]; rejected: Rejected[] } {
-  const hit = needMemo.get(world);
+const needMemo = new WeakMap<World, Map<string, { needs: Need[]; rejected: Rejected[] }>>();
+/** Every character's gear needs (characters that are on), and the candidates rejected. `name` is the deciding
+ *  character: its `current` is the step it just finished, so only the others' steps count as in flight (rank()'s
+ *  inFlight). Memoised per World and name. */
+export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: Rejected[] } {
+  let byName = needMemo.get(world);
+  if (!byName) needMemo.set(world, (byName = new Map()));
+  const hit = byName.get(name);
   if (hit) return hit;
   const needs: Need[] = [];
   const rejected: Rejected[] = [];
   const calH = calHOf(world);
   const xpNeeded = atlas()?.xpNeeded ?? [];
+  const gMins = new Map<string, number>(); // per character: no set of its candidates is cheaper to make
+  const gMin = (ch: Character, fight: string[]): number => {
+    let g = gMins.get(ch.name);
+    if (g == null) gMins.set(ch.name, (g = Math.min(...fight.map((code) => makeHours(new Map([[code, 1]]), ch, world).G))));
+    return g;
+  };
   for (const ch of world.characters) {
     if (!isOn(ch.name, world)) continue;
     const c = candidatesOf(ch, world);
@@ -227,23 +242,6 @@ export function gearNeeds(world: World): { needs: Need[]; rejected: Rejected[] }
       }
     }
 
-    // (b) open kill and drop objectives whose other gates it meets
-    const gMin = Math.min(...c.fight.map((code) => makeHours(new Map([[code, 1]]), ch, world).G)); // no set is cheaper to make
-    for (const t of targetsOf(world)) {
-      if (t.work.kind !== "kill" || !t.achievement || t.filler || !c.fight.length) continue;
-      const m = monsterOf(t.work.monster);
-      if (!m || m.level > L + 10 || !t.gates.every((g) => g.kind === "win" || met(g, ch, world))) continue;
-      const per = perOf(t.work);
-      const H0 = safeWin(ch, world, m.code) ? (t.left * actionSec(t.work, ch, world) * per) / 3600 : Infinity;
-      if (!(gMin <= NEED_RATIO * H0)) continue; // G + H1 ≤ 0.85 × H0 cannot hold: no solve
-      const n = fightNeed(ch, world, m.code, c.fight, H0, (r) => Math.min(H0, (t.left * killSec(ch, world, m.code, r) * per) / 3600));
-      if (!n) continue;
-      const pts = t.points * (world.config.weight[t.achievement] ?? 1);
-      const rest = achHours(t.achievement, ch.name, world) - (Number.isFinite(H0) ? H0 : 0);
-      const hours = n.mk.G + n.H1 + Math.max(0, Number.isFinite(rest) ? rest : 0);
-      push({ work: `${t.achievement} (${m.code})`, key: t.key, monster: m.code, pieces: n.pieces, H0, H1: n.H1, G: n.mk.G, parts: n.mk.parts, points: pts, fit: hours <= calH ? pts / hours : 0, any: pts / hours, hours, offered: n.mk.offered });
-    }
-
     // (c) a tool per gathering role: the lane's next gate, or an open gathering objective of the lane
     for (const lane of rolesFor(world)[ch.name] ?? []) {
       if (!GATHER_LANES.includes(lane) || !c.tools.length) continue;
@@ -272,7 +270,32 @@ export function gearNeeds(world: World): { needs: Need[]; rejected: Rejected[] }
       }
     }
   }
+
+  // (b) open kill and drop objectives: the fleet's work (settled point 4 of task 011)
+  const inFlight = (key: string): number => Object.entries(world.current).reduce((s, [n, x]) => s + (n !== name && x && x.target === key && x.as !== "level" && x.as !== "fallback" ? x.units : 0), 0);
+  for (const t of targetsOf(world)) {
+    if (t.work.kind !== "kill" || !t.achievement || t.filler) continue;
+    const m = monsterOf(t.work.monster);
+    const left = t.left - inFlight(t.key);
+    if (!m || left <= 0) continue;
+    const per = perOf(t.work);
+    const able = world.characters.filter((ch) => isOn(ch.name, world) && t.gates.every((g) => g.kind === "win" || met(g, ch, world)));
+    let H0 = Infinity;
+    for (const ch of able) if (safeWin(ch, world, m.code)) H0 = Math.min(H0, (left * actionSec(t.work, ch, world) * per) / 3600);
+    let best: Need | undefined;
+    for (const ch of able) {
+      const c = candidatesOf(ch, world);
+      if (!c.fight.length || m.level > ch.level + 10 || !(gMin(ch, c.fight) <= NEED_RATIO * H0)) continue; // G + H1 ≤ 0.85 × H0 cannot hold: no solve
+      const n = fightNeed(ch, world, m.code, c.fight, H0, (r) => Math.min(H0, (left * killSec(ch, world, m.code, r) * per) / 3600));
+      if (!n || (best && (n.mk.G + n.H1 > best.G + best.H1 || (n.mk.G + n.H1 === best.G + best.H1 && ch.name > best.for)))) continue;
+      const pts = t.points * (world.config.weight[t.achievement] ?? 1);
+      const rest = achHours(t.achievement, ch.name, world) - hoursOf(t, ch, world); // the achievement's other objectives
+      const hours = n.mk.G + n.H1 + Math.max(0, Number.isFinite(rest) ? rest : 0);
+      best = { for: ch.name, work: `${t.achievement} (${m.code})`, key: t.key, monster: m.code, pieces: n.pieces, H0, H1: n.H1, G: n.mk.G, parts: n.mk.parts, points: pts, fit: hours <= calH ? pts / hours : 0, any: pts / hours, hours, offered: n.mk.offered };
+    }
+    if (best) needs.push(best);
+  }
   const out = { needs, rejected };
-  needMemo.set(world, out);
+  byName.set(name, out);
   return out;
 }

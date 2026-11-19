@@ -43,7 +43,7 @@ export function applyActionResult(name: string, action: string, data: ActionResu
     try {
       const mcode = data.fight.opponent || mapAt(prevForFight.x, prevForFight.y)?.interactions.content?.code;
       const m = mcode ? monsterOf(mcode) : undefined;
-      if (m) recordFight(prevForFight, m, data.fight);
+      if (m) recordFight(prevForFight, m, data.fight, characters.value[name]);
     } catch {
       /* diagnostics only — must not disturb state folding */
     }

@@ -3,8 +3,12 @@
 //   2. An in-reach objective scores points × fit ÷ the achievement's remaining hours.
 //   3. A level gate scores Σ (points × fit) of the open achievements behind this lane's gates up to it
 //      ÷ (hours to the gate + their hours); candidates: the next gate of each lane the character has.
-//   4. The highest score wins; filler is scored only when nothing else scores above zero.
-//   5. When nothing fits the deadline, fit is dropped and the same rule runs on points per hour.
+//   4. The highest score wins, in this order (task 011): an achievement on config.first (by fit, else by points per
+//      hour); a real candidate (objective, level, supply) that fits the deadline; a filler that fits; a real candidate
+//      by points per hour; a filler by points per hour; the fallback. So a road that fits nothing takes the fallback's
+//      hours, never a fitting filler's.
+//   5. "Fits" = the points that fit the deadline (score `fit` > 0); the points-per-hour tiers drop fit and say so in
+//      the step's why ("nothing fits the deadline: points per hour").
 // Task 009: supply and gear are candidates too (supply.ts, gear.ts): a `src:` / `mat:` / `gear:` target scores what
 // it is for — its parent's points × fit ÷ the hours of the parent's whole chain, the same number on every link —
 // and a crafter short of a needed piece's recipe has that level as a level target carrying the piece's points.
@@ -216,26 +220,27 @@ export function rank(name: string, world: World): Ranking {
   }
 
   // Gear by need (section 4) and supply through the bank (section 3).
-  const { needs } = gearNeeds(world);
-  const pieces = new Map<string, { copies: Map<string, number>; best: (typeof needs)[number] }>();
+  const { needs } = gearNeeds(world, name);
+  const pieces = new Map<string, { copies: Map<string, number>; works: Map<string, string>; best: (typeof needs)[number] }>();
   for (const n of needs) {
     if (!n.offered) continue; // section 7: the crafter is not on
     for (const [code, k] of n.pieces) {
-      const e = pieces.get(code) ?? { copies: new Map(), best: n };
+      const e = pieces.get(code) ?? { copies: new Map(), works: new Map(), best: n };
       e.copies.set(n.for, Math.max(e.copies.get(n.for) ?? 0, k));
+      e.works.set(n.for, e.works.has(n.for) ? `${e.works.get(n.for)}; ${n.work}` : n.work); // task 011: each copy says whose work it is
       if (n.fit > e.best.fit || (n.fit === e.best.fit && n.any > e.best.any)) e.best = n;
       pieces.set(code, e);
     }
   }
   const parents: Parent[] = objectiveParents(world, name, calH);
   const supply: Candidate[] = [];
-  for (const [code, { copies, best: n }] of pieces) {
+  for (const [code, { copies, works, best: n }] of pieces) {
     const r = item(code)!.craft!;
     const qty = [...copies.values()].reduce((s, x) => s + x, 0) - inFlight(`gear:${code}`);
     if (qty <= 0) continue;
     parents.push({ key: `gear:${code}`, label: `${itemName(code)} for ${n.for} (${n.work})`, points: n.points, fit: n.fit, any: n.any, hours: n.hours, demand: recipeDemand(code, qty) });
     if (crafterOf(r.skill, world) !== name) continue;
-    const why = `${itemName(code)} ×${qty} for ${[...copies.keys()].join(", ")} — ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
+    const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
       levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
       continue;
@@ -278,19 +283,22 @@ export function rank(name: string, world: World): Ranking {
   }
 
   const byScore = (k: "fit" | "any") => (a: Candidate, b: Candidate): number => b[k] - a[k] || (a.target.key < b.target.key ? -1 : a.target.key > b.target.key ? 1 : 0);
-  const pick = (pool: Candidate[]): Candidate | undefined => {
-    for (const k of ["fit", "any"] as const) {
-      const best = pool.filter((c) => c[k] > 0).sort(byScore(k))[0];
-      if (best) return { ...best, step: { ...best.step, score: best[k], why: k === "any" ? `${best.step.why} (nothing fits the deadline: points per hour)` : best.step.why } };
-    }
-    return undefined;
+  const top = (pool: Candidate[], k: "fit" | "any"): Candidate | undefined => {
+    const best = pool.filter((c) => c[k] > 0).sort(byScore(k))[0];
+    return best && { ...best, step: { ...best.step, score: best[k], why: k === "any" ? `${best.step.why} (nothing fits the deadline: points per hour)` : best.step.why } };
   };
   const real = [...objectives, ...levels, ...supply];
   const firsts = real.filter((c) => c.target.achievement && cfg.first.includes(c.target.achievement));
-  const best = pick(firsts) ?? pick(real);
-  const fill = best ? undefined : pick(fillers);
-  const step = best ? { ...best.step, why: `${best.step.as}: ${best.step.why}` }
-    : fill ? { ...fill.step, why: `filler (nothing else scores): ${fill.step.why}` }
+  // Task 011, settled point 1: filler that fits goes before a road that fits nothing (the road takes the fallback's hours)
+  const realAny = real.some((c) => c.any > 0);
+  const best = top(firsts, "fit") ?? top(firsts, "any") ?? top(real, "fit");
+  const fill = best ? undefined : top(fillers, "fit");
+  const late = best || fill ? undefined : top(real, "any");
+  const fillAny = best || fill || late ? undefined : top(fillers, "any");
+  const chosen = best ?? late;
+  const step = chosen ? { ...chosen.step, why: `${chosen.step.as}: ${chosen.step.why}` }
+    : fill ? { ...fill.step, why: `filler (${realAny ? "nothing else fits the deadline" : "nothing else scores"}): ${fill.step.why}` }
+    : fillAny ? { ...fillAny.step, why: `filler (nothing else scores): ${fillAny.step.why}` }
     : fallback(ch, world, last);
   const wear = wearOf(step.work, ch, world);
   return { step: wear ? { ...step, wear } : step, objectives, levels, supply, fillers, lanes };
