@@ -283,6 +283,32 @@ Last updated: 2026-11-19, after report 008 was accepted and task 009 was written
       Nothing goes live until a restart; **from 009's commit on, any restart brings the second round's core live
       for whoever is on.** With Fifth alone on, chain work is not offered (its crafter is not the planner's).
 
+24. **All five are the planner's since 2026-11-19 09:25 UTC** (Alex switched First–Fourth on with the button, on
+    the chat's proposal: they had stood idle since the hive was stopped on 11-18 21:03 UTC). Stored as his patch
+    over `DEFAULTS.on`. Each took a Highway Patrol chunk and the units in flight were subtracted as designed (401
+    → 356 → 307 → 258 → 213). The "day with Fifth alone" of decisions 13 and 19 is thereby cut to ten minutes; the
+    old writers stay in the code as the way back (the same button) until the clean-up. Consequences:
+    - **No restart before 009's report is accepted**: a restart after its commit brings gear and supply chains
+      live for all five at once.
+    - 010 no longer turns anyone on; it is the Roadmap, the outlook, and the list below.
+    - **Offerings, as Alex saw them on 11-19 (none done that day).** Not the brackets: the item already falls back
+      to the next lower bracket it can complete (`offeringPick`, live since 11-18); the Fleet panel shows only the
+      own bracket's requirement, which reads as "stuck on Owlbear Hair". The cause was the trigger: at 00:05 UTC
+      every queue stood stopped, `scheduleOfferings` skipped them all and wrote the day's marker, so nothing
+      catches up; and the panel's "+ Queue" is refused for an owned character. From the next 00:05 UTC on the
+      planner's interrupt fires for all five whether or not a queue runs. For the task after 009:
+      - a character switched on (or found at boot) with offerings of the day still open and no offering interrupt
+        issued that day gets one — per character and day in the planner's state, not the old marker;
+      - the panel's buttons call the interrupt for an owned character, or go;
+      - the panel shows the bracket the item will take;
+      - `pickMonster` / `pickNode` do not know an active favor (× 1.5 XP and drops on its target until the
+        reset): count it;
+      - decision 17's second gap again, now that Alex names offerings a priority: the three gear crafting skills
+        to 10 on the four characters that do not craft them (about three more offerings a day). Proposed to him
+        as a cheap one-off target for the round after 009; not decided.
+    - Seen in the log of 11-18 evening (the hive's last wave): Third lost two skeleton fights in a row and Fifth's
+      skeleton fight was refused as no win — evidence for "safe" (decision 23).
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -295,7 +321,7 @@ Last updated: 2026-11-19, after report 008 was accepted and task 009 was written
 | 007 | The planner's core, pure: `src/plan/planner/*` and `scripts/check-planner.mts` (first steps, first week, the replay to the deadline) | done, `13ac755`. Accepted 2026-11-18. Nothing imports it: no engine change, no restart. |
 | 008 | The runtime: `src/state/planner.ts`, the step loop, blocks and stalls, `interrupt()` (offering, merchant, event, claim), the `claim` item, the guards, 598 as a vanished target, the smallest UI; Fifth on by default | done, `f3a476f`. Accepted 2026-11-19. **Engine change: Alex was told to restart the service on 2026-11-19**; from that restart Fifth is the planner's. The next planning chat reads `logs/dev.log` for the trial. |
 | 009 | The core's second round (decisions 20, 23): gear by need, supply through the bank, alchemy, the price of a level gate, roles, the pool, the forward model; the replay again, with a "win is enough" row | written 2026-11-19, `tasks/009-planner-gear-and-chains.md`; not run yet. No restart needed; it goes live with the next one. |
-| 010 | The Roadmap as home, the outlook, all five on | restart |
+| 010 | The Roadmap as home, the outlook; the offerings list of decision 24 (all five are on already) | restart |
 | 011… | The clean-up → keys and tolls → the fleet on events → group boss fights → `use` | |
 
 ## Open questions
@@ -303,12 +329,19 @@ Last updated: 2026-11-19, after report 008 was accepted and task 009 was written
   hours per level at 25–35 answer it; above 100 hours a level the plan falls back to about 100 points.
 - **Does the rule behave as a spine?** Not shown by 007 (decision 18); the replay of 009, with gear, answers it.
 - **Is "safe" the wall at combat 25, or the gear?** Decision 20; 009 and Fifth's trial.
-- **Was the service restarted after 006?** Asked a third time on 2026-11-19. The restart for 008 brings 006 live
-  either way; the answer only says whether layers and transitions get their first live day together with the
-  planner.
-- **How did Fifth's trial day go?** Read from `logs/dev.log` in the next chat: the first step (the item-currency
-  buy), a step about every 90 minutes, the samples against their estimates, the offering interrupt at 00:05 UTC,
-  any `blocked`, `flapping`, `queue found stopped`, `no step`, and every lost fight.
+- **Was the service restarted after 006?** Moot since the restart of 2026-11-19 09:15 UTC, which brought 006–008
+  live together.
+- **How did Fifth's trial day go?** Read from `logs/dev.log` in the next chat: a step about every 90 minutes, the
+  samples against their estimates, the offering interrupt at 00:05 UTC, any `blocked`, `flapping`,
+  `queue found stopped`, `no step`, and every lost fight. **The first minutes (read in the chat, 09:15–09:23
+  UTC): clean.** Take-over dropped one item (`Move to (8, 6)`); Tanner's Exchange in 45 s (three cowhide were in
+  the bank: `withdraw`, then the item-currency `buy` — it works); the read saw the completion (+2); the `claim`
+  interrupt took 10 vermin leather and banked it; then `ach:highway_patrol:0@Fifth#1`, 45 kills, reset and fights
+  as planned. The loop ran dry during the achievements read and was started again ("queue complete", then
+  "queue started") — case 2 of the seam, as designed.
+- **First to Fourth stood idle from 2026-11-18 21:03 UTC to 11-19 09:25 UTC**; switched on then (decision 24).
+- **The simulator's record.** The Character tab shows "sim check: 200 fights · 44 win/loss mispredicted". What
+  that counts (`src/sim/validate.ts`) and whether it bears on "safe" is to be looked at with 009's report.
 - Answered by 006: why offerings run under 15 a day (decision 17).
 - **The end of the season.** No date is published; 2027-02-24 is the working deadline. The leader's first
   achievement (2026-11-02) fits the announced opening of 2026-10-31 better than the API's 2026-10-24; if the four
