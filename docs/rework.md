@@ -3,8 +3,8 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-19 (evening), after report 010 was accepted — the service runs its code since 16:22 UTC — and
-task 011 was written.
+Last updated: 2026-11-19 (night), after report 011 was accepted, Alex restarted the service (run `[50ry]`, about
+20:05 UTC) and task 012 was written.
 
 ## The goal (Alex, 2026-11-18)
 - **The client plays the season by itself.** Alex's target is every achievement of the season: 210 achievement
@@ -48,6 +48,16 @@ task 011 was written.
   forecast that drinks twice the potions the log shows and on by-products priced as if gathered for themselves.
   Task 011 calibrates both; until its replay is read, "the fighters reach 30 around day 17" (decision 26) is
   open again.
+- **What task 011 found (2026-11-19).** The forecast's 6 potions a pig fight was the snapshot's set, not the
+  simulator: on the sets really worn the model, Monte Carlo and the log agree (3.5–5), and at today's price those
+  sets win the pig with no potion. The replay is back at **56 / 56 / 56 / 59** (default, potions at half price,
+  potions free, a win is enough): the filler returns, and with one need per objective 31–51 pieces are made
+  instead of 67. 56 is the ceiling of the code that exists: the other 154 points wait for a layer, an event,
+  gear above 38, `use`, a raid or a group, as in report 009. **Combat does stall at 29–30, for the potion's
+  price**: the pig gives no XP from 29, the safe XP monsters above it drink 5–14 minor health potions a fight
+  (89–93% of the kill's price), and 78% of that potion's price is an algae priced as a fishing gather while the
+  bank holds 2,099. Fighters at 30: days 41–64 at today's price, 13–22 with free potions. The gathering
+  specialists reach 40 on days 5.8–15.7 either way.
 - **One planner decides what the fleet does next and moves on by itself** — "the roadmap". Alex at most adjusts
   priorities, and doubts there is much to adjust.
 - **No manual queues in the UI.** Alex hardly used them; if something has to be done by hand, the planner is wrong
@@ -452,6 +462,65 @@ task 011 was written.
       brew batch at a step's tail stay parked.
     - **The order after it**: 012 keys, tolls and what is spent; 013 the fleet on events; then the clean-up.
       Looked at again with 011's replay: the day the fighters reach 30 says how soon events can pay.
+30. **Report 011 accepted (2026-11-19).** Checked in the chat: both commits in `.git/logs/HEAD` (`5a60dae` Rework
+    notes, `f4d4118` 011); `decide.ts`, `gear.ts` and `src/sim/validate.ts` read in full — the order at the end of
+    `rank()` (first → real that fits → filler that fits → real by points per hour → filler by points per hour →
+    fallback), work (b) (what is left less the others' steps; `H0` the least hours among the characters that win
+    safely; one need per objective, the least `G + H1`, ties to the name) and the two potion fields of a
+    `Deviation` are as the report says. Not checked there: `reach.ts`, `cost.ts`, `supply.ts`, `apply.ts`, the
+    check script, the check runs, the typecheck, the build (Claude Code ran them). **Engine change: Alex was told
+    to restart the service on 2026-11-19 at about 20:05 UTC**; the next look at the log confirms it and checks
+    acceptance step 7 (a kill objective named beside one character only). The log's tail at 20:03 UTC, still on
+    010's code: First, Third, Fourth and Fifth mine copper for `src:diamond_stone`, Second fights skeletons for
+    `lvl:combat:25`. The readings, as the chat takes them:
+    - **Verdict (c) stands**: the simulator and the expected mode are not repaired; the new record in
+      `validate.ts` decides the rest (initiative) from the next potion fights.
+    - **A by-product counts** (the open question of decision 28). An ingredient the bank holds beyond what open
+      demand reserves is free while the stock lasts, and the field price returns when it is gone. The forward
+      model must then debit what a fight drinks, so the replay lands between rows A and C honestly instead of
+      at either end.
+    - **The live bill of a shared objective was 25% of the fleet's hours** (3.56 of 14.1 character-hours,
+      16:43–19:34 UTC, 150 blue slimes at 0 XP among them). Fixed by 011; step 7 checks it.
+    - **The diamond chain is the next live loss**: four of five characters at the copper rocks (0 mining XP, ore
+      nobody asks for) for a craft gated at mining 35 that the chain neither tests nor prices; coal drops the
+      stone at the same rate with 2,060 mining XP an hour — XP toward that very gate. About 8 more hours of four
+      characters until the stones are there. Not stopped by hand; the rule is repaired in 012.
+    - **Two prices are off by a factor, the same way everywhere**: the fight-XP formula reads about two thirds
+      of the real XP (skeleton at combat 23: 24 against 38), and kill seconds are about twice the log's
+      (skeleton 127–143 s against 59–67 s; a craft step 5 s against 13–23 s). The day the fighters reach 30 and
+      whether the pig really ends at 29 hang on them.
+    - **The order after it** (it replaces the tail of decision 29): **012 — the prices round**: a by-product's
+      price with the stock debited in the forward model; the fight-XP formula against the log's fights and the
+      docs; why a kill is priced at twice its real time; the node of a `src:` gather (what else the gather
+      gives: XP toward an unmet gate of its own chain, ore the open chains are short of) and a chain whose
+      parent craft is gated; the replay again. **013 — keys, tolls and what is spent. 014 — the fleet on events.**
+      Then the clean-up. Reason: the tasks take an hour or two, the specialists reach 40 around day 6–16, and
+      what the fleet loses today is in the core's prices. Alex: ok (2026-11-19).
+    - Not taken up: row B is below row A on day 14 (37 against 42) and row D too (36) — the greedy's path, not
+      looked into; work (c) has section 4's fault in structure and never fired in the replay.
+31. **Task 012, settled in the chat** (2026-11-19; in the task file as "What is settled"). The restart is
+    confirmed: the log's tail at 20:10 UTC carries run `[50ry]`, the copper gathers and Second's skeleton step
+    (66/69) re-attached.
+    - **Fight XP is repaired at its cause** (wisdom of the set worn, the gap rule, or the base), from the docs
+      and every won fight of the log; if wisdom, the planner's XP uses the wisdom of the set it plans with.
+    - **A kill's seconds are decomposed** (the fight's cooldown, the turns, healing, walks, `KILL_LOG`) and
+      repaired part by part; rest becomes the docs' 1 s per 1% of max HP; `KILL_LOG` is re-measured as one
+      number afterwards. No factor per monster. **Food is not modelled**: the task prints what healing really
+      costs, the planning chat decides from that.
+    - **A step has a fixed cost** (the reset, the walk, the deposit), from the routes, once a step.
+    - **Stock is free; what the stock does not cover costs the field price**: an ingredient is free while the
+      bank holds 100 runs of it (the shortcut of `pickRecipe`), all or nothing, by-product or not; one function
+      for the solver, the planner and the executor's solves. **The forward model drinks**: a fight step's
+      potions leave the bank, so the stock runs out in the replay as in play.
+    - **The node of a `src:` gather is per character**: the least net seconds per item, net of the XP share
+      when the character holds the lane's role (a specialist's level is wanted anyway). No credit for a node's
+      other drops yet; printed.
+    - **A gated craft in a chain is priced and carried**: the parent's hours include the road to the level, and
+      the level is a candidate for the lane's role holders with the parent's score.
+    - The replay's rows: A the default, B potions free (the upper bound), C the field price always (the lower
+      bound), D a win is enough.
+    - Parked as before: a made piece in every fighter's pool (next in line), the tiny supply steps, the
+      offering's hunt, `initiative`, work (c).
 
 ## Tasks
 | # | What | State |
@@ -466,16 +535,24 @@ task 011 was written.
 | 008 | The runtime: `src/state/planner.ts`, the step loop, blocks and stalls, `interrupt()` (offering, merchant, event, claim), the `claim` item, the guards, 598 as a vanished target, the smallest UI; Fifth on by default | done, `f3a476f`. Accepted 2026-11-19. **Engine change: Alex was told to restart the service on 2026-11-19**; from that restart Fifth is the planner's. The next planning chat reads `logs/dev.log` for the trial. |
 | 009 | The core's second round (decisions 20, 23): gear by need, supply through the bank, alchemy, the price of a level gate, roles, the pool, the forward model; the replay again, with a "win is enough" row | done, `52e7f44`. Accepted 2026-11-19 (decision 25). **Engine change: Alex restarted the service on 2026-11-19 at 14:57 UTC**; all five steps re-attached. |
 | 010 | The live round (decision 27): what a potion costs, the brake per target, offerings that catch up, the first hours of the chains read from the log | done, `93790c7`. Accepted 2026-11-19 (decision 28). **Engine change, live: Alex restarted the service on 2026-11-19 at 16:22 UTC**, before the commit, on the final working tree. |
-| 011 | The calibration round (decision 29): what a fight drinks, filler before a road that does not fit, an objective is the fleet's work, the hours since 16:43 UTC read from the log | written 2026-11-19, `tasks/011-calibration.md`; not run yet. **Engine change: restart after it is accepted.** |
-| 012 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
-| 013 | The fleet on events; events in the forward model | |
-| 014… | The clean-up → the Roadmap as home, a cut-down outlook → group boss fights | |
+| 011 | The calibration round (decision 29): what a fight drinks, filler before a road that does not fit, an objective is the fleet's work, the hours since 16:43 UTC read from the log | done, `f4d4118`. Accepted 2026-11-19 (decision 30). **Engine change, live: Alex restarted the service on 2026-11-19 at about 20:05 UTC** (run `[50ry]`). |
+| 012 | The prices round (decisions 30, 31): fight XP and kill seconds against the log, a step's fixed cost, stock is free and the forward model drinks, the node of a `src:` gather, a gated craft in a chain | written 2026-11-19, `tasks/012-prices.md`; not run yet. **Engine change: restart after it is accepted.** |
+| 013 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
+| 014 | The fleet on events; events in the forward model | |
+| 015… | The clean-up → the Roadmap as home, a cut-down outlook → group boss fights | |
 
 ## Open questions
-- **Does combat stall near 28–30 for want of cheap potions?** Report 010's replay says so (combat 35 on days
-  86–96); the count behind it is twice the log's. Task 011 answers it, and with it when the fleet reaches an event.
-- **Should a by-product count?** An algae priced as a whole fishing gather; diamonds mined at the copper rocks
-  for no XP. 011 prints both cases; decided from its numbers.
+- **How far does the bank's algae carry the fighters?** 2,099 in the bank and about 6,400 more from the fishing
+  objectives, against 14 minor health potions an imp fight at 30. Rows A and C bracket it (30 on days 41–64 or
+  13–22); 012's replay with the stock debited says where between.
+- **Is the pig really over at 29, and how fast is a level?** The fight-XP formula reads two thirds of the real
+  XP and kills are priced at twice their time. 012.
+- **Who strikes first?** The API's characters carry `initiative` 100, the simulator starts the player at 0. The
+  record of `validate.ts` (turn and potion errors) decides it at the next potion fights.
+- **Does 011's fix hold in play?** Acceptance step 7 (a kill objective beside one character only) is read by
+  task 012, section 1, from the first decision after the restart of about 20:05 UTC.
+- Answered by 011 (decision 30): combat stalls at 29–30 for the potion's price, not for the count; a by-product
+  counts.
 - Answered by 010 (decision 28): how the chains run in real play ("The first hours" of its report: nothing
   blocked, braked, stalled or lost); what the simulator's record counts (a predicted win that was lost: 44 of
   159 skeleton fights on 11-18, so "safe" is doing its work).
@@ -629,6 +706,24 @@ task 011 was written.
   - Guesses in the numbers, most doubtful first: potions a fight by the forecast; by-products in `potionSec`; a
     boost or antidote once a fight; `BREW_MAX` 45; an offering issued again after an hour, three times a day;
     the brake's numbers (6 of one target, 20 of any, 10 minutes, 30 minutes); favors until the reset.
+
+- From report 011, not fixed (012 where said; and see decision 30):
+  - The node of a `src:` gather is the least `gatherSec × rate` for everyone (`targets.ts:71`, `:80`), and a
+    parent craft's own gate is neither tested nor priced (`supply.ts:167-180`): 012. The fight-XP formula and
+    the kill and craft seconds against the log: 012.
+  - Work (c): a tool for an open gathering objective is judged per role holder (`gear.ts`, the loop over
+    `targetsOf` inside work (c)); 0 cases in the replay.
+  - An objective's own craft step in flight is not subtracted from its demand (`supply.ts:171`): the shortfall
+    is over-counted by one step's materials while it runs.
+  - A made piece goes to whoever resets first — now the larger part of the duplicate gear (row A's 19 pieces
+    for arachnophobia are one need whose holder moves). Still parked; next in line after the prices.
+  - Banked potions ride on fights that do not need them (a utility slot filled with a stack that is used 0
+    times); harmless while none is drunk.
+  - Cooked beef deposited by a step's tail and withdrawn by the next fight step 13–48 s later; food is 9–21% of
+    a fighter's time (Fifth ate 133 times in 136 fights).
+  - Two monster events spawned on 11-19 (18:12, 18:52 UTC) with no `interrupt event` and nothing in the log to
+    say why (`eventorders.ts:84` writes "nothing to do" to `eventPlans` only). For 014.
+  - The offering hunt lost 10 of 164 fights on 11-19 (Fourth 5 of 41): under one in five, left as it is.
 
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
