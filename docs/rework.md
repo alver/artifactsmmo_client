@@ -3,7 +3,8 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-19, after report 008 was accepted and task 009 was written.
+Last updated: 2026-11-19, after report 009 was accepted, the service was restarted (14:57 UTC) and task 010 was
+written.
 
 ## The goal (Alex, 2026-11-18)
 - **The client plays the season by itself.** Alex's target is every achievement of the season: 210 achievement
@@ -29,6 +30,16 @@ Last updated: 2026-11-19, after report 008 was accepted and task 009 was written
   plus set — gear nobody makes in stage 1. **The planner without gear by need is a gathering planner.** 54 is
   still nearly twice what the client reaches as it is (about 30). The expectation of 105–135 stands on the
   abilities to come and has no replay behind it until gear is in the core (task 009).
+- **What task 009 found (2026-11-19).** With gear by need and supply through the bank the replay ends at **56
+  (the three crafting prices alike), 59 when a win is enough** — against 54. The first week 15 → 33, 44 by day
+  14; 67 pieces are made in the first eight days; every fighter is at combat 38 by day 33 — and there the fleet
+  stops again: above 38 nothing craftable flips a monster (the pieces need tasks-coin crystals, event materials
+  or a boss; coins turned into crystals up front change nothing), and from day 33 on 47% of all hours are the
+  fallback gather. The 154 open points wait for: another layer 67, an event 35, gear above 38 15, `use` 10,
+  unhandled 10, a raid 8, filler 6, a group 3. **56 is what the code that exists earns, not a forecast**: the
+  forward model has no events and no keyed or paid transitions, so it sees neither the 102 points behind them
+  nor the gear that event materials give. The expectation of 105–135 still has no replay behind it. What the
+  replay does say is where the next points are: layers and events, not more of the core (decision 26).
 - **One planner decides what the fleet does next and moves on by itself** — "the roadmap". Alex at most adjusts
   priorities, and doubts there is much to adjust.
 - **No manual queues in the UI.** Alex hardly used them; if something has to be done by hand, the planner is wrong
@@ -305,9 +316,84 @@ Last updated: 2026-11-19, after report 008 was accepted and task 009 was written
         reset): count it;
       - decision 17's second gap again, now that Alex names offerings a priority: the three gear crafting skills
         to 10 on the four characters that do not craft them (about three more offerings a day). Proposed to him
-        as a cheap one-off target for the round after 009; not decided.
+        as a cheap one-off target for the round after 009. **Dropped (Alex, 2026-11-19)**: a bracket's requirement
+        sits anywhere in its range (mining 10–20 asked for coal, a level-20 node; woodcutting 10–20 for spruce,
+        level 10 — `scripts/check-offering.mts`), and a craft offering must be crafted by the character itself,
+        banked items do not count. Skill 10 would complete it only on some days; a reliable 10–20 bracket means
+        skill 20 on twelve skill lanes, far more than three offerings a day are worth.
     - Seen in the log of 11-18 evening (the hive's last wave): Third lost two skeleton fights in a row and Fifth's
       skeleton fight was refused as no win — evidence for "safe" (decision 23).
+
+25. **Report 009 accepted (2026-11-19).** Checked in the chat: the three commits in `.git/logs/HEAD` (`a879ad3`
+    Rework notes, `c57f81d` Rework notes with decision 24, `52e7f44` 009); `decide.ts`, `gear.ts`, `supply.ts`,
+    `bundle.ts`, `gates.ts`, `stock.ts`, `compile.ts`, `config.ts` and `src/state/planner.ts` read in full — the
+    need rule (`G + H1 ≤ 0.85 × H0`, drop the dearest piece while it holds), the three works, `billOf` with the
+    shared virtual bank, `src:` / `mat:` / `gear:` candidates scored by the parent's whole chain, the pinned
+    roles, the wall in `bundleOf`, the pool less the others' reservations, the three item shapes of a supply
+    step, `measure` past the trailing `deposit-all` and the brake over supply are as the report says. Not
+    checked there: `reach.ts`, `cost.ts`, `forward.ts`, `pick.ts`, `roles.ts`, the check script, the check runs,
+    the typecheck, the build (Claude Code ran them). **Engine change: Alex was told to restart the service on
+    2026-11-19 (afternoon); from that restart gear and supply chains are live for all five.** The report's own
+    readings, accepted:
+    - **A trade for an item currency is a chain, not spending** (hard leather for cowhide, cloth for wool,
+      snakeskin for snake hide): a `mat:` step `[withdraw, buy, deposit-all]`. Tanner's Exchange proved the item
+      shape live on 11-19.
+    - **A far gate is walked to its wall**: the level target stops at the first level with no XP source and the
+      score prices the rest at the last pace. Without it nobody levelled past 25 for `grand_master`.
+    - **The budget missed** (the first week inside `npm run check`: 110 s against 40 s, the gear solver) stays
+      missed for now; `scripts/check.mts` got a longer backstop for it. A forward run to the deadline is 216–225 s:
+      the outlook cannot be that run (report 009, section 8, says what to cut).
+    - **The open questions it answers.** *Safe*: a wall worth about 3 points (row D, an upper bound: the model
+      has no losses), not the wall that stops the fleet — the gear above 38 is. Safe stays the rule; a loss
+      probability is cheap when wanted (`monteCarlo` on the solved set, about 2 ms per 1,000 fights). *Spine or
+      greedy*: combat is a spine (21% of all hours go to levelling it toward `grand_master`); crafting is not
+      exercised — every piece asked for was within the crafters' 20–21, so the three crafting prices give the
+      same 56. *What gear crafting costs* is therefore still open, and does not matter until gear above 38 is in
+      reach.
+    - **Known as it goes live** (none of it holds the restart back; 010 takes them):
+      - the brake counts every start: six short supply steps inside ten minutes block everything for 30 minutes
+        and the character gathers a fallback chunk. Sign: `flapping` with `mat:` / `gear:` keys;
+      - a made piece is in every fighter's pool: whoever starts a fight step first wears it, extra copies follow;
+      - a shared kill objective is counted whole for each fighter (five battlestaffs for 401 highwaymen);
+      - the model treats the bank's potion stacks as inexhaustible; real fights brew when a stack drains.
+26. **The order after 009 follows the replay's walls** (it replaces the tail of decisions 14 and 19). The Roadmap
+    and the outlook earn no points and move back; the tasks have been taking half a day each, so the order below
+    is about what the fleet meets first, not about weeks:
+    - **010 — the live round** (restart). What the first hours of chains in real play show (the planner's lines
+      of `logs/dev.log`, read by the task: the log is 61 MB, too large for the chat); the brake counts steps
+      that ended blocked or empty, not every start; short supply steps in a row; a made piece kept for the
+      fighter it was made for; a shared objective counted once; the offerings list of decision 24; an honest
+      `waitingOf` for a material sold for tasks coins; and **tasks coins spent on an objective's own material**
+      (crafted_with_honor: one astralyte crystal, 12 of 526 coins — decision 10 allows it; 009 only held it
+      back). The `use` objectives (10 points) ride along if they compile to today's items.
+    - **011 — keys, tolls and `has_item` transitions**, with the gold budget for fares (67 points wait behind a
+      layer; the gathering specialists reach 40 around day 14).
+    - **012 — the fleet on events, and events in the forward model** (35 points, and the materials of the gear
+      above 38; the fighters reach 30 around day 17).
+    - then the clean-up, the Roadmap as home with a cut-down outlook, group boss fights.
+    Provisional until the first live hours are read: a defect of the chains in real play goes first.
+27. **Task 010, settled in the chat** (2026-11-19, after the restart; in the task file as "What is settled").
+    The restart of 14:57:11 UTC was clean: all five steps re-attached (four `lvl:combat:25` on pigs, Fourth on
+    Intermediate Miner's coal), so the first decision of 009's core came only when those steps ended — the chat
+    saw none. What the log's tail did show, under 008's core, decides the task:
+    - **Potions are the dearest thing in real play.** Second, Third and Fifth fight pigs with Small Health
+      Potions; 16 potions last four to six fights, and the next batch is ten minutes of sunflowers: about two
+      thirds of the step is brewing. `killSeconds` (`src/plan/bis.ts`) prices a potion's heal at the rest rate
+      and says so in its own comment. **A consumed potion costs what it takes to make another** — one function
+      for the solver, the planner and the executor. Safe stays the first tier. Potions as supply through the
+      bank are not built: with an honest price a fighter brewing its own is the same hours; decided again from
+      010's numbers.
+    - **The brake is per target** (six starts of one target in ten minutes block that target for 30 minutes;
+      a ceiling of 20 starts of any kind keeps today's behaviour).
+    - **Offerings**: the planner keeps the day per character and catches up (boot, switch-on, the tick); a
+      removed interrupt comes back after an hour; the panel's buttons issue the interrupt and the panel shows
+      the bracket the item takes; an active favor counts in `pickMonster` / `pickNode`.
+    - **The first hours are read by the task** (read-only; nothing found there is fixed in it), with where the
+      time goes per character, and what `src/sim/validate.ts` counts.
+    - **Moved out of 010** (against decision 26): a made piece in every fighter's pool, a shared objective
+      counted whole, the tiny supply steps — hours, not days; parked. Tasks coins on an objective's own
+      material and an honest `waitingOf` go to 011, which becomes "keys, tolls and what is spent". The `use`
+      objectives wait for their own look.
 
 ## Tasks
 | # | What | State |
@@ -320,15 +406,22 @@ Last updated: 2026-11-19, after report 008 was accepted and task 009 was written
 | 006 | Movement knows layers; free transitions are walked; 598 is an answer; the `train` item's node; the backpack wish dropped; read-only: why offerings run at 8–11 of 15 | done, `929017d`. Accepted 2026-11-18. **Engine change: Alex was told to restart the service on 2026-11-18**; the next planning chat asks whether it happened. |
 | 007 | The planner's core, pure: `src/plan/planner/*` and `scripts/check-planner.mts` (first steps, first week, the replay to the deadline) | done, `13ac755`. Accepted 2026-11-18. Nothing imports it: no engine change, no restart. |
 | 008 | The runtime: `src/state/planner.ts`, the step loop, blocks and stalls, `interrupt()` (offering, merchant, event, claim), the `claim` item, the guards, 598 as a vanished target, the smallest UI; Fifth on by default | done, `f3a476f`. Accepted 2026-11-19. **Engine change: Alex was told to restart the service on 2026-11-19**; from that restart Fifth is the planner's. The next planning chat reads `logs/dev.log` for the trial. |
-| 009 | The core's second round (decisions 20, 23): gear by need, supply through the bank, alchemy, the price of a level gate, roles, the pool, the forward model; the replay again, with a "win is enough" row | written 2026-11-19, `tasks/009-planner-gear-and-chains.md`; not run yet. No restart needed; it goes live with the next one. |
-| 010 | The Roadmap as home, the outlook; the offerings list of decision 24 (all five are on already) | restart |
-| 011… | The clean-up → keys and tolls → the fleet on events → group boss fights → `use` | |
+| 009 | The core's second round (decisions 20, 23): gear by need, supply through the bank, alchemy, the price of a level gate, roles, the pool, the forward model; the replay again, with a "win is enough" row | done, `52e7f44`. Accepted 2026-11-19 (decision 25). **Engine change: Alex restarted the service on 2026-11-19 at 14:57 UTC**; all five steps re-attached. |
+| 010 | The live round (decision 27): what a potion costs, the brake per target, offerings that catch up, the first hours of the chains read from the log | written 2026-11-19, `tasks/010-live-round.md`; not run yet. **Engine change: restart after it is accepted.** |
+| 011 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
+| 012 | The fleet on events; events in the forward model | |
+| 013… | The clean-up → the Roadmap as home, a cut-down outlook → group boss fights | |
 
 ## Open questions
 - **What does gear crafting cost this fleet?** The leaderboard shows it for the leader only. The planner's measured
-  hours per level at 25–35 answer it; above 100 hours a level the plan falls back to about 100 points.
-- **Does the rule behave as a spine?** Not shown by 007 (decision 18); the replay of 009, with gear, answers it.
-- **Is "safe" the wall at combat 25, or the gear?** Decision 20; 009 and Fifth's trial.
+  hours per level at 25–35 answer it; above 100 hours a level the plan falls back to about 100 points. Not
+  exercised by 009's replay (decision 25): it matters once gear above 38 is in reach.
+- Answered by 009 (decision 25): the rule is a spine for combat, crafting is not exercised; "safe" was not the
+  wall at 25 — the gear was — and costs about 3 points at the deadline.
+- **How do the chains run in real play?** From the restart of 2026-11-19 14:57 UTC: the first `src:` / `mat:` /
+  `gear:` steps, the samples against their estimates, `flapping`, `blocked`, pieces made and who wears them,
+  lost fights. The chat read the log only to 15:01 UTC (the restart, the re-attached steps, the potion
+  brewing of decision 27); the file is 61 MB, so task 010 reads the rest and reports it.
 - **Was the service restarted after 006?** Moot since the restart of 2026-11-19 09:15 UTC, which brought 006–008
   live together.
 - **How did Fifth's trial day go?** Read from `logs/dev.log` in the next chat: a step about every 90 minutes, the
@@ -440,9 +533,25 @@ Last updated: 2026-11-19, after report 008 was accepted and task 009 was written
   - The harness's fake has no XP and no levels, so no scenario exercises a level sample or the release of a long
     block by a level-up.
 
+- From report 009, not fixed (010 unless said otherwise; and see decision 25, "Known as it goes live"):
+  - Many tiny supply steps: a `mat:` craft of one to ten bars is five seconds of crafting behind a bank reset;
+    a `mat:` step that gathers its own field inputs would be today's items too and remove most of them.
+  - `waitingOf` lists crafted_with_honor as "no field source"; the honest reason is 12 tasks coins. `inputsOf`
+    gives up on a material sold only for coins before the bill can price it.
+  - Steps persisted by 008 carry no `wear`: they reserve no gear until they end (one step each after the restart).
+  - `fleetSec` prices a kill by the highest-level character that wins it, not the quickest; `firstWin` and
+    `winLevel` take a win to hold at every higher level; `roadRate` ignores monsters above the road's top level.
+  - The subset rule of the solve cache takes a smaller pool never to find a better set.
+  - The check's gear table attributes some copies to the step's `for` when the needs moved in between.
+  - The UI bundle grew to 389 kB: `src/state/planner.ts` brings the core into it.
+  - Guesses in the numbers, most doubtful first: the wall reading; potions as an inexhaustible stock;
+    `NEED_RATIO` 0.85 and the ten-level horizon; a shared objective counted whole per fighter; the solver caps
+    (3 and 6 a slot); a craft at 5 s and no bank-reset time per step; the coins-spent variant as the measure of
+    what spending is worth.
+
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
 - Hive continuous mode (⟳) off.
-- Fifth is the planner's from the restart for 008: nothing to do by hand. "🧭 planner on" in its queue panel
-  hands it back.
+- All five are the planner's since 2026-11-19 (decision 24): nothing to do by hand. "🧭 planner on" in a queue
+  panel hands that character back.
 - Lost World Maps: bought by the standing order; nothing to do by hand.
