@@ -6,9 +6,9 @@
 // show, or ↻) — the accept/complete echoes keep it current after that.
 
 import { useEffect, useState } from "preact/hooks";
-import { characterList, characters, offerings } from "../state/store";
+import { bankItems, characterList, characters, offerings } from "../state/store";
 import { categoryLevel, loadOfferings, offeringSlots, todayOfferings } from "../state/offerings";
-import { queueOfferings, queues } from "../state/queue";
+import { offeringPick, queueOfferings, queues } from "../state/queue";
 import { itemName, monster, resource } from "../catalog";
 import { asset, assetFallback, titleCase } from "../lib/util";
 import { itemHover } from "./ItemPopup";
@@ -17,7 +17,7 @@ import * as actions from "../api/actions";
 import type { ActionRunner } from "./useAction";
 import type { Col } from "./DataTable";
 import type { OfferingSlot } from "../state/offerings";
-import type { Character, OfferingFavor } from "../types/api";
+import type { Character, CharacterOfferings, OfferingFavor, SeasonalOffering } from "../types/api";
 
 const invQty = (c: Character, code: string): number => (c.inventory || []).reduce((s, it) => s + (it.code === code ? it.quantity : 0), 0);
 const hasOfferingItem = (name: string): boolean => !!queues.value[name]?.items.some((it) => it.kind === "offering");
@@ -35,6 +35,50 @@ function Requirement({ ch, slot }: { ch: Character; slot: OfferingSlot }) {
       {quantity}× {itemName(code)}
       {slot.status === "accepted" && <span class="chip-have">{held}/{quantity}</span>}
     </span>
+  );
+}
+
+/**
+ * The bracket the `offering` item will take in an open category (queue.ts offeringPick: the own bracket, else the next
+ * lower one it can complete). It runs here, in the tab, over the mirrored bank — a monster bracket asks a BIS solve
+ * (memoised per bank there), so the answer is kept per bank snapshot, day and level: an echo that changes neither
+ * costs nothing. `undefined` = it could not run (the catalog not loaded yet).
+ */
+const pickMemo = new Map<string, { st: unknown; bank: unknown; lv: number; o: SeasonalOffering | undefined }>();
+function pickOf(ch: Character, st: CharacterOfferings, category: string): { o: SeasonalOffering | undefined } | undefined {
+  const k = `${ch.name}|${category}`;
+  const lv = categoryLevel(ch, category);
+  const m = pickMemo.get(k);
+  if (m && m.st === st && m.bank === bankItems.value && m.lv === lv) return m;
+  try {
+    const e = { st, bank: bankItems.value, lv, o: offeringPick(ch, st, category) };
+    pickMemo.set(k, e);
+    return e;
+  } catch {
+    return undefined;
+  }
+}
+
+/** An open category's requirement as the item will take it: the own bracket, a lower one, or none completable. */
+function Open({ ch, st, slot }: { ch: Character; st: CharacterOfferings; slot: OfferingSlot }) {
+  const pick = pickOf(ch, st, slot.category);
+  if (!pick) return <Requirement ch={ch} slot={slot} />;
+  if (!pick.o) {
+    return (
+      <>
+        <Requirement ch={ch} slot={slot} />
+        <span class="muted small">nothing completable today</span>
+      </>
+    );
+  }
+  if (pick.o.id === slot.id) return <Requirement ch={ch} slot={slot} />;
+  return (
+    <>
+      <Requirement ch={ch} slot={{ ...slot, requirement: pick.o.requirement, favor: pick.o.favor }} />
+      <span class="muted small" title={`can't complete the own bracket (${slot.requirement ? `${slot.requirement.quantity}× ${itemName(slot.requirement.code)}` : "none"}) — the item takes a lower one`}>
+        lower bracket ({pick.o.level_min}–{pick.o.level_max})
+      </span>
+    </>
   );
 }
 
@@ -81,7 +125,7 @@ export function OfferingsSection() {
         const slot = offeringSlots(c, mine)[i];
         return (
           <div class="chips">
-            <Requirement ch={c} slot={slot} />
+            {slot.status === "open" ? <Open ch={c} st={mine} slot={slot} /> : <Requirement ch={c} slot={slot} />}
             <Status slot={slot} />
           </div>
         );
@@ -160,7 +204,7 @@ export function AltarPanel({ actor, ctl }: { actor?: Character; ctl: ActionRunne
             <b>{titleCase(s.category)}</b> <span class="muted">· Lv {categoryLevel(ch, s.category)}</span> <Status slot={s} />
           </div>
           <div class="chips">
-            <Requirement ch={ch} slot={s} />
+            {s.status === "open" ? <Open ch={ch} st={st} slot={s} /> : <Requirement ch={ch} slot={s} />}
           </div>
           {s.favor && <div class="muted small">Favor: {favorText(s.favor)}</div>}
           <div class="cat-trade-actions">

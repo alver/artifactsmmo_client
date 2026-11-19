@@ -8,13 +8,19 @@
 // Objective (lexicographic, encoded as one scalar):
 //   1. feasible: EV win AND not a 100-turn timeout            (else the -1e12 tier)
 //   2. safe: the pessimistic pass also wins                   (+1e9)
-//   3. minimize seconds per kill: fight cooldown (2 s/turn) + healing back
-//      every HP the fight cost (5 HP/s) — damage taken, INCLUDING what a
-//      restore potion put back: NOT "HP remaining" (a potion heals every turn
-//      under half health, so that rewarded a slow weapon that dragged the
-//      fight out — fire staff over iron sword vs a cow), and NOT rest-to-full
-//      alone (the potion pins end-of-fight HP at half of max, so every +HP
-//      armor read as MORE rest and the solver stripped body armor).
+//   3. minimize seconds per kill (killSeconds): the fight's cooldown (2 s/turn)
+//      + resting back the HP really missing at its end (5 HP/s) + every potion
+//      the fight drinks at what making another costs (xp.ts potionSec: a small
+//      health potion 47.5 s, not the 6 s of rest its 30 HP buy — task 010; a
+//      restore potion fires every own turn under half HP, a boost once a
+//      fight, FightForecast.used). Two traps of earlier objectives stay shut:
+//      NOT "HP remaining" (a potion heals every turn under half health, so
+//      that rewarded a slow weapon that dragged the fight out — fire staff
+//      over iron sword vs a cow, 2026-11-07: here a longer fight drinks more
+//      potions), and NOT rest-to-full alone (the potion pins end-of-fight HP
+//      at half of max, so every +HP armor read as MORE rest and the solver
+//      stripped body armor, 2026-11-08: here the armor saves procs).
+//      scripts/check-planner.mts keeps both cases.
 // So any safe win beats any risky win; within a tier, the fastest grind.
 // Sets that can't win at all still rank (on a tier no win loses to, by turns
 // survived) — when NOTHING owned beats the monster, the solver still returns
@@ -26,7 +32,7 @@ import { applyGear, baseStats } from "../sim/stats";
 import type { EffectiveStats } from "../sim/types";
 import { simulate } from "../sim/combat";
 import type { FightForecast } from "../sim/combat";
-import { fightSec } from "./xp";
+import { fightSec, potionSec } from "./xp";
 import { restSeconds } from "../sim/cost";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../types/api";
 import type { Character, GearSlot } from "../types/api";
@@ -58,16 +64,20 @@ export interface BisOptions {
    * normally include them).
    */
   noUtilities?: boolean;
+  /** The price of a potion a fight drinks, for killSeconds. Default potionSec; only scripts/check-planner.mts passes another. */
+  potionPrice?: (code: string) => number;
   perSlotCap?: number; // default 12
   weaponCap?: number; // default 10
 }
 
-/** Wall-clock per kill: the fight's cooldown plus healing back everything it
- *  cost — rest to full PLUS the HP potions restored mid-fight: each proc burns
- *  a potion that takes far longer to brew (~40 s for a small health potion)
- *  than resting those 30 HP (6 s), so it is anything but free healing.
- *  shortcut: potion heals priced at the 5 HP/s rest rate (a floor), upgrade to the real brew cost per proc if potion burn ever decides a set */
-export const killSeconds = (f: FightForecast): number => fightSec(f.turns) + restSeconds(f.maxHp - f.hpRemaining + f.hpRestored);
+/** Wall-clock per kill: the fight's cooldown, the rest back from the HP missing at its end, and each potion it drinks
+ *  (FightForecast.used) at what making another takes (xp.ts potionSec). `price` is for scripts/check-planner.mts
+ *  only: its "before" column prices a potion at the rest its heal buys, the objective of tasks 008–009. */
+export function killSeconds(f: FightForecast, price: (code: string) => number = potionSec): number {
+  let s = fightSec(f.turns) + restSeconds(f.maxHp - f.hpRemaining);
+  for (const code in f.used) if (f.used[code] > 0) s += f.used[code] * price(code);
+  return s;
+}
 
 const SINGLE_SLOTS: GearSlot[] = ["shield", "helmet", "body_armor", "leg_armor", "boots", "amulet", "rune", "bag"];
 const RING_SLOTS: GearSlot[] = ["ring1", "ring2"];
@@ -196,7 +206,7 @@ function buildPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlo
 
 interface Eval { score: number; f: ReturnType<typeof simulate>; worst: ReturnType<typeof simulate>; safe: boolean }
 
-function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>, worn: Partial<Record<GearSlot, string>>) {
+function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>, worn: Partial<Record<GearSlot, string>>, price: (code: string) => number = potionSec) {
   return (slots: Record<GearSlot, string>): Eval => {
     const codes: string[] = [];
     for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
@@ -232,7 +242,7 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
     }
     const worst = simulate(fighter, monster, { pessimistic: true });
     const safe = worst.win;
-    return { score: (safe ? 1e9 : 0) - killSeconds(f) * 1000 + tiebreak, f, worst, safe };
+    return { score: (safe ? 1e9 : 0) - killSeconds(f, price) * 1000 + tiebreak, f, worst, safe };
   };
 }
 
@@ -249,7 +259,7 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
   const pools = buildPools(ch, m, opts);
   const worn: Partial<Record<GearSlot, string>> = {};
   for (const s of GEAR_SLOTS) worn[s] = slotCode(ch, s);
-  const evaluate = makeEvaluator(base, m, worn);
+  const evaluate = makeEvaluator(base, m, worn, opts.potionPrice);
   // How many copies of a code the group search may place: owned counts when
   // known, else "as many as the group has slots" (craftable candidates).
   const countOf = (code: string): number => opts.ownedQty?.get(code) ?? 3;

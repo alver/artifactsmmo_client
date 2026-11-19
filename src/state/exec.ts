@@ -10,8 +10,8 @@
 
 import * as actions from "../api/actions";
 import { ApiError } from "../api/client";
-import { item, itemName, npc as npcOf } from "../catalog";
-import { currentFighter } from "../sim/stats";
+import { item, itemName, monster as monsterOf, npc as npcOf } from "../catalog";
+import { currentFighter, fighterForGear } from "../sim/stats";
 import { simulate } from "../sim/combat";
 import { jobGear, nextGearAction } from "../plan/jobgear";
 import { carriedFood, foodPlan, foodQuantity, gatherSourceFor } from "../plan/consumables";
@@ -342,14 +342,12 @@ export const foodInHand = (ch: Character): FoodSpec | undefined => carriedFood(c
 const FOOD_HORIZON = 50;
 
 /**
- * Potions brewed per expedition. Deliberately small: a brew only starts when
- * the potion has NO supply anywhere, so the fighter is standing around NOT
- * fighting while ingredients are gathered — a horizon-sized batch (50 × up to
- * 3 ingredients each) meant half an hour of sunflower picking before the first
- * swing. A small batch reaches the fights in minutes; when the worn stack
- * drains dry the next expedition brews the next batch.
+ * At most this many potions a brew (task 010; a guess: three of the old 15-potion batches). A brew starts only when
+ * the potion has NO supply anywhere; the batch is what the item's remaining fights drink by the forecast — a restore
+ * potion fires every own turn under half HP, so 16 small health potions lasted four to six pig fights (dev.log
+ * 2026-11-19 14:50–14:58) and the old cap of 15 sent the fighter back to the sunflowers every few minutes.
  */
-const BREW_BATCH = 15;
+const BREW_MAX = 45;
 
 /**
  * One provisioning action toward having between-fight food in hand: withdraw
@@ -452,9 +450,11 @@ export async function provisionPotions(
     if (invQty(ch, want) > 0 || bankQty(want) > 0) continue; // the differ's job
     const recipe = item(want)?.craft;
     if (!recipe || skillLevel(ch, recipe.skill) < recipe.level) continue;
-    // One potion fires (and is consumed) per fight at most — never brew more
-    // than the fights left, and never more than a batch per expedition.
-    const target = Math.min(ctx.fightsLeft ?? 1, BREW_BATCH);
+    // Units a fight drinks, by the forecast of the set being brewed for (desiredForJob's memo knows its monster).
+    const memo = fightSetMemo.get(name);
+    const mon = memo?.desired === desired ? monsterOf(memo.key) : undefined;
+    const perFight = mon ? simulate(fighterForGear(ch, Object.values(desired).filter((c): c is string => !!c)), mon).used[want] ?? 0 : 1;
+    const target = Math.min(BREW_MAX, Math.max(1, Math.ceil((ctx.fightsLeft ?? 1) * perFight)));
     if ((await produceOnce(name, ch, want, recipe, target, ctx)) === "acted") return "acted";
   }
   return "none";

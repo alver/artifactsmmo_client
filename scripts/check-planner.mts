@@ -14,9 +14,13 @@ import { atlas } from "../src/catalog/atlas";
 import { applyGear, baseStats } from "../src/sim/stats";
 import { simulate } from "../src/sim/combat";
 import type { TurnEvent } from "../src/sim/combat";
-import { killSeconds } from "../src/plan/bis";
+import { bestInSlot, killSeconds } from "../src/plan/bis";
+import { brewablePotions } from "../src/plan/consumables";
 import { ownedQtyOf } from "../src/plan/jobgear";
-import { fightXp } from "../src/plan/xp";
+import { fightXp, potionSec } from "../src/plan/xp";
+import { STAT_CODES } from "../src/sim/types";
+import { GEAR_SLOTS } from "../src/types/api";
+import type { GearRecommendation } from "../src/plan/types";
 import { itemsOf } from "../src/plan/planner/compile";
 import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, TRAIN_LANES } from "../src/plan/planner/config";
 import { killWalk, levelHoursEstimate, levelOf, perOf } from "../src/plan/planner/cost";
@@ -26,7 +30,7 @@ import { advance, forward, pointsOf, waitingOf, wear } from "../src/plan/planner
 import { gearNeeds, piecesFor } from "../src/plan/planner/gear";
 import { isOn } from "../src/plan/planner/gates";
 import { pickMonster, pickNode, pickRecipe } from "../src/plan/planner/pick";
-import { fightRec, memoSizes, nearestSpot, placeOf, travel } from "../src/plan/planner/reach";
+import { chAt, fightRec, memoSizes, nearestSpot, placeOf, travel } from "../src/plan/planner/reach";
 import { crafterOf, rolesFor } from "../src/plan/planner/roles";
 import { available, floor, poolBank } from "../src/plan/planner/stock";
 import { billOf, recipeDemand } from "../src/plan/planner/supply";
@@ -53,6 +57,10 @@ const BANK_GOLD = 155_976; // docs/design/snapshot/leaderboard-accounts.json, ac
 const NAMES = chars.map((c) => c.name);
 const ALL_ON: PlannerConfig = { ...DEFAULTS, on: Object.fromEntries(NAMES.map((n) => [n, true])) };
 const base: World = { now: NOW, characters: chars, bank: fx.bankItems, bankGold: BANK_GOLD, achievements, events: [], current: {}, costs: {}, blocked: {}, config: ALL_ON };
+/** Task 010: the combat levels logs/dev.log shows (read without a request): the snapshot's XP plus every `fight win · +N
+ *  xp` and combat offering logged since the snapshot's time, levelled by the atlas's xpNeeded (the potion table). */
+const LOG_AT = "2026-11-19 15:37 UTC";
+const LOG_LEVELS: Record<string, number> = { First: 21, Second: 22, Third: 21, Fourth: 21, Fifth: 21 };
 const DAY = 864e5;
 const day = (t: number): string => ((t - NOW) / DAY).toFixed(1);
 const f1 = (x: number): string => (!Number.isFinite(x) ? "∞" : x < 10 ? x.toFixed(1) : String(Math.round(x)));
@@ -113,8 +121,15 @@ interface Run {
   hours: Map<string, number>;
   reached: Map<string, number>; // "<name>:<level>" → day
   copies: Map<string, string[]>; // a gear step's key → whom its copies are for, one name a copy
+  fightHours: number; // kill steps' hours, and the share of them that is making the potions the fights drink (task 010)
+  potionHours: number;
 }
-const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map() });
+const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0 });
+/** Seconds a fight spends on the potions it drinks (task 010: what making them takes). */
+const potionPart = (f: { used: Record<string, number> }, price: (code: string) => number = potionSec): number =>
+  Object.entries(f.used).reduce((s, [c, n]) => s + n * price(c), 0);
+/** A potion priced at the rest its heal buys: the objective before task 010 (the "before" columns). */
+const restFloor = (code: string): number => (item(code)?.effects ?? []).reduce((t, e) => t + (e.code === "restore" ? e.value / 5 : 0), 0);
 
 function verify(w: World, step: Step, run: Run): void {
   const ch = w.characters.find((c) => c.name === step.character)!;
@@ -172,7 +187,14 @@ function verify(w: World, step: Step, run: Run): void {
   // records for the tables
   const k = step.as === "level" ? `level ${step.target.split(":")[1]}` : step.as === "supply" ? `supply ${step.target.split(":")[0]}:` : step.as;
   run.hours.set(k, (run.hours.get(k) ?? 0) + step.hours);
-  if (step.work.kind === "kill") { const rec = fightRec(ch, w, step.work.monster); if (rec?.forecast.win && !rec.safe) run.unsafeHours += step.hours; }
+  if (step.work.kind === "kill") {
+    const rec = fightRec(ch, w, step.work.monster);
+    if (rec?.forecast.win && !rec.safe) run.unsafeHours += step.hours;
+    if (rec?.forecast.win) {
+      run.fightHours += step.hours;
+      run.potionHours += (step.hours * potionPart(rec.forecast) * KILL_LOG) / (killSeconds(rec.forecast) * KILL_LOG + killWalk(ch, w, step.work.monster));
+    }
+  }
   for (const n of gearNeeds(w).needs) for (const [code] of n.pieces) {
     const key = `${n.for}|${code}`;
     if (!run.asked.has(key)) run.asked.set(key, { at: w.now, work: n.work, parts: n.parts });
@@ -476,6 +498,39 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   console.log(`  8. Second not on: ${offered8.length} need(s) for Fifth, none offered; Fifth — ${r8.step.why}`);
 }
 
+// ── 5b. task 010: the two traps of bis.ts's header, before (a potion at the rest its heal buys) and after (potionSec) ──
+/** A character with every slot emptied (stats follow, as forward.ts wear) at another combat level (+5 max HP a level). */
+function stripped(ch: Character, level: number): Character {
+  const c = { ...ch } as unknown as Record<string, number | string>;
+  for (const g of GEAR_SLOTS) {
+    const code = c[`${g}_slot`] as string;
+    if (!code) continue;
+    for (const e of item(code)?.effects ?? []) if (STAT_CODES.has(e.code) && e.code !== "initiative") { const k = e.code === "hp" ? "max_hp" : e.code; c[k] = (c[k] as number) - e.value; }
+    c[`${g}_slot`] = "";
+    if (g.startsWith("utility")) c[`${g}_slot_quantity`] = 0;
+  }
+  c.max_hp = (c.max_hp as number) + 5 * (level - (c.level as number));
+  c.level = level;
+  c.hp = c.max_hp;
+  return c as unknown as Character;
+}
+const setLine = (r: GearRecommendation | undefined, price: (code: string) => number): string =>
+  r ? `${Object.values(r.slots).filter(Boolean).join(" + ")} — ${r.safe ? "safe" : r.forecast.win ? "win" : "loss"}, ${r.forecast.turns} turns, ${Object.entries(r.forecast.used).map(([c, n]) => `${n} ${c}`).join(", ") || "no potion"}, ${f1(killSeconds(r.forecast, price))} s` : "none";
+{
+  const at10 = stripped(chars[0], 10);
+  const trap = (monster: string, pool: string[]): (GearRecommendation | undefined)[] => {
+    const o = { owned: new Set(pool), ownedQty: new Map(pool.map((c) => [c, item(c)!.type === "utility" ? 100 : 1])), includeCraftable: false };
+    return [bestInSlot(at10, monster, { ...o, potionPrice: restFloor })[0], bestInSlot(at10, monster, o)[0]];
+  };
+  const [b1, a1] = trap("cow", ["fire_staff", "iron_sword", "small_health_potion"]);
+  const [b2, a2] = trap("cow", ["iron_sword", "copper_armor", "small_health_potion"]);
+  cases.push(["trap 1 of bis.ts: a cow, a restore potion — the iron sword, not the slow fire staff, before and after", b1?.slots.weapon === "iron_sword" && a1?.slots.weapon === "iron_sword"]);
+  cases.push(["trap 2 of bis.ts: a restore potion — the body armor stays, before and after", b2?.slots.body_armor === "copper_armor" && a2?.slots.body_armor === "copper_armor"]);
+  console.log(`  the traps of bis.ts's header (${at10.name} stripped to level 10, ${at10.max_hp} HP, against a cow):`);
+  console.log(`     fire staff, iron sword, small health potions — before: ${setLine(b1, restFloor)}\n                                                     after:  ${setLine(a1, potionSec)}`);
+  console.log(`     iron sword, copper armor, small health potions — before: ${setLine(b2, restFloor)}\n                                                       after:  ${setLine(a2, potionSec)}`);
+}
+
 // ── 6. the replay to the deadline: four rows in four child processes ─────────
 const results: number[] = [];
 if (VERBOSE) {
@@ -495,6 +550,8 @@ if (VERBOSE) {
     for (const [k, v] of got.inv) { const r = inv.get(k)!; r.n += v.n; r.fails += v.fails; r.bad.push(...v.bad.slice(0, 5 - r.bad.length)); }
   }
   safeTable(base, "the snapshot");
+  potionTable(base, "the 2026-11-18 snapshot (the bank of 2026-11-17)");
+  potionTable({ ...base, characters: chars.map((c) => chAt(c, LOG_LEVELS[c.name] ?? c.level)) }, `the fleet as logs/dev.log shows it at ${LOG_AT} (combat levels: the snapshot's XP plus every combat XP gain logged since; no gear piece was crafted since the snapshot, so the pool is the snapshot's)`);
 }
 
 function replayRow(row: (typeof ROWS)[number]): number {
@@ -510,6 +567,7 @@ function replayRow(row: (typeof ROWS)[number]): number {
     console.log(`  completed: ${r.completed.map((c) => `${c.code} +${c.points} (${day(c.at)})`).join(", ")}`);
     const total = [...r.run.hours.values()].reduce((s, x) => s + x, 0);
     console.log(`  character-hours: ${[...r.run.hours].sort((a, b) => b[1] - a[1]).map(([k, h]) => `${k} ${((100 * h) / total).toFixed(1)}%`).join(" · ")}`);
+    console.log(`  potion making (task 010): ${f1(r.run.potionHours)} of ${f1(r.run.fightHours)} fight hours, ${((100 * r.run.potionHours) / Math.max(1e-9, r.run.fightHours)).toFixed(1)}%`);
     const craftLv = r.played.filter((p) => p.step.as === "level" && [...GEAR_CRAFT, "cooking"].includes(p.step.target.split(":")[1]));
     console.log(`  crafting levels taken: ${craftLv.length} steps of ${r.played.length} (${f1(craftLv.reduce((s, p) => s + p.step.hours, 0))} h): ${[...new Set(craftLv.map((p) => p.step.target))].join(", ") || "none"}`);
     for (const c of r.world.characters) console.log(`  ${pad(c.name, 7)} ${["combat", ...GATHER_LANES, ...GEAR_CRAFT, "cooking"].map((l) => `${l} ${levelOf(c, l as Lane)}`).join(", ")}`);
@@ -534,6 +592,42 @@ function replayRow(row: (typeof ROWS)[number]): number {
     }
     if (row.label.startsWith("A")) safeTable(r.world, "where row A leaves each fighter");
     return pointsOf(r.world);
+  }
+}
+
+// ── 8. what a potion costs (task 010) ────────────────────────────────────────
+/** The executor's choice of set (jobgear.ts jobGear): the pool's best, or the set with brewable potions when that wins
+ *  where it did not, is safe where it was not, or kills faster — all under `price`. */
+function execSet(ch: Character, bank: BankItem[], monster: string, price: (code: string) => number): GearRecommendation | undefined {
+  const qty = ownedQtyOf(ch, bank);
+  const opts = { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, potionPrice: price };
+  const rec = bestInSlot(ch, monster, opts)[0];
+  const brews = brewablePotions(ch, bank);
+  const recB = rec && brews.length ? bestInSlot(ch, monster, { ...opts, extraCandidates: brews })[0] : undefined;
+  return recB && rec && ((recB.forecast.win && !rec.forecast.win) || (recB.safe && !rec.safe) || (recB.forecast.win && killSeconds(recB.forecast, price) < killSeconds(rec.forecast, price))) ? recB : rec;
+}
+function potionTable(w: World, label: string): void {
+  console.log(`\n## What a potion costs — ${label}`);
+  console.log(`  per unit: ${[...catalog().items.values()].filter((it) => it.type === "utility").map((it) => `${it.code} ${f1(potionSec(it.code))} s${it.craft ? "" : " (floor)"}${restFloor(it.code) ? ` (rest ${f1(restFloor(it.code))} s)` : ""}`).join(" · ")}`);
+  console.log(`  per fighter, its XP monsters: the executor's set (owned + brewable potions) before (a potion at the rest its heal buys) and after (potionSec); s/kill as the planner prices it (× ${KILL_LOG}, + bank trips); the pick = the best XP/s among safe wins`);
+  for (const ch of w.characters) {
+    const picks: Record<"b" | "a", { code: string; rate: number } | undefined> = { b: undefined, a: undefined };
+    const rows: string[] = [];
+    for (const m of [...catalog().monsters.values()].filter((x) => x.type !== "boss" && x.type !== "raid_boss" && x.level <= ch.level + 10 && fightXp(x.level, x.hp, x.type, ch.level) > 0 && nearestSpot(placeOf(ch), "monster", x.code, w)).sort((a, b) => a.level - b.level)) {
+      const xp = fightXp(m.level, m.hp, m.type, ch.level);
+      const cell = (k: "b" | "a", price: (code: string) => number): string => {
+        const r = execSet(ch, w.bank, m.code, price);
+        if (!r?.forecast.win) return "no win";
+        const sec = killSeconds(r.forecast, price) * KILL_LOG + killWalk(ch, w, m.code);
+        if (r.safe && (!picks[k] || xp / sec > picks[k]!.rate)) picks[k] = { code: m.code, rate: xp / sec };
+        const pots = Object.entries(r.forecast.used).filter(([, n]) => n > 0).map(([c, n]) => `${n} ${c.replace(/_potion$/, "")}`).join(" + ");
+        return `${r.safe ? "safe" : "win "} ${pad(Math.round(sec), 4)} s ${pad(Math.round((xp / sec) * 3600), 5)} XP/h ${pots ? `drinks ${pots}` : "no potion"}`;
+      };
+      rows.push(`     ${pad(`${m.code} (${m.level})`, 24)} before: ${pad(cell("b", restFloor), 50)} after: ${cell("a", potionSec)}`);
+    }
+    const p = (x?: { code: string; rate: number }): string => (x ? `${x.code} ${Math.round(x.rate * 3600)} XP/h` : "none");
+    console.log(`  ${ch.name} (combat ${ch.level}, ${ch.max_hp} HP) — pick before: ${p(picks.b)} · after: ${p(picks.a)}`);
+    for (const r of rows) console.log(r);
   }
 }
 

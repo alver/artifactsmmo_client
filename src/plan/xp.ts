@@ -69,3 +69,44 @@ export const fightSec = (turns: number): number => Math.max(5, 2 * turns);
 
 /** One fight round including the healing it costs, measured. */
 export const FIGHT_SEC = 40;
+
+/** Seconds of field work for one unit of an ingredient: the surest node that drops it (lowest drop rate, then lowest
+ *  level — consumables.ts gatherSourceFor without the skill filter) at rate × its gather seconds, as gatherPays prices
+ *  it; else the surest monster drop at rate × FIGHT_SEC; else, when `open`, its recipe one level deep (5 s plus its own
+ *  inputs' field seconds, not opened further) over the recipe's quantity. Infinity: none of these. */
+function fieldSec(code: string, open: boolean): number {
+  const surest = <T extends { level: number; drops: { code: string; rate: number }[] }>(xs: Iterable<T>): { rate: number; level: number } | undefined => {
+    let best: { rate: number; level: number } | undefined;
+    for (const x of xs) for (const d of x.drops) if (d.code === code && (!best || d.rate < best.rate || (d.rate === best.rate && x.level < best.level))) best = { rate: d.rate, level: x.level };
+    return best;
+  };
+  const node = surest(catalog().resources.values());
+  if (node) return node.rate * gatherSec(node.level);
+  const mon = surest(catalog().monsters.values());
+  if (mon) return mon.rate * FIGHT_SEC;
+  const r = open ? item(code)?.craft : undefined;
+  return r ? (CRAFT_SEC + r.items.reduce((t, g) => t + g.quantity * fieldSec(g.code, false), 0)) / Math.max(1, r.quantity) : Infinity;
+}
+
+const potionMemo = new Map<string, number>();
+/**
+ * What one more unit of a utility potion costs, in seconds (task 010): a consumed potion costs what it takes to make
+ * another. A recipe: its ingredients' field seconds (fieldSec) plus the craft, over the recipe's quantity — a small
+ * health potion is 3 sunflowers at 30 s and a 5 s brew for two, 47.5 s a potion against the 6 s of rest its 30 HP
+ * buy. No recipe: the rest seconds of what it heals (5 HP/s; 0 for a boost) — a floor. The one price of a potion in
+ * the solver's objective (bis.ts killSeconds), and so in the planner's prices and the executor's choice of set. Here
+ * because every per-action price lives here and bis.ts and the planner's core both import this module. Static
+ * catalog ⇒ memoised for good.
+ */
+export function potionSec(code: string): number {
+  let s = potionMemo.get(code);
+  if (s == null) {
+    const it = item(code);
+    const r = it?.craft;
+    s = r
+      ? (CRAFT_SEC + r.items.reduce((t, g) => t + g.quantity * fieldSec(g.code, true), 0)) / Math.max(1, r.quantity)
+      : (it?.effects ?? []).reduce((t, e) => t + (e.code === "restore" ? e.value / 5 : 0), 0);
+    potionMemo.set(code, s);
+  }
+  return s;
+}

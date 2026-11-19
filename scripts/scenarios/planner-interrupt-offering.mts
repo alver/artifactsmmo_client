@@ -2,7 +2,8 @@
 // goes ahead of the running fight item, does the day's offering (accept at the altar, the requirement from the
 // bank, complete), and the step resumes with its counter. The step's running seconds do not count the
 // interrupt's time, so neither does its cost sample. One offering interrupt per character and UTC day.
-// (The boot catch-up is the same call; it is suppressed here so the trigger comes mid-step.)
+// (The boot catch-up is the same call; it is suppressed here so the trigger comes mid-step. Since task 010 the planner
+// keeps its own offerings day per character, so the setup marks today's as issued there as well as in the old marker.)
 import { achievement, planLines, scenario } from "../harness/index.mts";
 import { T0 } from "../harness/clock.mts";
 import { offeringsDue, planner } from "../../src/state/planner";
@@ -16,7 +17,10 @@ await scenario(
     bank: { copper_dagger: 1, feather: 2 },
     achievements: [achievement("chicken_hunt", 5, ["combat_kill", "chicken", 40])],
     offerings: [{ id: "off-1", category: "combat", type: "monster", level_min: 1, level_max: 10, requirement: { code: "feather", quantity: 2 }, favor }],
-    setup: () => localStorage.setItem("ammo:v1:offeringsDaily", String(Date.UTC(2026, 0, 15, 0, 5))), // today's 00:05 handled
+    setup: () => {
+      localStorage.setItem("ammo:v1:offeringsDaily", String(Date.UTC(2026, 0, 15, 0, 5))); // today's 00:05 handled
+      planner.value = { ...planner.value, offered: { Pia: { day: "2026-01-15", n: 0 } } }; // …and the planner's day
+    },
     limits: { actions: 400, minutes: 120 },
   },
   async (t) => {

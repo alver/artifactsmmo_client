@@ -21,16 +21,19 @@ export { ELEMENTS, elementDamagePct, isCombatEffect, isConsumableEffect, zeroSta
 export type { Element, EffectEntry, EffectiveStats, Fighter } from "./types";
 
 /** Fold one item's effects into a stat accumulator, collecting combat effects aside. */
-function foldEffects(acc: EffectiveStats, effects: ItemEffect[] | undefined, combat: EffectEntry[], sign = 1): void {
+function foldEffects(acc: EffectiveStats, effects: ItemEffect[] | undefined, combat: EffectEntry[], sign = 1, potion?: string): void {
   if (!effects) return;
   for (const e of effects) {
     if (STAT_CODES.has(e.code)) {
       acc[e.code as keyof EffectiveStats] += sign * e.value;
     } else if (isCombatEffect(e.code)) {
-      combat.push({ code: e.code, value: sign * e.value });
+      combat.push(potion ? { code: e.code, value: sign * e.value, potion } : { code: e.code, value: sign * e.value });
     }
   }
 }
+
+/** A utility item's code (a potion a fight consumes), else undefined. */
+const potionOf = (code: string): string | undefined => (item(code)?.type === "utility" ? code : undefined);
 
 /** The non-empty item codes currently equipped in a character's 16 slots. */
 export function equippedCodes(ch: Character): string[] {
@@ -82,7 +85,7 @@ export function baseStats(ch: Character): EffectiveStats {
 export function applyGear(base: EffectiveStats, codes: string[]): Fighter {
   const stats = { ...base };
   const effects: EffectEntry[] = [];
-  for (const code of codes) foldEffects(stats, item(code)?.effects, effects, 1);
+  for (const code of codes) foldEffects(stats, item(code)?.effects, effects, 1, potionOf(code));
   return { stats, effects };
 }
 
@@ -100,8 +103,9 @@ export function currentFighter(ch: Character): Fighter {
   const stats = currentStats(ch);
   const effects: EffectEntry[] = [];
   for (const code of equippedCodes(ch)) {
+    const potion = potionOf(code);
     for (const e of item(code)?.effects ?? []) {
-      if (isCombatEffect(e.code)) effects.push({ code: e.code, value: e.value });
+      if (isCombatEffect(e.code)) effects.push(potion ? { code: e.code, value: e.value, potion } : { code: e.code, value: e.value });
       if (e.code === "initiative") stats.initiative += e.value; // not in Character totals
     }
   }

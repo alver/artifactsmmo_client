@@ -16,18 +16,23 @@ import type { Input, Lane, Place, World } from "./types";
 
 export interface MonsterPick { monster: string; xp: number; sec: number; rate: number; place: Place; until?: number }
 
+/** Task 010: the XP multiplier of the character's active favor on this target (an accepted offering's), else 1. */
+const favorXp = (world: World, name: string, type: "monster" | "resource", code: string): number =>
+  world.favors?.[name]?.find((f) => f.type === type && f.code === code && f.until > world.now)?.xp ?? 1;
+
 /**
  * The monster to level combat on: XP per second (the docs' fight XP over the kill's cost — fight, rest, the
  * log factor, the bank trips) among monsters on the map now (static or a live event's), that the character
  * reaches by a free route and wins SAFELY with bank + own gear; × 1.25 for a monster with an open kill or drop
- * objective (`bonus`). Bosses are group work. Candidates stop at level + 10, as `trainingMonsterFor`.
+ * objective (`bonus`); the XP × an active favor's multiplier while it lasts (task 010; pickNode likewise). Bosses are
+ * group work. Candidates stop at level + 10, as `trainingMonsterFor`.
  * The solves behind it are memoised in reach.ts `fightRec` (bank gear, name, level, max HP, worn set).
  */
 export function pickMonster(ch: Character, world: World, bonus: Set<string>): MonsterPick | undefined {
   let best: MonsterPick | undefined;
   for (const m of catalog().monsters.values()) {
     if (m.type === "boss" || m.type === "raid_boss" || m.level > ch.level + 10) continue;
-    const xp = fightXp(m.level, m.hp, m.type, ch.level);
+    const xp = fightXp(m.level, m.hp, m.type, ch.level) * favorXp(world, ch.name, "monster", m.code);
     if (xp <= 0) continue;
     const spot = nearestSpot(placeOf(ch), "monster", m.code, world);
     if (!spot || !safeWin(ch, world, m.code)) continue;
@@ -49,7 +54,7 @@ export function pickNode(skill: string, level: number, ch: Character, world: Wor
   let best: NodePick | undefined;
   for (const r of catalog().resources.values()) {
     if (r.skill !== skill || r.level > level) continue;
-    const xp = gatherXp(r.level, level);
+    const xp = gatherXp(r.level, level) * favorXp(world, ch.name, "resource", r.code);
     if (xp <= 0 && !any) continue;
     const spot = nearestSpot(placeOf(ch), "resource", r.code, world);
     if (!spot) continue;

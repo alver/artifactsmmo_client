@@ -5,9 +5,10 @@
 // wore before goes back (a step with no set — craft, train, task, buy — returns it all); what a step gathers, drops
 // and crafts is in the bank when it ends, at the expected quantities (fractions kept); a craft takes its materials
 // from the bank, a buy its currency; a crafted gear piece is bank stock.
-// Left out, on purpose: the XP of offerings (conservative); events (none spawn); what a `train` step sources and
-// recycles inside its item; utility potions, runes, artifacts and bags (not worn by the model). A level-up adds 5 max
-// HP (the atlas's 115 + 5·L).
+// Left out, on purpose: the XP of offerings and of an active favor (conservative; the favors are dropped from the
+// World); events (none spawn); what a `train` step sources and recycles inside its item; utility potions, runes,
+// artifacts and bags (not worn by the model; a potion's stock is not kept — the kill's price carries what drinking it
+// costs, task 010). A level-up adds 5 max HP (the atlas's 115 + 5·L).
 
 import { atlas } from "../../catalog/atlas";
 import { item, monster as monsterOf, resource as resourceOf } from "../../catalog";
@@ -168,7 +169,7 @@ export interface Forward { world: World; played: Played[]; completed: { code: st
  */
 export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void): Forward {
   const names = world.characters.map((c) => c.name);
-  let w: World = { ...world, clock: { ...world.clock } };
+  let w: World = { ...world, clock: { ...world.clock }, favors: undefined }; // the forward model ignores favors
   const free: Record<string, number> = Object.fromEntries(names.map((n) => [n, w.clock![n] ?? w.now]));
   const pending: Record<string, Step | undefined> = {};
   const last: Record<string, Step | undefined> = { ...world.current };
@@ -241,8 +242,9 @@ export function outlook(world: World, n: number): Outlook {
   return {
     next, expected: pointsOf(r.world), completed: r.completed,
     notes: [
-      "offerings count their favors and their time, not their XP",
+      "offerings count their favors and their time, not their XP; an active favor's XP is not counted",
       "events are not simulated",
+      "utility potions are not kept as stock: a potion a fight drinks is priced in its kill seconds at what making another takes (xp.ts potionSec)",
       "gear is made by need and worn; what a step gathers, drops and crafts is in the bank when it ends (expected quantities)",
     ],
   };

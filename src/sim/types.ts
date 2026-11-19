@@ -22,6 +22,8 @@ export interface EffectiveStats {
 export interface EffectEntry {
   code: string;
   value: number;
+  /** The utility item (potion) the effect comes from: a fight consumes it (FightForecast.used). Unset for gear and runes. */
+  potion?: string;
 }
 
 /** One "fighter" the simulator consumes: always-on stats + its combat effects. */

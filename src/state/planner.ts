@@ -16,7 +16,7 @@
 import { batch, effect, signal } from "@preact/signals";
 import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { devlog } from "../lib/devlog";
-import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, pendingRewards, plannerOn } from "./store";
+import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn } from "./store";
 import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, queues, resetQueue, runQueue, setOwnedOfferings } from "./queue";
 import { hive, setHiveManual } from "./hive";
 import { liveEvents } from "./events";
@@ -86,15 +86,34 @@ export function worldOf(now: number): World {
   return {
     now, characters: characterList(), bank: bankItems.value, bankGold: bankDetails.value?.gold ?? 0,
     achievements: achievements.value ?? NONE, events: liveEvents(), current, costs: st.costs, blocked: st.blocked, config,
+    favors: favorsOf(now),
   };
+}
+
+/** Task 010: each character's active favors, from today's offerings cache (never a read), until the favor's own
+ *  expiry (the accept echo's favor_expires_at) or the day's reset. A completed offering's favor stays: the API
+ *  document gives `active_favors` as "XP favors active for this character until reset". */
+function favorsOf(now: number): NonNullable<World["favors"]> {
+  const out: NonNullable<World["favors"]> = {};
+  for (const [name, st] of Object.entries(offerings.value)) {
+    if (!st || Date.parse(st.expires_at) <= now) continue;
+    out[name] = st.active_favors.map((f) => {
+      const sel = st.selected_offerings.find((s) => s.favor?.target_type === f.target_type && s.favor.target_code === f.target_code);
+      return { type: f.target_type, code: f.target_code, xp: f.xp_multiplier, drop: f.drop_multiplier, until: Date.parse(sel?.expires_at ?? st.expires_at) };
+    });
+  }
+  return out;
 }
 
 // ── the step loop ────────────────────────────────────────────────────────────
 
 const busy = new Set<string>(); // a decision in flight (it may wait for an achievements read)
-const starts = new Map<string, { at: number; key: string }[]>();
+const starts = new Map<string, { at: number; target: string; key: string }[]>();
 const lastSeen = new Map<string, { at: number; counting: boolean }>(); // in memory: a stopped service counts nothing
+// The brake (task 010: per target). Different short steps in a row are work; the same target started again and again is
+// flapping: its 7th start inside the window blocks that target. 20 starts of any kind block everything (the ceiling).
 const BRAKE_N = 6;
+const BRAKE_ALL = 20;
 const BRAKE_WINDOW = 10 * 60_000;
 const BRAKE_HOLD = 30 * 60_000;
 const BLOCK_MS = 6 * 3_600_000; // guess: long enough for an event, a bank refill or a level to change things
@@ -109,22 +128,35 @@ function start(name: string): void {
   const recent = (starts.get(name) ?? []).filter((s) => now - s.at < BRAKE_WINDOW);
   let step: Step;
   let items: QueueItem[];
+  const hold = (keys: string[]): void => {
+    const blocked = { ...planner.value.blocked };
+    for (const k of keys) blocked[`${k}@${name}`] = { until: now + BRAKE_HOLD, why: "flapping" };
+    put({ blocked });
+  };
   try {
-    if (recent.length >= BRAKE_N) {
-      // The brake: everything this character could do now is blocked for 30 minutes, so the rule gives the fallback.
-      plog(name, `flapping — ${recent.map((s) => s.key).join(", ")}`);
+    if (recent.length >= BRAKE_ALL) {
+      // The ceiling, for what nobody foresaw: everything this character could do now is blocked for 30 minutes, so
+      // the rule gives the fallback.
+      plog(name, `flapping — ${recent.length} starts in 10 min, every candidate blocked 30 min (${recent.map((s) => s.key).join(", ")})`);
       const r = rank(name, worldOf(now));
-      const blocked = { ...planner.value.blocked };
-      for (const c of [...r.objectives, ...r.levels, ...r.supply, ...r.fillers]) blocked[`${c.target.key}@${name}`] = { until: now + BRAKE_HOLD, why: "flapping" };
-      put({ blocked });
+      hold([...r.objectives, ...r.levels, ...r.supply, ...r.fillers].map((c) => c.target.key));
       recent.length = 0;
     }
     step = decide(name, worldOf(now));
+    // Per target: a target this character started BRAKE_N times inside the window is blocked and the decision made
+    // again — three times at most in one start(); then whatever comes is taken.
+    for (let i = 0; i < 3; i++) {
+      const n = recent.filter((s) => s.target === step.target).length;
+      if (n < BRAKE_N) break;
+      plog(name, `flapping — ${step.target}: ${n} starts in 10 min, blocked 30 min`);
+      hold([step.target]);
+      step = decide(name, worldOf(now));
+    }
     items = itemsOf(step, ch);
   } catch (e) {
     return void plog(name, `no step — ${(e as Error).message}`); // the next queue change or tick tries again
   }
-  starts.set(name, [...recent, { at: now, key: step.key }]);
+  starts.set(name, [...recent, { at: now, target: step.target, key: step.key }]);
   lastSeen.delete(name);
   const prev = planner.value.current[name];
   const lane = laneOf(step);
@@ -297,6 +329,7 @@ function tick(): void {
       // An interrupt that pauses is removed, not the step under it (settled point 7).
       plog(name, `interrupt removed — ${queueItemText(head)}: ${head.error}`);
       dropItem(name, head.id);
+      if (head.id.startsWith("pl:int:offering:")) offeringLater(name, now);
       runQueue(name);
       continue;
     }
@@ -345,6 +378,7 @@ function heartbeat(): void {
     runQueue(name);
   }
   if (Date.now() - lastRead >= READ_EVERY) void readAchievements();
+  catchUpOfferings();
   tick();
 }
 
@@ -414,9 +448,52 @@ export function interrupt(name: string, cls: InterruptClass, items: QueueItemInp
   return true;
 }
 
-/** The daily offerings trigger for an owned character (queue.ts scheduleOfferings: 00:05 UTC, and the boot catch-up). */
-export const offeringsDue = (name: string): boolean => interrupt(name, "offering", [{ kind: "offering" }], new Date().toISOString().slice(0, 10));
+// ── offerings (task 010, section 4) ──────────────────────────────────────────
+// The planner owns the trigger for its characters, per character and offerings day (the date of the most recent 00:05
+// UTC): the daily trigger (queue.ts scheduleOfferings), the boot, a switch-on and the five-minute tick all go through
+// catchUpOfferings, so a service down at 00:05, a stopped queue or a character switched on at noon loses nothing. An
+// item with nothing left to do ends at once (runOffering). A removed offering interrupt comes back an hour later, at
+// most three times a day.
+
+const AGAIN_MS = 3_600_000;
+const AGAIN_MAX = 3;
+const offerDay = (now: number): string => new Date(now - 5 * 60_000).toISOString().slice(0, 10);
+const putOffered = (name: string, o: { day: string; n: number; again?: number }): void => put({ offered: { ...planner.value.offered, [name]: o } });
+
+/** One offering interrupt for this character and today's offerings day, recorded: the daily trigger, the catch-up and
+ *  the panel's buttons (queue.ts queueOfferings). False when one is already queued or the character is not owned. */
+export function offeringsDue(name: string): boolean {
+  if (!IS_SERVER || !isOwned(name) || !characters.value[name]) return false;
+  const day = offerDay(Date.now());
+  if (planner.value.offered?.[name]?.day !== day) putOffered(name, { day, n: 0 });
+  return interrupt(name, "offering", [{ kind: "offering" }], day);
+}
 setOwnedOfferings(offeringsDue);
+
+/** Every owned character without an offering interrupt for today gets one; a removed one is issued again when due. */
+function catchUpOfferings(): void {
+  const now = Date.now();
+  const day = offerDay(now);
+  for (const name of owned()) {
+    const o = planner.value.offered?.[name];
+    if (o?.day !== day) offeringsDue(name);
+    else if (o.again && o.again <= now) {
+      putOffered(name, { day, n: o.n });
+      plog(name, `offering interrupt issued again (${o.n} of ${AGAIN_MAX} today)`);
+      interrupt(name, "offering", [{ kind: "offering" }], day);
+    }
+  }
+}
+
+/** A paused offering interrupt was removed (a 598 at the altar): it comes back in an hour, three times a day at most. */
+function offeringLater(name: string, now: number): void {
+  const day = offerDay(now);
+  const o = planner.value.offered?.[name];
+  const n = o?.day === day ? o.n : 0;
+  if (n >= AGAIN_MAX) return void plog(name, `offering interrupt not issued again — ${AGAIN_MAX} times today already`);
+  putOffered(name, { day, n: n + 1, again: now + AGAIN_MS });
+  plog(name, `offering interrupt comes back at ${new Date(now + AGAIN_MS).toISOString().slice(11, 16)}Z (${n + 1} of ${AGAIN_MAX} today)`);
+}
 
 // ── taking a character over, handing it back ─────────────────────────────────
 
@@ -452,6 +529,7 @@ function handBack(name: string): void {
 function switchOn(name: string): void {
   activate();
   takeOver(name);
+  catchUpOfferings();
   busy.add(name);
   void (async () => {
     try {
@@ -516,6 +594,7 @@ export function resumePlanner(r: Reads): void {
     if (r && !r.over) setRunning(name, { ...r, over: true }); // it ended while the service was down: no sample
     if (queues.value[name]?.items.length && !queues.value[name].running) runQueue(name); // interrupts run meanwhile
   }
+  catchUpOfferings();
   setTimeout(() => {
     ready = true;
     scheduleTick();

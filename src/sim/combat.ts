@@ -28,9 +28,13 @@ export interface FightForecast {
   timedOut: boolean; // hit the 100-turn cap ⇒ player loses
   playerFirst: boolean;
   restSeconds: number; // cost to heal back to full before the next fight
-  hpRestored: number; // HP restored by utility potions mid-fight (each proc burns a potion — not free)
+  hpRestored: number; // HP restored by restore potions mid-fight: the `restore` value × procs (each proc burns one)
   margin: number; // win ? hpRemaining/maxHp : 0 — used to rank/gate gear sets
   maxHp: number;
+  /** Units of each worn utility potion one fight consumes (task 010): a `restore` potion one per proc (the start of
+   *  each own turn under half HP; two restore potions fire together, as their values are summed), every other potion
+   *  one a fight — a boost is applied once at the fight's start (`opening`). An empty object when none is worn. */
+  used: Record<string, number>;
 }
 
 /** One attack (or DoT death) in a traced fight — for the playground's turn table. */
@@ -86,6 +90,7 @@ interface Combatant {
   // self regen / buffs
   restore: number;
   restored: number; // HP restored by potion procs so far
+  procs: number; // restore procs so far (each consumes one unit of every restore potion worn)
   healing: number; // % max hp / 3 turns
   reconstitution: number; // full heal every N turns
   barrierRegen: number;
@@ -182,7 +187,7 @@ function newSide(hp: number, atk: Record<Element, number>, dmgPct: Record<Elemen
     hp, maxHp: hp, barrier: 0, turns: 0,
     atk, dmgPct, res, hitEV: 0, hitNormal: 0, hitCrit: 0, dirty: true, bonus: 0,
     dmgMult: 1, totalAtk: atk.fire + atk.earth + atk.water + atk.air, crit, init,
-    restore: 0, restored: 0, healing: 0, reconstitution: 0, barrierRegen: 0,
+    restore: 0, restored: 0, procs: 0, healing: 0, reconstitution: 0, barrierRegen: 0,
     berserker: 0, berserked: false, lifesteal: 0,
     poisonApply: 0, burnApply: 0, poison: 0, burnCur: 0, burnActive: false,
     antipoison: 0, corrupted: 0, bubble: 0, bubbleEl: null, sunShield: 0,
@@ -291,7 +296,7 @@ function startOfTurn(c: Combatant, opp: Combatant): boolean {
   if (c.reconstitution > 0 && c.turns % c.reconstitution === 0) c.hp = c.maxHp;
   if (c.healing > 0 && c.turns % 3 === 0) c.hp = Math.min(c.maxHp, c.hp + (c.maxHp * c.healing) / 100);
   if (c.barrierRegen > 0 && c.turns > 1 && (c.turns - 1) % 5 === 0) c.barrier += c.barrierRegen;
-  if (c.restore > 0 && c.hp < 0.5 * c.maxHp) { c.hp = Math.min(c.maxHp, c.hp + c.restore); c.restored += c.restore; }
+  if (c.restore > 0 && c.hp < 0.5 * c.maxHp) { c.hp = Math.min(c.maxHp, c.hp + c.restore); c.restored += c.restore; c.procs++; }
   if (c.voidDrain > 0 && c.turns % 4 === 0) {
     const drain = (opp.hp * c.voidDrain) / 100;
     hurt(opp, drain);
@@ -350,6 +355,9 @@ function attack(a: Combatant, d: Combatant, turn: number, rng: (() => number) | 
   if (a.hp < a.maxHp) checkBerserk(a);
   return { dmg, crit };
 }
+
+/** The `used` of a fight with no potion worn: one shared object, so the solver's hot loop allocates nothing for it. */
+const NO_USE: Record<string, number> = Object.freeze({}) as Record<string, number>;
 
 export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {}): FightForecast {
   const { boostDmg, pMaxHp, pRes } = opening(player);
@@ -427,6 +435,12 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
 
   const clampedHp = Math.max(0, Math.round(P.hp));
   const lost = pMaxHp - clampedHp;
+  let used = NO_USE;
+  for (const e of player.effects) {
+    if (!e.potion) continue;
+    if (used === NO_USE) used = {};
+    used[e.potion] = Math.max(used[e.potion] ?? 0, e.code === "restore" ? P.procs : 1);
+  }
   return {
     win,
     turns: turn,
@@ -438,5 +452,6 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
     hpRestored: Math.round(P.restored),
     margin: win && pMaxHp > 0 ? clampedHp / pMaxHp : 0,
     maxHp: pMaxHp,
+    used,
   };
 }

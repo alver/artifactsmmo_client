@@ -2,7 +2,8 @@
 // owns. The 5-minute event poll finds Pia mid-step and nearest; the order's items go in through interrupt() with
 // pl:int:merchant: ids, ahead of the step's running item; the trip sells the eggs and buys the maps; the step
 // resumes with its counter. (The boot catch-up of the offerings is suppressed, so the queue is still empty when
-// boot() looks at the event, and the order waits for the poll.)
+// boot() looks at the event, and the order waits for the poll. Since task 010 the planner keeps its own offerings day
+// per character, so the setup marks today's there as well as in the old marker.)
 import { achievement, merchantEvent, scenario } from "../harness/index.mts";
 import { planner } from "../../src/state/planner";
 
@@ -14,7 +15,10 @@ await scenario(
     gold: 45_000, // 45,000 − 20,000 + 5,000 = one map, for the one level-20 character
     events: [merchantEvent("nomadic_merchant", 3, 2)],
     achievements: [achievement("chicken_hunt", 5, ["combat_kill", "chicken", 40])],
-    setup: () => localStorage.setItem("ammo:v1:offeringsDaily", String(Date.UTC(2026, 0, 15, 0, 5))),
+    setup: () => {
+      localStorage.setItem("ammo:v1:offeringsDaily", String(Date.UTC(2026, 0, 15, 0, 5)));
+      planner.value = { ...planner.value, offered: { Pia: { day: "2026-01-15", n: 0 } } };
+    },
     limits: { actions: 400, minutes: 120 },
   },
   async (t) => {

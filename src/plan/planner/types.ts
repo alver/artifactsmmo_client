@@ -101,7 +101,13 @@ export interface World {  // everything decide() reads — a snapshot, so it run
   config: PlannerConfig;
   /** Forward model only: when each character is free (ms). Missing = `now`. */
   clock?: Record<string, number>;
+  /** Task 010: each character's active offering favors (today's offerings cache); pickMonster / pickNode count their
+   *  XP while they last. The forward model drops them. */
+  favors?: Record<string, Favor[]>;
 }
+
+/** An accepted offering's favor: × `xp` XP (and × `drop` drops) on its target for that character until `until` (ms). */
+export interface Favor { type: "monster" | "resource" | "craft"; code: string; xp: number; drop: number; until: number }
 
 /** A character's step as the runtime (src/state/planner.ts) tracks it. Kept after the step ends until the next
  *  decision, so `world.current[name]` of the deciding character is the step it just finished (the +10% of B.4). */
@@ -126,5 +132,8 @@ export interface PlannerState {  // the synced, persisted signal of task 008 —
   config: Partial<PlannerConfig>;  // Alex's patch over DEFAULTS (a later change of the defaults reaches a running installation)
   optedOut: string[];           // characters the planner put on the hive's opt-out list
   achievementsAt: number;       // the last successful achievements read
+  /** Task 010: per owned character, the offerings day (the date of the most recent 00:05 UTC) whose offering interrupt
+   *  was issued; `n` re-issues that day after a removed one (at most 3), the next one due at `again` (ms). */
+  offered?: Record<string, { day: string; n: number; again?: number }>;
   outlook?: { at: number; next: Step[]; blocked: { target: string; why: string }[]; expected: number };
 }

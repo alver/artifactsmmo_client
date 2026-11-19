@@ -1690,7 +1690,8 @@ export function resumeQueue(): void {
 // queue does today's seasonal offerings first, then its old head resumes. A boot
 // after 00:05 catches up once (the marker persists the last 00:05 handled).
 // A character the planner owns gets the planner's `offering` interrupt instead (set by state/planner.ts, which
-// queue.ts must not import).
+// queue.ts must not import); since task 010 the planner keeps its own day per character and catches up by itself
+// (boot, switch-on, its five-minute tick), so this marker only decides the call at 00:05 and at boot.
 const OFFERINGS_DAILY_KEY = "ammo:v1:offeringsDaily";
 let offeringsTimer: ReturnType<typeof setTimeout> | undefined;
 let ownedOfferings: ((name: string) => void) | undefined;
@@ -1713,9 +1714,11 @@ function scheduleOfferings(): void {
   offeringsTimer = setTimeout(scheduleOfferings, last + 86_400_000 - now);
 }
 
-/** Today's offerings AHEAD of the head, even a running ∞ one (the loop re-reads it every step); a 🔁-recycled copy further back goes. */
+/** Today's offerings AHEAD of the head, even a running ∞ one (the loop re-reads it every step); a 🔁-recycled copy further back goes.
+ *  A character the planner owns gets the planner's offering interrupt instead (task 010: the panel's buttons). */
 export function queueOfferings(name: string): void {
   if (!IS_SERVER) return rpc("queueOfferings", [name]);
+  if (isOwned(name)) return void ownedOfferings?.(name);
   if (refused(name)) return;
   const q = queues.value[name];
   if (!q) return addItem(name, withId({ kind: "offering" }));
