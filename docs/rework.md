@@ -3,7 +3,7 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-18, after report 007 was accepted and task 008 was written.
+Last updated: 2026-11-19, after report 008 was accepted and task 009 was written.
 
 ## The goal (Alex, 2026-11-18)
 - **The client plays the season by itself.** Alex's target is every achievement of the season: 210 achievement
@@ -229,6 +229,60 @@ Last updated: 2026-11-18, after report 007 was accepted and task 008 was written
     while reading `runLoop`: a start issued from inside an effect on `queues` is lost (`startQueue` returns while
     the ending loop is still in `liveLoops`, and the loop's `finally` drops `running`); the task names the trap.
 
+22. **Report 008 accepted (2026-11-19).** Checked in the chat: both commits in `.git/logs/HEAD` (`54f01ab` Rework
+    notes, `f3a476f` 008); `src/state/planner.ts` read in full; in `src/state/queue.ts` the guard (`refused`),
+    `insertItem` / `dropItem` / `resetQueue`, `runLoop` with the 598 path, `runQueue` / `haltQueue`,
+    `scheduleOfferings`, the `withdraw`, `buy`, `craft` and `claim` handlers; `sync.ts` (the boot order, the two
+    reads), `eventorders.ts`, `apply.ts` (a claimed row leaves `pendingRewards`), `compile.ts`, `hive.ts`
+    (`setHiveManual`, `skipAssignment`). The seam holds as the report says: the effect only queues a microtask,
+    each exit of the loop is one synchronous run, and `runQueue` either cancels a pending stop or launches a new
+    loop. Not checked there: `npm run check`, the typecheck, the build, the scenarios, the harness,
+    `QueuePanel.tsx` (Claude Code ran them). **Engine change: Alex was told to restart the service on 2026-11-19;
+    from that restart Fifth is the planner's and the trial day runs.** Found while reading; none of it holds the
+    trial back:
+    - Fifth's first step (Tanner's Exchange) is the first purchase with an item currency the client makes by
+      itself (report 004 had it as a by-hand gap). If the `buy` fails the pair is blocked for 6 h and Fifth goes
+      on to the highwaymen; the dev log shows which.
+    - `fallback()` ignores `blocked` (the report's own note): a fallback chunk that ends empty is decided again at
+      once, at the pace of a bank reset, and the brake does not end it. Sign: `flapping` more than once. 009.
+    - The core's memo tables (`fightMemo`, `cutMemo` in `reach.ts`) are keyed on the bank's gear as a string and
+      never emptied. In real play the bank's gear changes with every reset, so nearly every decision misses the
+      memo (about half a second each — fine) and the table grows by some kilobytes per decision: nothing in a day
+      with one character, megabytes a day with five. 009 bounds them and keys them on something that holds still.
+    - The take-over opts Fifth out of the hive through `skipAssignment`, which calls the guarded `stopQueue` and
+      `removeItem`: "the planner owns this queue" lines in the activity log at the first boot, and the hive may
+      count Fifth's assignment of the running wave as done (its items are gone). Cosmetic; goes with the hive.
+    - An achievements read from the tab's panel replaces the list outside `readAchievements`, so a completion
+      first seen that way starts no claim; the next completion or the next boot claims it. For 010.
+    - A 598 now skips an item in every queue. With 🔁 on, an item that answers 598 every time is skipped, recycled
+      and tried again without a pause. After 006 only event tiles vanish and `ev:` items are never recycled, so
+      no case is known; it goes with 🔁.
+23. **Task 009, settled in the chat** (in the task file as "What is settled"):
+    - **Safe stays the rule; gear by need is the answer to "wins, but not safely".** A price for risk needs a
+      loss probability the simulator does not give. 009 prints what decides it: a replay row in which a win is
+      enough (an upper bound on what "safe" costs), the table of monsters each fighter wins unsafely, and whether
+      the simulator could give a probability. Fifth's trial adds real losses, if any.
+    - **One rule for gear, flips and speed-ups alike**: a craftable piece is needed when "make it, then do the
+      work with it" takes at most 85% of the hours of doing the work without it (∞ when there is no safe win).
+      The work is a fighter's road to its next combat gate or an open kill objective; a gathering tool on a lane
+      is the same rule. The piece scores the points behind that work over the hours of the whole chain, the same
+      number on every link, and a crafter's missing level is a level target that carries it. This is rule 3 with
+      more kinds of gate — where "spine or greedy" finally shows.
+    - **The bank is the buffer.** A material short in the bank is a target of its own: `src:` (a gather or a
+      hunt, chunked by actions, banked at the step's end) or `mat:` (a craft from banked stock). That handles the
+      materials made by another craft and the diamonds' 71-hour step with one mechanism. Supply is made for open
+      demand only, never ahead.
+    - **No spending yet**: no gold, no tasks coins. A piece that needs a bought material is listed with its
+      price, and the question comes to Alex only if the replay says it matters.
+    - Roles are pinned in the defaults (crafters as today; gatherers as design B.3, with the two event extras per
+      lane written out); a combat gate is priced by the character's own XP sources; alchemy 12–19 levels by
+      brewing; the fallback honours blocks; the forward model deposits, wears and makes gear.
+    - The core does not import `src/plan/hive/*`: it is deleted in the clean-up. What the planner needs from it
+      is restated in the core.
+    - Two edits to the runtime ride along (units read past a trailing `deposit-all`; the brake covers supply).
+      Nothing goes live until a restart; **from 009's commit on, any restart brings the second round's core live
+      for whoever is on.** With Fifth alone on, chain work is not offered (its crafter is not the planner's).
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -239,8 +293,8 @@ Last updated: 2026-11-18, after report 007 was accepted and task 008 was written
 | 005 | The planner's design → `docs/design/planner.md`; with it, the map checked against the leaderboard (four public reads) | done, `72b726f`. Accepted 2026-11-18. No engine change, no restart. |
 | 006 | Movement knows layers; free transitions are walked; 598 is an answer; the `train` item's node; the backpack wish dropped; read-only: why offerings run at 8–11 of 15 | done, `929017d`. Accepted 2026-11-18. **Engine change: Alex was told to restart the service on 2026-11-18**; the next planning chat asks whether it happened. |
 | 007 | The planner's core, pure: `src/plan/planner/*` and `scripts/check-planner.mts` (first steps, first week, the replay to the deadline) | done, `13ac755`. Accepted 2026-11-18. Nothing imports it: no engine change, no restart. |
-| 008 | The runtime: `src/state/planner.ts`, the step loop, blocks and stalls, `interrupt()` (offering, merchant, event, claim), the `claim` item, the guards, 598 as a vanished target, the smallest UI; Fifth on by default | written 2026-11-18, `tasks/008-planner-runtime.md`; not run yet. **Engine change: Alex restarts the service after its report is accepted**; from then on Fifth is the planner's. |
-| 009 | The core's second round, pure (decision 20): gear by need, materials made by another craft, alchemy, the price of a level gate, roles; the replay again | after 008's report, during Fifth's trial; no restart |
+| 008 | The runtime: `src/state/planner.ts`, the step loop, blocks and stalls, `interrupt()` (offering, merchant, event, claim), the `claim` item, the guards, 598 as a vanished target, the smallest UI; Fifth on by default | done, `f3a476f`. Accepted 2026-11-19. **Engine change: Alex was told to restart the service on 2026-11-19**; from that restart Fifth is the planner's. The next planning chat reads `logs/dev.log` for the trial. |
+| 009 | The core's second round (decisions 20, 23): gear by need, supply through the bank, alchemy, the price of a level gate, roles, the pool, the forward model; the replay again, with a "win is enough" row | written 2026-11-19, `tasks/009-planner-gear-and-chains.md`; not run yet. No restart needed; it goes live with the next one. |
 | 010 | The Roadmap as home, the outlook, all five on | restart |
 | 011… | The clean-up → keys and tolls → the fleet on events → group boss fights → `use` | |
 
@@ -249,8 +303,12 @@ Last updated: 2026-11-18, after report 007 was accepted and task 008 was written
   hours per level at 25–35 answer it; above 100 hours a level the plan falls back to about 100 points.
 - **Does the rule behave as a spine?** Not shown by 007 (decision 18); the replay of 009, with gear, answers it.
 - **Is "safe" the wall at combat 25, or the gear?** Decision 20; 009 and Fifth's trial.
-- **Was the service restarted after 006?** Asked again in the chat on report 007 (2026-11-18); not answered when
-  this was written. Until it is, the miners' 598 loop at mining 30 is still possible (Fourth and Fifth stand at 24).
+- **Was the service restarted after 006?** Asked a third time on 2026-11-19. The restart for 008 brings 006 live
+  either way; the answer only says whether layers and transitions get their first live day together with the
+  planner.
+- **How did Fifth's trial day go?** Read from `logs/dev.log` in the next chat: the first step (the item-currency
+  buy), a step about every 90 minutes, the samples against their estimates, the offering interrupt at 00:05 UTC,
+  any `blocked`, `flapping`, `queue found stopped`, `no step`, and every lost fight.
 - Answered by 006: why offerings run under 15 a day (decision 17).
 - **The end of the season.** No date is published; 2027-02-24 is the working deadline. The leader's first
   achievement (2026-11-02) fits the announced opening of 2026-10-31 better than the API's 2026-10-24; if the four
@@ -331,8 +389,27 @@ Last updated: 2026-11-18, after report 007 was accepted and task 008 was written
     bundle level of a kill from the atlas's safe level; 1.5× actions for a rare drop; the log factors 1.3 and
     1.05; offerings at 10 a day and 20 minutes; 1.95 h a task; `craftK` 0.1 and 60 h above 40.
 
+- From report 008, not fixed (and see decision 22):
+  - `world.current` holds only the planner's characters: with Fifth alone on it sees no step and no reservation
+    of the other four. Ends with 010.
+  - `left` comes from the last achievements read; a short tail step of an objective can be decided twice within
+    the read cap.
+  - `QUEUE_KINDS` is the restore filter: `claim` and `prepare` items are dropped at a restart (a claim is
+    re-issued at boot).
+  - `runOffering` turns a 598 at the altar into a pause; for an owned character the planner then removes the
+    offering interrupt and that day's offerings are lost for it.
+  - Two string couplings: the outage hold is recognised by its note text, the "ended empty" reason by the
+    `skipped: ` prefix of the activity log.
+  - `reconcile()` and the planner's boot both read `/my/pending_items`.
+  - Guesses in the runtime's numbers, most doubtful first: the stall time (20 min or 5 × the unit estimate; a
+    craft step's batch sourcing is not measured); the 6-hour block; the brake (7 starts in 10 min) and the three
+    strikes; six reads an hour; the first level of every run of level steps is never sampled.
+  - The harness's fake has no XP and no levels, so no scenario exercises a level sample or the release of a long
+    block by a level-up.
+
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
 - Hive continuous mode (⟳) off.
-- Fifth: remove the leftover `hive:` item, then "Train pins".
+- Fifth is the planner's from the restart for 008: nothing to do by hand. "🧭 planner on" in its queue panel
+  hands it back.
 - Lost World Maps: bought by the standing order; nothing to do by hand.
