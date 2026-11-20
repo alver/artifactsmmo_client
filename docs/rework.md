@@ -3,8 +3,10 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-20 (midday), after report 013 was accepted, Alex restarted the service (run `[wj59]`, seen at
-09:54 UTC) and task 014 was written. Earlier that day Alex was told to restart the service (the
+Last updated: 2026-11-21 (night), after Alex restarted the service on report 014's code (run `[tdhi]`, 23:32:54 UTC
+on 11-20) and task 015 was written (decision 41). On the evening of 11-20 report 014 was accepted (decision 40);
+the log's tail at 18:13 UTC still carried run `[wj59]` (013's code). At midday: report 013 was accepted,
+Alex restarted the service (run `[wj59]`, seen at 09:54 UTC) and task 014 was written. Earlier that day Alex was told to restart the service (the
 log's tail at 09:44 UTC still carried run `[yewz]`, 012's code). Before that, in the morning: report 012 was
 accepted, Alex restarted the service (run `[yewz]`,
 07:31:51 UTC) and task 013 was written.
@@ -87,6 +89,20 @@ accepted, Alex restarted the service (run `[yewz]`,
   7 above report 012's C. Play lies between C and A until the consumables round. Open at the deadline in every
   row: 73 points behind another layer; the fighters reach 40 on days 56-81 by default, 12-16 with free
   potions.
+- **What task 014 found (2026-11-20).** Consumables are planned now: needed as gear is needed, made through
+  the bank by whoever is placed best, taken by the fight step that planned them. The replay: **87 / 94 / 77 / 89
+  / 68 / 86** (default, consumables free, report 013's model, a win is enough, no events, all five as
+  alchemists). The fighters reach combat 40 on days 36-40 (it was 56-82) and stand at 44-46 at the deadline;
+  Third's alchemy is at 40 on day 2.7 (18.6). **The wall is planned, not cheaper**: 79% of the fight and making
+  hours are making (87% inside the fights before), supply is 55% of all hours, about half of the fleet's whole
+  season goes into potion and food ingredients, and algae (ten fishing gathers each) is the largest target. A
+  potion heals 0.2-0.7 HP a second of making against rest's 5-7: it is never a cheaper heal, it is a win. From
+  combat 30 every XP pick drinks about ten health potions a kill; past 36 there is no road without the greater
+  health potion (alchemy 40). A is 5 points below C on day 30 (the kill objectives wait for their stock) and
+  ahead from day 31. Free consumables are worth 7 more points, a second alchemist nothing. **The 73 points
+  behind a layer are open in every row**: they wait for keys and tolls, and combat 40 now comes with 57 days
+  left. **87 leans on event fights** (decision 40): A is 19 above "no events", and a trip carries one stack of
+  a potion while the model credits the member's whole hour.
 - **One planner decides what the fleet does next and moves on by itself** — "the roadmap". Alex at most adjusts
   priorities, and doubts there is much to adjust.
 - **No manual queues in the UI.** Alex hardly used them; if something has to be done by hand, the planner is wrong
@@ -120,6 +136,12 @@ accepted, Alex restarted the service (run `[yewz]`,
 - **Alex restarts the service himself (`npm start`). The planning chat tells him when** — after a task that changes
   the engine is accepted.
 - The planning chat tells Alex when it is time to start a new chat.
+- **The chat can read the service's state** (found 2026-11-21): copy `.ammo/storage.db` and `.ammo/storage.db-wal`
+  to the chat's own machine and open the copy with sqlite (never the files in place). The table
+  `nodejs_webstorage` holds UTF-16 keys and values: `ammo:v1:state` (the characters, `bankItems`, `bankDetails`,
+  the account's points, the last sync), `ammo:v1:planner` (the running steps with their why, `blocked`, the
+  config patch, the costs), `ammo:v1:simdev` (the record of `validate.ts`). `ammo:v1:token` is the game's token:
+  never printed, never copied into a file. The raw log (65 MB) cannot be copied; its tail can be read.
 - Nothing is handed to Alex to do by hand except what only he can do in the game's UI.
 
 ## Decisions so far
@@ -817,6 +839,94 @@ accepted, Alex restarted the service (run `[yewz]`,
     - Until then seven slots are free. Alex was told that, if the number climbs before 015 is in service, one
       expansion bought by hand in the game's own client (a character on a bank tile) gives twenty slots and
       shows him the price.
+40. **Report 014 accepted (2026-11-20, evening).** Checked in the chat: the commits in `.git/logs/HEAD`
+    (`938d11f`, `4f2f589`, `6fd2f0f` Rework notes, `edaaf23` 014; `docs/rework.md` was last written at 15:01 UTC,
+    so `6fd2f0f` carries decision 39 too); `src/plan/planner/consumables.ts`, `compile.ts` and `stock.ts` read
+    in full; `decide.ts` (`fightPlan`, `levelCand`); in `src/state/queue.ts` `takeOf`, `ranDry`, `keepOf`,
+    `ctxOf` and the fight and gear cases; `exec.ts` (`bankOff`, `healOnce`, `fightRound`); `jobgear.ts`
+    (`jobGear` with `planned`, the reset's stash, the top-up and trim); `src/state/planner.ts` (`worldOf`,
+    `bagsOf`, `next`); `src/plan/consumables.ts` (`healingFoods`, `foodQuantity`); `used` in
+    `src/sim/combat.ts`. They are as the report says. Not checked there: `reach.ts`, `supply.ts`, `forward.ts`,
+    `events.ts`, `eventorders.ts`, `bis.ts`, `config.ts`, `gear.ts`, `cost.ts`, the check script, the scenarios,
+    the check runs, the typecheck, the build (Claude Code ran them). **Engine change: Alex was told to restart
+    the service on 2026-11-20 (evening)**; the log's tail at 18:13 UTC still carried `[wj59]` (First, Fourth and
+    Fifth on coal, Second on birch, Third on nettle). The next look at the log confirms the restart and reads
+    acceptance step 7. The report has no decision for Alex; agreed. The readings, as the chat takes them:
+    - **Two defects found in the chat's read, neither covered by a scenario; both go to the head of 015.**
+      - *Planned food has no bag cap.* `fightTake` plans `ceil(units a kill x kills x 1.2)` of the food and the
+        reset withdraws `min(short, banked, freeSpace)` until the bag is full (`src/state/queue.ts:519-528`).
+        The old path capped a restock at a third of the bag (`src/plan/consumables.ts foodQuantity`). A bag is
+        100 + 2 a level (Fifth banked 144 items at combat 23). 147 units for 122 wolf kills leave three slots:
+        the drops send the fighter to the bank every few kills. A plan above the bag (two or three units a
+        kill: cooked chicken, 80 HP, against 184 lost) fills it whole; `fightRound` then calls `bankOff` with
+        the food protected, it throws "inventory full of protected working stock" (`exec.ts:61-63`), the step
+        does nothing and its target is blocked for 6 h. Nothing is lost by it. Repair: a step's kills are
+        capped by the food its bag carries (a third of the bag), as they are by a potion stack.
+      - *The food in the plan is the best-healing one in stock, whether or not it fits the fight.* `poolFood`
+        returns the first of `healingFoods` (highest heal first) with any stock, and `fightTake` takes
+        `floor(lost / heal)` units a kill: with one apple pie (320) or cooked porkchop (225) in the bank a
+        fight that loses 184 plans no food and rests, whatever lesser food the cook banked for it. `foodFor`
+        (the need) judges each food on its own, so the cook makes food that is not eaten until the bigger one
+        is gone. Repair: the food in the plan is the best in stock that the fight's loss covers at least once.
+    - **87 leans on event fights.** A is 19 points above row E; the two apparitions (gathers) were 7 of report
+      013's 15. A trip takes at most one stack of a potion (`takeOf`): 16 kills of the full moon vampire (6 + 6
+      a kill), 9 of an ogre or a lizard (11 + 11), 7 of a demon (13 + 13) a spawn, and the forward model
+      credits the member's whole share of the hour (the report's own note). The event fights' points and the
+      gold set behind them are optimistic by that factor until a trip carries more.
+    - **A fight step is a stack long**: `fightTake` caps the kills at `floor(100 / (units a kill x 1.2))`, 16
+      at the rat's 5 + 5, a quarter of an hour, then a bank reset; the forward model has the same cap, so the
+      replay pays it. Potions beyond a stack could ride in the bag and be equipped when the slot drains, with
+      no bank trip; the same lifts the trip's cap. For the round before the first event fight members (about
+      day 15), with the first potion steps' samples in hand.
+    - **Run dry is "none left"**: `ranDry` is true at zero of a planned code, and the live gate takes a worn
+      potion as inexhaustible (`combat.ts:438-442`: `used` knows no stock), so a step whose fights drink more
+      than planned + a fifth fights its last kill short of potions: a possible loss and the walk from spawn,
+      then the step ends. Left as it is.
+    - **The replay check stands at its backstop**: 1,716 s of 1,800 (the rows run side by side; row D alone
+      1,689 s, row A 1,539 s). 015 gives it room (a higher backstop; rows D and F on request).
+    - **What the round bought**: 10 points at the deadline and combat 40 three to six weeks earlier, which is
+      what the layers behind keys and tolls need. What it did not: the hours. Half the season still goes into
+      ingredients; the levers left are the stock of by-products (the fishing objectives' algae), a trip and a
+      step that carry more than a stack, and gold (open question: the Grand Exchange).
+    - **The order stays**: 015 the bank, with the two food repairs and the check's backstop riding along; 016
+      the journal; 017 keys, tolls and what is spent.
+    - **The bank stood at 102 of 110 on the night of 11-20 to 11-21** (Alex; 103 at midday): eight slots free
+      with nettle already coming in, so nothing is bought by hand. The log's tail at 23:30 UTC on 11-20 still
+      carried `[wj59]`: not restarted yet. 015 is written once the restart shows in the log, so that the first
+      hours of 014 in play are in the task.
+41. **Task 015, settled in the chat** (2026-11-21, night; in the task file as "What is settled"). The restart is
+    confirmed: `[tdhi] server start` at 23:32:54.550 UTC on 11-20, all five steps re-attached (`lvl:mining:35`
+    for First, Fourth and Fifth, `ach:intermediate_lumberjack:0` for Second, `lvl:alchemy:30` for Third);
+    `[wj59]` wrote its last line at 23:32:31.965. No decision of 014's code was seen yet (the re-attached steps
+    are 175-181 gathers each); 015 reads the first hours. Read in the chat for the task: the state of 23:32:55
+    UTC (above, "How we work"), `src/api/client.ts` (the retries), `loopkit.ts depositAll`, `runLoop`'s error
+    path, the `recycle` item, `src/plan/events.ts` (the sell floors), `scripts/check.mts`.
+    - **The bank at 23:32:55 UTC**: 102 codes of 110 slots, three expansions bought, the next 28,000 gold,
+      231,984 gold. About 45 codes are gear; copper, wooden, leather and iron pieces of level 1-10 lie there in
+      5-24 copies each while the fleet wears adventurer and steel sets at combat 22-25. Cooked food: 4 cooked
+      trout and nothing else, so by `poolFood` no fight that loses under 225 HP eats (decision 40's second
+      defect, live from the first kill step). 240 air boost potions (the alchemy levels' by-product) hold a
+      slot; 575 sap, of which the merchant's order would sell 275. Points: 26.
+    - **A slot is a code**, so a tidy takes a code whole: every copy is recycled, by a character that may
+      recycle it, as a planned step. Outdated = recyclable, ten levels below the lowest combat level, worn by
+      nobody, picked by no solve the planner makes today, used by no recipe and asked for by no bill.
+    - **Tidy below 15 free slots, buy below 10 when nothing is left to tidy**; an expansion at most 60,000 gold
+      and never below the gold floor; above the cap one line a day says so. With no slot, no tidy and no gold,
+      a step that would bank a new code is no candidate and nobody is paused.
+    - **A 462 keeps what does not fit in the bag and goes on**, for every character; the planner hears of it
+      and never blocks a target for it.
+    - **The standing order sells nothing a recipe uses**, and `stock.ts floor` is the gold floor alone.
+    - **Food**: a step's planned food is at most a third of the bag and its kills are capped by it; the food
+      in the plan is the best in stock that the fight's loss covers once.
+    - **The replay check**: a 2,700 s backstop; rows D and F only on request.
+    - **The branch `rework`** is created by 015 from `main` at `edaaf23` and pushed; `main` is not moved.
+    - Seen in the state, for 015's read: `src:ogre_skin@Fifth` blocked at about 22:41 UTC on 11-20 for "lost 2
+      fights in a row" (013's code); the record of `validate.ts` holds ogre and vampire fights lost with 1-5
+      potions drunk against 7-9 predicted, the slot's stack running out inside the fight. Under 014 a step ends
+      by its kills with a fifth of its potions left; 015 counts such losses since the restart.
+    - Guesses of the chat: the thresholds 15 and 10; the level margin of ten; "no solve today picks it" as the
+      test of use (a piece's element may fit a monster the fleet meets later; Alex's "it is made again" covers
+      it).
 
 ## Tasks
 | # | What | State |
@@ -834,14 +944,24 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 011 | The calibration round (decision 29): what a fight drinks, filler before a road that does not fit, an objective is the fleet's work, the hours since 16:43 UTC read from the log | done, `f4d4118`. Accepted 2026-11-19 (decision 30). **Engine change, live: Alex restarted the service on 2026-11-19 at about 20:05 UTC** (run `[50ry]`). |
 | 012 | The prices round (decisions 30, 31): fight XP and kill seconds against the log, a step's fixed cost, stock is free and the forward model drinks, the node of a `src:` gather, a gated craft in a chain | done, `1d76174`. Accepted 2026-11-20 (decision 32). **Engine change: Alex restarted the service on 2026-11-20 at 07:31:51 UTC** (run `[yewz]`); all five steps re-attached. |
 | 013 | The fleet on events (decision 33): who goes to a spawn, an event in the score, events in the forward model; in flight for an `ach:` target | done, `c8266ac`. Accepted 2026-11-20 (decision 34). **Engine change: Alex restarted the service on 2026-11-20 between 09:44 and 09:54 UTC** (run `[wj59]`). |
-| 014 | The consumables round (decision 35): potions and food by need, made through the bank and taken by the step that planned them; one price; an event's fights stocked for one spawn; bag stock; what the potion wall is made of | written 2026-11-20, `tasks/014-consumables.md`; not run yet. **Engine change: restart after it is accepted.** |
-| 015 | The bank (decision 39): a full bank is answered, not met; outdated gear is recycled; the planner buys an expansion under a price cap; sap is no longer sold from under the recipes; the branch `rework` and the first push | written by the chat that accepts report 014. **Engine change.** |
+| 014 | The consumables round (decision 35): potions and food by need, made through the bank and taken by the step that planned them; one price; an event's fights stocked for one spawn; bag stock; what the potion wall is made of | done, `edaaf23`. Accepted 2026-11-20 (decision 40). **Engine change: Alex restarted the service on 2026-11-20 at 23:32:54 UTC** (run `[tdhi]`); all five steps re-attached. |
+| 015 | The bank (decision 39): a full bank is answered, not met; outdated gear is recycled; the planner buys an expansion under a price cap; sap is no longer sold from under the recipes; the branch `rework` and the first push; riding along (decision 40): a bag cap on planned food, the food that fits the fight, room for the replay check | written 2026-11-21, `tasks/015-bank.md` (decision 41); not run yet. **Engine change: restart after it is accepted.** |
 | 016 | The journal (decision 37): a journal of decisions and step results beside the raw log, the raw log a file a day, a status file, a daily snapshot of the World | after 014's report. **Engine change.** |
 | 017 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
 | 018… | The clean-up → the Roadmap as home, a cut-down outlook → the Lab (decision 36) → group boss fights | |
 
 ## Open questions
-- **Who brews and cooks for the fighters, and who drinks first?** The wall at combat 33–35 is the potion's
+- **Does 014 hold in play?** After the restart (report 014, acceptance step 7): a kill step's `plan` line names
+  the potions and food it takes and its reset withdraws those quantities; no `restock`, `craft` or `gather` of a
+  consumable inside an owned fight item; `mat:` and `src:` lines name the work they are for; "ran dry" without a
+  `blocked` line. And the two defects of decision 40: "inventory full of protected working stock", and fights
+  that rest while cooked food lies in the bank.
+- **Would the Grand Exchange sell potions, food or algae for less than the fleet's hours?** Half the season goes
+  into ingredients (decision 40) and report 014 priced the NPC merchants only (events, a tenth of a day's
+  need). One public read (`GET /grandexchange/orders`) would show the prices; Alex would have to allow it and
+  the spending. Looked at with 017.
+- Answered by 014 (decision 40): Third brews most, First cooks, the stock goes to the best-scoring work first.
+  The question was: **who brews and cooks for the fighters, and who drinks first?** The wall at combat 33–35 is the potion's
   price (decision 32). The consumables round (014).
 - **Does the event rule hold in play?** After the restart: `api GET /events/active` about every 2 minutes, one
   `plan: event` line a spawn (expected for now: "nobody needs it", "does not fit" or "members: none"), and the
@@ -1074,6 +1194,25 @@ accepted, Alex restarted the service (run `[yewz]`,
   - Guesses in the numbers, most doubtful first: `SPAWN_LOG` 1.64; the kill seconds at an event (no event
     fight was ever logged); usable seconds (both walks taken as the tile's walk to its bank); the shares
     assume no two spawns overlap; "can ever be a member" looks ten levels up with today's pool.
+
+- From report 014, not fixed (and see decision 40):
+  - Planned food without a bag cap; the food in the plan picked by heal alone. Both: 015.
+  - A trip and a fight step carry one stack of a potion; the forward model's event work is not capped by it.
+  - A level step's craft sample is set against a craft-only estimate (`src/state/planner.ts:260-265`):
+    "slower than expected", 117 s against 3 s. A level step triggers no achievements read
+    (intermediate_alchemist, complete since 12:23 UTC on 11-20, is read at the next objective's end).
+  - An owned character's `task-loop` (filler) still provisions food and potions by itself.
+  - A kill source inside a craft step fights with `take: {}` while its price counts the pool's potions.
+  - A need's potion set searches at most twelve potions, by code (`bis.ts chooseGroup`): from alchemy 40
+    (17 potions) the minor and small health potions and the antidote are never weighed.
+  - The solve cache keys a set on a potion's presence, not its quantity; the step's kills are capped by the
+    stock, the price is not.
+  - Three role holders take one gated level for one parent's points (`lvl:mining:35`, three miners, +3).
+  - Not traced: whether what a running `src:` step has gathered counts twice, as bag stock (`bagsOf` leaves
+    out a step's inputs, not its product) and as that step's units in flight.
+  - Guesses in the numbers, most doubtful first: `KILL_LOG` 1 (eight decomposed steps, median 1.087; 1.27 over
+    23 samples with the in-item food making left in); the cache shortcuts that keep a row inside the backstop;
+    `HORIZON` 2, `MARGIN` a fifth, `NEED_RATIO` 0.85 for consumables; `USE_SEC` 4.5 s.
 
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
