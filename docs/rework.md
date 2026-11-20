@@ -708,6 +708,25 @@ accepted, Alex restarted the service (run `[yewz]`,
       `NEED_RATIO` reused for consumables, the event reserve of one spawn.
     - Out: any purchase, keys and tolls, the merchants, a `mat:` step that gathers its own inputs, `SPAWN_LOG`
       (the new ratio is printed, the constant stays unless it left 1.3-2.0).
+36. **A lab tab for the replay (Alex, 2026-11-20, while 014 ran).** Asked when the interface changes, Alex kept
+    the order (014 consumables, 015 keys and tolls, the clean-up, then the Roadmap as home). He then asked
+    for the "emulator" as a tab of its own: change the parameters, the priorities and the steps, run it, look
+    at the result, and tell the planning chat what to correct in the real roadmap. What exists for it: the
+    forward model (`src/plan/planner/forward.ts`) and the replay of `scripts/check-planner.mts`, by
+    expectation, no dice; the knobs of `PlannerConfig` (`first`, `weight`, `exclude`, `filler`, `roles`,
+    `risk`, the deadline); `setPlannerConfig` to apply a patch to the real planner. What it needs: a run
+    outside the service's one thread (a child process; a season is minutes, the whole check about 18), a
+    start from the live World and not only the 11-18 snapshot, a forced opening per character ("this one
+    does X first") since a step is otherwise the rule's to choose, two runs side by side, and a button that
+    applies a run's knobs. Placed after the Roadmap task, which builds the same off-thread run for its
+    outlook; the lab is that run with other knobs. To be told to Alex with every result: the model's
+    differences between two runs are worth more than its absolute points (54 to 77 in five reports as prices
+    were repaired).
+    - **Its name is the Lab** ("Лаборатория"; Alex liked the word). **A thin first version, then shaped by
+      use** (Alex, the same day: he does not know yet what he wants from it and has to touch something first).
+      So the first version is the least that can be played with: start from the live World, the knobs that
+      exist, one run off the service's thread, its result beside the default run's. The forced opening, the
+      "apply" button and anything else wait for what he asks for after using it; no design ahead of that.
 
 ## Tasks
 | # | What | State |
