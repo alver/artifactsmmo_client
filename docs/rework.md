@@ -111,7 +111,9 @@ accepted, Alex restarted the service (run `[yewz]`,
   - the real service is running and playing: no start, stop or restart; no `npm run build` into `dist/`; no request
     to the game or to the local service unless the task says so;
   - no new dependencies unless the task lists them;
-  - Claude Code makes every commit (leftovers included), locally, no push; one task at a time; it never writes the
+  - Claude Code makes every commit (leftovers included); from task 015 on the work lives on the branch `rework`
+    and is pushed to `origin/rework` after each task's commits, never to `main` (decision 38); one task at a
+    time; it never writes the
     next task;
   - the report sections: Summary · Decisions for Alex · How Alex verifies · What was done / files · Notes ·
     To delete (Alex).
@@ -727,6 +729,94 @@ accepted, Alex restarted the service (run `[yewz]`,
       So the first version is the least that can be played with: start from the live World, the knobs that
       exist, one run off the service's thread, its result beside the default run's. The forced opening, the
       "apply" button and anything else wait for what he asks for after using it; no design ahead of that.
+37. **The journal goes first: 015 is the journal, 016 keys, tolls and what is spent** (Alex, 2026-11-20: "yes").
+    His idea was to improve the logs so that the chat can read them too: a new file every hour, more detail
+    for analysis. Settled in the chat: hourly files of the raw log do not help (an hour is about 0.9 MB of
+    action lines; the chat reads a file whole or its tail and cannot search; on 11-20 it saw the restart and
+    could not find its time). What does:
+    - **A journal beside the raw log**, one record a line, machine-readable: a step started (who, key, answer,
+      why, units and hours planned), a step ended (units done, seconds taken against the estimate, where the
+      seconds went: fight, rest, eat, bank, walk, gather, craft; potions drunk, food eaten, XP, what was
+      banked), blocked / flapping / defect / no step, every interrupt, every `plan: event` decision, a restart
+      with the commit it loaded, an achievement completed, the day's offerings. A couple of hundred lines a
+      day: the chat reads a day whole.
+    - **The raw log a file a day.**
+    - **A status file rewritten every minute**: per character the step, its why and since when; the points;
+      the last error; the run id and its commit. The chat's first read; a stale one says the service is down.
+    - **A daily snapshot of the World** (the characters, the bank, the achievements' progress). Nothing
+      reconstructs it later: it is the Lab's and the outlook's starting point and what the replay's forecast
+      is held against, day by day.
+    - The log factors (`KILL_LOG`, `SPAWN_LOG`, the step samples against their estimates) are read from the
+      journal from then on; a task's "read the log" section becomes a read of the journal.
+    After 014, because 014 changes the log's lines. An engine change: a restart follows.
+    - Raised with Alex the same day as "not to be postponed" (his answers are recorded when given): the
+      repository has no remote, every commit is local and on one disk (`.env`, `.ammo/` and `logs/` are
+      ignored, so a push is safe); the service runs the working tree, so a crash or a reboot while a task
+      runs loads half-done work (decision 28's near miss), and a second checkout at the accepted commit for
+      the service would end the rule "restart only when the report exists"; nobody is told when the service
+      stops; the season's end date (open question) is his to look up.
+38. **Alex's answers to decision 37's list, and the bank (2026-11-20).**
+    - **Push to a new branch, not `main`** (Alex: the repository exists; `main` gets the work when the rework
+      is finished). The chat was wrong to say there was no remote: `.git/config` has `origin`
+      (`git@github.com-personal:alver/artifactsmmo_client.git`), the local branch is `main` and the rework's
+      commits were never pushed. So task 015 starts by creating `rework` at HEAD and pushing it with its
+      upstream; every task from then on pushes its commits there. Nothing is pushed to `main`.
+    - **The service's own checkout goes with the clean-up**, no hurry (Alex: "if the service goes down, it
+      goes down, I bring it up when I can"). Until then the rule "restart only when the report exists"
+      stays, and no alert is built.
+    - **Bank space** (Alex asked whether he can buy more, or free some by recycling or selling outdated gear).
+      Read in the chat: the game has `bank/buy_expansion` (+20 slots, the price rises with each;
+      `BankDetails.next_expansion_cost`), the client wraps it (`docs/game-actions.md`: `buyExpansion`) and
+      nothing calls it: no button in `TableTabs.tsx`, `FleetView.tsx`, `CharacterPanel.tsx` or `ActionBar.tsx`,
+      no caller in `src/state/queue.ts`, `exec.ts` or `store.ts`. Selling is the event merchant's whitelist
+      only (`src/plan/events.ts SELL_FLOORS`: sap, shell, golden shrimp, golden egg). Recycling exists as a
+      queue item and as the planner's filler; outdated gear is never recycled on purpose. **No handling of a
+      full bank (462) was found** in `queue.ts`, `exec.ts` or `store.ts` (searched for the code and the
+      words; the generic error path was not traced): every step starts with a bank reset, so a full bank may
+      stop all five. The Bank tab's header shows used / slots. Alex was asked for that number: with few slots
+      free it is a small task of its own before the journal, otherwise it goes into 016 ("what is spent"):
+      the planner buys an expansion when the free slots run low (spending: his yes), a 462 is answered
+      instead of met, and gear no solve will pick again is recycled (what is destroyed for good: his yes).
+    - **Sap is sold and it is a potion ingredient** (Alex, the same day: "why sell sap? it is needed for the
+      potions"). He is right. The whitelist is a rule of the hive's time: the merchant order sells every sap
+      above 300 and every shell above 50 (`merchantOrder`, `SELL_FLOORS`), 300 being somebody's guess of what
+      the recipes need. And the same number is read the other way round by the planner: `stock.ts available`
+      subtracts `floor(code)`, so the last 300 sap and 50 shells are what a step may **not** plan with (read
+      in the chat in `stock.ts:42-46`; whether the bills go through `available` or the raw bank was not
+      traced). For 016: nothing an open bill can use is sold, the sell floor stops being a planning floor, and
+      what is sold at all is decided there with the rest of what is spent. Not touched while 014 runs.
+39. **The bank is nearly full: 103 of 110 slots (Alex, 2026-11-20). The bank goes first: 015 the bank, 016 the
+    journal, 017 keys, tolls and what is spent, then the clean-up** (the task numbers named in decisions 36-38
+    shift by one; the bank and sap items that decision 38 sent to "016" are this task).
+    - Alex's answers: the planner may buy bank expansions by itself ("probably yes"; he does not know how the
+      price grows and wants to know at which point to stop); outdated gear is recycled, "definitely": if a
+      piece is ever wanted again it is made again.
+    - **A full bank is met by nobody** (traced in the chat): `src/api/client.ts` retries 499 and 461 only;
+      `exec.ts bankOff`, `loopkit.ts`'s deposit and the gear swap's deposit pass a 462 on as an error; the
+      item pauses, the planner blocks the step's target for 6 hours and decides again, and the next step's
+      reset meets the same bank. So the targets are blocked one after another. Not seen in play yet. A
+      deposit into a stack the bank already holds needs no slot, so it is new codes that fail.
+    - **What 015 holds** (the task file is written in the chat that accepts report 014: 014 is changing
+      `exec.ts` and `queue.ts` at this moment):
+      - a 462 is "the bank is full": the character keeps what does not fit and goes on, the planner answers
+        it (tidy, then buy); it never blocks a target for it;
+      - **the tidy-up first**: gear that no fighter's solve picks at its level or any level ahead, that no
+        open objective and no recipe asks for, is recycled as a planned step (reserved like any withdrawal);
+        the materials that come back are stock;
+      - **then an expansion**, when fewer than 10 slots are free and the tidy-up has nothing left: at most
+        60,000 gold each and never below the gold floor (Alex, 2026-11-20: the next expansion costs 28,000
+        today, so the chat's first 30,000 was too low and "the limit must be higher"; 60,000 is the start, his
+        to move when
+        he has seen the prices). Above the cap it is not bought and says so, with the price, where Alex sees
+        it. Every purchase is logged with its price and the next one's;
+      - printed for the stop rule: the price ladder (the docs' formula, or the live `next_expansion_cost`),
+        the slots by kind (gear, materials, consumables, currencies, the rest) and what the tidy-up frees;
+      - sap: nothing an open recipe can use is on the merchant's sell list, and `stock.ts available` stops
+        subtracting a sell floor;
+      - the branch `rework` and the first push (decision 38).
+    - Until then seven slots are free. Alex was told that, if the number climbs before 015 is in service, one
+      expansion bought by hand in the game's own client (a character on a bank tile) gives twenty slots and
+      shows him the price.
 
 ## Tasks
 | # | What | State |
@@ -745,8 +835,10 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 012 | The prices round (decisions 30, 31): fight XP and kill seconds against the log, a step's fixed cost, stock is free and the forward model drinks, the node of a `src:` gather, a gated craft in a chain | done, `1d76174`. Accepted 2026-11-20 (decision 32). **Engine change: Alex restarted the service on 2026-11-20 at 07:31:51 UTC** (run `[yewz]`); all five steps re-attached. |
 | 013 | The fleet on events (decision 33): who goes to a spawn, an event in the score, events in the forward model; in flight for an `ach:` target | done, `c8266ac`. Accepted 2026-11-20 (decision 34). **Engine change: Alex restarted the service on 2026-11-20 between 09:44 and 09:54 UTC** (run `[wj59]`). |
 | 014 | The consumables round (decision 35): potions and food by need, made through the bank and taken by the step that planned them; one price; an event's fights stocked for one spawn; bag stock; what the potion wall is made of | written 2026-11-20, `tasks/014-consumables.md`; not run yet. **Engine change: restart after it is accepted.** |
-| 015 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
-| 016… | The clean-up → the Roadmap as home, a cut-down outlook → group boss fights | |
+| 015 | The bank (decision 39): a full bank is answered, not met; outdated gear is recycled; the planner buys an expansion under a price cap; sap is no longer sold from under the recipes; the branch `rework` and the first push | written by the chat that accepts report 014. **Engine change.** |
+| 016 | The journal (decision 37): a journal of decisions and step results beside the raw log, the raw log a file a day, a status file, a daily snapshot of the World | after 014's report. **Engine change.** |
+| 017 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
+| 018… | The clean-up → the Roadmap as home, a cut-down outlook → the Lab (decision 36) → group boss fights | |
 
 ## Open questions
 - **Who brews and cooks for the fighters, and who drinks first?** The wall at combat 33–35 is the potion's
