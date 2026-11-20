@@ -88,6 +88,7 @@ export interface PlannerConfig {
   potionK: number;                        // × the price of a potion a fight drinks, in the core's solves and prices (the replay's row B only; 1)
   potionStock: number;                    // task 012: 1 = an ingredient the stock covers is free (reach.ts potionPrice); 0 = the field price always (row C only)
   events: number;                         // task 013: 1 = an event is a calendar (events.ts) and the forward model attends it; 0 = a wall, no events (row E only)
+  consumables: number;                    // task 014: 1 = potions and food by need, through the bank (consumables.ts); 0 = report 013's model whole (row C only)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;
@@ -107,6 +108,10 @@ export interface World {  // everything decide() reads — a snapshot, so it run
   /** Task 010: each character's active offering favors (today's offerings cache); pickMonster / pickNode count their
    *  XP while they last. The forward model drops them. */
   favors?: Record<string, Favor[]>;
+  /** Task 014, settled point 9: what lies in the bags of the characters beyond their own steps' inputs — stock on its
+   *  way to the bank (the runtime's worldOf; the forward model banks at a step's end). The bills count it; a step's
+   *  withdrawal and what a craft can feed now (stock.ts available) do not. */
+  bags?: Record<string, number>;
 }
 
 /** An accepted offering's favor: × `xp` XP (and × `drop` drops) on its target for that character until `until` (ms). */

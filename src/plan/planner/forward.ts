@@ -23,6 +23,7 @@ import { fightXp } from "../xp";
 import { craftsPerLevel, hoursToLevel, levelOf, perOf } from "./cost";
 import { decide, met } from "./decide";
 import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
+import { consFree, consumed } from "./consumables";
 import { fightRec, winLevel } from "./reach";
 import { available } from "./stock";
 import { billOf } from "./supply";
@@ -94,6 +95,9 @@ export const pointsOf = (world: World): number => world.achievements.reduce((t, 
  * the price (reach.ts potionPrice) returns to the field's.
  */
 export function drinksOf(world: World, step: Step): Map<string, number> {
+  // task 014, settled point 8: a step's consumables leave the bank with its withdraw (the mat: steps put them there); the
+  // two shortcuts below (the one-unit stack, the ingredients drunk as if brewed) are report 013's model, consumables 0 only
+  if (world.config.consumables ?? 1) return consFree(world) ? new Map() : consumed(world, step);
   const out = new Map<string, number>();
   const ch = world.characters.find((c) => c.name === step.character);
   if (!ch) return out;
@@ -201,7 +205,7 @@ export function advance(world: World, step: Step): World {
 }
 
 /** Task 013: an event the character attended while the step ran — its share of the time, the actions and hours it took. */
-export interface Attended { code: string; share: number; actions: number; hours: number }
+export interface Attended { code: string; share: number; actions: number; hours: number; perKill?: Record<string, number> }
 export interface Played { at: number; step: Step; events?: Attended[] }
 export interface Forward { world: World; played: Played[]; completed: { code: string; points: number; at: number }[] }
 
@@ -234,7 +238,7 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
       w = advance(prev, at ? { ...pending[name]!, hours: at.hours } : pending[name]!);
       onEnd?.(w, pending[name]!, prev);
       for (const e of at?.events ?? []) {
-        const s = eventStep(name, e.code, e.actions);
+        const s = eventStep(name, e.code, e.actions, e.perKill);
         if (!s) continue;
         prev = { ...w, current: { ...pending } };
         w = advance(prev, s);
@@ -318,7 +322,9 @@ export function outlook(world: World, n: number): Outlook {
     notes: [
       "offerings count their favors and their time, not their XP; an active favor's XP is not counted",
       "events are attended by expectation: a member of an event with open demand gives it the share of its time a spawn takes (usable seconds ÷ the mean seconds between spawns), and the work is applied as a kill or gather step's",
-      "a potion a fight drinks is priced at what making another takes, an ingredient the bank covers for 100 runs free (xp.ts potionPriceOf); a kill step's potions leave the bank when it ends — the brewed potion first, then its ingredients",
+      world.config.consumables ?? 1
+        ? "potions and food are made by need through the bank (consumables.ts): a fight step takes what its stock covers, they leave the bank with it; one in stock costs nothing, any other its chain; healing is eating when a food is in the pool"
+        : "a potion a fight drinks is priced at what making another takes, an ingredient the bank covers for 100 runs free (xp.ts potionPriceOf); a kill step's potions leave the bank when it ends — the brewed potion first, then its ingredients",
       "gear is made by need and worn; what a step gathers, drops and crafts is in the bank when it ends (expected quantities)",
     ],
   };

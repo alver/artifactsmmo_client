@@ -47,6 +47,10 @@ export const DEFAULTS: PlannerConfig = {
   // Task 013: 1 = an event is priced by its calendar (events.ts) and the forward model attends it by expectation; 0 = an
   // event is a wall and the forward model has none — the replay's row E only, with the same rules as potionK.
   events: 1,
+  // Task 014: 1 = potions and food are needed, made through the bank and taken by the step that planned them, priced as
+  // the chain (consumables.ts); 0 = report 013's model whole — its prices, its KILL_LOG, its drinksOf — the replay's
+  // row C only, with the same rules as potionK.
+  consumables: 1,
 };
 
 /** Task 012, settled point 4: the bank actions of a craft, trade or gear step (the reset's deposit and swap, the
@@ -63,8 +67,20 @@ export const NEED_RATIO = 0.85;
 // prints them): the median, kept outside 0.9–1.1. Below 1 because most steps eat: food heals faster than rest (food is
 // not modelled, task 012 settled point 3). It was 1.3 (map E: 51.9 s a fight against the 40 s the client assumed), on
 // rest at 5 HP a second.
-export const KILL_LOG = 0.88;
+export const KILL_LOG_013 = 0.88;
+/** Task 014, settled point 6: measured ÷ the estimate with healing priced as it is — eating where the step ate (one `use`,
+ *  bis.ts USE_SEC, and the rest under one unit), rest by the docs where it rested — over report 012's eight decomposed kill
+ *  steps of 11-19, the food a fight item made inside itself taken out of the measured (the new executor never makes it
+ *  there: settled point 1). Median 1.087, inside 0.9–1.1: no factor (task 012's rule). With that food left in, over all
+ *  23 kill samples, the median is 1.27; scripts/check-planner.mts prints both. No kill step ran after 11-20 08:06 UTC. */
+export const KILL_LOG = 1;
+/** The log factor of a kill as the World's config reads it: report 013's with consumables 0 (row C). */
+export const killLog = (world: { config: { consumables?: number } }): number => ((world.config.consumables ?? 1) ? KILL_LOG : KILL_LOG_013);
 export const GATHER_LOG = 1.05; // 30.6 s against the formula's 30–39 s
+
+/** Task 014, settled point 3: consumables are made for the next HORIZON chunks of a work, plus MARGIN (a fifth). */
+export const HORIZON = 2;
+export const MARGIN = 1.2;
 
 /** Task 013: a spawn is seen half a poll late on average (the 2-minute poll while event demand is open, sync.ts). */
 export const EVENT_SEEN_SEC = 60;

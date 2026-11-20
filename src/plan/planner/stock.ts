@@ -62,7 +62,11 @@ export function poolBank(world: World, name: string): BankItem[] {
         : world.bank;
       wholeGear.set(world.bank, whole);
     }
-    b = res.size ? whole.map((x) => (res.has(x.code) ? { ...x, quantity: Math.max(0, x.quantity - res.get(x.code)!) } : x)).filter((x) => x.quantity > 0) : whole;
+    // task 014 (consumables 1): a potion another step reserved stays in the pool — consumables.ts fightTake's reservable
+    // decides what a step may take. shortcut: every fight step took its potions out of four pools and back, re-solving their
+    // fights; upgrade if a plan ever leans on a potion that is all reserved
+    const keep = (code: string): boolean => !!(world.config.consumables ?? 1) && item(code)?.type === "utility";
+    b = res.size ? whole.map((x) => (res.has(x.code) && !keep(x.code) ? { ...x, quantity: Math.max(0, x.quantity - res.get(x.code)!) } : x)).filter((x) => x.quantity > 0) : whole;
     byName.set(name, b);
   }
   return b;

@@ -22,6 +22,7 @@ import { hive, setHiveManual } from "./hive";
 import { liveEvents } from "./events";
 import { invCount } from "./exec";
 import { DEFAULTS } from "../plan/planner/config";
+import { item as itemOf } from "../catalog";
 import { costKey, levelHoursEstimate, levelOf, perOf, sample, unitSec } from "../plan/planner/cost";
 import { decide, rank } from "../plan/planner/decide";
 import { itemsOf } from "../plan/planner/compile";
@@ -89,8 +90,24 @@ export function worldOf(now: number): World {
   return {
     now, characters: characterList(), bank: bankItems.value, bankGold: bankDetails.value?.gold ?? 0,
     achievements: achievements.value ?? NONE, events: liveEvents(), current, costs: st.costs, blocked: st.blocked, config,
-    favors: favorsOf(now),
+    favors: favorsOf(now), bags: bagsOf(config),
   };
+}
+
+/** Task 014, settled point 9: what lies in the owned characters' bags beyond their own running steps' inputs (a step's
+ *  withdrawal, its sources' and its recipe's materials, a buy's currency) — stock on its way: every step starts with a
+ *  bank reset. The bills count it (supply.ts billOf); a craft's withdrawal and feedable stay the bank's. */
+function bagsOf(config: PlannerConfig): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const ch of characterList()) {
+    if (!config.on[ch.name]) continue;
+    const r = planner.value.current[ch.name], s = r && !r.over ? r.step : undefined;
+    const inputs = new Set<string>([...Object.keys(s?.withdraw ?? {}), ...(s?.sources ?? []).map((x) => x.code)]);
+    if (s?.work.kind === "craft") for (const g of itemOf(s.work.code)?.craft?.items ?? []) inputs.add(g.code);
+    if (s?.work.kind === "buy") inputs.add(s.work.currency);
+    for (const it of ch.inventory ?? []) if (it.code && it.quantity > 0 && !inputs.has(it.code)) out[it.code] = (out[it.code] ?? 0) + it.quantity;
+  }
+  return out;
 }
 
 /** Task 010: each character's active favors, from today's offerings cache (never a read), until the favor's own

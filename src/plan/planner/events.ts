@@ -19,14 +19,15 @@ import { catalog, itemName, monster as monsterOf, resource as resourceOf, tileAt
 import type { GameEvent } from "../../catalog";
 import { killSeconds } from "../bis";
 import { jobGear } from "../jobgear";
-import { EVENT_MIN_SEC, EVENT_SEEN_SEC, KILL_LOG, SPAWN_LOG, STEP_BANK_SEC } from "./config";
+import { EVENT_MIN_SEC, EVENT_SEEN_SEC, SPAWN_LOG, STEP_BANK_SEC, killLog } from "./config";
 import { actionSec, killWalk, levelOf, perOf } from "./cost";
 import { WEAR_SLOTS } from "./decide";
 import { isOn } from "./gates";
 import { gearPieces, pieceParent } from "./gear";
-import { CITY, bankSec, chAt, fightRec, placeOf, planRec, safeWin, travel, winLevel, wins } from "./reach";
+import { CITY, bankSec, chAt, fightRec, openOf, placeOf, planRec, potionPrice, safeWin, travel, winLevel, wins } from "./reach";
 import { rolesFor } from "./roles";
 import { poolBank } from "./stock";
+import { potionSet, takeOf, useOf } from "./consumables";
 import { objectiveParents, supplyNeeds } from "./supply";
 import { perUnit, sourceFor, targetsOf, unhandledOf } from "./targets";
 import type { Parent } from "./supply";
@@ -79,7 +80,8 @@ export function contentSec(c: Content, ch: Character, world: World, level = ch.l
   const at = level === ch.level ? ch : chAt(ch, level);
   const r = at === ch ? (safeWin(ch, world, c.code) ? fightRec(ch, world, c.code) : undefined) : planRec(at, world, c.code);
   if (!r || !wins(r, world)) return Infinity;
-  return killSeconds(r.forecast, () => 0) * KILL_LOG + killWalk(ch, world, c.code);
+  // task 014: the potions a member drinks are the event's reserve, made before the trip (free inside the hour); its food is eaten
+  return killSeconds(r.forecast, () => 0, potionPrice(world, ch.name).food) * killLog(world) + killWalk(ch, world, c.code);
 }
 
 const possibleMemo = new WeakMap<World, Map<string, Member[]>>();
@@ -93,6 +95,7 @@ export function possibleMembers(ev: GameEvent, world: World): Member[] {
   if (hit) return hit;
   const out: Member[] = [];
   const c = contentOf(ev);
+  const fw = (world.config.consumables ?? 1) ? openOf(world) : world;
   if (c && evOn(world) && tilesOf(ev).length) {
     for (const ch of world.characters) {
       if (!isOn(ch.name, world)) continue;
@@ -103,8 +106,14 @@ export function possibleMembers(ev: GameEvent, world: World): Member[] {
       }
       const m = monsterOf(c.code);
       if (!m || m.type === "boss" || m.type === "raid_boss" || m.level > ch.level + 20) continue; // ten levels up and ten more: no win
-      const at = winLevel(ch, world, m.code);
-      const sec = at == null ? Infinity : contentSec(c, ch, world, at);
+      // task 014 (consumables 1): whether it can ever be a member is judged on the fleet's gear (reach.ts openOf)
+      let at = winLevel(ch, fw, m.code);
+      let sec = at == null ? Infinity : contentSec(c, ch, fw, at);
+      // task 014, settled point 7: a member with the potions its reserve would hold — the potion set at its level now
+      // (consumables.ts potionSet, on the fleet's gear: reach.ts openOf); the spawn itself still asks for a safe win from
+      // the pool (eventMembers)
+      const r = !Number.isFinite(sec) && (world.config.consumables ?? 1) ? potionSet(ch, world, m.code, true) : undefined;
+      if (r) { at = ch.level; sec = killSeconds(r.forecast, () => 0, potionPrice(world, ch.name).food) * killLog(world) + killWalk(ch, world, m.code); }
       if (Number.isFinite(sec)) out.push({ name: ch.name, sec, level: at });
     }
   }
@@ -194,7 +203,17 @@ function materialNeeds(world: World, name: string): ReturnType<typeof supplyNeed
  * the deadline with its calendar in its hours. `name`: the deciding character of a forward model (its gear needs are
  * memoised), "" for the fleet.
  */
+const demandMemo = new WeakMap<World, Map<string, Demand>>();
 export function eventDemand(ev: GameEvent, world: World, name = ""): Demand {
+  // task 014: memoised per World, name and event (the consumables' event work and the forward model's shares both ask)
+  let byKey = demandMemo.get(world);
+  if (!byKey) demandMemo.set(world, (byKey = new Map()));
+  const k = `${name}|${ev.code}`;
+  let d = byKey.get(k);
+  if (!d) byKey.set(k, (d = demandOf(ev, world, name)));
+  return d;
+}
+function demandOf(ev: GameEvent, world: World, name: string): Demand {
   const c = contentOf(ev);
   const calH = Math.max(0, (Date.parse(world.config.deadline) - world.now) / 3.6e6);
   const expected = (calH * 3600) / gapSec(ev);
@@ -245,7 +264,7 @@ export function eventDemand(ev: GameEvent, world: World, name = ""): Demand {
 
 /** A member with the actions it brings in the `use` seconds of the spawn it works and its set; any other owned character
  *  with why not (the line's words). */
-export interface Verdict { name: string; member: boolean; why: string; actions?: number; use?: number; set?: Record<string, string> }
+export interface Verdict { name: string; member: boolean; why: string; actions?: number; use?: number; set?: Record<string, string>; perKill?: Record<string, number>; take?: Record<string, number> }
 export interface EventPlan {
   key: string;        // code@created_at, as state/events.ts eventKey
   code: string;
@@ -290,10 +309,10 @@ function setOf(c: Content, ch: Character, world: World): Record<string, string> 
   return out;
 }
 /** The world with a member's set out of the others' pool (its step underneath waits: its own reservations stay). */
-function withSet(world: World, name: string, set: Record<string, string>): World {
+function withSet(world: World, name: string, set: Record<string, string>, take?: Record<string, number>): World {
   const cur = world.current[name];
   const stub = { key: `event@${name}`, target: "event", character: name, as: "fallback", work: { kind: "task" }, units: 0, hours: 0, score: 0, why: "" } as Step;
-  return { ...world, current: { ...world.current, [name]: { ...(cur ?? stub), wear: { ...(cur?.wear ?? {}), ...set } } } };
+  return { ...world, current: { ...world.current, [name]: { ...(cur ?? stub), wear: { ...(cur?.wear ?? {}), ...set }, ...(take ? { withdraw: { ...(cur?.withdraw ?? {}), ...take } } : {}) } } };
 }
 
 const fmtUntil = (ms: number): string => new Date(ms).toISOString().slice(11, 16);
@@ -375,9 +394,11 @@ export function eventMembers(e: ActiveEvent, world: World, busy: Record<string, 
     const b = best as { i: number; n: number; s: number };
     const x = rest.splice(b.i, 1)[0];
     const set = setOf(content, x.ch, w);
-    members.push({ name: x.ch.name, member: true, why: `≈${f0(b.n)} ${unit} in ${Math.round(x.sec / 60)} min`, actions: b.n, use: x.sec, set });
+    // task 014, settled point 7: the trip's reset takes what the hour drinks and eats (its set's potions, its pool's food)
+    const perKill = content.type === "monster" ? useOf(w, x.ch, content.code) : undefined, take = takeOf(perKill, b.n);
+    members.push({ name: x.ch.name, member: true, why: `≈${f0(b.n)} ${unit} in ${Math.round(x.sec / 60)} min${take ? ` with ${Object.entries(take).map(([c, q]) => `${q} ${itemName(c)}`).join(" and ")}` : ""}`, actions: b.n, use: x.sec, set, perKill, take });
     left -= b.n;
-    w = withSet(w, x.ch.name, set);
+    w = withSet(w, x.ch.name, set, take);
   }
   for (const x of rest) others.push({ name: x.ch.name, member: false, why: gate.get(x.ch.name) ?? "not needed: the members bring the demand" });
   const line = `${head} — demand: ${fit.map(what).join("; ")}${late.length ? `; ${late.join("; ")}` : ""} → ${f0(d.actions)} ${unit}; members: ${members.map((m) => `${m.name} (${m.why})`).join(", ") || "none"}${others.length ? `; not: ${others.map((o) => `${o.name} — ${o.why}`).join(", ")}` : ""}`;
@@ -403,9 +424,9 @@ export function eventPlans(events: ActiveEvent[], world: World, busy: Record<str
  *  0: the missing map target skips it), everything banked: `back`, the step underneath's own bank reset (it banks the
  *  drops too and puts the step's set back on — a craft item has no gear self-heal and resumed in the trip's set, the
  *  event-fleet-monster scenario), else deposit-all. */
-export function tripOf(c: Content, back?: QueueItemInput): QueueItemInput[] {
+export function tripOf(c: Content, back?: QueueItemInput, take?: Record<string, number>): QueueItemInput[] {
   const end: QueueItemInput = back ?? { kind: "deposit-all" };
-  if (c.type === "monster") return [{ kind: "gear", job: { kind: "fight", monster: c.code }, reset: true }, { kind: "fight", monster: c.code, times: 0, done: 0, gear: true }, end];
+  if (c.type === "monster") return [{ kind: "gear", job: { kind: "fight", monster: c.code }, reset: true }, { kind: "fight", monster: c.code, times: 0, done: 0, gear: true, take: take ?? {} }, end];
   const r = resourceOf(c.code);
   const drop = [...(r?.drops ?? [])].sort((a, b) => a.rate - b.rate)[0]?.code ?? c.code;
   return [{ kind: "gear", job: { kind: "gather", skill: r?.skill ?? "" }, reset: true }, { kind: "gather", code: drop, resource: c.code, times: 0, done: 0, gear: true }, end];
@@ -414,7 +435,7 @@ export function tripOf(c: Content, back?: QueueItemInput): QueueItemInput[] {
 // ── the forward model (settled point 8) ──────────────────────────────────────
 
 /** An event a character attends while its step runs: the share of its time, seconds an action, the demand's actions. */
-export interface Share { code: string; content: Content; share: number; sec: number; actions: number }
+export interface Share { code: string; content: Content; share: number; sec: number; actions: number; perKill?: Record<string, number> }
 
 /** A spawn of the event assumed live now at its first tile the city reaches, seen half a poll late. */
 export function spawnOf(ev: GameEvent, now: number): ActiveEvent | undefined {
@@ -443,30 +464,32 @@ export function sharesOf(name: string, world: World): Share[] {
     const w: World = { ...world, events: [...world.events, e] };
     const me = eventMembers(e, w, {}, d).members.find((m) => m.name === name);
     if (!me?.actions || !me.use) continue;
-    out.push({ code: ev.code, content: c, share: me.use / gapSec(ev), sec: me.use / me.actions, actions: d.actions });
+    out.push({ code: ev.code, content: c, share: me.use / gapSec(ev), sec: me.use / me.actions, actions: d.actions, perKill: me.perKill });
   }
   return out;
 }
 
 /** The step under the shares takes that much longer: its work `hours`, plus per share its time while its demand lasts
  *  (the uncapped event time is hours × share ÷ (1 − Σ shares)). */
-export function stretch(hours: number, shares: Share[]): { hours: number; events: { code: string; share: number; actions: number; hours: number }[] } {
+export function stretch(hours: number, shares: Share[]): { hours: number; events: { code: string; share: number; actions: number; hours: number; perKill?: Record<string, number> }[] } {
   const S = shares.reduce((s, x) => s + x.share, 0);
   if (!shares.length) return { hours, events: [] };
   const free = Math.max(1e-6, 1 - S);
   const events = shares.map((x) => {
     const actions = Math.min(x.actions, (hours * 3600 * x.share) / free / x.sec);
-    return { code: x.code, share: x.share, actions, hours: (actions * x.sec) / 3600 };
+    return { code: x.code, share: x.share, actions, hours: (actions * x.sec) / 3600, perKill: x.perKill };
   });
   return { hours: hours + events.reduce((s, x) => s + x.hours, 0), events };
 }
 
 /** The event's work as a step the forward model applies (advance): its actions, no hours (the step under it carries them). */
-export function eventStep(name: string, code: string, actions: number): Step | undefined {
+export function eventStep(name: string, code: string, actions: number, perKill?: Record<string, number>): Step | undefined {
   const ev = eventOf(code), c = ev && contentOf(ev);
   if (!c) return undefined;
   const work: Work = c.type === "monster" ? { kind: "kill", monster: c.code } : { kind: "gather", resource: c.code, drop: "" };
-  return { key: `event:${code}@${name}`, target: `event:${code}`, character: name, as: "supply", work, units: actions, hours: 0, score: 0, why: "event" };
+  // task 014: what the hour drinks and eats leaves the bank with the trip (forward.ts drinksOf)
+  const withdraw = takeOf(perKill, actions);
+  return { key: `event:${code}@${name}`, target: `event:${code}`, character: name, as: "supply", work, units: actions, hours: 0, score: 0, why: "event", ...(withdraw ? { withdraw } : {}) };
 }
 
 /** Whether any open objective or bill waits for an event's spawns (the poll's 2 minutes, settled point 6): an open

@@ -17,12 +17,11 @@
 // It is never a step of its own: the event interrupt does that work (decide.ts).
 
 import { catalog, item, itemName } from "../../catalog";
-import { killSeconds } from "../bis";
 import { CRAFT_SEC } from "../xp";
-import { CHUNK_SEC, CRAFT_LANES, GEAR_CRAFT, KILL_LOG } from "./config";
+import { CHUNK_SEC, CRAFT_LANES, GATHER_LANES, GEAR_CRAFT } from "./config";
 import { actionSec, hoursToLevel, killWalk, levelOf, makePlace, perOf, stepSec } from "./cost";
 import { isOn, met, outOfReach } from "./gates";
-import { planRec, potionPrice, wins } from "./reach";
+import { fightSecOf, planRec, wins } from "./reach";
 import { crafterOf } from "./roles";
 import { available } from "./stock";
 import { materialCal } from "./events";
@@ -91,7 +90,7 @@ export function fleetSec(work: Work, gates: Gate[], world: World): number {
       if (!isOn(c.name, world) || !gates.every((g) => (g.kind === "win" ? true : met(g, c, world)))) continue;
       if (work.kind !== "kill") { s = Math.min(s, actionSec(work, c, world)); continue; }
       const r = planRec(c, world, work.monster);
-      if (wins(r, world)) { s = killSeconds(r!.forecast, potionPrice(world, c.name).price) * KILL_LOG + killWalk(c, world, work.monster); break; }
+      if (wins(r, world)) { s = fightSecOf(r!.forecast, world, c.name) + killWalk(c, world, work.monster); break; }
     }
     m.set(k, s);
   }
@@ -151,7 +150,8 @@ export function billOf(world: World, name: string, demand: [string, number][], v
   const fixed = (w: Work): number => stepSec(makePlace(w, world)) / 3600;
   const need = (code: string, q: number, depth: number): void => {
     if (q <= 1e-9) return;
-    const have = vb.has(code) ? vb.get(code)! : available(code, world, name);
+    // task 014, settled point 9: what lies in a bag is stock on its way (World.bags; feedable and a withdrawal stay the bank's)
+    const have = vb.has(code) ? vb.get(code)! : available(code, world, name) + (world.bags?.[code] ?? 0);
     const take = Math.min(have, q);
     vb.set(code, have - take);
     q -= take;
@@ -164,7 +164,19 @@ export function billOf(world: World, name: string, demand: [string, number][], v
       if (why) return void bill.out.push(`${itemName(code)}: ${why}`);
       leaf(`src:${code}`, code, "src", s.work, s.gates, q);
       if (ev) evQty.set(code, (evQty.get(code) ?? 0) + q);
-      else if (price) bill.hours += (q * perOf(s.work) * fleetSec(s.work, s.gates, world)) / 3600;
+      else if (price) {
+        let sec = fleetSec(s.work, s.gates, world);
+        // task 014, settled point 2: a gathering source at a level nobody that is on meets (the nettle of a minor health
+        // potion: alchemy 20) is a road like a gated craft's — its level goes to the lane's roads, its gathers are priced
+        // at the node; consumables 1 only (report 013's bill reads ∞ there)
+        const lv = !Number.isFinite(sec) && (world.config.consumables ?? 1) && s.work.kind === "gather" ? s.gates.find((g) => g.kind === "level" && GATHER_LANES.includes(g.lane)) : undefined;
+        const by = lv && world.characters.find((c) => isOn(c.name, world));
+        if (lv?.kind === "level" && by && s.gates.every((g) => g === lv || world.characters.some((c) => isOn(c.name, world) && met(g, c, world)))) {
+          sec = actionSec(s.work, by, world);
+          if ((laneTop.get(lv.lane)?.level ?? 0) < lv.level) laneTop.set(lv.lane, { code, level: lv.level });
+        }
+        bill.hours += (q * perOf(s.work) * sec) / 3600;
+      }
       return;
     }
     const r = item(code)?.craft;
@@ -223,6 +235,7 @@ export interface Parent {
   hours: number;          // its whole remaining chain
   demand: [string, number][];
   gated?: Gated[];        // task 012: the chain's crafts whose level nobody that may craft them meets (finite roads)
+  reserve?: boolean;      // task 014, settled point 7: an event's consumables — served before every other parent
 }
 
 /** One unit of an objective, with nothing in the bank, is all field work the fleet can do, at most three sources,
@@ -281,7 +294,7 @@ export interface SupplyNeed { key: string; kind: "src" | "mat"; code: string; sh
 export function supplyNeeds(world: World, name: string, parents: Parent[], inFlight: (key: string) => number): SupplyNeed[] {
   const vb = new Map<string, number>();
   const out = new Map<string, SupplyNeed>();
-  for (const p of [...parents].sort((a, b) => b.fit - a.fit || b.any - a.any || (a.key < b.key ? -1 : 1))) {
+  for (const p of [...parents].sort((a, b) => Number(!!b.reserve) - Number(!!a.reserve) || b.fit - a.fit || b.any - a.any || (a.key < b.key ? -1 : 1))) {
     for (const l of billOf(world, name, p.demand, vb, false).leaves.values()) {
       const qty = l.kind === "src" ? l.qty * perOf(l.work) : l.qty;
       const s = out.get(l.key);

@@ -6,11 +6,10 @@
 
 import { atlas } from "../../catalog/atlas";
 import { catalog, item, monster as monsterOf, resource as resourceOf } from "../../catalog";
-import { killSeconds } from "../bis";
 import { CRAFT_SEC, autoRecyclable, fightXp, gatherSec } from "../xp";
-import { GATHER_LANES, GATHER_LOG, GEAR_CRAFT, KILL_LOG, STEP_BANK_SEC, TASK_SEC } from "./config";
+import { GATHER_LANES, GATHER_LOG, GEAR_CRAFT, STEP_BANK_SEC, TASK_SEC, killLog } from "./config";
 import { craftXpOf } from "./xp";
-import { CITY, bankSec, chAt, fightRec, firstWin, gatherCut, nearestSpot, placeOf, planRec, potionPrice, setWisdom } from "./reach";
+import { CITY, bankSec, chAt, fightRec, fightSecOf, firstWin, gatherCut, nearestSpot, openOf, placeOf, planRec, setWisdom } from "./reach";
 import { pickMonster, pickNode, pickRecipe } from "./pick";
 import { rolesFor } from "./roles";
 import { atlasKillSec, perUnit, sourceFor } from "./targets";
@@ -84,8 +83,8 @@ export function actionSec(w: Work, ch: Character, world: World): number {
     const mon = monsterOf(w.monster);
     if (!mon) return Infinity;
     const f = planRec(ch, world, w.monster)?.forecast.win ? fightRec(ch, world, w.monster)?.forecast : undefined; // reach.ts safeWin's first look
-    const fight = f?.win ? killSeconds(f, potionPrice(world, ch.name).price) : atlasKillSec(w.monster);
-    return fight * KILL_LOG + walkPerAction(ch, world, "monster", w.monster, mon.drops);
+    const fight = f?.win ? fightSecOf(f, world, ch.name) : atlasKillSec(w.monster) * killLog(world);
+    return fight + walkPerAction(ch, world, "monster", w.monster, mon.drops);
   }
   if (w.kind === "gather") {
     const r = resourceOf(w.resource);
@@ -165,7 +164,10 @@ export function levelHoursEstimate(lane: Lane, L: number, world: World, ch: Char
   const a = atlas();
   if (!a || L >= 50) return Infinity;
   if (lane === "combat") {
-    const own = (c: Character): number => ((p) => (p ? p.xp / p.sec : 0))(pickMonster(c, world, NO_BONUS));
+    // task 014 (consumables 1): the pace at the character's own level on the fleet's gear (reach.ts openOf), as the levels
+    // above it — the step itself picks on its own pool (decide.ts planLevel)
+    const at = (world.config.consumables ?? 1) ? openOf(world) : world;
+    const own = (c: Character): number => ((p) => (p ? p.xp / p.sec : 0))(pickMonster(c, at, NO_BONUS));
     const rate = L === ch.level ? own(ch) : L < ch.level ? own(chAt(ch, L)) : roadRate(ch, world, L);
     return rate > 0 ? (a.xpNeeded[L] ?? Infinity) / (rate * 3600) : Infinity;
   }
@@ -207,7 +209,7 @@ function roadRate(ch: Character, world: World, L: number): number {
       const at = firstWin(ch, world, m.code);
       if (at == null) continue;
       const r = planRec(chAt(ch, at), world, m.code)!;
-      const sec = measured(world.costs, `kill:${m.code}`) ?? killSeconds(r.forecast, potionPrice(world, ch.name).price) * KILL_LOG + killWalk(ch, world, m.code);
+      const sec = measured(world.costs, `kill:${m.code}`) ?? fightSecOf(r.forecast, world, ch.name) + killWalk(ch, world, m.code);
       road.push({ code: m.code, at, sec, wis: setWisdom(chAt(ch, at), r) }); // task 012: the XP with the wisdom of that set
     }
     byName.set(k, road);

@@ -17,6 +17,7 @@ import { winLevel } from "./reach";
 import { rolesFor } from "./roles";
 import { available } from "./stock";
 import { billOf } from "./supply";
+import { gearWorld } from "./consumables";
 import { targetsOf } from "./targets";
 import type { Character } from "../../types/api";
 import type { Gate, Lane, Target, World } from "./types";
@@ -72,15 +73,18 @@ export function unmetOf(name: string, world: World): Map<string, Gate[]> {
   const c = ctxOf(name, world);
   if (c.unmet) return c.unmet;
   const out = new Map<string, Gate[]>();
+  // task 014: a win gate is judged on the gear (the bank without its potions): the stock comes and goes, and a potion that
+  // makes a kill objective winnable is its need (consumables.ts) — its own candidate still meets the gate with the stock
+  const gw = gearWorld(world);
   for (const [code, ts] of c.byAch) {
     const gs: Gate[] = [];
     for (const t of ts) {
-      gs.push(...unmetGates(t.gates, c.ch, world));
+      gs.push(...unmetGates(t.gates, c.ch, gw));
       for (const i of t.inputs ?? []) {
         const short = t.left * i.per - available(i.code, world, name);
         if (short <= 0) continue;
-        if (i.source.kind !== "craft") gs.push(...unmetGates(i.gates, c.ch, world));
-        else for (const l of billOf(world, name, [[i.code, short]], undefined, false).leaves.values()) gs.push(...unmetGates(l.gates, c.ch, world));
+        if (i.source.kind !== "craft") gs.push(...unmetGates(i.gates, c.ch, gw));
+        else for (const l of billOf(world, name, [[i.code, short]], undefined, false).leaves.values()) gs.push(...unmetGates(l.gates, c.ch, gw));
       }
     }
     out.set(code, gs);
@@ -97,7 +101,7 @@ export function bundleOf(lane: Lane, name: string, world: World): Bundle | undef
   const pts = (code: string, p: number): number => p * (world.config.weight[code] ?? 1);
   const inLane = (g: Gate): number | undefined => {
     if (g.kind === "level") return g.lane === lane && g.level > L ? g.level : undefined;
-    if (g.kind === "win" && lane === "combat") { const at = winLevel(c.ch, world, g.monster); return at != null && at > L ? at : undefined; }
+    if (g.kind === "win" && lane === "combat") { const at = winLevel(c.ch, gearWorld(world), g.monster); return at != null && at > L ? at : undefined; }
     return undefined;
   };
   const behind: { code: string; at: number; points: number; ev?: { h: number; cal: number; note?: Bundle["events"][number] } }[] = [];

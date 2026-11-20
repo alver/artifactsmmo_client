@@ -156,9 +156,22 @@ const potionPrice = (bank: BankItem[]): ((code: string) => number) =>
  * call. `undefined` = no set at all (unknown monster / job "none") — callers
  * keep the current gear.
  */
-export function jobGear(ch: Character, bank: BankItem[], job: GearJob): Partial<Record<GearSlot, string>> | undefined {
+export function jobGear(ch: Character, bank: BankItem[], job: GearJob, planned?: Record<string, number>): Partial<Record<GearSlot, string>> | undefined {
   if (job.kind === "none") return undefined;
   const qty = ownedQtyOf(ch, bank);
+
+  if (job.kind === "fight" && planned) {
+    // Task 014, settled point 1: a step the planner owns counts as potions only the ones it planned (the fight item's `take`), free —
+    // they are its stock — never a brewable one; its reset puts exactly those into the utility slots.
+    for (const c of [...qty.keys()]) if (item(c)?.type === "utility" && !(c in planned)) qty.delete(c);
+    const rec = bestInSlot(ch, job.monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, potionPrice: () => 0 })[0];
+    if (!rec) return undefined;
+    const set = jobSetFromRecommendation(ch, bank, rec);
+    const pots = Object.keys(planned).filter((c) => item(c)?.type === "utility").sort();
+    set.utility1 = pots[0] ?? "";
+    set.utility2 = pots[1] ?? "";
+    return set;
+  }
 
   if (job.kind === "fight") {
     // Utilities are IN the search: the solver may pick owned potion stacks
@@ -294,6 +307,9 @@ export interface GearActionOpts {
    * RESET_UTILITY_STRIP underlay) so every unneeded slot is emptied.
    */
   reset?: boolean;
+  /** Task 014, settled point 4: what a utility slot takes, per potion (default a whole stack, 100): an owned step's
+   *  reset puts exactly its planned quantity on, topping a worn stack of the same potion up or taking the excess off. */
+  utility?: Record<string, number>;
 }
 
 export type GearAction =
@@ -423,7 +439,7 @@ function roomOf(
   const skip = new Set([...(opts.keep ?? []), ...junk.map((j) => j.code)]);
   const wantCount = new Map<string, number>();
   for (const [g, c] of Object.entries(desired) as [GearSlot, string][]) {
-    if (c && slotCode(ch, g) !== c) wantCount.set(c, (wantCount.get(c) ?? 0) + (isUtility(g) ? UTILITY_STACK : 1));
+    if (c && slotCode(ch, g) !== c) wantCount.set(c, (wantCount.get(c) ?? 0) + (isUtility(g) ? (opts.utility?.[c] ?? UTILITY_STACK) : 1));
   }
   const out = [...junk];
   for (const [code, n] of inv) {
@@ -492,7 +508,10 @@ export function nextGearAction(
     // bank, not the bag.
     const wantCount = new Map<string, number>();
     for (const [g, c] of Object.entries(desired) as [GearSlot, string][]) {
-      if (c && slotCode(ch, g) !== c) wantCount.set(c, (wantCount.get(c) ?? 0) + 1);
+      // task 014: a planned utility quantity stays in the bag for its slot (an unplanned one: one unit, as before)
+      if (c && slotCode(ch, g) !== c) wantCount.set(c, (wantCount.get(c) ?? 0) + (isUtility(g) && opts.utility ? (opts.utility[c] ?? UTILITY_STACK) : 1));
+      // a planned top-up of a worn stack waits in the bag for its slot (else the stash banks what was just withdrawn)
+      else if (c && isUtility(g) && opts.utility) wantCount.set(c, (wantCount.get(c) ?? 0) + Math.max(0, (opts.utility[c] ?? UTILITY_STACK) - slotQuantity(ch, g)));
     }
     const stash: { code: string; quantity: number }[] = [];
     for (const [code, n] of inv) {
@@ -541,6 +560,7 @@ export function nextGearAction(
   // other stock as the swap itself needs room for (see roomOf). Everything
   // else stays in the bag until the bag is full or a reset runs.
   const atBank = onBankTile(ch);
+  const utilityQty = (code: string): number => opts.utility?.[code] ?? UTILITY_STACK;
   const junk = junkOf(inv, desired, opts);
   /** Room for `n` more units. In the field only junk gear earns the trip; null ⇒
    *  nothing to deposit — yield and let the caller's normal bank-off make room. */
@@ -574,6 +594,19 @@ export function nextGearAction(
     return { kind: "unequip", slots: batch };
   }
 
+  // Task 014: a planned quantity on a worn stack of the same potion — the excess off (the reset's stash banks it), a
+  // shortfall topped up from the bag, else from the bank. Only with opts.utility: an owned step's reset.
+  if (opts.utility) for (const g of ["utility1", "utility2"] as GearSlot[]) {
+    const want = desired[g];
+    if (!want || slotCode(ch, g) !== want) continue;
+    const have = slotQuantity(ch, g), t = utilityQty(want);
+    if (have > t) return free >= have - t ? { kind: "unequip", slots: [{ slot: g, quantity: have - t }] } : makeRoom(have - t - free);
+    if (have >= t) continue;
+    const held = inv.get(want) ?? 0, banked = bankQty.get(want) ?? 0;
+    if (held > 0) return { kind: "equip", items: [{ code: want, slot: g, quantity: Math.min(held, t - have) }] };
+    if (banked > 0 && atBank && free > 0) return { kind: "withdraw", items: [{ code: want, quantity: Math.min(banked, t - have, free) }] };
+  }
+
   // 2. Equip whatever is already in hand into the (now empty) slots.
   //    Utility slots take the whole held stack (game cap 100); a partial stack
   //    is fine — the slot only re-activates once it drains to empty.
@@ -583,7 +616,7 @@ export function nextGearAction(
     if (slotCode(ch, a.slot)) continue; // still occupied (capped unequip) — next tick
     const n = invLeft.get(a.want) ?? 0;
     if (n > 0) {
-      const q = isUtility(a.slot) ? Math.min(n, UTILITY_STACK) : 1;
+      const q = isUtility(a.slot) ? Math.min(n, utilityQty(a.want)) : 1;
       invLeft.set(a.want, n - q);
       equipNow.push({ code: a.want, slot: a.slot, quantity: q });
     }
@@ -593,7 +626,7 @@ export function nextGearAction(
   // 3. Withdraw the remainder from the bank (aggregate per code, capped by room).
   const need = new Map<string, number>();
   for (const a of active) {
-    const target = isUtility(a.slot) ? UTILITY_STACK : 1;
+    const target = isUtility(a.slot) ? utilityQty(a.want) : 1;
     const n = invLeft.get(a.want) ?? 0;
     if (n > 0) {
       invLeft.set(a.want, Math.max(0, n - target)); // covered by hand, waiting for its slot

@@ -1,0 +1,508 @@
+// Consumables by need, through the bank (task 014). Pure.
+//
+// One price, the chain's (settled point 6): a potion or a unit of food the pool a character may plan with holds costs
+// nothing; any other costs its bill (supply.ts billOf) by the best-placed maker with its tools — the same bill a supply
+// parent opens. Healing is eating when a food is in the pool (bis.ts healSeconds: the `use` action), rest otherwise.
+//
+// By need (settled point 2), as gear: for a run of fights — (a) a fighter's road to its next combat gate, (b) an open
+// kill objective as the fleet's work, (c) the hunt of an open parent's src: leaf, (d) an event with open demand that can
+// still pay — a potion or a food is needed when making it and then fighting with it takes at most NEED_RATIO of the hours
+// of fighting with what the pool holds now (∞ when that is no safe win): G + H1 ≤ NEED_RATIO × H0. H0 is judged on the
+// pool without the consumable when the pool's stock of it does not cover the horizon; G is the bill of every unit the
+// work takes (stock counted, a recipe nobody meets with its level road: supply.ts gateRoad, as any gated craft).
+//
+// Through the bank (settled point 3): a need is a parent of supply (cons:<code>:<work>) with the score of its work; its
+// demand is what the next HORIZON chunks take for the character on it, plus MARGIN (an event: one spawn per member),
+// less the stock and what is in flight (supply.ts supplyNeeds). The stock is shared from the best-scoring parent down;
+// an event's is a reserve no other bill or fight step takes (reservable).
+//
+// The fight step (settled point 4): its consumables are its `withdraw` (fightTake), its kills the chunk or what the
+// reservable stock covers; nothing covered: that set is no candidate, a set that wins without them stays one.
+// Bounds (the service has one thread): (a) solves the current pick and four flips at most two levels up, as gear (a);
+// (b) and (c) only a monster nobody that is on wins safely now (a flip; a speed-up of an objective is not asked for),
+// by the highest-level character that wins it with a potion; (d) the possible members at their level now.
+
+import { catalog, item, itemName, monster as monsterOf } from "../../catalog";
+import { atlas } from "../../catalog/atlas";
+import { canEquip, killSeconds } from "../bis";
+import type { Food } from "../bis";
+import { gearMaterial, healingFoods } from "../consumables";
+import { fightXp } from "../xp";
+import { CHUNK_SEC, HORIZON, MARGIN, NEED_RATIO, killLog } from "./config";
+import { actionSec, killWalk, levelHoursEstimate, perOf } from "./cost";
+import { achHours, bundleOf, bundleScore } from "./bundle";
+import { eventDemand, usableSec } from "./events";
+import { isOn, met } from "./gates";
+import { gearPieces, pieceParent } from "./gear";
+import { pickMonster } from "./pick";
+import { fightRec, nearestSpot, placeOf, potionPrice, potionRec, safeWin, setWisdom, wins } from "./reach";
+import { crafterOf } from "./roles";
+import { available } from "./stock";
+import { billOf, mayCraft, objectiveParents, supplyNeeds } from "./supply";
+import type { Gated, Parent } from "./supply";
+import { sourceFor, targetsOf } from "./targets";
+import type { Price } from "./reach";
+import type { Character } from "../../types/api";
+import type { GearRecommendation } from "../types";
+import type { FightForecast } from "../../sim/combat";
+import type { Lane, Step, World } from "./types";
+
+/** What a utility slot holds (src/plan/jobgear.ts UTILITY_STACK; the game answers 484 above it). */
+const STACK = 100;
+const cons = (world: World): boolean => !!(world.config.consumables ?? 1);
+/** Row B: every consumable a fight wants is at hand and free. */
+export const consFree = (world: World): boolean => cons(world) && (world.config.potionK ?? 1) === 0;
+const calHOf = (world: World): number => Math.max(0, (Date.parse(world.config.deadline) - world.now) / 3.6e6);
+
+// ── the candidates ───────────────────────────────────────────────────────────
+
+const potMemo = new Map<number, string[]>();
+/** The potions a character may drink: every utility potion with a recipe it can equip (the condition is its level). */
+export function potionCands(ch: Character): string[] {
+  let out = potMemo.get(ch.level);
+  if (!out) potMemo.set(ch.level, (out = [...catalog().items.values()].filter((it) => it.type === "utility" && it.craft && canEquip(ch, it)).map((it) => it.code).sort()));
+  return out;
+}
+const foodMemo = new Map<number, { code: string; hp: number }[]>();
+/** The foods a character may eat (consumables.ts healingFoods: no other recipe's ingredient), with a recipe whose
+ *  ingredients feed no gear (gearMaterial): what a need may ask to be made. */
+export function foodCands(ch: Character): { code: string; hp: number }[] {
+  let out = foodMemo.get(ch.level);
+  if (!out) foodMemo.set(ch.level, (out = healingFoods(ch).filter(({ it }) => it.craft && !it.craft.items.some((g) => gearMaterial(g.code))).map(({ it, heal }) => ({ code: it.code, hp: heal }))));
+  return out;
+}
+/** The food in the plan: the best-healing food the pool this character may plan with holds (row B: the best it may eat). */
+export function poolFood(world: World, name: string): Food | undefined {
+  const ch = world.characters.find((c) => c.name === name);
+  if (!ch) return undefined;
+  for (const { it, heal } of healingFoods(ch)) if (consFree(world) ? !!it.craft : available(it.code, world, name) > 0) return { code: it.code, hp: heal };
+  return undefined;
+}
+
+// ── the price (settled point 6) ──────────────────────────────────────────────
+
+/** Units a chain is priced over: a step's fixed seconds spread over a stack. */
+const UNITS = 100;
+const chainMemo = new WeakMap<World, Map<string, number>>();
+/** What one more unit costs the fleet when the pool holds none: its bill for UNITS units (billOf: the stock of every
+ *  ingredient first, then the field by the quickest character that is on with its tools, the crafts and a step's fixed
+ *  seconds) ÷ UNITS, a level road left out (it is the need's G); ∞ when it cannot be made. */
+export function chainSec(world: World, name: string, code: string): number {
+  let m = chainMemo.get(world);
+  if (!m) chainMemo.set(world, (m = new Map()));
+  const k = `${name}|${code}`;
+  const hit = m.get(k);
+  if (hit != null) return hit;
+  m.set(k, Infinity); // re-entered through a kill leaf's own price: ∞ for that turn
+  // nobody that is on may make it (a food's cook is not on): ∞ — supply.ts mayCraft, a potion anyone's at the level
+  const r = item(code)?.craft;
+  if (r && !world.characters.some((c) => isOn(c.name, world) && mayCraft(r.skill as Lane, 0, c.name, world))) return Infinity;
+  const b = billOf(world, name, [[code, UNITS]]);
+  const road = b.gated.reduce((s, g) => s + g.hours, 0);
+  const h = b.out.length || !Number.isFinite(road) ? Infinity : b.hours - road;
+  const s = Number.isFinite(h) ? (h * 3600) / UNITS : Infinity;
+  m.set(k, s);
+  return s;
+}
+/** Settled point 6: the core's price with consumables 1 (reach.ts potionPrice). */
+export function consPrice(world: World, name: string): Price {
+  const free = consFree(world);
+  const memo = new Map<string, number>();
+  const price = (code: string): number => {
+    let s = memo.get(code);
+    if (s == null) memo.set(code, (s = free || available(code, world, name) > 0 ? 0 : chainSec(world, name, code)));
+    return s;
+  };
+  return { key: free ? "free" : "cons", price, covered: [], tag: free ? "free" : "cons", food: poolFood(world, name) };
+}
+
+// ── the needs (settled points 2, 3, 7) ───────────────────────────────────────
+
+export interface ConsNeed {
+  key: string;        // the parent's key: cons:<code>:<work key>
+  code: string;
+  food: boolean;
+  for: string[];      // the characters on the work it is judged for
+  work: string;       // "Second's road to combat 30", "the_reaper (skeleton)", "Skeleton Bone for …", "event bandit_camp"
+  workKey: string;
+  monster: string;
+  perKill: number;    // units a kill takes
+  kills: number;      // the kills of the work judged
+  demand: number;     // units: HORIZON chunks + MARGIN for each character on it; an event: one spawn per member
+  H0: number; H1: number; G: number;
+  points: number; fit: number; any: number; hours: number;
+  gated: Gated[];
+  reserve: boolean;   // an event's: no other bill or fight step takes it
+}
+
+const emptyMemo = new WeakMap<World, World>();
+/** The World with an empty bank: the chain's price with the stock ignored — a need's potion set is priced on it, so the
+ *  stock coming and going changes none of its solves (the making of the stock is the need's G). */
+function emptyOf(world: World): World {
+  let w = emptyMemo.get(world);
+  if (!w) emptyMemo.set(world, (w = { ...world, bank: [] }));
+  return w;
+}
+/** Task 014: the World a gear verdict is judged on — the bank without its potions (consumables 1; the World itself with 0):
+ *  a bundle's win gates and win levels (bundle.ts), the needs' "nobody wins it safely" (the stock comes and goes). */
+export const gearWorld = (world: World): World =>
+  (world.config.consumables ?? 1) && (world.config.potionK ?? 1) !== 0 ? noStock(world, world.bank.filter((b) => item(b.code)?.type === "utility").map((b) => b.code)) : world;
+const stockMemo = new WeakMap<World, Map<string, World>>();
+/** The World with none of `codes` in the bank: the pool "without the consumable" of H0. */
+export function noStock(world: World, codes: string[]): World {
+  let m = stockMemo.get(world);
+  if (!m) stockMemo.set(world, (m = new Map()));
+  const k = [...codes].sort().join(",");
+  let w = m.get(k);
+  if (!w) m.set(k, (w = { ...world, bank: world.bank.filter((b) => !codes.includes(b.code)) }));
+  return w;
+}
+
+/** Seconds a kill with every consumable free (made already: G carries the making), eating `food` when given. */
+const freeSec = (f: FightForecast, ch: Character, world: World, monster: string, food?: Food): number =>
+  killSeconds(f, () => 0, food) * killLog(world) + killWalk(ch, world, monster);
+
+/** Levels above a character a potion is asked to flip a fight (a bound: the solve with every potion is the dearest). */
+export const POTION_REACH = 3;
+/** The set of the pool's gear with every potion the character may drink a candidate at the chain's price, the stock left
+ *  out (reach.ts potionRec): what wins once the potions are made — their making is the need's G. */
+export function potionSet(ch: Character, world: World, monster: string, fleet = false): GearRecommendation | undefined {
+  // shortcut: a potion is asked to flip a fight up to POTION_REACH levels above the character; upgrade if one ever flips
+  // a monster further up (the gear's ten-level look, reach.ts winLevel, is unchanged)
+  if ((monsterOf(monster)?.level ?? Infinity) > ch.level + POTION_REACH) return undefined;
+  const bare = emptyOf(world);
+  const price = (c: string): number => chainSec(bare, ch.name, c);
+  const r = potionRec(ch, world, monster, potionCands(ch).filter((c) => Number.isFinite(price(c))), price, fleet);
+  return r && wins(r, world) ? r : undefined;
+}
+/** The making hours of `qty` units (G): the bill, its level roads in it; undefined when it cannot be made. */
+function making(world: World, name: string, code: string, qty: number): { G: number; gated: Gated[] } | undefined {
+  const b = billOf(world, name, [[code, qty]]);
+  return b.out.length || !Number.isFinite(b.hours) ? undefined : { G: b.hours, gated: b.gated.filter((g) => Number.isFinite(g.hours)) };
+}
+/** The food a need may ask for: the cheapest a HP by its chain (one unit at least eaten a fight). */
+function foodFor(ch: Character, world: World, lost: number, name: string): { code: string; hp: number; n: number } | undefined {
+  let best: { code: string; hp: number; n: number; s: number } | undefined;
+  const mats = parentMats(world, name);
+  for (const f of foodCands(ch)) {
+    if (item(f.code)?.craft?.items.some((g) => mats.has(g.code))) continue; // never from an open parent's own material
+    const n = Math.floor(lost / f.hp);
+    const s = chainSec(world, ch.name, f.code) / f.hp;
+    if (n >= 1 && Number.isFinite(s) && (!best || s < best.s)) best = { ...f, n, s };
+  }
+  return best;
+}
+
+/** The work a need is judged for (one character's run of fights at one monster). */
+interface Work0 { ch: Character; by: string; monster: string; work: string; workKey: string; points: number; reserve?: boolean; horizon: (sec: number) => number }
+/** One need when G + H1 ≤ NEED_RATIO × H0 (settled point 2): `kills` of the work take `u` units each. */
+function needOf(w: Work0, world: World, code: string, food: boolean, u: number, kills: number, H0: number, H1: number, sec: number): ConsNeed | undefined {
+  if (!(kills > 0) || !(u > 0)) return undefined;
+  const mk = making(world, w.ch.name, code, kills * u);
+  if (!mk || !(mk.G + H1 <= NEED_RATIO * H0)) return undefined;
+  return { key: `cons:${code}:${w.workKey}`, code, food, for: [w.ch.name], work: w.work, workKey: w.workKey, monster: w.monster, perKill: u, kills, demand: Math.min(w.horizon(sec), kills) * u * MARGIN, H0, H1, G: mk.G, points: w.points, fit: 0, any: 0, hours: mk.G + H1, gated: mk.gated, reserve: !!w.reserve };
+}
+/** A fixed run of `kills` kills (works b, c, d): the potions of the set that wins with them (H0 `h0`: the pool now), and
+ *  the food of the set it fights with (H0: the same run, healing as the pool heals now). */
+function judgeRun(w: Work0, world: World, kills: number, h0: number): ConsNeed[] {
+  const out: ConsNeed[] = [];
+  const { ch, monster } = w;
+  const r1 = potionSet(ch, world, monster);
+  const food0 = potionPrice(world, ch.name).food;
+  if (r1) {
+    const sec1 = freeSec(r1.forecast, ch, world, monster, food0);
+    for (const [p, u] of Object.entries(r1.forecast.used)) {
+      const n = needOf(w, world, p, false, u, kills, available(p, world, ch.name) > 0 ? h0Without(w, world, p, kills, h0) : h0, (kills * sec1) / 3600, sec1);
+      if (n) out.push(n);
+    }
+  }
+  const base = r1 ?? (safeWin(ch, world, monster) ? fightRec(ch, world, monster) : undefined);
+  if (base) {
+    const lost = base.forecast.maxHp - base.forecast.hpRemaining, pick = foodFor(ch, world, lost, w.by);
+    if (pick) {
+      const secF = freeSec(base.forecast, ch, world, monster, pick), sec0 = freeSec(base.forecast, ch, world, monster, food0);
+      const n = needOf(w, world, pick.code, true, pick.n, kills, (kills * sec0) / 3600, (kills * secF) / 3600, secF);
+      if (n) out.push(n);
+    }
+  }
+  return out;
+}
+/** H0 of a fixed run on the pool without the potion: ∞ unless the pool still wins safely then. */
+function h0Without(w: Work0, world: World, p: string, kills: number, h0: number): number {
+  if (!Number.isFinite(h0)) return h0;
+  const w0 = noStock(world, [p]);
+  return safeWin(w.ch, w0, w.monster) ? (kills * actionSec({ kind: "kill", monster: w.monster }, w.ch, w0)) / 3600 : Infinity;
+}
+
+const matMemo = new WeakMap<World, Map<string, Set<string>>>();
+/** What the open parents (objectives, gear pieces) ask for: a food made of one is no candidate (settled point 2). */
+function parentMats(world: World, name: string): Set<string> {
+  let byName = matMemo.get(world);
+  if (!byName) matMemo.set(world, (byName = new Map()));
+  let out = byName.get(name);
+  // the parents' demand and every open objective's own inputs (one sourced inside its own step is no parent)
+  if (!out) byName.set(name, (out = new Set([...baseParents(world, name).flatMap((p) => p.demand.map(([c]) => c)), ...targetsOf(world).flatMap((t) => (t.achievement ? (t.inputs ?? []).map((i) => i.code) : []))])));
+  return out;
+}
+
+const needMemo = new WeakMap<World, Map<string, ConsNeed[]>>();
+/** Every consumable need of the World's works (characters that are on). `name` is the deciding character (in flight
+ *  counts the others' steps, as gear.ts gearNeeds). Memoised per World and name. Nothing with consumables 0 or free. */
+export function consumableNeeds(world: World, name = ""): ConsNeed[] {
+  if (!cons(world) || consFree(world)) return [];
+  let byName = needMemo.get(world);
+  if (!byName) needMemo.set(world, (byName = new Map()));
+  const hit = byName.get(name);
+  if (hit) return hit;
+  byName.set(name, []); // re-entered: none for that turn
+  const out: ConsNeed[] = [];
+  const calH = calHOf(world);
+  const xpNeeded = atlas()?.xpNeeded ?? [];
+  const chunks = (sec: number): number => (HORIZON * CHUNK_SEC) / sec;
+  const byLevel = [...world.characters].filter((c) => isOn(c.name, world)).sort((a, b) => b.level - a.level || (a.name < b.name ? -1 : 1));
+  // "nobody wins it safely" is asked of the pool without its potions: a need holds while its stock is drunk (the stock is
+  // shared from the best work down, reservable), not only until the first potions are made
+  const bare = gearWorld(world);
+
+  // (a) each fighter's road to its next combat gate, judged on its next ten levels (gear.ts (a)): H0 on the pool without
+  // the potions it holds, level by level; H1 per level the better of that and the potion monster's run
+  for (const ch of byLevel) {
+    const b = bundleOf("combat", ch.name, world);
+    if (!b) continue;
+    const L = ch.level, end = Math.min(b.next, L + 10);
+    const w0 = bare; // the pool without its potions (one World a decision: its solves hold still while the stock moves)
+    const own0 = (l: number): number => levelHoursEstimate("combat", l, w0, ch);
+    let H0 = 0, rest = 0, pace = Infinity, unpaced = 0;
+    for (let l = L; l < b.next; l++) {
+      const h = own0(l);
+      if (Number.isFinite(h)) pace = h;
+      if (l < end) H0 += h;
+      else if (Number.isFinite(pace)) rest += Number.isFinite(h) ? h : pace;
+      else unpaced++;
+    }
+    /** The road at a monster, a kill of `sec` in a set of wisdom `wis`: per level (`min`) the better of it and the pool's. */
+    const road = (mc: string, sec: number, wis: number, min: boolean): { h: number; kills: number } => {
+      const m = monsterOf(mc)!;
+      let h = 0, kills = 0;
+      for (let l = L; l < end; l++) {
+        const xp = fightXp(m.level, m.hp, m.type, l, wis), hl = xp > 0 ? (xpNeeded[l] ?? Infinity) / ((xp / sec) * 3600) : Infinity;
+        if (!min || hl < own0(l)) { h += hl; kills += xp > 0 ? (xpNeeded[l] ?? 0) / xp : 0; } else h += own0(l);
+      }
+      return { h, kills };
+    };
+    const w: Work0 = { ch, by: name, monster: "", work: `${ch.name}'s road to combat ${b.next}`, workKey: `lvl:combat:${b.next}@${ch.name}`, points: b.behind.reduce((s, x) => s + x.points, 0), horizon: chunks };
+    const score = (n: ConsNeed): ConsNeed => {
+      const s = bundleScore(b, n.G + n.H1 + rest + (unpaced * n.H1) / Math.max(1, end - L), calH);
+      return { ...n, fit: s.fit, any: s.any, hours: s.hours };
+    };
+    const ok = (code: string): boolean => { const m = monsterOf(code); return !!m && m.type !== "boss" && m.type !== "raid_boss" && fightXp(m.level, m.hp, m.type, L) > 0 && !!nearestSpot(placeOf(ch), "monster", code, world); };
+    const cur = pickMonster(ch, w0, new Set());
+    const flips = [...catalog().monsters.values()].filter((m) => m.level <= L + 2 && ok(m.code) && !safeWin(ch, w0, m.code))
+      .sort((x, y) => fightXp(y.level, y.hp, y.type, L) - fightXp(x.level, x.hp, x.type, L) || (x.code < y.code ? -1 : 1)).slice(0, 2).map((m) => m.code); // the pick and two flips (gear.ts (a) looks at four: a potion solve is dearer)
+    let best: ConsNeed[] = [], bestH = Infinity;
+    for (const mc of [...new Set([cur?.monster ?? "", ...flips])].filter(Boolean)) {
+      const r1 = potionSet(ch, world, mc);
+      if (!r1) continue;
+      const sec1 = freeSec(r1.forecast, ch, world, mc, potionPrice(world, ch.name).food);
+      const r = road(mc, sec1, setWisdom(ch, r1), true);
+      const ns = Object.entries(r1.forecast.used).flatMap(([p, u]) => { const n = needOf({ ...w, monster: mc }, world, p, false, u, r.kills, H0, r.h, sec1); return n ? [score(n)] : []; });
+      const h = ns.reduce((s, n) => Math.min(s, n.G + n.H1), Infinity);
+      if (ns.length && h < bestH) { best = ns; bestH = h; }
+    }
+    out.push(...best);
+    // the food of the road at its pick (the pool's set now): eating it against the pool's healing now
+    const pick = pickMonster(ch, world, new Set());
+    const base = pick && fightRec(ch, world, pick.monster);
+    if (pick && base) {
+      const lost = base.forecast.maxHp - base.forecast.hpRemaining, f = foodFor(ch, world, lost, name);
+      if (f) {
+        const wis = setWisdom(ch, base);
+        const r0 = road(pick.monster, freeSec(base.forecast, ch, world, pick.monster, potionPrice(world, ch.name).food), wis, false);
+        const secF = freeSec(base.forecast, ch, world, pick.monster, f), r1 = road(pick.monster, secF, wis, false);
+        const n = needOf({ ...w, monster: pick.monster }, world, f.code, true, f.n, r1.kills, r0.h, r1.h, secF);
+        if (n) out.push(score(n));
+      }
+    }
+  }
+
+  // (b) open kill objectives nobody that is on wins safely now: the fleet's work (gear.ts (b)), by the highest-level
+  // character that wins it with a potion
+  const others = Object.entries(world.current).filter(([n, s]) => n !== name && s).map(([, s]) => s!);
+  const inFlight = (key: string): number => others.reduce((t, s) => t + (s.target === key && s.as !== "level" && s.as !== "fallback" ? s.units : 0), 0);
+  for (const t of targetsOf(world)) {
+    if (t.work.kind !== "kill" || !t.achievement || t.filler || t.gates.some((g) => g.kind === "event")) continue;
+    const m = monsterOf(t.work.monster), left = t.left - inFlight(t.key);
+    if (!m || left <= 0 || m.type === "boss" || m.type === "raid_boss") continue;
+    const able = byLevel.filter((ch) => m.level <= ch.level + 10 && t.gates.every((g) => g.kind === "win" || met(g, ch, world)));
+    if (!able.length || able.some((ch) => safeWin(ch, bare, m.code))) continue;
+    const ch = able.find((c) => potionSet(c, world, m.code));
+    if (!ch) continue;
+    const kills = left * perOf(t.work);
+    const pts = t.points * (world.config.weight[t.achievement] ?? 1);
+    const rest = achHours(t.achievement, ch.name, world) - (kills * actionSec({ kind: "kill", monster: m.code }, ch, world)) / 3600;
+    for (const n of judgeRun({ ch, by: name, monster: m.code, work: t.achievement, workKey: t.key, points: pts, horizon: chunks }, world, kills, Infinity)) {
+      const hours = n.hours + (Number.isFinite(rest) ? Math.max(0, rest) : 0);
+      out.push({ ...n, hours, fit: hours <= calH ? pts / hours : 0, any: pts / hours });
+    }
+  }
+
+  // (c) the hunt of an open parent's src: leaf whose source is a monster nobody that is on wins safely now
+  for (const s of supplyNeeds(world, name, baseParents(world, name), () => 0)) {
+    const src = sourceFor(s.code);
+    if (s.kind !== "src" || typeof src === "string" || src.work.kind !== "kill" || src.gates.some((g) => g.kind === "event")) continue;
+    const m = monsterOf(src.work.monster);
+    if (!m || m.type === "boss" || m.type === "raid_boss" || byLevel.some((ch) => safeWin(ch, bare, m.code))) continue;
+    const ch = byLevel.find((c) => m.level <= c.level + 10 && potionSet(c, world, m.code));
+    if (!ch) continue;
+    for (const n of judgeRun({ ch, by: name, monster: m.code, work: `${itemName(s.code)} for ${s.parent.label}`, workKey: s.key, points: s.parent.points, horizon: chunks }, world, s.short, Infinity)) {
+      out.push({ ...n, fit: s.parent.fit, any: s.parent.any, hours: s.parent.hours });
+    }
+  }
+
+  // (d) settled point 7: an event with open demand that can still pay — one spawn's fights for each member today; a reserve
+  if (world.config.events ?? 1) for (const ev of catalog().events.values()) {
+    if (ev.content.type !== "monster") continue;
+    const m = monsterOf(ev.content.code);
+    if (!m || m.type === "boss" || m.type === "raid_boss") continue;
+    const d = eventDemand(ev, world, name);
+    if (!(d.actions > 0)) continue;
+    const use = usableSec(ev), pts = Math.max(0, ...d.items.filter((i) => i.fits).map((i) => i.points));
+    const byCode = new Map<string, ConsNeed>();
+    for (const ch of byLevel) {
+      if (m.level > ch.level + 10) continue;
+      const h0 = safeWin(ch, bare, m.code) ? (d.actions * actionSec({ kind: "kill", monster: m.code }, ch, bare)) / 3600 : Infinity;
+      for (const n of judgeRun({ ch, by: name, monster: m.code, work: `event ${ev.code}`, workKey: `event:${ev.code}`, points: pts, reserve: true, horizon: (sec) => use / sec }, world, d.actions, h0)) {
+        const one = Math.min(n.demand, n.food ? Infinity : STACK); // a trip carries a slot's stack of a potion at most
+        const e = byCode.get(n.code);
+        if (e) { e.demand += one; e.for.push(ch.name); } else byCode.set(n.code, { ...n, demand: one, fit: d.score, any: d.score, hours: n.G + n.H1 });
+      }
+    }
+    out.push(...byCode.values());
+  }
+  byName.set(name, out);
+  return out;
+}
+
+const baseMemo = new WeakMap<World, Map<string, Parent[]>>();
+/** The parents rank() opens before the consumables: the objective parents and the gear pieces (events.ts materialNeeds). */
+export function baseParents(world: World, name: string): Parent[] {
+  let byName = baseMemo.get(world);
+  if (!byName) baseMemo.set(world, (byName = new Map()));
+  let out = byName.get(name);
+  if (!out) {
+    out = objectiveParents(world, name, calHOf(world));
+    const others = Object.entries(world.current).filter(([n, s]) => n !== name && s).map(([, s]) => s!);
+    for (const [code, p] of gearPieces(world, name)) {
+      const qty = [...p.copies.values()].reduce((s, x) => s + x, 0) - others.reduce((t, s) => t + (s.target === `gear:${code}` ? s.units : 0), 0);
+      if (qty > 0) out.push(pieceParent(code, p, qty, world, name));
+    }
+    byName.set(name, out);
+  }
+  return out;
+}
+
+/** Settled point 3: each need as a parent of supply — its demand (the horizon), its work's score on every link; an
+ *  event's is a reserve (supply.ts supplyNeeds serves it first, as a floor comes off before any parent). */
+export function consParents(world: World, name: string): Parent[] {
+  return consumableNeeds(world, name).map((n) => ({
+    key: n.key, label: `${itemName(n.code)} ×${Math.ceil(n.demand)} for ${n.work} (${monsterOf(n.monster)?.name ?? n.monster}, ${n.reserve ? "one spawn" : `${HORIZON} chunks`})`,
+    points: n.points, fit: n.fit, any: n.any, hours: n.hours, demand: [[n.code, n.demand]], gated: n.gated, reserve: n.reserve,
+  }));
+}
+
+/** Settled point 3: the stock of `code` a fight step of a work scoring (fit, any) may take — what the character may plan
+ *  with, less the demand of an event's reserve and of every work that scores better. */
+export function reservable(world: World, name: string, code: string, fit: number, any: number): number {
+  let left = available(code, world, name);
+  for (const n of consumableNeeds(world, name)) {
+    if (n.code !== code || !(n.reserve || n.fit > fit || (n.fit === fit && n.any > any))) continue;
+    left -= Math.min(left, n.demand);
+  }
+  return left;
+}
+
+/** A fight step's consumables (settled point 4). */
+export interface Take {
+  kills: number;                     // what the reservable stock covers (the kills asked when no potion is in the set)
+  sec?: number;                      // a kill's seconds when the set changed (its potions could not be stocked)
+  rec?: GearRecommendation;          // that set
+  withdraw?: Record<string, number>; // the potions and food the step takes from the bank (its expected units + MARGIN)
+  note: string;                      // for the why
+}
+/**
+ * The consumables a kill step of `kills` kills plans (settled point 4): the potions its set drinks and the food it eats,
+ * for its kills + MARGIN, out of what a work scoring (fit, any) may reserve; the kills capped at what the potions
+ * cover. Nothing covered: the set of the gear alone (gearWorld), when it wins, at its own price; undefined: no set.
+ */
+export function fightTake(world: World, ch: Character, monster: string, kills: number, fit: number, any: number): Take | undefined {
+  if (!cons(world) || consFree(world)) return { kills, note: "" };
+  let w = world;
+  let r = fightRec(ch, w, monster);
+  if (!r) return { kills, note: "" };
+  let used = Object.entries(r.forecast.used).filter(([, u]) => u > 0);
+  let K = kills, changed = false;
+  const res = new Map(used.map(([p]) => [p, reservable(world, ch.name, p, fit, any)]));
+  // a utility slot holds STACK of a potion (the game's 484): a step carries no more
+  for (const [p, u] of used) K = Math.min(K, Math.floor(Math.min(res.get(p)!, STACK) / (u * MARGIN) + 1e-9));
+  if (used.length && K < 1) {
+    w = gearWorld(world); // the set of the gear alone (one World a decision, shared with the bundles' gates)
+    const r2 = fightRec(ch, w, monster);
+    if (!r2 || !wins(r2, w)) return undefined;
+    r = r2;
+    used = Object.entries(r.forecast.used).filter(([, u]) => u > 0);
+    if (used.length) return undefined; // shortcut: a set of other potions is not stocked here; upgrade if one ever wins only with it
+    K = kills;
+    changed = true;
+  }
+  const withdraw: Record<string, number> = {};
+  for (const [p, u] of used) withdraw[p] = Math.min(Math.ceil(u * K * MARGIN - 1e-9), Math.floor((res.get(p) ?? Infinity) + 1e-9)); // whole units the stock holds
+  const food = potionPrice(world, ch.name).food;
+  const lost = r.forecast.maxHp - r.forecast.hpRemaining;
+  const n = food ? Math.floor(lost / food.hp) : 0;
+  if (food && n > 0) {
+    const q = Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(reservable(world, ch.name, food.code, fit, any)));
+    if (q > 0) withdraw[food.code] = q;
+  }
+  const took = Object.entries(withdraw).map(([c, q]) => `${q} ${itemName(c)}`);
+  const note = took.length ? ` with ${took.join(" and ")} from the bank` + (withdraw[food?.code ?? ""] ? "" : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "")
+    : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "";
+  return { kills: K, ...(changed ? { sec: freeSec(r.forecast, ch, w, monster, food), rec: r } : {}), withdraw: took.length ? withdraw : undefined, note };
+}
+/** Why a fight rests (settled point 6's "rest otherwise", made-up case "no cook at the level"). */
+function restWhy(world: World, ch: Character, lost: number): string {
+  const need = consumableNeeds(world, ch.name).find((n) => n.food && n.for.includes(ch.name));
+  if (need) return `${itemName(need.code)} is needed for ${need.work}, not in the bank yet`;
+  const cands = foodCands(ch).filter((f) => f.hp <= lost);
+  if (!cands.length) return "no food heals so little";
+  if (!cands.some((f) => Number.isFinite(chainSec(world, ch.name, f.code)))) {
+    const cook = crafterOf("cooking", world), r = item(cands[0].code)?.craft;
+    return !cook || !isOn(cook, world) ? `no cook is on to make ${itemName(cands[0].code)} or any other food` : `no cook at ${r?.skill} ${r?.level} for ${itemName(cands[0].code)}, nor any other food made`;
+  }
+  return `no food pays: making it and eating saves less than ${NEED_RATIO} asks`;
+}
+
+/** Settled point 8: what a step's fights drink and eat in the forward model — its consumables (a kill step's `withdraw`,
+ *  an event step's) less MARGIN, never more than the bank holds less the others' reservations. */
+export function consumed(world: World, step: Step): Map<string, number> {
+  const out = new Map<string, number>();
+  if (step.work.kind !== "kill") return out;
+  for (const [code, q] of Object.entries(step.withdraw ?? {})) {
+    const n = Math.min(q / MARGIN, Math.max(0, available(code, world, step.character)));
+    if (n > 1e-9) out.set(code, n);
+  }
+  return out;
+}
+/** Settled point 7: what one kill of a member takes — the potions its set drinks and the food it eats (its pool's). */
+export function useOf(world: World, ch: Character, monster: string): Record<string, number> | undefined {
+  if (!cons(world) || consFree(world)) return undefined;
+  const r = fightRec(ch, world, monster);
+  if (!r) return undefined;
+  const out: Record<string, number> = {};
+  for (const [p, u] of Object.entries(r.forecast.used)) if (u > 0) out[p] = u;
+  const food = potionPrice(world, ch.name).food, n = food ? Math.floor((r.forecast.maxHp - r.forecast.hpRemaining) / food.hp) : 0;
+  if (food && n > 0) out[food.code] = n;
+  return Object.keys(out).length ? out : undefined;
+}
+/** A member's consumables for `actions` kills (its per-kill use + MARGIN): what the trip's reset takes. */
+export const takeOf = (use: Record<string, number> | undefined, actions: number): Record<string, number> | undefined =>
+  use && Object.keys(use).length ? Object.fromEntries(Object.entries(use).map(([c, u]) => [c, Math.min(Math.ceil(u * actions * MARGIN - 1e-9), item(c)?.type === "utility" ? STACK : Infinity)])) : undefined;

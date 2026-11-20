@@ -145,14 +145,14 @@ export async function gearSwapStep(
   ch: Character,
   desired: Partial<Record<GearSlot, string>>,
   ctx: StepCtx,
-  opts?: { junk?: boolean; reset?: boolean },
+  opts?: { junk?: boolean; reset?: boolean; utility?: Record<string, number> },
 ): Promise<"done" | "acted"> {
   // Provisioning-in-progress stock is working stock — neither a reset's stash
   // nor a make-room deposit may take a pending brew's ingredients or the next
   // meal being cooked.
   const extra = [...brewKeep(ch, desired), ...(ctx.food ? foodKeep(ch) : [])];
   const keep = extra.length ? [...new Set([...(ctx.keep ?? []), ...extra])] : ctx.keep;
-  const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset });
+  const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset, utility: opts?.utility });
   if (!act) return "done";
 
   const toBank = async (): Promise<boolean> => {
@@ -232,12 +232,13 @@ export async function gearSwapStep(
  * cheap scan and computed fresh.
  */
 const fightSetMemo = new Map<string, { bank: unknown; level: number; key: string; desired?: Partial<Record<GearSlot, string>> }>();
-export function desiredForJob(name: string, ch: Character, job: GearJob): Partial<Record<GearSlot, string>> | undefined {
+/** Task 014: `take` — an owned step's planned consumables (the fight item's): its solve counts only those potions. */
+export function desiredForJob(name: string, ch: Character, job: GearJob, take?: Record<string, number>): Partial<Record<GearSlot, string>> | undefined {
   if (job.kind !== "fight") return jobGear(ch, bankItems.value, job);
-  const key = job.monster;
+  const key = take ? `${job.monster}|${JSON.stringify(take)}` : job.monster;
   const m = fightSetMemo.get(name);
   if (m && m.bank === bankItems.value && m.level === ch.level && m.key === key) return m.desired;
-  const desired = jobGear(ch, bankItems.value, job);
+  const desired = jobGear(ch, bankItems.value, job, take);
   fightSetMemo.set(name, { bank: bankItems.value, level: ch.level, key, desired });
   return desired;
 }

@@ -29,16 +29,16 @@
 // monster better than a higher one. Pure.
 
 import { catalog, item, itemName, monster as monsterOf } from "../../catalog";
-import { canEquip, killSeconds } from "../bis";
+import { canEquip } from "../bis";
 import { ownedQtyOf } from "../jobgear";
 import { CRAFT_SEC, fightXp } from "../xp";
 import { atlas } from "../../catalog/atlas";
-import { GATHER_LANES, KILL_LOG, NEED_RATIO } from "./config";
+import { GATHER_LANES, NEED_RATIO } from "./config";
 import { actionSec, hoursOf, hoursToLevel, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { isOn, met } from "./gates";
 import { pickMonster } from "./pick";
-import { gatherCut, nearestSpot, placeOf, planRec, potionPrice, safeWin, setWisdom, toolCut, wins } from "./reach";
+import { fightSecOf, gatherCut, nearestSpot, placeOf, planRec, safeWin, setWisdom, toolCut, wins } from "./reach";
 import { crafterOf, rolesFor } from "./roles";
 import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
@@ -70,7 +70,7 @@ const solve = planRec;
 
 /** Seconds per kill as cost.ts prices it, for a solved set: the fight and the rest × the log, plus the bank trips. */
 const killSec = (ch: Character, world: World, monster: string, r: GearRecommendation): number =>
-  killSeconds(r.forecast, potionPrice(world, ch.name).price) * KILL_LOG + killWalk(ch, world, monster);
+  fightSecOf(r.forecast, world, ch.name) + killWalk(ch, world, monster);
 
 interface Cands { fight: string[]; tools: string[]; rejected: Rejected[] }
 const candMemo = new WeakMap<World, Map<string, Cands>>();

@@ -121,7 +121,7 @@ function ownedEvents(live: ActiveEvent[], plans: Record<string, string>): void {
     const joined: string[] = [];
     for (const m of p.members) {
       if (busy[m.name] === p.key) continue; // on the trip already
-      if (interrupt(m.name, "event", tripOf(p.content, backTo(m.name)), p.key)) joined.push(`${m.name} (${m.why})`);
+      if (interrupt(m.name, "event", tripOf(p.content, backTo(m.name), m.take), p.key)) joined.push(`${m.name} (${m.why})`);
       (sent.get(p.key) ?? sent.set(p.key, new Set()).get(p.key)!).add(m.name);
     }
     if (!(p.key in plans)) devlog(`plan: ${p.line}`);

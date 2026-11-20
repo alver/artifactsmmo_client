@@ -15,7 +15,7 @@ import { applyGear, baseStats } from "../src/sim/stats";
 import { simulate } from "../src/sim/combat";
 import type { FightForecast, TurnEvent } from "../src/sim/combat";
 import { restSeconds } from "../src/sim/cost";
-import { bestInSlot, killSeconds } from "../src/plan/bis";
+import { USE_SEC, bestInSlot, healSeconds, killSeconds } from "../src/plan/bis";
 import { brewablePotions } from "../src/plan/consumables";
 import { ownedQtyOf } from "../src/plan/jobgear";
 import { COVER_RUNS, FIGHT_SEC, fightSec, fightXp, gatherSec, potionPriceOf, potionSec } from "../src/plan/xp";
@@ -23,9 +23,10 @@ import { STAT_CODES } from "../src/sim/types";
 import { GEAR_SLOTS } from "../src/types/api";
 import type { GearRecommendation } from "../src/plan/types";
 import { itemsOf } from "../src/plan/planner/compile";
-import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
+import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, KILL_LOG_013, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
 import { actionSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec } from "../src/plan/planner/cost";
 import { bundleOf, bundleScore } from "../src/plan/planner/bundle";
+import { chainSec, consFree, consParents, consumableNeeds, reservable } from "../src/plan/planner/consumables";
 import { calendar, contentOf, eventDemand, eventMembers, eventOf, eventPlans, gapSec, possibleMembers, spawnOf, usableSec } from "../src/plan/planner/events";
 import type { Played } from "../src/plan/planner/forward";
 import { decide, met, rank } from "../src/plan/planner/decide";
@@ -38,7 +39,8 @@ import { pickMonster, pickNode, pickRecipe, pickSource } from "../src/plan/plann
 import { bankSec, chAt, fightRec, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setWisdom, travel, winLevel } from "../src/plan/planner/reach";
 import { crafterOf, rolesFor } from "../src/plan/planner/roles";
 import { available, floor, poolBank } from "../src/plan/planner/stock";
-import { billOf, gateRoad, objectiveParents, recipeDemand, tradeOf } from "../src/plan/planner/supply";
+import { billOf, feedable, gateRoad, mayCraft, objectiveParents, recipeDemand, supplyNeeds, tradeOf } from "../src/plan/planner/supply";
+import type { Parent } from "../src/plan/planner/supply";
 import { isDone, sourceFor, targetsOf, unhandledOf } from "../src/plan/planner/targets";
 import { catalog, item, itemName, monster as monsterOfCode, resource as resourceOf, tileAt } from "../src/catalog";
 import type { ActiveEvent, AccountAchievement, BankItem, Character, FightResult } from "../src/types/api";
@@ -120,6 +122,8 @@ const INV = [
   "16 a piece made is worn by its fighter within a day",
   "17 a craft, trade or gear step costs its fixed seconds",
   "18 no character's event shares sum to its whole time",
+  "19 no step drinks or eats what the bank did not hold when it started",
+  "20 no potion or food is made beyond its parent's horizon",
 ] as const;
 const inv = new Map<string, { n: number; fails: number; bad: string[] }>(INV.map((k) => [k, { n: 0, fails: 0, bad: [] }]));
 const check = (k: (typeof INV)[number], ok: boolean, detail: () => string): void => {
@@ -138,7 +142,8 @@ const winsDirect = (ch: Character, w: World, monster: string): boolean => {
   const have = ownedQtyOf(ch, w.bank);
   const need = new Map<string, number>();
   for (const c of r.codes) need.set(c, (need.get(c) ?? 0) + 1);
-  if ([...need].some(([c, n]) => (have.get(c) ?? 0) < n)) return false;
+  // the pool's tolerance (stock.ts poolBank floors expected quantities with it); row B: every potion is at hand
+  if ([...need].some(([c, n]) => (have.get(c) ?? 0) + 1e-9 < n && !(consFree(w) && item(c)?.type === "utility"))) return false;
   const f = applyGear(baseStats(ch), r.codes);
   const ev = simulate(f, m);
   return ev.win && !ev.timedOut && (w.config.risk === "win" || simulate(f, m, { pessimistic: true }).win);
@@ -171,8 +176,12 @@ interface Run {
   evBy: Map<string, { actions: number; hours: Map<string, number> }>; // task 013: event code → actions, each member's hours
   evDone: { code: string; event: string; at: number }[];             // task 013: achievements an event step completed
   world30?: World;                 // task 013: the world when the first step ends past day 30
+  /** Task 014: the consumables — supply hours for a cons: parent by kind (src: an ingredient gathered or hunted, mat: a
+   *  potion brewed, a food cooked), per code what was made (by whom, for which works), the hours a fighter's road waited
+   *  for stock while it did other work (by that work), and the works refused stock for a better one. */
+  cons: { hours: Map<string, number>; made: Map<string, { n: number; by: Map<string, number>; for: Set<string> }>; waited: Map<string, Map<string, number>>; refused: Map<string, string> };
 }
-const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0, byproducts: new Map(), toolDup: new Map(), atLevel: new Map(), drunk: new Map(), gained: new Map(), checkpoints: new Map(), uncovered: new Map(), evBy: new Map(), evDone: [] });
+const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0, byproducts: new Map(), toolDup: new Map(), atLevel: new Map(), drunk: new Map(), gained: new Map(), checkpoints: new Map(), uncovered: new Map(), evBy: new Map(), evDone: [], cons: { hours: new Map(), made: new Map(), waited: new Map(), refused: new Map() } });
 /** Task 012: every ingredient of a potion recipe, and the stock the forward model counts (bank less the floor). */
 const POTION_INGS = new Set([...catalog().items.values()].filter((it) => it.type === "utility" && it.craft).flatMap((it) => it.craft!.items.map((g) => g.code)));
 const stockOf = (w: World, code: string): number => w.bank.reduce((s, b) => s + (b.code === code ? b.quantity : 0), 0);
@@ -263,11 +272,41 @@ function verify(w: World, step: Step, run: Run): void {
     const open =
       par.startsWith("lvl:") ? levelOf(forCh, par.split(":")[1] as Lane) < Number(par.split(":")[2])
       : par.startsWith("gear:") ? gearNeeds(w, ch.name).needs.some((n) => n.offered && n.pieces.has(par.slice(5)))
+      : par.startsWith("cons:") ? consumableNeeds(w, ch.name).some((n) => n.key === par) // task 014: a potion or a food by need
       : targetsOf(w).some((x) => x.key === par);
     const crafterOn = step.target.startsWith("gear:") ? crafterOf(item(step.target.slice(5))!.craft!.skill, w) === ch.name && isOn(ch.name, w) : isOn(ch.name, w);
     check(INV[13], open && crafterOn, () => `${tag()}: parent ${par}`);
+    // task 014: a consumable is made for its parent's horizon, no more (the demand less the stock: supplyNeeds)
+    // (a mat: leaf's shortfall is every parent's that is short of it — the step names the best one)
+    // (each parent's bill makes whole runs: supply.ts billOf rounds a parent's demand up to the recipe's quantity)
+    const cn = par.startsWith("cons:") && step.target.startsWith("mat:") ? consumableNeeds(w, ch.name).filter((n) => n.code === step.target.slice(4)) : [];
+    const q = Math.max(1, item(step.target.slice(4))?.craft?.quantity ?? 1);
+    const horizon = cn.reduce((s, n) => s + Math.ceil(n.demand / q - 1e-9) * q, 0);
+    if (cn.length) check(INV[19], step.units <= horizon, () => `${tag()}: ${step.units} of ${f1(horizon)} for ${par}`);
   }
   // records for the tables
+  // task 014: the consumable hours by kind, made for whom, a road waiting for its stock, a work refused stock
+  if (step.as === "supply" && step.parent?.startsWith("cons:")) {
+    const code = step.target.slice(4), isFood = item(code)?.type === "consumable";
+    const kind = step.target.startsWith("src:") ? "ingredients gathered or hunted" : isFood ? "cooking" : "brewing";
+    run.cons.hours.set(kind, (run.cons.hours.get(kind) ?? 0) + step.hours);
+  }
+  if (w.config.consumables ?? 1) {
+    const needs = consumableNeeds(w, ch.name);
+    const road = needs.find((n) => n.workKey.startsWith("lvl:combat:") && n.workKey.endsWith(`@${ch.name}`) && !n.food && available(n.code, w, ch.name) < n.perKill);
+    if (road && !(step.as === "level" && step.target.startsWith("lvl:combat:"))) {
+      const by = run.cons.waited.get(ch.name) ?? new Map<string, number>();
+      const what = step.target.replace(/:d+$/, "");
+      by.set(what, (by.get(what) ?? 0) + step.hours);
+      run.cons.waited.set(ch.name, by);
+    }
+    for (const n of needs) {
+      const k = `${n.workKey} (${n.code})`;
+      if (run.cons.refused.has(k)) continue;
+      const res = reservable(w, ch.name, n.code, n.fit, n.any), have = available(n.code, w, ch.name);
+      if (res < Math.min(have, n.demand) - 1e-6) run.cons.refused.set(k, `day ${day(w.now)}: ${f1(res)} of ${f1(have)} for it, the rest to ${needs.filter((x) => x.code === n.code && x !== n && (x.reserve || x.fit > n.fit || (x.fit === n.fit && x.any > n.any))).map((x) => x.workKey).join(", ")}`);
+    }
+  }
   const k = step.as === "level" ? `level ${step.target.split(":")[1]}` : step.as === "supply" ? `supply ${step.target.split(":")[0]}:` : step.as;
   run.hours.set(k, (run.hours.get(k) ?? 0) + step.hours);
   if (step.as === "supply") { const sk = `${step.target} for ${step.parent ?? "?"}`; (run.supplyBy ??= new Map()).set(sk, (run.supplyBy.get(sk) ?? 0) + step.hours); }
@@ -324,10 +363,12 @@ function ended(after: World, step: Step, before: World, run: Run): void {
   const ch = after.characters.find((c) => c.name === step.character)!;
   for (const L of [25, 30, 35, 40]) if (ch.level >= L && !run.reached.has(`${ch.name}:${L}`)) run.reached.set(`${ch.name}:${L}`, after.clock?.[ch.name] ?? after.now);
   // task 011: a gathering lane at 40 (the specialists' layer)
-  for (const lane of GATHER_LANES) for (const L of [35, 40]) if (levelOf(ch, lane) >= L && !run.reached.has(`${ch.name}:${lane}:${L}`)) run.reached.set(`${ch.name}:${lane}:${L}`, after.clock?.[ch.name] ?? after.now);
+  for (const lane of [...GATHER_LANES, "cooking" as Lane]) for (const L of [35, 40]) if (levelOf(ch, lane) >= L && !run.reached.has(`${ch.name}:${lane}:${L}`)) run.reached.set(`${ch.name}:${lane}:${L}`, after.clock?.[ch.name] ?? after.now);
   if (RECORD_LEVELS) for (const L of [25, 28, 30, 35]) if (ch.level >= L && !run.atLevel.has(`${ch.name}:${L}`)) run.atLevel.set(`${ch.name}:${L}`, levelLine(ch, after));
   // task 012, settled point 6: what the fights drank (the same call advance made on `before`), what reached the bank
   const drank = drinksOf(before, step);
+  // task 014: what a step drinks and eats was in the bank, and is what it took less the margin
+  for (const [c, q] of drank) check(INV[18], q <= stockOf(before, c) + 1e-6 && (!(before.config.consumables ?? 1) || q <= (step.withdraw?.[c] ?? 0) + 1e-6), () => `${step.key}: ${c} ${f1(q)} of ${f1(stockOf(before, c))} in the bank, ${step.withdraw?.[c] ?? 0} taken`);
   for (const [c, q] of drank) run.drunk.set(c, (run.drunk.get(c) ?? 0) + q);
   for (const c of POTION_INGS) {
     const got = stockOf(after, c) - stockOf(before, c) + (drank.get(c) ?? 0);
@@ -338,6 +379,12 @@ function ended(after: World, step: Step, before: World, run: Run): void {
   // task 013: what an event step completed, and the world a month in (the event demands that do not fit then)
   if (step.target.startsWith("event:")) for (const a of after.achievements) if (isDone(a) && !before.achievements.some((b) => b.code === a.code && isDone(b))) run.evDone.push({ code: a.code, event: step.target.slice(6), at: end });
   if (!run.world30 && end >= NOW + 30 * DAY) run.world30 = after;
+  // task 014: a potion or food made for a cons: parent — how many, by whom, for which work
+  if (step.as === "supply" && step.target.startsWith("mat:") && step.parent?.startsWith("cons:")) {
+    const code = step.target.slice(4), m = run.cons.made.get(code) ?? { n: 0, by: new Map<string, number>(), for: new Set<string>() };
+    m.n += step.units; m.by.set(step.character, (m.by.get(step.character) ?? 0) + step.units); m.for.add(step.parent.split(":").slice(2).join(":"));
+    run.cons.made.set(code, m);
+  }
   if (RECORD_LEVELS) {
     const cov = new Set(coveredIn(after));
     for (const pair of run.covered0 ?? (run.covered0 = coveredIn(before))) if (!cov.has(pair) && !run.uncovered.has(pair)) run.uncovered.set(pair, end);
@@ -404,12 +451,17 @@ const DEADLINE = Date.parse(DEFAULTS.deadline);
 // Task 012, section 6: A the default (stock is free, the forward model drinks); B potions free (the upper bound); C the
 // field price always (report 011's row A with sections 2, 3 and 5: the lower bound); D a win is enough, on A's price.
 // Task 013: events attended by expectation in every row but E (no events: report 012's row A, the anchor).
-const ROWS: { label: string; potionK: number; potionStock: number; risk: PlannerConfig["risk"]; events: number }[] = [
-  { label: "A (default: stock is free, the fights drink, events attended)", potionK: 1, potionStock: 1, risk: "safe", events: 1 },
-  { label: "B (potions free)", potionK: 0, potionStock: 1, risk: "safe", events: 1 },
-  { label: "C (the field price always)", potionK: 1, potionStock: 0, risk: "safe", events: 1 },
-  { label: "D (a win is enough)", potionK: 1, potionStock: 1, risk: "win", events: 1 },
-  { label: "E (no events: report 012's row A)", potionK: 1, potionStock: 1, risk: "safe", events: 0 },
+// Task 014: A the default (consumables by need, through the bank); B consumables free (every potion and food a fight wants
+// at hand: the ceiling); C consumables 0 — report 013's row A whole, the anchor (77); D a win is enough; E no events; F all
+// five hold the alchemy role (gathering and its level roads): what self-supply by the fighters would be worth.
+const ALCHEMY_ALL: PlannerConfig["roles"] = Object.fromEntries(Object.entries(DEFAULTS.roles).map(([n, r]) => [n, { ...r, gather: [...new Set([...(r.gather ?? []), "alchemy"])] }]));
+const ROWS: { label: string; potionK: number; potionStock: number; risk: PlannerConfig["risk"]; events: number; consumables: number; roles?: PlannerConfig["roles"] }[] = [
+  { label: "A (default: consumables by need, through the bank)", potionK: 1, potionStock: 1, risk: "safe", events: 1, consumables: 1 },
+  { label: "B (consumables free)", potionK: 0, potionStock: 1, risk: "safe", events: 1, consumables: 1 },
+  { label: "C (consumables 0: report 013's row A)", potionK: 1, potionStock: 1, risk: "safe", events: 1, consumables: 0 },
+  { label: "D (a win is enough)", potionK: 1, potionStock: 1, risk: "win", events: 1, consumables: 1 },
+  { label: "E (no events)", potionK: 1, potionStock: 1, risk: "safe", events: 0, consumables: 1 },
+  { label: "F (all five hold the alchemy role)", potionK: 1, potionStock: 1, risk: "safe", events: 1, consumables: 1, roles: ALCHEMY_ALL },
 ];
 let RECORD_LEVELS = false; // row A records each fighter's pick at combat 25, 28, 30 and 35 (ended → levelLine)
 // A child of the replay (section 6): one row, its section, its invariant counts on the last line.
@@ -418,6 +470,17 @@ if (process.env.AMMO_PLANNER_ROW != null) {
   console.log(`##ROW ${JSON.stringify({ points, days, inv: [...inv] })}`);
   process.exit(0);
 }
+// Task 014: the rows start here, before sections 1–5 (they share nothing with them), so they have the 30 minutes of the
+// named check's backstop (scripts/check.mts) and not what the sections leave of it.
+const rows: Promise<string[]> = !VERBOSE ? Promise.resolve([]) : Promise.all(ROWS.map((_, i) => new Promise<string>((resolve) => {
+  // each row its own storage file beside this one's (the fight-record case above wrote to this one: SQLite locks it)
+  const args = process.execArgv.map((a) => (a.startsWith("--localstorage-file=") ? `${a}.row${i}` : a));
+  const child = spawn(process.execPath, [...args, process.argv[1]], { env: { ...process.env, AMMO_PLANNER_ROW: String(i) }, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  child.stdout.on("data", (d) => (out += d));
+  child.stderr.on("data", (d) => (out += d));
+  child.on("close", (code) => resolve(code === 0 ? out : `${out}\nrow ${ROWS[i].label}: exit ${code}`));
+})));
 
 // ── 1. roles ─────────────────────────────────────────────────────────────────
 {
@@ -685,8 +748,9 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
 
 {
   // Task 011, section 3 (rule 4): a filler that fits goes before a road that fits nothing. Only grand_master (combat 50)
-  // and ecologist open, the deadline 300 hours away.
-  const short: PlannerConfig = { ...ALL_ON, deadline: new Date(NOW + 300 * 3.6e6).toISOString() };
+  // and ecologist open, the deadline 300 hours away. Task 014: on report 013's prices (consumables 0) — with the
+  // snapshot bank's apple pie eaten the road to the wall fits 300 hours, and the case is about rule 4, not the price.
+  const short: PlannerConfig = { ...ALL_ON, deadline: new Date(NOW + 300 * 3.6e6).toISOString(), consumables: 0 };
   const w = { ...base, achievements: only(["grand_master", "ecologist"]), config: short };
   const r = rank("Second", w);
   const s = steps1(w, "Second");
@@ -840,10 +904,15 @@ const MAKE_LOG: { t: string; who: string; key: string; from: [number, number]; t
 /** The bank as far as logs/dev.log shows it (the deposits and withdrawals since the fixture's 2026-11-17, cut bodies
  *  hidden): the by-product ingredients the log settles; the rest unknown. */
 const LOG_BANK: Record<string, number> = { algae: 2287, blue_slimeball: 18, milk_bucket: 291, sap: 492, nettle_leaf: 0, coconut: 0, red_slimeball: 0, yellow_slimeball: 0 };
+/** Task 014: whether a fighter's fights on a monster mostly ate (logs/dev.log 2026-11-19 09:15 → 11-20 08:06 UTC, a `use`
+ *  before the next fight): Third on highwaymen 0 of 45, flying snakes 0 of 40, blue slimes 0 of 150, green slimes 0 of 374
+ *  rested; every other pair of the samples ate in 57–100% of its fights. */
+const ATE = (who: string, monster: string): boolean => !(["flying_snake", "blue_slime", "green_slime"].includes(monster) || (who === "Third" && monster === "highwayman"));
 const median = (xs: number[]): number => { const s = [...xs].sort((a, b) => a - b); return s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
 /** The kill as the planner prices it, in parts, for a character at a level in the sets the log shows (realWorld). */
 function killParts(who: string, level: number, monster: string, pieces: Record<string, number> = {}, price: (code: string) => number = potionSec) {
-  const w = realWorld({ [who]: level }, pieces);
+  const w0 = realWorld({ [who]: level }, pieces);
+  const w: World = { ...w0, config: { ...w0.config, consumables: 0 } }; // task 014: task 012's measurement, on its prices
   const ch = w.characters.find((c) => c.name === who)!;
   const f = fightRec(ch, w, monster)?.forecast;
   if (!f?.win) return undefined;
@@ -873,7 +942,8 @@ function killParts(who: string, level: number, monster: string, pieces: Record<s
   // First at combat 30, the bank of the snapshot with 30 brewed minor health potions, 120 algae and 300 nettle leaves
   const c30 = chAt(chars[0], 30);
   const potBank = bankPlus(fx.bankItems, new Map([[MINOR, 30], ["algae", 120 - stockOf(base, "algae")], ["nettle_leaf", 300]]));
-  const w0: World = { ...base, characters: [c30, ...chars.slice(1)], bank: potBank, achievements: only(["grand_master"]) };
+  // task 014: report 013's prices (consumables 0) — this is task 012's price and its drinksOf
+  const w0: World = { ...base, characters: [c30, ...chars.slice(1)], bank: potBank, achievements: only(["grand_master"]), config: { ...base.config, consumables: 0 } };
   const pick = pickMonster(c30, w0, new Set()), f = pick && fightRec(c30, w0, pick.monster)?.forecast;
   const wField: World = { ...w0, config: { ...w0.config, potionStock: 0 } };
   const pickF = pickMonster(c30, wField, new Set());
@@ -1123,19 +1193,268 @@ function gainTable(w: World, label: string): void {
   console.log(`  gear by need for an event monster's kill or with an event material: ${evNeeds.map((n) => `${n.for}: ${n.work} — ${[...n.pieces].map(([c, k]) => (k > 1 ? `${c}×${k}` : c)).join(" + ")}, H0 ${f1(n.H0)} h, H1 ${f1(n.H1)} h, G ${f1(n.G)} h`).join(" | ") || "none"}`);
 }
 
+// ── 5e. task 014: consumables by need, through the bank ──────────────────────
+/** A made-up achievement with one objective. */
+const made = (code: string, points: number, type: string, target: string, total: number): AccountAchievement =>
+  ({ code, name: "made up", description: "", points, completed_at: null, objectives: [{ type, target, total, progress: 0 }] }) as AccountAchievement;
+/** Task 014: a made-up world — the characters of `who` stripped to their level (their skills overridden), only `on` on, the
+ *  bank `bank` (+ `keep` of the snapshot's), the achievements `achs` open and every other done. */
+function consWorld(bank: Record<string, number>, achs: AccountAchievement[], on: string[], who: Record<string, Record<string, number>>, extra: Partial<PlannerConfig> = {}): World {
+  return {
+    ...base, characters: chars.map((c) => (who[c.name] ? ({ ...stripped(c, who[c.name].level ?? c.level), ...who[c.name] } as Character) : c)),
+    bank: Object.entries(bank).map(([code, quantity]) => ({ code, quantity })), achievements: [...only([]), ...achs],
+    config: { ...ALL_ON, on: Object.fromEntries(on.map((n) => [n, true])), ...extra },
+  };
+}
+{
+  const POT = "small_health_potion";
+  const slimes = made("made_up_slimes", 5, "combat_kill", "green_slime", 20);
+  const lvl10 = { level: 10, alchemy_level: 5 };
+  // 1. a fighter with no safe win without a potion: the potion is needed; its mat: and src: candidates carry the work's
+  //    score; the fight is no candidate until the stock covers it, and one for exactly the covered kills afterwards
+  const w1 = consWorld({ copper_dagger: 1, sunflower: 300 }, [slimes], ["First"], { First: lvl10 });
+  const n1 = consumableNeeds(w1, "First").find((n) => n.code === POT && n.workKey === "ach:made_up_slimes:0");
+  const r1 = rank("First", w1);
+  const mat1 = r1.supply.find((c) => c.target.key === `mat:${POT}`);
+  const src1 = rank("First", consWorld({ copper_dagger: 1 }, [slimes], ["First"], { First: lvl10 })).supply.find((c) => c.target.key === "src:sunflower");
+  const n1b = consumableNeeds(consWorld({ copper_dagger: 1 }, [slimes], ["First"], { First: lvl10 }), "First").find((n) => n.code === POT);
+  const w1c = consWorld({ copper_dagger: 1, [POT]: 30 }, [slimes], ["First"], { First: lvl10 });
+  const kill1 = rank("First", w1c).objectives.find((c) => c.target.key === "ach:made_up_slimes:0");
+  const covered = n1 ? Math.floor(30 / (n1.perKill * 1.2) + 1e-9) : NaN;
+  cases.push(["task 014: no safe win without a potion — the potion is needed (H0 ∞), its mat: candidate carries the work's score", !!n1 && !Number.isFinite(n1.H0) && !!mat1 && Math.abs(mat1.fit - n1.fit) < 1e-12 && !r1.objectives.some((c) => c.target.key === "ach:made_up_slimes:0")]);
+  cases.push(["…with no sunflower in the bank its src: candidate carries it too", !!src1 && !!n1b && Math.abs(src1.fit - n1b.fit) < 1e-12]);
+  cases.push(["…with 30 potions in the bank the fight is a candidate for exactly the kills they cover, taking them", !!kill1 && kill1.step.units === covered && kill1.step.withdraw?.[POT] === Math.min(30, Math.ceil(n1!.perKill * covered * 1.2 - 1e-9))]);
+  console.log(`  task 014, 1. First stripped to combat 10 (alchemy 5, a copper dagger) and 20 green slimes it wins only with ${POT}: need ${n1 ? `${n1.key}, ${f1(n1.perKill)} a kill, demand ${f1(n1.demand)}, H0 ${f1(n1.H0)} h, H1 ${f1(n1.H1)} h, G ${f1(n1.G)} h, fit ${n1.fit.toPrecision(3)}` : "none"}`);
+  console.log(`     ${mat1 ? `${mat1.step.key} (fit ${mat1.fit.toPrecision(3)}): ${mat1.step.why}` : "no mat: candidate"}`);
+  console.log(`     no sunflower: ${src1 ? `${src1.step.key} (fit ${src1.fit.toPrecision(3)}): ${src1.step.why}` : "no src: candidate"}`);
+  console.log(`     30 potions: ${kill1 ? `${kill1.step.key}: ${kill1.step.why}` : "no kill candidate"}`);
+
+  // 2. a recipe above every alchemist's level: the level is the role holder's candidate with the work's score
+  const w2 = consWorld({ copper_dagger: 1, sunflower: 300 }, [slimes], ["First", "Third"], { First: { level: 10, alchemy_level: 1 }, ...Object.fromEntries(NAMES.slice(1).map((n) => [n, { alchemy_level: 1 }])) });
+  const n2 = consumableNeeds(w2, "Third").find((n) => n.code === POT);
+  const lv2 = rank("Third", w2).levels.find((c) => c.target.key === "lvl:alchemy:5");
+  cases.push(["…a recipe above every alchemist's level: the level is the role holder's candidate with the work's score", !!n2 && n2.gated.some((g) => g.lane === "alchemy" && g.level === 5) && !!lv2 && lv2.fit >= n2.fit - 1e-12]);
+  console.log(`  2. alchemy 1 everywhere: need ${n2 ? `${n2.key}, gated ${n2.gated.map((g) => `${g.lane} ${g.level} (${f1(g.hours)} h by ${g.who})`).join(", ")}` : "none"}; Third's level candidate: ${lv2 ? `fit ${lv2.fit.toPrecision(3)} — ${lv2.step.why}` : "none"}`);
+
+  // 3. two works short of the same potion: the better score served first, a work that fits no deadline last
+  const far = made("made_up_slimes_far", 1, "combat_kill", "green_slime", 50_000);
+  const w3 = consWorld({ copper_dagger: 1, [POT]: 50 }, [slimes, far], ["First"], { First: lvl10 }, { deadline: new Date(NOW + 60 * 3.6e6).toISOString() });
+  const n3 = consumableNeeds(w3, "First").filter((n) => n.code === POT);
+  const a3 = n3.find((n) => n.workKey === "ach:made_up_slimes:0"), b3 = n3.find((n) => n.workKey === "ach:made_up_slimes_far:0");
+  const leaf3 = supplyNeeds(w3, "First", consParents(w3, "First"), () => 0).find((s) => s.key === `mat:${POT}`);
+  cases.push(["…two works short of the same potion: the better served first, a work that fits no deadline last", !!a3 && !!b3 && a3.fit > 0 && b3.fit === 0 && reservable(w3, "First", POT, a3.fit, a3.any) === 50 && reservable(w3, "First", POT, b3.fit, b3.any) === Math.max(0, 50 - a3.demand) && leaf3?.parent.key === a3.key]);
+  console.log(`  3. 50 potions, two works: ${a3?.workKey} fit ${a3?.fit.toPrecision(3)} demand ${f1(a3?.demand ?? NaN)} may take ${f1(a3 ? reservable(w3, "First", POT, a3.fit, a3.any) : NaN)}; ${b3?.workKey} fit ${b3?.fit} may take ${f1(b3 ? reservable(w3, "First", POT, b3.fit, b3.any) : NaN)}; the mat: leaf's parent: ${leaf3?.parent.key}`);
+
+  // 4. a potion that saves less than NEED_RATIO asks for: no need (the snapshot fleet wins its picks without one; the
+  //    potions at the chain's price, no stock)
+  const n4 = consumableNeeds(base, "First").filter((n) => !n.food && n.workKey.startsWith("lvl:combat"));
+  cases.push(["…a potion that saves less than NEED_RATIO asks for: no need (the snapshot's roads, the bank of 11-17)", n4.length === 0]);
+  console.log(`  4. the snapshot's combat roads: ${n4.length} potion need(s)${n4.length ? `: ${n4.map((n) => `${n.workKey} ${n.code} H0 ${f1(n.H0)} H1 ${f1(n.H1)} G ${f1(n.G)}`).join(" | ")}` : ""}`);
+
+  // 5. food from a by-product in the bank: needed and cooked by the cook; never from an open parent's own material
+  const noFood = fx.bankItems.filter((b) => item(b.code)?.subtype !== "food");
+  const w5: World = { ...base, bank: [...noFood, { code: "raw_beef", quantity: 2000 }], characters: chars.map((c) => (c.name === "First" ? ({ ...c, cooking_level: 10 } as Character) : c)) };
+  const f5 = consumableNeeds(w5, "First").filter((n) => n.food);
+  const cook5 = rank("First", w5).supply.find((c) => c.target.key === "mat:cooked_beef");
+  const w5b: World = { ...w5, achievements: [...w5.achievements, made("made_up_beef", 2, "crafting", "cooked_beef", 400)] };
+  const f5b = consumableNeeds(w5b, "First").filter((n) => n.food && n.code === "cooked_beef");
+  cases.push(["…food from a by-product in the bank (raw beef): needed, and cooked by the cook", f5.some((n) => n.code === "cooked_beef") && !!cook5]);
+  cases.push(["…never from an open parent's own material (an objective cooking that beef)", f5b.length === 0]);
+  console.log(`  5. 2,000 raw beef in the bank, First at cooking 10: food needs ${f5.map((n) => `${n.code} for ${n.work} (${f1(n.perKill)} a kill, H0 ${f1(n.H0)} h, H1 ${f1(n.H1)} h, G ${f1(n.G)} h)`).join(" | ") || "none"}; the cook's candidate: ${cook5 ? cook5.step.why : "none"}; with an objective cooking 400 beef: ${f5b.length} beef need(s)`);
+
+  // 6. no cook at the level: the fights rest and say so
+  const w6: World = { ...w5, config: { ...w5.config, on: { ...w5.config.on, First: false } } };
+  const st6 = rank("Second", w6).levels.find((c) => c.step.work.kind === "kill") ?? rank("Second", w6).objectives.find((c) => c.step.work.kind === "kill");
+  cases.push(["…no cook that is on: the fights rest and say so", !!st6 && /rests \(no cook is on/.test(st6.step.why) && !consumableNeeds(w6, "Second").some((n) => n.food)]);
+  console.log(`  6. the cook (First) off: ${st6 ? st6.step.why : "no kill candidate"}`);
+
+  // 7. the horizon: the demand stops at two chunks (+ a fifth) of the work
+  const w7 = consWorld({ copper_dagger: 1, sunflower: 300 }, [made("made_up_slimes", 5, "combat_kill", "green_slime", 5000)], ["First"], { First: lvl10 });
+  const n7 = consumableNeeds(w7, "First").find((n) => n.code === POT);
+  const sec7 = n7 ? (n7.H1 * 3600) / n7.kills : NaN;
+  cases.push(["…the horizon: the demand is two chunks of the work (+ a fifth), not its 5,000 kills", !!n7 && Math.abs(n7.demand - ((2 * CHUNK_SEC) / sec7) * n7.perKill * 1.2) < 1e-6 && n7.demand < 5000 * n7.perKill]);
+  console.log(`  7. 5,000 slimes: demand ${f1(n7?.demand ?? NaN)} potions (two chunks of ${f1(sec7)} s kills at ${f1(n7?.perKill ?? NaN)} a kill, + a fifth), of the ${f1((n7?.kills ?? 0) * (n7?.perKill ?? 0))} the work drinks`);
+
+  // 8. the event reserve: another work's bill and fight step do not take it
+  const w8 = consWorld({ steel_battleaxe: 1, small_health_potion: 50, minor_health_potion: 50, health_potion: 50 }, [made("made_up_vampires", 3, "combat_kill", "full_moon_vampire", 200)], ["First"], { First: { level: 30, alchemy_level: 30 } });
+  const n8 = consumableNeeds(w8, "First").find((n) => n.reserve);
+  const P8 = n8?.code ?? "";
+  const other: Parent = { key: "made_up_parent", label: "a made-up work", points: 9, fit: 1e9, any: 1e9, hours: 1, demand: [[P8, 30]] };
+  const leaf8 = supplyNeeds(w8, "First", [other, ...consParents(w8, "First")], () => 0).find((s) => s.key === `mat:${P8}`);
+  cases.push(["…the event reserve: a better-scoring work's fight step and bill do not take it", !!n8 && reservable(w8, "First", P8, 1e9, 1e9) === Math.max(0, 50 - n8.demand) && leaf8?.parent.key === n8.key]);
+  console.log(`  8. 50 of each health potion, the full moon's reserve ${n8 ? `${P8} ${f1(n8.demand)} (${n8.for.join(", ")}, one spawn)` : "none"}: a work scoring 1e9 may take ${f1(reservable(w8, "First", P8, 1e9, 1e9))} of the 50; the mat: leaf's parent: ${leaf8?.parent.key}`);
+
+  // 9. settled point 9, report 013's diamond (02:19:24 UTC on 11-20): the stones short lie in a bag — no further gather is
+  //    planned; the craft (a withdrawal) waits for the bank
+  const wD9: World = { ...base, achievements: only(["diamond_in_the_sky"]) };
+  const src9 = (w: World): number => rank("Fourth", w).supply.find((c) => c.target.key === "src:diamond_stone")?.target.left ?? 0;
+  const short9 = Math.ceil(src9(wD9) / perOf({ kind: "gather", resource: "copper_rocks", drop: "diamond_stone" }) - 1e-9);
+  const wB9: World = { ...wD9, bags: { diamond_stone: short9 } };
+  cases.push(["…bag stock (settled point 9): the stones short in a bag — no further gather planned, and nothing the bank cannot feed is crafted", short9 > 0 && src9(wB9) === 0 && feedable("diamond", wB9, "Fourth") === feedable("diamond", wD9, "Fourth")]);
+  console.log(`  9. diamond_in_the_sky: ${short9} stone(s) short, ${f1(src9(wD9))} gathers planned; the same stones in Third's bag: ${f1(src9(wB9))} gathers; feedable from the bank either way: ${feedable("diamond", wB9, "Fourth")}`);
+}
+
+
+
+// ── 9. task 014, section 2: what consumables cost, and which lever moves the wall ────────────────────────────────
+const POTIONS14 = [...catalog().items.values()].filter((it) => it.type === "utility" && it.craft).map((it) => it.code);
+const FOODS14 = [...catalog().items.values()].filter((it) => it.type === "consumable" && it.subtype === "food" && it.craft).filter((it) => !itemUsesOf(it.code)).map((it) => it.code);
+/** Whether a code is another recipe's ingredient (consumables.ts healingFoods' rule: such a food is feedstock). */
+function itemUsesOf(code: string): boolean { return [...catalog().items.values()].some((x) => x.craft?.items.some((g) => g.code === code)); }
+const restoreOf = (code: string): number => (item(code)?.effects ?? []).reduce((t, e) => t + (e.code === "restore" || e.code === "splash_restore" ? e.value : 0), 0);
+const healOf = (code: string): number => (item(code)?.effects ?? []).reduce((t, e) => t + (e.code === "heal" ? e.value : 0), 0);
+/** Where an ingredient comes from (sourceFor): the node or monster, its skill and level, the actions an item. */
+function sourceLine(code: string): string {
+  const s = sourceFor(code);
+  if (typeof s === "string") return item(code)?.craft ? `${code} (crafted)` : `${code} (${s})`;
+  const lv = s.gates.find((g) => g.kind === "level") as { lane: string; level: number } | undefined;
+  return `${code} ← ${s.work.kind === "gather" ? s.work.resource : s.work.kind === "kill" ? s.work.monster : "?"}${lv ? ` (${lv.lane} ${lv.level})` : ""}, ${f1(perOf(s.work))} actions an item`;
+}
+/** Who that is on reaches an ingredient's source today (a node's level; a monster won safely). */
+function gatherers(code: string, w: World): string {
+  const s = sourceFor(code);
+  if (typeof s === "string") return "—";
+  return w.characters.filter((c) => isOn(c.name, w) && s.gates.every((g) => met(g, c, w))).map((c) => c.name).join(", ") || "nobody";
+}
+/** gatherPays' reading of a food (consumables.ts: the gathers of its short ingredients at the surest node, 5 HP/s rest). */
+function gatherReading(code: string): number {
+  const r = item(code)?.craft;
+  if (!r) return NaN;
+  let sec = 0;
+  for (const g of r.items) {
+    const res = [...catalog().resources.values()].filter((x) => x.drops.some((d) => d.code === g.code)).sort((a, b) => (a.drops.find((d) => d.code === g.code)!.rate - b.drops.find((d) => d.code === g.code)!.rate) || a.level - b.level)[0];
+    if (!res) return NaN;
+    sec += g.quantity * res.drops.find((d) => d.code === g.code)!.rate * gatherSec(res.level);
+  }
+  return sec / Math.max(1, r.quantity);
+}
+function consCostTable(w: World, label: string): void {
+  console.log(`\n## What consumables cost (task 014 section 2) — ${label}`);
+  console.log(`  per unit, seconds: (a) today's price (potionSec; a food: what gatherPays reads) · (b) the chain by the best-placed maker with its tools, the stock ignored · (c) the chain with the bank now (consumables.ts chainSec); a potion: HP restored a second of making; a food: HP healed a second of making and eating (a \`use\` ${USE_SEC} s) — rest heals 5 HP a second at 500 max HP, 7 at 700`);
+  const empty: World = { ...w, bank: [] };
+  const by = w.characters.find((c) => isOn(c.name, w))!.name;
+  for (const code of [...POTIONS14, ...FOODS14]) {
+    const r = item(code)!.craft!;
+    const makers = w.characters.filter((c) => isOn(c.name, w) && mayCraft(r.skill as Lane, r.level, c.name, w)).map((c) => c.name);
+    const a = item(code)!.type === "utility" ? potionSec(code) : gatherReading(code), b = chainSec(empty, by, code), c = chainSec(w, by, code);
+    const hp = item(code)!.type === "utility" ? restoreOf(code) : healOf(code);
+    const per = (s: number): string => (hp > 0 && Number.isFinite(s) && s > 0 ? f1(hp / (item(code)!.type === "utility" ? s : s + USE_SEC)) : "—");
+    console.log(`  ${pad(code, 28)} ${r.skill} ${pad(r.level, 2)} · ${r.items.map((g) => `${g.quantity} ${sourceLine(g.code)} [${gatherers(g.code, w)}]`).join(" + ")} → ${r.quantity} · makers today: ${makers.join(", ") || "nobody at the level"} · (a) ${f1(a)} s (b) ${f1(b)} s (c) ${f1(c)} s · ${hp} HP: ${per(a)} / ${per(b)} / ${per(c)} HP a second`);
+  }
+}
+/** The best set a fighter at `level` wins `monster` safely with, every potion it may drink a candidate at `price`. */
+function setAt(ch: Character, level: number, w: World, monster: string, price: (c: string) => number, potions = potionCandsOf(chAt(ch, level))): GearRecommendation | undefined {
+  const at = chAt(ch, level);
+  const qty = ownedQtyOf(at, poolBank(w, ch.name));
+  const r = bestInSlot(at, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: potions, perSlotCap: 3, weaponCap: 3, potionPrice: price })[0];
+  return r?.safe ? r : undefined;
+}
+const potionCandsOf = (ch: Character): string[] => POTIONS14.filter((c) => canEquipItem(ch, c));
+const canEquipItem = (ch: Character, code: string): boolean => (item(code)?.conditions ?? []).every((x) => x.code !== "level" || ch.level > x.value);
+/** The cheapest food a HP by `price`, one unit at least eaten for `lost` HP. */
+function cheapFood(ch: Character, lost: number, price: (c: string) => number): { code: string; hp: number } | undefined {
+  return FOODS14.filter((c) => canEquipItem(ch, c) && healOf(c) <= lost && Number.isFinite(price(c))).map((c) => ({ code: c, hp: healOf(c) })).sort((x, y) => price(x.code) / x.hp - price(y.code) / y.hp)[0];
+}
+/** A kill's seconds in parts — the fight, the healing, the potions — at `price`, eating when `eat` (the cheapest food). */
+function killSplit(f: FightForecast, price: (c: string) => number, eat: boolean, ch: Character): { fight: number; heal: number; pots: number; food?: string } {
+  const lost = f.maxHp - f.hpRemaining, food = eat ? cheapFood(ch, lost, price) : undefined;
+  return { fight: fightSec(f.turns), heal: healSeconds(lost, f.maxHp, price, food), pots: Object.entries(f.used).reduce((t, [c, n]) => t + (n > 0 ? n * price(c) : 0), 0), food: food?.code };
+}
+const XPN = (): number[] => atlas()?.xpNeeded ?? [];
+/** The fighter's XP monster at a level with every potion a candidate at `price` (the best XP a second; the kill priced at it). */
+function pickAt(ch: Character, level: number, w: World, price: (c: string) => number, eat: boolean, potions?: string[]): { monster: string; r: GearRecommendation; sec: number; xp: number } | undefined {
+  let best: { monster: string; r: GearRecommendation; sec: number; xp: number } | undefined;
+  const at = chAt(ch, level);
+  for (const m of catalog().monsters.values()) {
+    if (m.type === "boss" || m.type === "raid_boss" || m.level > level + 5 || m.level < level - 10 || !nearestSpot(placeOf(ch), "monster", m.code, w)) continue;
+    const r = setAt(ch, level, w, m.code, price, potions);
+    if (!r) continue;
+    const s = killSplit(r.forecast, price, eat, at), sec = s.fight + s.heal + s.pots + killWalk(at, w, m.code);
+    const xp = fightXp(m.level, m.hp, m.type, level, setWisdom(at, r));
+    if (xp > 0 && (!best || xp / sec > best.xp / best.sec)) best = { monster: m.code, r, sec, xp };
+  }
+  return best;
+}
+function roadTable(w: World, label: string): void {
+  console.log(`\n## Every fighter on its road (task 014 section 2) — ${label}`);
+  console.log(`  per level: the XP monster (every potion a candidate at the chain's price with the stock, (c)), its set, the potions a kill drinks, the HP missing at its end; a kill's seconds = fight + healing + potions under (a) the field price and rest · (b) the chain, the stock ignored, eating the cheapest food · (c) the chain with the stock, eating`);
+  const empty: World = { ...w, bank: [] };
+  const by = w.characters[0].name;
+  const priceA = potionSec, priceB = (c: string): number => chainSec(empty, by, c), priceC = (c: string): number => (available(c, w, by) > 0 ? 0 : chainSec(w, by, c));
+  for (const ch of w.characters) {
+    for (const L of [...new Set([ch.level, 28, 30, 33, 35, 40])].filter((x) => x >= ch.level).sort((a, b) => a - b)) {
+      const p = pickAt(ch, L, w, priceC, true);
+      if (!p) { console.log(`  ${pad(ch.name, 7)} ${pad(L, 2)} no safe XP monster, with every potion at the chain's price`); continue; }
+      const at = chAt(ch, L), f = p.r.forecast, parts = [killSplit(f, priceA, false, at), killSplit(f, priceB, true, at), killSplit(f, priceC, true, at)];
+      const drinks = Object.entries(f.used).filter(([, n]) => n > 0).map(([c, n]) => `${n} ${c}`).join(" + ") || "no potion";
+      console.log(`  ${pad(ch.name, 7)} ${pad(L, 2)} ${pad(p.monster, 18)} ${pad(p.r.codes.filter((c) => item(c)?.type !== "utility").length, 2)} pieces, ${drinks}, ${f.maxHp - f.hpRemaining} of ${f.maxHp} HP missing · ${parts.map((s, i) => `(${"abc"[i]}) ${f1(s.fight)} + ${f1(s.heal)}${s.food ? ` (${s.food})` : ""} + ${f1(s.pots)} = ${f1(s.fight + s.heal + s.pots)} s`).join(" · ")}`);
+    }
+  }
+  console.log(`  the event monsters of report 013, at the level each is first won (the fleet's best fighter, every potion a candidate at (c)):`);
+  const top = [...w.characters].sort((a, b) => b.level - a.level)[0];
+  for (const m of ["corrupted_ogre", "full_moon_vampire", "bandit_lizard", "demon", "corrupted_owlbear", "cultist_emperor"]) {
+    let line = "not won by 50";
+    for (let L = top.level; L <= 50; L++) {
+      const r = setAt(top, L, w, m, priceC);
+      if (!r) continue;
+      const at = chAt(top, L), f = r.forecast, parts = [killSplit(f, priceA, false, at), killSplit(f, priceB, true, at), killSplit(f, priceC, true, at)];
+      line = `first won at ${L}: ${Object.entries(f.used).filter(([, n]) => n > 0).map(([c, n]) => `${n} ${c}`).join(" + ") || "no potion"}, ${f.maxHp - f.hpRemaining} HP missing · ${parts.map((s, i) => `(${"abc"[i]}) ${f1(s.fight)} + ${f1(s.heal)} + ${f1(s.pots)} = ${f1(s.fight + s.heal + s.pots)} s`).join(" · ")}`;
+      break;
+    }
+    console.log(`     ${pad(m, 18)} ${line}`);
+  }
+}
+/** Hours a combat level from 28 to 40 for one fighter, under a price, eating or resting, a potion list. */
+function levelsHours(ch: Character, w: World, price: (c: string) => number, eat: boolean, potions?: string[]): { h: number; per: string[] } {
+  let h = 0;
+  const per: string[] = [];
+  for (let L = 28; L < 40; L++) {
+    const p = pickAt(ch, L, w, price, eat, potions);
+    const hl = p ? (XPN()[L] ?? Infinity) / ((p.xp / p.sec) * 3600) : Infinity;
+    h += hl;
+    if (L % 4 === 0) per.push(`${L}: ${p ? `${p.monster} ${f1(hl)} h` : "none"}`);
+  }
+  return { h, per };
+}
+function leversTable(w: World, who: string): void {
+  console.log(`\n## The levers (task 014 section 2): hours a combat level from 28 to 40 for ${who} (the mean of the twelve levels), each against the chain with the bank's stock and rest`);
+  const ch = w.characters.find((c) => c.name === who)!;
+  const empty: World = { ...w, bank: [] };
+  const priceA = potionSec, priceB = (c: string): number => chainSec(empty, who, c), priceC = (c: string): number => (available(c, w, who) > 0 ? 0 : chainSec(w, who, c));
+  const low = POTIONS14.filter((c) => (item(c)?.level ?? 0) <= 20);
+  const rows: [string, ReturnType<typeof levelsHours>][] = [
+    ["today's price (the field, rest)", levelsHours(ch, w, priceA, false)],
+    ["the chain, the stock ignored, rest", levelsHours(ch, empty, priceB, false)],
+    ["the chain with the bank's stock, rest — the base", levelsHours(ch, w, priceC, false)],
+    ["…a potion of a higher tier refused (small, minor only)", levelsHours(ch, w, priceC, false, low)],
+    ["…food in place of rest (the cheapest food by its chain)", levelsHours(ch, w, priceC, true)],
+    ["consumables free (row B's ceiling)", levelsHours(ch, w, () => 0, true)],
+  ];
+  for (const [k, r] of rows) console.log(`  ${pad(k, 58)} ${f1(r.h / 12)} h a level (${f1(r.h)} h for twelve) · ${r.per.join(", ")}`);
+  const tools = [...catalog().items.values()].filter((it) => it.subtype === "tool" && (it.effects ?? []).some((e) => e.code === "alchemy_gathering"));
+  console.log(`  the alchemist's tools on the ingredients: ${tools.map((t) => `${t.code} (level ${t.level}, ${(t.effects ?? []).find((e) => e.code === "alchemy_gathering")?.value}% a gather)`).join(", ") || "none"} — fleetSec prices a gather with the best tool the pool holds (gatherCut)`);
+  const wC = { ...w, characters: w.characters.map((c) => (c.name === who ? chAt(c, 28) : c)) };
+  const needs = gearNeeds(wC, who).needs.filter((n) => n.for === who);
+  console.log(`  a gear piece in place of the potion (gear by need at 28, the potions at the chain's price): ${needs.map((n) => `${n.work}: ${[...n.pieces.keys()].join(" + ")} (H0 ${f1(n.H0)} h, H1 ${f1(n.H1)} h, G ${f1(n.G)} h)`).join(" | ") || "none"}`);
+  console.log(`  a second and a third alchemist: the making hours are the same, made side by side — row F of the replay`);
+}
+function goldTable(w: World): void {
+  console.log(`\n## What gold would buy (task 014 section 2; nothing is bought)`);
+  const ings = new Set([...POTIONS14, ...FOODS14].flatMap((c) => item(c)!.craft!.items.map((g) => g.code)));
+  for (const n of catalog().npcs.values()) for (const o of n.items ?? []) {
+    if (o.buy_price == null || !(POTIONS14.includes(o.code) || FOODS14.includes(o.code) || ings.has(o.code) || item(o.code)?.subtype === "food")) continue;
+    console.log(`  ${pad(n.code, 22)} sells ${pad(o.code, 24)} ${o.buy_price} ${o.currency}`);
+  }
+  const at30 = w.characters.map((c) => ({ c, p: pickAt(c, 30, w, (x) => (available(x, w, c.name) > 0 ? 0 : chainSec(w, c.name, x)), true) }));
+  const day = at30.reduce((t, { p }) => t + (p ? Object.entries(p.r.forecast.used).reduce((s, [, n]) => s + n * (86400 / p.sec), 0) : 0), 0);
+  console.log(`  a day of the fleet's fights at 30 (five fighters, every second fighting): ${f1(day)} potions — ${at30.map(({ c, p }) => `${c.name} ${p ? `${p.monster}, ${Object.entries(p.r.forecast.used).map(([x, n]) => `${n} ${x}`).join(" + ") || "none"} a kill, ${f1(86400 / p.sec)} kills` : "none"}`).join("; ")}`);
+}
+
 // ── 6. the replay to the deadline: five rows in five child processes ─────────
 const results: number[] = [];
 const rowDays: Record<string, number>[] = [];
 if (VERBOSE) {
-  const outs = await Promise.all(ROWS.map((_, i) => new Promise<string>((resolve) => {
-    // each row its own storage file beside this one's (the fight-record case above wrote to this one: SQLite locks it)
-    const args = process.execArgv.map((a) => (a.startsWith("--localstorage-file=") ? `${a}.row${i}` : a));
-    const child = spawn(process.execPath, [...args, process.argv[1]], { env: { ...process.env, AMMO_PLANNER_ROW: String(i) }, stdio: ["ignore", "pipe", "pipe"] });
-    let out = "";
-    child.stdout.on("data", (d) => (out += d));
-    child.stderr.on("data", (d) => (out += d));
-    child.on("close", (code) => resolve(code === 0 ? out : `${out}\nrow ${ROWS[i].label}: exit ${code}`));
-  })));
+  const outs = await rows;
   for (const [i, out] of outs.entries()) {
     const line = out.split("\n").find((l) => l.startsWith("##ROW "));
     console.log(out.split("\n").filter((l) => !l.startsWith("##ROW ")).join("\n").trimEnd());
@@ -1151,7 +1470,14 @@ if (VERBOSE) {
     console.log(`\n## What the events cost (task 013): row A against row E (no events)`);
     for (const d of ["7", "14", "30", "60"]) console.log(`  day ${pad(d, 3)} A ${pad(a[d], 4)} E ${pad(e[d], 4)} ${a[d] < e[d] ? "← A below E" : ""}`);
     console.log(`  deadline A ${results[0]} E ${results[4]}`);
-    cases.push(["task 013: row E (no events) ends where report 012's row A did (63)", results[4] === 63]);
+    cases.push(["task 014: row C (consumables 0) ends where report 013's row A did (77)", results[2] === 77]);
+  }
+  // task 014, section 5: what the round paid — row A (consumables by need) against row C (report 013's model)
+  const c14 = rowDays[2];
+  if (a && c14) {
+    console.log(`\n## What the round paid (task 014): row A against row C (consumables 0, report 013's model)`);
+    for (const d of ["7", "14", "30", "60"]) console.log(`  day ${pad(d, 3)} A ${pad(a[d], 4)} C ${pad(c14[d], 4)} ${a[d] < c14[d] ? "← A below C" : ""}`);
+    console.log(`  deadline A ${results[0]} C ${results[2]}`);
   }
   safeTable(base, "the snapshot");
   drinkTable();
@@ -1179,18 +1505,25 @@ if (VERBOSE) {
   const roles0 = rolesFor(end);
   const ahead: World = { ...end, characters: end.characters.map((c) => ({ ...chAt(c, 28), ...(roles0[c.name].includes("mining") ? { mining_level: 30 } : {}), ...(roles0[c.name].includes("woodcutting") ? { woodcutting_level: 30 } : {}) }) as Character) };
   gainTable(ahead, "the fleet at the log's end with every fighter at combat 28 and the mining and woodcutting role holders at 30");
+  // task 014, section 2: what consumables cost, the roads, the levers, what gold would buy
+  consCostTable(end, "the fleet at the log's end (2026-11-20 08:06 UTC; no fighter fought after it)");
+  consCostTable(ahead, "a week on: every fighter at combat 28, the mining and woodcutting role holders at 30");
+  roadTable(end, "the fleet at the log's end");
+  roadTable(ahead, "a week on (combat 28, the role holders at 30)");
+  leversTable(end, "Second");
+  goldTable(end);
 }
 
 function replayRow(row: (typeof ROWS)[number]): { points: number; days: Record<number, number> } {
   {
-    const config: PlannerConfig = { ...ALL_ON, potionK: row.potionK, potionStock: row.potionStock, risk: row.risk, events: row.events };
+    const config: PlannerConfig = { ...ALL_ON, potionK: row.potionK, potionStock: row.potionStock, risk: row.risk, events: row.events, consumables: row.consumables, ...(row.roles ? { roles: row.roles } : {}) };
     RECORD_LEVELS = row.label.startsWith("A");
     const t = performance.now();
     const r = playOut({ ...base, config }, DEADLINE);
     const sec = (performance.now() - t) / 1000;
     const pts = (d: number): number => pointsOf(base) + r.completed.filter((c) => c.at <= NOW + d * DAY).reduce((s, c) => s + c.points, 0);
     const m = memoSizes();
-    console.log(`\n## Replay ${row.label}: potionK ${row.potionK}, potionStock ${row.potionStock}, risk ${row.risk}, events ${row.events} (${sec.toFixed(0)} s, ${r.played.length} decisions, ${m.fights} full and ${m.plans} planning-grade solves cached at the end)`);
+    console.log(`\n## Replay ${row.label}: potionK ${row.potionK}, potionStock ${row.potionStock}, risk ${row.risk}, events ${row.events}, consumables ${row.consumables} (${sec.toFixed(0)} s, ${r.played.length} decisions, ${m.fights} full and ${m.plans} planning-grade solves cached at the end)`);
     console.log(`  points: day 7 ${pts(7)} · day 14 ${pts(14)} · day 30 ${pts(30)} · day 60 ${pts(60)} · deadline ${pointsOf(r.world)}`);
     console.log(`  completed: ${r.completed.map((c) => `${c.code} +${c.points} (${day(c.at)})`).join(", ")}`);
     const evH = r.played.reduce((s, p) => s + evHours(p), 0);
@@ -1200,6 +1533,9 @@ function replayRow(row: (typeof ROWS)[number]): { points: number; days: Record<n
     for (const [k, h] of r.run.hours) { const a = k.split(" ")[0]; byAnswer.set(a, (byAnswer.get(a) ?? 0) + h); }
     console.log(`  hours by answer (task 011; task 013: the event hours their own line): ${["objective", "level", "supply", "filler", "fallback"].map((a) => `${a} ${((100 * (byAnswer.get(a) ?? 0)) / total).toFixed(1)}%`).join(" · ")} · events ${((100 * evH) / total).toFixed(1)}% (${f1(evH)} h${r.run.evBy.size ? `: ${[...r.run.evBy].map(([c, b]) => `${c} ${f1([...b.hours.values()].reduce((s, x) => s + x, 0))} h`).join(", ")}` : ""})`);
     console.log(`  potion making (task 010): ${f1(r.run.potionHours)} of ${f1(r.run.fightHours)} fight hours, ${((100 * r.run.potionHours) / Math.max(1e-9, r.run.fightHours)).toFixed(1)}% (a potion at ${row.potionK} × ${row.potionStock ? "the price with the stock counted" : "the field price"})`);
+    // task 014: the consumable hours their own lines, and their share of the fight hours
+    const consH = [...r.run.cons.hours.values()].reduce((x, y) => x + y, 0);
+    console.log(`  consumables (task 014): ${["ingredients gathered or hunted", "brewing", "cooking"].map((k) => `${k} ${f1(r.run.cons.hours.get(k) ?? 0)} h (${((100 * (r.run.cons.hours.get(k) ?? 0)) / total).toFixed(1)}%)`).join(" · ")}; consumable making ${f1(consH)} h of ${f1(consH + r.run.fightHours)} fight and making hours, ${((100 * consH) / Math.max(1e-9, consH + r.run.fightHours)).toFixed(1)}%`);
     const craftLv = r.played.filter((p) => p.step.as === "level" && [...GEAR_CRAFT, "cooking"].includes(p.step.target.split(":")[1]));
     console.log(`  crafting levels taken: ${craftLv.length} steps of ${r.played.length} (${f1(craftLv.reduce((s, p) => s + p.step.hours, 0))} h): ${[...new Set(craftLv.map((p) => p.step.target))].join(", ") || "none"}`);
     for (const c of r.world.characters) console.log(`  ${pad(c.name, 7)} ${["combat", ...GATHER_LANES, ...GEAR_CRAFT, "cooking"].map((l) => `${l} ${levelOf(c, l as Lane)}`).join(", ")}`);
@@ -1211,11 +1547,23 @@ function replayRow(row: (typeof ROWS)[number]): { points: number; days: Record<n
     }
     const roles = rolesFor(base);
     const atL = (n: string, l: Lane, L: number): string => (r.run.reached.has(`${n}:${l}:${L}`) ? `day ${day(r.run.reached.get(`${n}:${l}:${L}`)!)}` : levelOf(chars.find((c) => c.name === n)!, l) >= L ? "at start" : "—");
-    console.log(`  a gathering role at 35 / 40 (task 011; 013: 35): ${NAMES.flatMap((n) => roles[n].filter((l) => GATHER_LANES.includes(l)).map((l) => `${n} ${l} ${atL(n, l, 35)} / ${atL(n, l, 40)}`)).join(" · ")}`);
+    console.log(`  a gathering role at 35 / 40 (task 011; 013: 35): ${NAMES.flatMap((n) => roles[n].filter((l) => GATHER_LANES.includes(l) || l === "cooking").map((l) => `${n} ${l} ${atL(n, l, 35)} / ${atL(n, l, 40)}`)).join(" · ")}`);
     console.log(`  gear made (task 011): ${r.run.made.filter((g) => g.bank! <= NOW + 8 * DAY).length} pieces in the first eight days, ${r.run.made.length} to the deadline (report 009: 67); supply ${f1(byAnswer.get("supply") ?? 0)} character-hours`);
     console.log(`  supply hours by target and parent (task 012; the ten largest): ${[...(r.run.supplyBy ?? new Map<string, number>())].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, h]) => `${k} ${f1(h)} h`).join(" · ") || "none"}`);
     if (r.run.toolDup.size) console.log(`  work (c): a gathering objective asking a tool of several holders at once: ${[...r.run.toolDup].map(([k, n]) => `${k} (${n})`).join(", ")}; tools made for gathering objectives: ${r.run.made.filter((g) => g.work.endsWith(", tool)")).map((g) => `${g.code} for ${g.for} (${g.work})`).join(", ") || "none"}`);
     else console.log(`  work (c): no gathering objective asked a tool of more than one holder at once`);
+    if (row.label.startsWith("A") && row.consumables) {
+      // task 014, section 5: per potion and food — made, drunk or eaten, by whom and for which works, the stock at the deadline
+      console.log(`  consumables made (task 014; units made · by whom · for which works · drunk or eaten · stock at the deadline):`);
+      for (const code of [...new Set([...r.run.cons.made.keys(), ...[...r.run.drunk.keys()].filter((c) => item(c)?.type === "utility" || item(c)?.subtype === "food")])]) {
+        const m = r.run.cons.made.get(code);
+        console.log(`     ${pad(code, 24)} made ${pad(Math.round(m?.n ?? 0), 6)} by ${m ? [...m.by].map(([n, q]) => `${n} ${Math.round(q)}`).join(", ") : "nobody"} · for ${m ? [...m.for].slice(0, 6).join(", ") + (m.for.size > 6 ? ` and ${m.for.size - 6} more` : "") : "—"} · ${item(code)?.type === "utility" ? "drunk" : "eaten"} ${Math.round(r.run.drunk.get(code) ?? 0)} · stock ${Math.round(stockOf(r.world, code))}`);
+      }
+      console.log(`  a fighter's road waited for its stock (task 014; hours by the work done meanwhile): ${[...r.run.cons.waited].map(([n, by]) => `${n} ${f1([...by.values()].reduce((x, y) => x + y, 0))} h (${[...by].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([k, h]) => `${k} ${f1(h)} h`).join(", ")})`).join(" · ") || "never"}`);
+      console.log(`  works refused stock for a better one (task 014; the first time each): ${r.run.cons.refused.size ? "" : "none"}`);
+      for (const [k, v] of [...r.run.cons.refused].slice(0, 25)) console.log(`     ${k} — ${v}`);
+      if (r.run.cons.refused.size > 25) console.log(`     … and ${r.run.cons.refused.size - 25} more`);
+    }
     if (row.label.startsWith("A")) {
       // task 012, settled point 6: the potions and their ingredients the fights drank, day by day
       r.run.checkpoints.set(Math.round((DEADLINE - NOW) / DAY), totals(r.world, r.run));
@@ -1422,7 +1770,23 @@ function killTable(): void {
   const brewing = (r: (typeof rows)[number]): boolean => r.x.monster === "pig" && r.x.s > 150; // the pig steps of 13:43–16:02 that brewed potions under the old objective
   console.log(`  median ${med.toFixed(3)} over ${rows.length} samples → KILL_LOG ${Math.abs(med - 1) > 0.1 ? med.toFixed(2) : "none (inside 0.9–1.1)"} (config.ts KILL_LOG = ${KILL_LOG}); without the three pig steps that brewed potions under the old objective: ${median(rows.filter((r) => !brewing(r)).map((r) => r.ratio)).toFixed(3)}`);
   console.log(`  cross-check on the planner's own estimates then (rest at 5 HP/s, × 1.3): measured ÷ (estimate ÷ 1.3), median ${median(KILL_SAMPLES.map((x) => (1.3 * x.s) / x.est)).toFixed(3)} (the rest rule moves it by at most ±9% at 460–550 max HP)`);
-  cases.push(["task 012: KILL_LOG is the median of measured ÷ the repaired estimate over every kill sample", Math.abs(med - 1) > 0.1 ? Math.abs(KILL_LOG - Number(med.toFixed(2))) < 1e-9 : (KILL_LOG as number) === 1]);
+  cases.push(["task 012: KILL_LOG_013 is the median of measured ÷ the repaired estimate over every kill sample", Math.abs(med - 1) > 0.1 ? Math.abs(KILL_LOG_013 - Number(med.toFixed(2))) < 1e-9 : (KILL_LOG_013 as number) === 1]);
+  // task 014, settled point 6: KILL_LOG again, healing priced as it is — eating cooked beef (the food most eaten on 11-19/20,
+  // 798 of 1,705 `use` lines) where that fighter's fights on that monster mostly ate (ATE), rest by the docs where they
+  // rested; a potion from stock free (none of these sets drinks from the fixture's bank)
+  const beef = { code: "cooked_beef", hp: 150 };
+  const rows14 = rows.map((r) => { const k = r.k!; const ate = ATE(r.x.who, r.x.monster); const est = k.fight + healSeconds(k.lost, k.maxHp, () => 0, ate ? beef : undefined) + k.walk; return { ...r, ate, est, ratio14: r.x.s / est }; });
+  console.log(`  task 014 — healing as it is (a \`use\` ${USE_SEC} s; cooked beef where the pair ate, rest where it rested; potions from stock free):`);
+  for (const r of [...rows14].sort((a, b) => a.ratio14 - b.ratio14)) console.log(`  ${r.x.t} ${pad(r.x.who, 6)} ${pad(r.x.monster, 12)} ${r.ate ? "ate   " : "rested"} measured ${pad(r.x.s, 3)} s · estimate ${pad(Math.round(r.est), 3)} s · ${r.ratio14.toFixed(2)}`);
+  const med14 = median(rows14.map((r) => r.ratio14));
+  console.log(`  median ${med14.toFixed(3)} over ${rows14.length} samples → KILL_LOG ${med14.toFixed(2)} (config.ts KILL_LOG = ${KILL_LOG}); the eaters ${median(rows14.filter((r) => r.ate).map((r) => r.ratio14)).toFixed(3)}, the resters ${median(rows14.filter((r) => !r.ate).map((r) => r.ratio14)).toFixed(3)}`);
+  // the same over report 012's eight decomposed steps (STEPS_LOG), the food each fighter made inside its own fight item taken
+  // out of the measured — the new executor never makes it there (settled point 1): it is a supply step, priced in G
+  const dec = STEPS_LOG.map((s) => { const k = killParts(s.who, s.level, s.monster, s.pieces); if (!k) return undefined; const ate = s.eat > 0.5; const est = k.fight + healSeconds(k.lost, k.maxHp, () => 0, ate ? beef : undefined) + k.walk; return { s, ate, est, own: s.total - s.food, ratio: (s.total - s.food) / est }; }).filter((x) => !!x);
+  for (const r of [...dec].sort((a, b) => a.ratio - b.ratio)) console.log(`  ${r.s.t} ${pad(r.s.who, 6)} ${pad(r.s.monster, 12)} ${r.ate ? "ate   " : "rested"} measured ${f1(r.s.total)} s less the food's making ${f1(r.s.food)} s = ${f1(r.own)} s · estimate ${f1(r.est)} s · ${r.ratio.toFixed(2)}`);
+  const medDec = median(dec.map((r) => r.ratio));
+  console.log(`  the decomposed steps, the fight item's own food making out: median ${medDec.toFixed(3)} over ${dec.length} → KILL_LOG ${Math.abs(medDec - 1) > 0.1 ? medDec.toFixed(2) : "none (inside 0.9–1.1)"} — the one taken (config.ts KILL_LOG = ${KILL_LOG}); all 23 samples with it in: ${med14.toFixed(2)}`);
+  cases.push(["task 014: KILL_LOG is the median of measured (less a fight item's own food making) ÷ the estimate with healing as it is", Math.abs(medDec - 1) > 0.1 ? Math.abs(KILL_LOG - Number(medDec.toFixed(2))) < 1e-9 : (KILL_LOG as number) === 1]);
   console.log(`\n## A kill step's parts (task 012 section 3): the log (per kill) against the estimate's parts — steps since 16:22 UTC`);
   for (const s of STEPS_LOG) {
     const k = killParts(s.who, s.level, s.monster, s.pieces);

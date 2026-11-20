@@ -26,6 +26,7 @@ import { CHUNK_SEC, GATHER_LANES, TRAIN_LANES } from "./config";
 import { actionSec, craftsPerLevel, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { met } from "./gates";
+import { consParents, fightTake, gearWorld } from "./consumables";
 import { gearPieces, pieceParent } from "./gear";
 import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
 import { fightRec, nearestSpot, placeOf } from "./reach";
@@ -73,7 +74,8 @@ function planMake(w: Work & { kind: "craft" | "buy" }, inputs: Input[], ch: Char
   for (const x of ins) if (!x.field) max = Math.min(max, Math.floor(x.avail / x.i.per + 1e-9));
   if (max < 1) return undefined;
   // shortcut: a drop or a rare gather is sourced at 1.5 × its expected actions, so a step rarely comes up short
-  const times = (x: (typeof ins)[number], n: number): number => Math.ceil(Math.max(0, n * x.i.per - x.avail) * x.per * x.margin - 1e-9);
+  // task 014, settled point 9: what lies in a bag is not gathered a second time (the step's reset banks it first)
+  const times = (x: (typeof ins)[number], n: number): number => Math.ceil(Math.max(0, n * x.i.per - x.avail - (world.bags?.[x.i.code] ?? 0)) * x.per * x.margin - 1e-9);
   const fixed = stepSec(spot.place, here); // task 012: the reset, the walks and the deposit, once a step
   const sec = (n: number): number => ins.reduce((s, x) => s + (times(x, n) ? times(x, n) * x.act : 0), 0) + n * own + fixed;
   if (!(sec(1) <= 2 * CHUNK_SEC)) return undefined; // one unit longer than two chunks: supply targets carry it
@@ -181,9 +183,26 @@ export function rank(name: string, world: World): Ranking {
   const blocked = (key: string): boolean => (world.blocked[`${key}@${name}`]?.until ?? 0) > world.now;
   const pts = (code: string, p: number): number => p * (cfg.weight[code] ?? 1);
   const boost = (key: string): number => (last?.target === key ? 1.1 : 1);
-  const stepOf = (t: Target, p: Plan, as: Answer, score: number, why: string, extra: Partial<Step> = {}): Step => {
+  const stepOf = (t: Target, p: Plan & { wear?: Record<string, string> }, as: Answer, score: number, why: string, extra: Partial<Step> = {}): Step => {
     const n = last?.target === t.key ? Number(last.key.split("#").pop()) + 1 : 1;
-    return { key: `${t.key}@${name}#${n}`, target: t.key, character: name, as, work: p.work, units: p.units, hours: p.hours, score, why, place: p.place, sources: p.sources, withdraw: p.withdraw, until: p.until, ...extra };
+    return { key: `${t.key}@${name}#${n}`, target: t.key, character: name, as, work: p.work, units: p.units, hours: p.hours, score, why, place: p.place, sources: p.sources, withdraw: p.withdraw, until: p.until, ...(p.wear ? { wear: p.wear } : {}), ...extra };
+  };
+  /** Task 014, settled point 4: a kill plan's consumables — its `withdraw`, its kills capped at what the stock a work of
+   *  this score may reserve covers (`per` kills a unit); a set without potions when they cannot be stocked; undefined: no
+   *  candidate. The note goes into the why. */
+  const fightPlan = (p: Plan, per: number, fit: number, any: number, left: number): (Plan & { note: string; wear?: Record<string, string> }) | undefined => {
+    if (p.work.kind !== "kill") return { ...p, note: "" };
+    const tk = fightTake(world, ch, p.work.monster, p.units * per, fit, any);
+    if (!tk) return undefined;
+    const unit = tk.sec != null ? tk.sec * per : (p.hours * 3600) / p.units;
+    const asked = tk.sec != null ? Math.max(1, Math.min(left, Math.round(CHUNK_SEC / unit))) : p.units;
+    const units = Math.min(asked, Math.max(Math.floor(tk.kills / per + 1e-9), tk.kills >= 1 ? 1 : 0));
+    if (units < 1) return undefined;
+    if (tk.sec == null && units === p.units && !tk.withdraw) return { ...p, note: tk.note }; // nothing changed (consumables 0: always)
+    const k = (units * per) / Math.max(1, tk.kills); // the withdrawal was sized for tk.kills
+    const withdraw = tk.withdraw && Object.fromEntries(Object.entries(tk.withdraw).map(([c, q]) => [c, Math.min(q, Math.ceil(q * k - 1e-9))]));
+    const wear = tk.rec && Object.fromEntries(WEAR_SLOTS.filter((g) => tk.rec!.slots[g]).map((g) => [g, tk.rec!.slots[g]!]));
+    return { ...p, units, hours: units === p.units && tk.sec == null ? p.hours : (units * unit) / 3600, withdraw, note: tk.note, wear };
   };
 
   const objectives: Candidate[] = [];
@@ -193,13 +212,15 @@ export function rank(name: string, world: World): Ranking {
     if (!t.achievement || blocked(t.key) || t.gates.some((g) => g.kind === "event")) continue;
     const left = t.left - inFlight(t.key);
     if (left <= 0) continue;
-    const p = planObjective(t, ch, world, left);
-    if (!p) continue;
+    const p0 = planObjective(t, ch, world, left);
+    if (!p0) continue;
     const h = achHours(t.achievement, name, world);
     const fit = h <= calH ? 1 : 0;
     const any = (pts(t.achievement, t.points) / Math.max(h, 0.01)) * boost(t.key);
+    const p = fightPlan(p0, t.work.kind === "kill" ? perOf(t.work) : 1, any * fit, any, left);
+    if (!p) continue;
     const what = p.work.kind === "train" ? "recycled" : unitWord(t.work);
-    const why = `${achievementOf(t.achievement)?.name ?? t.achievement}: ${left} ${what} left, +${t.points} pts in ~${fmt(h)} h; ${p.units} now (${fmt(p.hours)} h)`;
+    const why = `${achievementOf(t.achievement)?.name ?? t.achievement}: ${left} ${what} left, +${t.points} pts in ~${fmt(h)} h; ${p.units} now (${fmt(p.hours)} h)${p.note}`;
     (t.filler ? fillers : objectives).push({ target: t, step: stepOf(t, p, t.filler ? "filler" : "objective", any * fit, why), fit: any * fit, any });
   }
 
@@ -208,11 +229,14 @@ export function rank(name: string, world: World): Ranking {
   const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string): void => {
     const t = targets.find((x) => x.key === `lvl:${lane}:${to}`) ?? { key: `lvl:${lane}:${to}`, points: 0, work: { kind: "level", lane, to }, left: 1, gates: [], filler: false };
     if (blocked(t.key) || levels.some((c) => c.target.key === t.key && c.fit >= fit * boost(t.key))) return;
-    const p = planLevel(lane, ch, world, bonus);
-    if (!p) return;
+    let p0 = planLevel(lane, ch, world, bonus);
+    let p = p0 && fightPlan(p0, 1, fit * boost(t.key), any * boost(t.key), Infinity);
+    // task 014: the pick's potions are held for better works — the road goes on at the pick of the gear alone
+    if (p0 && !p && lane === "combat") p = (p0 = planLevel(lane, ch, gearWorld(world), bonus)) && fightPlan(p0, 1, fit * boost(t.key), any * boost(t.key), Infinity);
+    if (!p0 || !p) return;
     const i = levels.findIndex((c) => c.target.key === t.key);
     if (i >= 0) levels.splice(i, 1);
-    levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p.what, p)), fit: fit * boost(t.key), any: any * boost(t.key) });
+    levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p0.what, p) + p.note), fit: fit * boost(t.key), any: any * boost(t.key) });
   };
   for (const lane of lanes) {
     const b = bundleOf(lane, name, world);
@@ -249,18 +273,25 @@ export function rank(name: string, world: World): Ranking {
     const p: Plan = { work: t.work, units: runs, hours: (runs * CRAFT_SEC + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(code, runs)) };
     supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }), fit: n.fit * boost(key), any: n.any * boost(key) });
   }
+  // task 014, settled point 3: potions and food by need, parents of supply with the score of the work they are for
+  parents.push(...consParents(world, name));
   for (const s of supplyNeeds(world, name, parents, srcInFlight)) {
     // task 013, settled point 1: an event-only material is the event interrupt's work, never a step
     if (blocked(s.key) || s.gates.some((g) => g.kind === "event")) continue;
     const par = s.parent;
     const t: Target = { key: s.key, points: 0, work: s.work, left: s.short, gates: s.gates, filler: false };
-    let p: Plan | undefined, node = "";
+    let p: (Plan & { wear?: Record<string, string> }) | undefined, node = "", note = "";
     if (s.kind === "src") {
       // task 012, settled point 7: the node (or monster) is this character's — the least net seconds an item
       const src = pickSource(s.code, ch, world);
       if (!src) continue;
       const items = s.short / perOf(s.work); // short is in actions of the static source (supplyNeeds)
-      p = chunk(src.work, src.sec, Math.ceil(items * src.per - 1e-9), world, src);
+      const acts = Math.ceil(items * src.per - 1e-9);
+      const c = chunk(src.work, src.sec, acts, world, src);
+      const f = c && fightPlan(c, 1, par.fit * boost(s.key), par.any * boost(s.key), acts);
+      if (!f) continue;
+      p = f;
+      note = f.note;
       const what = src.work.kind === "gather" ? resourceOf(src.work.resource)?.name ?? src.work.resource : monsterName(src.work.monster);
       node = `; ${what}: ${Math.round(src.xp)} ${src.lane} XP ${src.work.kind === "gather" ? "a gather" : "a kill"}${src.share >= 1 ? ", the lane's best" : src.share > 0 ? `, ${Math.round(100 * src.share)}% of the lane's best` : ""}${src.over ? ` (over ${src.over}: the XP share decided)` : ""}`;
     } else if (s.work.kind === "buy") {
@@ -279,7 +310,7 @@ export function rank(name: string, world: World): Ranking {
     }
     if (!p) continue;
     const unit = s.kind === "src" ? (p.work.kind === "kill" ? "kills" : "gathers") : "made";
-    const why = `${itemName(s.code)}: ${fmt(s.short)} ${s.kind === "src" ? "actions" : ""} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h)${node}; ${p.units} ${unit} now (${fmt(p.hours)} h)`;
+    const why = `${itemName(s.code)}: ${fmt(s.short)} ${s.kind === "src" ? "actions" : ""} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h)${node}; ${p.units} ${unit} now (${fmt(p.hours)} h)${note}`;
     // task 013, settled point 9: the answer is prefixed once, where the chosen step's why is made ("supply: supply:")
     supply.push({ target: t, step: stepOf(t, p, "supply", par.fit * boost(s.key), why.replace("  ", " "), { parent: par.key }), fit: par.fit * boost(s.key), any: par.any * boost(s.key) });
   }
@@ -308,7 +339,7 @@ export function rank(name: string, world: World): Ranking {
     : fill ? { ...fill.step, why: `filler (${realAny ? "nothing else fits the deadline" : "nothing else scores"}): ${fill.step.why}` }
     : fillAny ? { ...fillAny.step, why: `filler (nothing else scores): ${fillAny.step.why}` }
     : fallback(ch, world, last);
-  const wear = wearOf(step.work, ch, world);
+  const wear = step.wear ?? wearOf(step.work, ch, world); // task 014: a kill whose potions could not be stocked wears the set without them
   return { step: wear ? { ...step, wear } : step, objectives, levels, supply, fillers, lanes };
 }
 

@@ -36,7 +36,7 @@ const stockOf = (ch: Character, bank: BankItem[], code: string): number => {
  *  A food that is another recipe's ingredient is feedstock, never a snack:
  *  2 apples + an egg make 640 HP of apple pie instead of 100; coconut and
  *  lava fish feed potions. */
-function healingFoods(ch: Character, exclude?: string): { it: Item; heal: number }[] {
+export function healingFoods(ch: Character, exclude?: string): { it: Item; heal: number }[] {
   const out: { it: Item; heal: number }[] = [];
   for (const it of catalog().items.values()) {
     if (it.type !== "consumable" || it.subtype !== "food" || it.code === exclude) continue;
@@ -49,7 +49,7 @@ function healingFoods(ch: Character, exclude?: string): { it: Item; heal: number
 
 /** Feeds a gear recipe: never cooked. 2 mushrooms = 220 HP of soup (44 s of
  *  rest) but 2/5 of a life ring — fighters cooked a hive order's mushrooms. */
-const gearMaterial = (code: string): boolean =>
+export const gearMaterial = (code: string): boolean =>
   itemUses(code).recipes.some((r) => !["consumable", "utility"].includes(catalog().items.get(r.code)?.type ?? ""));
 
 /** A food pick: what to eat between fights, and how much of it exists. */

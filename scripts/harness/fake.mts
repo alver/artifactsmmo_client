@@ -60,6 +60,8 @@ export interface ForcedFight {
   turns?: number;
   gold?: number;
   drops?: ItemStack[];
+  /** Task 014: the worn utility potions the fight drinks (a simulated fight drinks what simulate() says it uses). */
+  used?: Record<string, number>;
 }
 
 type Char = Character & { layer: string; map_id: number };
@@ -506,7 +508,7 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
     const m = monster(standingOn(d.ch, "monster", "Monster").code)!;
     if (carried(d.ch) >= d.ch.inventory_max_items) throw new GameError(497, FULL); // a fight needs free space [3.1]
     const f = forced.get(d.ch.name)?.shift();
-    let win: boolean, turns: number, hp: number;
+    let win: boolean, turns: number, hp: number, used: Record<string, number> = f?.used ?? {};
     if (f) {
       win = f.result === "win";
       turns = f.turns ?? 10;
@@ -520,6 +522,14 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
       win = r.win;
       turns = r.turns;
       hp = Math.max(1, Math.round(r.hpRemaining));
+      used = r.used;
+    }
+    // task 014: the fight drinks its potions from the worn stacks (guess: as the forecast counts them, at most the stack)
+    for (const g of ["utility1", "utility2"] as const) {
+      const code = str(d.ch)[`${g}_slot`], n = Math.min(Math.round(used[code] ?? 0), num(d.ch)[`${g}_slot_quantity`]);
+      if (!code || n <= 0) continue;
+      num(d.ch)[`${g}_slot_quantity`] -= n;
+      if (num(d.ch)[`${g}_slot_quantity`] === 0) { str(d.ch)[`${g}_slot`] = ""; wear(d.ch, item(code)!, -1); }
     }
     const drops = win ? (f?.drops ?? yieldOf(m.code, m.drops)) : [];
     const gold = win ? (f?.gold ?? m.min_gold) : 0; // guess: the minimum of the gold range

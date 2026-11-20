@@ -37,6 +37,7 @@ import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
 import type { Place } from "../plan/route";
+import { slotCode, slotQuantity } from "../types/api";
 import type { BankItem, Character, CharacterOfferings, OfferingFavor, SeasonalOffering } from "../types/api";
 import type { CraftRecipe, DropRate, Monster, Resource } from "../types/catalog";
 import type { FightForecast } from "../sim/combat";
@@ -206,6 +207,21 @@ const skillLevel = (ch: Character, skill: string): number =>
 const pinnedAt = (it: { x?: number; y?: number; layer?: string }): Place | undefined =>
   it.x != null && it.y != null ? { x: it.x, y: it.y, layer: it.layer ?? "overworld" } : undefined;
 
+/** Task 014: the consumables an owned step planned — a planner fight item's `take`; for a planner gear item, the take of
+ *  the fight item right behind it (a step's reset, a trip's reset, a trip's way back into its step). Undefined: not
+ *  the planner's (a character it does not own never carries one), and today's provisioning applies. */
+function takeOf(name: string, it: QueueItem): Record<string, number> | undefined {
+  if (it.kind === "fight") return it.take;
+  if (it.kind !== "gear" || !it.id.startsWith("pl:")) return undefined;
+  const items = queues.value[name]?.items ?? [];
+  const next = items[items.findIndex((x) => x.id === it.id) + 1];
+  return next?.kind === "fight" && next.id.startsWith("pl:") ? next.take : undefined;
+}
+/** Task 014, settled point 5: a planned potion is all drunk, or the planned food all eaten. */
+function ranDry(ch: Character, take: Record<string, number>): boolean {
+  return Object.keys(take).some((c) => invQty(ch, c) + (["utility1", "utility2"] as const).reduce((t, g) => t + (slotCode(ch, g) === c ? slotQuantity(ch, g) : 0), 0) === 0);
+}
+
 function keepOf(it: QueueItem, ch: Character): string[] | undefined {
   const base =
     it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
@@ -219,6 +235,9 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
     : it.kind === "train" ? trainKeep(ch, it)
     : it.kind === "offering" ? offeringKeep(ch, it)
     : undefined;
+  // Task 014: an owned step's reset keeps exactly the food it planned (the next reset banks what is left)
+  const take = it.kind === "gear" ? takeOf(ch.name, it) : undefined;
+  if (take) return [...(base ?? []), ...Object.keys(take).filter((c) => itemOf(c)?.type !== "utility")];
   // Carried between-fight food is working stock too — a loot bank-off or the
   // job-start gear reset must not stash the fighter's rations.
   if (it.kind === "fight" || it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight") || (it.kind === "train" && it.skill === "combat")) {
@@ -231,7 +250,8 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
 function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
   // Persisted queues from before food became a boolean may carry an old
   // FoodSpec object here — any non-false value means "keep fed".
-  const fed = it.kind === "fight" ? it.food !== false : it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "train" && it.skill === "combat") ? true : undefined;
+  // task 014: an owned step's fight item (`take`) eats what its reset took and never provisions more
+  const fed = it.kind === "fight" ? !it.take && it.food !== false : it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "train" && it.skill === "combat") ? true : undefined;
   return {
     keep: keepOf(it, ch),
     food: fed,
@@ -459,12 +479,20 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // and swap (memoized per bank reference — free when nothing changed).
       // Planned-but-unowned utility potions get brewed (provisionPotions).
       if (it.gear) {
-        const desired = desiredForJob(name, ch, { kind: "fight", monster: it.monster });
-        if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return false;
-        if (desired && (await provisionPotions(name, ch, desired, ctx)) === "acted") return false;
+        const desired = desiredForJob(name, ch, { kind: "fight", monster: it.monster }, it.take);
+        // task 014, settled points 1 and 4: an owned step's utility slots are its reset's — a round never refills them
+        // from the bank, and nothing is brewed (provisionPotions is for the items the planner does not write)
+        const round = it.take && desired ? Object.fromEntries(Object.entries(desired).filter(([g]) => !g.startsWith("utility"))) : desired;
+        if (round && (await gearSwapStep(name, ch, round, ctx)) === "acted") return false;
+        if (!it.take && desired && (await provisionPotions(name, ch, desired, ctx)) === "acted") return false;
       }
       ctx.note(`fighting ${it.done + 1}${it.times > 0 ? `/${it.times}` : ""}`);
       const out = await fightRound(name, ch, m, tile, S(name), ctx);
+      // task 014, settled point 5: running dry is the end of the step, not a failure
+      if (out === "no-win" && it.take && ranDry(ch, it.take)) {
+        log(name, `ran dry after ${it.done} fights vs ${m.name}: its potions or food are gone and the fresh forecast is no win — the step ends`, "info");
+        return true;
+      }
       if (out === "no-win") throw new Error(`not a safe win vs ${m.name}`);
       if (out === "gave-up") throw new Error("lost 2 fights in a row");
       if (out === "won") patchItem(name, it.id, { done: it.done + 1 });
@@ -477,7 +505,8 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       return false;
     }
     case "gear": {
-      const desired = it.desired ?? (it.job ? desiredForJob(name, ch, it.job) : undefined);
+      const take = takeOf(name, it);
+      const desired = it.desired ?? (it.job ? desiredForJob(name, ch, it.job, take) : undefined);
       if (it.reset) {
         // Full bank reset. Fight jobs always get a set (best-effort when no
         // winnable one exists) — desired is only missing for an UNKNOWN
@@ -487,7 +516,18 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         }
         // Utility strip as an UNDERLAY: a fight set's potion picks override it.
         const total = { ...RESET_UTILITY_STRIP, ...(desired ?? stripAllMap()) };
-        return (await gearSwapStep(name, ch, total, ctx, { reset: true })) === "done";
+        if ((await gearSwapStep(name, ch, total, ctx, { reset: true, utility: take })) === "acted") return false;
+        // task 014, settled point 4: an owned step's reset puts exactly its planned potions on (utility, above) and its
+        // planned food into the bag
+        for (const [code, q] of Object.entries(take ?? {})) {
+          if (itemOf(code)?.type === "utility") continue;
+          const short = q - invQty(ch, code), banked = bankQty(code), bank = nearestBank(ch);
+          if (short > 0 && banked > 0 && freeSpace(ch) > 0 && bank) {
+            await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(short, banked, freeSpace(ch)), at: bank }, ctx);
+            return false;
+          }
+        }
+        return true;
       }
       if (!desired) return true; // no set for this job (unknown monster / job "none") — keep current
       return (await gearSwapStep(name, ch, desired, ctx)) === "done";

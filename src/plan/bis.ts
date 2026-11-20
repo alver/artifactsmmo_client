@@ -73,11 +73,25 @@ export interface BisOptions {
   weaponCap?: number; // default 10
 }
 
-/** Wall-clock per kill: the fight's cooldown, the rest back from the HP missing at its end (1 s per 1% of max HP, task
- *  012), and each potion it drinks (FightForecast.used) at `price` — default what making another takes in the field
- *  (xp.ts potionSec); xp.ts potionPriceOf's when the stock is counted (task 012). */
-export function killSeconds(f: FightForecast, price: (code: string) => number = potionSec): number {
-  let s = fightSec(f.turns) + restSeconds(f.maxHp - f.hpRemaining, f.maxHp);
+/** Task 014: a food a fighter eats between fights — its code and the HP one unit heals. */
+export interface Food { code: string; hp: number }
+/** Task 014: the seconds of one `use` action. The docs give none (docs/api/openapi.json: "Use an item as a consumable.");
+ *  logs/dev.log 2026-11-19 09:15 → 11-20 08:06 UTC: 1,705 `use` lines, the median from one to the character's next action
+ *  4.49 s (p25 4.10, p75 5.14; tasks/014-consumables.report.md). healOnce (src/state/exec.ts) eats every unit the deficit
+ *  takes in one action, then rests what is left under one unit. */
+export const USE_SEC = 4.5;
+/** Task 014: the healing term — eating when a food is in the plan: one `use` of the units the HP missing takes (whole
+ *  units, as healOnce eats them), each at `price`, then rest for what is left under one unit; rest by the docs otherwise. */
+export function healSeconds(lost: number, maxHp: number, price: (code: string) => number, food?: Food): number {
+  const n = food && food.hp > 0 ? Math.floor(lost / food.hp) : 0;
+  return n > 0 ? USE_SEC + n * price(food!.code) + restSeconds(lost - n * food!.hp, maxHp) : restSeconds(lost, maxHp);
+}
+
+/** Wall-clock per kill: the fight's cooldown, the healing back from the HP missing at its end (rest: 1 s per 1% of max
+ *  HP, task 012; task 014: eating when `food` is given), and each potion it drinks (FightForecast.used) at `price` —
+ *  default what making another takes in the field (xp.ts potionSec); the stock counted where the caller says so. */
+export function killSeconds(f: FightForecast, price: (code: string) => number = potionSec, food?: Food): number {
+  let s = fightSec(f.turns) + healSeconds(f.maxHp - f.hpRemaining, f.maxHp, price, food);
   for (const code in f.used) if (f.used[code] > 0) s += f.used[code] * price(code);
   return s;
 }

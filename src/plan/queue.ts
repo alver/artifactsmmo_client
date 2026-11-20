@@ -19,7 +19,10 @@ export type QueueItem = { id: string; error?: string } & (
   // best bank set vs the monster each round and swap when it improves.
   // `food` defaults ON (false disables): eat between fights and self-provision
   // when the hand runs dry — bank stock, else cook from stock, else gather.
-  | { kind: "fight"; monster: string; times: number; done: number; food?: boolean; keep?: string[]; gear?: boolean }
+  // `take` (task 014, the planner's items only): the potions and food its step planned — the step's bank reset puts
+  // exactly those into the utility slots and the bag; the item never brews, cooks or gathers them, and it ends when they
+  // are gone and its fresh forecast is no win. Present (even empty) = the plan is the consumables' one writer.
+  | { kind: "fight"; monster: string; times: number; done: number; food?: boolean; keep?: string[]; gear?: boolean; take?: Record<string, number> }
   // times 0 = infinite. `gear` ⇒ keep the bank gathering set for the resource's skill on.
   | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; layer?: string; gear?: boolean }
   // quantity 0 = infinite: withdraw a bagful of materials from the bank, craft,

@@ -14,9 +14,10 @@ const jobOf = (w: Work): GearJob =>
   : w.kind === "craft" ? { kind: "craft", skill: item(w.code)?.craft?.skill }
   : { kind: "none" };
 
-/** The field item of a kill or a gather work, `times` actions. */
-const fieldItem = (w: Work, times: number): QueueItemInput =>
-  w.kind === "kill" ? { kind: "fight", monster: w.monster, times, done: 0, gear: true }
+/** The field item of a kill or a gather work, `times` actions. Task 014: a planner's fight item carries `take`, the
+ *  consumables its step planned (none: {}) — the plan is their one writer. */
+const fieldItem = (w: Work, times: number, take: Record<string, number> = {}): QueueItemInput =>
+  w.kind === "kill" ? { kind: "fight", monster: w.monster, times, done: 0, gear: true, take }
   : w.kind === "gather" ? { kind: "gather", code: w.drop, resource: w.resource, times, done: 0, gear: true }
   : (() => { throw new Error(`no field item for ${w.kind}`); })();
 
@@ -33,7 +34,7 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
   const supply = step.as === "supply";
   switch (w.kind) {
     case "kill": case "gather":
-      out = [reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9))), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
+      out = [reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9)), step.withdraw), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
       break;
     case "craft": {
       if (supply) {
