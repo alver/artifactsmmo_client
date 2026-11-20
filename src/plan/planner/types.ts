@@ -87,6 +87,7 @@ export interface PlannerConfig {
   risk: "safe" | "win";                   // a planned fight: a safe win (default), or any win (task 009's replay row D only)
   potionK: number;                        // × the price of a potion a fight drinks, in the core's solves and prices (the replay's row B only; 1)
   potionStock: number;                    // task 012: 1 = an ingredient the stock covers is free (reach.ts potionPrice); 0 = the field price always (row C only)
+  events: number;                         // task 013: 1 = an event is a calendar (events.ts) and the forward model attends it; 0 = a wall, no events (row E only)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;

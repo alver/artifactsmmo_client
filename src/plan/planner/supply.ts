@@ -11,6 +11,10 @@
 // meets puts the road to that level (the one who gets there first, cost.ts hoursToLevel) into the parent's hours, and
 // the parent waits when there is no road (settled point 8); decide.ts makes the level a candidate of the lane's role
 // holders with the parent's score.
+// Task 013, settled point 7: an event-only material (its field source carries an event gate) is a leaf like any other,
+// priced by its calendar (events.ts materialCal: the spawns needed × the mean time between spawns, everybody that can
+// ever be a member) — ∞ when nobody can, and the parent waits; with config.events 0 it is out of reach (a wall), as before.
+// It is never a step of its own: the event interrupt does that work (decide.ts).
 
 import { catalog, item, itemName } from "../../catalog";
 import { killSeconds } from "../bis";
@@ -21,6 +25,7 @@ import { isOn, met, outOfReach } from "./gates";
 import { planRec, potionPrice, wins } from "./reach";
 import { crafterOf } from "./roles";
 import { available } from "./stock";
+import { materialCal } from "./events";
 import { placeGates, sourceFor, targetsOf } from "./targets";
 import type { Gate, Lane, Target, Work, World } from "./types";
 
@@ -31,9 +36,12 @@ export interface Gated { code: string; lane: Lane; level: number; who?: string; 
 export interface Bill {
   leaves: Map<string, Leaf>; // by key; src qty = items short, mat qty = products short
   out: string[];             // what is out of reach, with its price
-  hours: number;             // field hours of the src leaves (the fleet's quickest character) + 5 s a mat run + each mat leaf's fixed step seconds + the gated roads
+  hours: number;             // field hours of the src leaves (the fleet's quickest character) + 5 s a mat run + each mat leaf's fixed step seconds + the gated roads + the event calendars
   crafts: number;            // the mat runs' share of `hours` (their fixed step seconds included)
   gated: Gated[];            // per lane the highest gated level of the chain, with its road (in `hours` when finite)
+  /** Task 013, settled point 7: an event-only material's calendar (events.ts materialCal: the spawns needed × the mean
+   *  time between spawns, everybody that can ever be a member) — in `hours`; ∞ = nobody can ever be one. */
+  events: { code: string; event: string; qty: number; hours: number }[];
 }
 
 /** Who may craft a recipe of `lane` once the level is there (mayCraft without the level): anyone for a gathering
@@ -129,8 +137,10 @@ export function priceOf(code: string, qty: number): string {
  * turn); fresh when omitted.
  */
 export function billOf(world: World, name: string, demand: [string, number][], vb = new Map<string, number>(), price = true): Bill {
-  const bill: Bill = { leaves: new Map(), out: [], hours: 0, crafts: 0, gated: [] };
+  const bill: Bill = { leaves: new Map(), out: [], hours: 0, crafts: 0, gated: [], events: [] };
   const laneTop = new Map<Lane, { code: string; level: number }>(); // settled point 8: per lane the highest craft level of the chain
+  const evQty = new Map<string, number>(); // task 013: an event-only material's quantity, priced by its calendar at the end
+  const evOn = !!(world.config.events ?? 1);
   /** A new leaf: true. Task 012, settled point 4: a mat leaf's step has its fixed seconds, once a leaf. */
   const leaf = (key: string, code: string, kind: Leaf["kind"], work: Work, gates: Gate[], q: number): boolean => {
     const l = bill.leaves.get(key);
@@ -148,10 +158,13 @@ export function billOf(world: World, name: string, demand: [string, number][], v
     if (q <= 1e-9) return;
     const s = sourceFor(code);
     if (typeof s !== "string") {
-      const why = outOfReach(s.gates, world);
+      // task 013, settled point 7: an event-only material is a calendar, not a wall (its other gates still decide)
+      const ev = evOn && s.gates.some((g) => g.kind === "event");
+      const why = outOfReach(ev ? s.gates.filter((g) => g.kind !== "event") : s.gates, world);
       if (why) return void bill.out.push(`${itemName(code)}: ${why}`);
       leaf(`src:${code}`, code, "src", s.work, s.gates, q);
-      if (price) bill.hours += (q * perOf(s.work) * fleetSec(s.work, s.gates, world)) / 3600;
+      if (ev) evQty.set(code, (evQty.get(code) ?? 0) + q);
+      else if (price) bill.hours += (q * perOf(s.work) * fleetSec(s.work, s.gates, world)) / 3600;
       return;
     }
     const r = item(code)?.craft;
@@ -181,7 +194,12 @@ export function billOf(world: World, name: string, demand: [string, number][], v
     bill.out.push(priceOf(code, q));
   };
   for (const [code, q] of demand) need(code, q, 0);
-  if (!price) return bill; // only the leaves wanted (bundle.ts unmetOf): no roads
+  if (!price) return bill; // only the leaves wanted (bundle.ts unmetOf): no roads, no calendars
+  for (const [code, q] of evQty) {
+    const c = materialCal(code, q, world);
+    bill.events.push({ code, event: c.event, qty: q, hours: c.hours });
+    bill.hours += c.hours;
+  }
   // settled point 8: a gated craft of the chain — the road to its level for whoever gets there first is in the hours
   for (const [lane, g] of laneTop) {
     const road = gateRoad(lane, g.level, world);
@@ -212,14 +230,22 @@ export interface Parent {
 export function inStep(t: Target, world: World): boolean {
   let sec = 0;
   for (const i of t.inputs ?? []) {
-    if (i.source.kind === "craft" || outOfReach(i.gates, world)) return false;
+    // task 013, settled point 1: event work has one writer, the event interrupt — never a step's field source
+    if (i.source.kind === "craft" || i.gates.some((g) => g.kind === "event") || outOfReach(i.gates, world)) return false;
     sec += i.per * perOf(i.source) * fleetSec(i.source, i.gates, world);
   }
   return (t.inputs ?? []).length <= 3 && sec <= 2 * CHUNK_SEC;
 }
 
-/** The open craft and buy objectives that need supply (section 3), with their chains. Filler is not a parent. */
+const parentMemo = new WeakMap<World, Map<string, Parent[]>>();
+/** The open craft and buy objectives that need supply (section 3), with their chains. Filler is not a parent. Memoised
+ *  per World and name (task 013: the event demand reads them too); a caller that adds to the list copies it. */
 export function objectiveParents(world: World, name: string, calH: number): Parent[] {
+  let byName = parentMemo.get(world);
+  if (!byName) parentMemo.set(world, (byName = new Map()));
+  const k = `${name}|${calH}`;
+  const hit = byName.get(k);
+  if (hit) return [...hit];
   const out: Parent[] = [];
   for (const t of targetsOf(world)) {
     if (!t.achievement || t.filler || (t.work.kind !== "craft" && t.work.kind !== "buy") || inStep(t, world)) continue;
@@ -243,7 +269,8 @@ export function objectiveParents(world: World, name: string, calH: number): Pare
     const points = t.points * (world.config.weight[t.achievement] ?? 1);
     out.push({ key: t.key, label: t.achievement, points, fit: hours <= calH ? points / hours : 0, any: points / hours, hours, demand, gated });
   }
-  return out;
+  byName.set(k, out);
+  return [...out];
 }
 
 /** A short code as a target for one character: what it is, how much is short, its best parent. */

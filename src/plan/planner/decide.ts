@@ -15,8 +15,10 @@
 // It always returns a step (C.4): else filler, else a gather chunk on the best node of the character's highest
 // gathering skill whose fallback is not blocked. Built in: × 1.25 in pickMonster for a monster with an open
 // objective (E), + 10% for the target the character was on last (B.4). Ties go to the target key. Pure.
+// Task 013, settled point 1: a target with an event gate is never a step, live or not, nor an event-only material's
+// src: leaf — that work is the event interrupt's (events.ts eventMembers); its points ride a level's bundle (bundle.ts)
+// or a parent's calendar (supply.ts).
 
-import { atlas } from "../../catalog/atlas";
 import { achievement as achievementOf, item, itemName, resource as resourceOf } from "../../catalog";
 import { CRAFT_SEC } from "../xp";
 import { jobGear } from "../jobgear";
@@ -24,12 +26,12 @@ import { CHUNK_SEC, GATHER_LANES, TRAIN_LANES } from "./config";
 import { actionSec, craftsPerLevel, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { met } from "./gates";
-import { gearNeeds } from "./gear";
+import { gearPieces, pieceParent } from "./gear";
 import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
 import { fightRec, nearestSpot, placeOf } from "./reach";
 import { crafterOf, rolesFor } from "./roles";
 import { available, poolBank } from "./stock";
-import { billOf, feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
+import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
 import { sourceFor, targetsOf } from "./targets";
 import { GEAR_SLOTS } from "../../types/api";
 import type { Parent } from "./supply";
@@ -141,7 +143,7 @@ function planLevel(lane: Lane, ch: Character, world: World, bonus: Set<string>):
 }
 
 /** The slots a step's set is worn in (task 009: runes, artifacts, utilities and bags are not planned). */
-const WEAR_SLOTS: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag" && g !== "rune");
+export const WEAR_SLOTS: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag" && g !== "rune");
 /** The set a step's job wears from the character's pool: the fight solve's, else the gather argmax; none for the rest. */
 function wearOf(w: Work, ch: Character, world: World): Record<string, string> | undefined {
   const set: Partial<Record<GearSlot, string>> | undefined =
@@ -179,12 +181,6 @@ export function rank(name: string, world: World): Ranking {
   const blocked = (key: string): boolean => (world.blocked[`${key}@${name}`]?.until ?? 0) > world.now;
   const pts = (code: string, p: number): number => p * (cfg.weight[code] ?? 1);
   const boost = (key: string): number => (last?.target === key ? 1.1 : 1);
-  /** Event work also needs the spawns: one character's floor, as the map's evDays. */
-  const floorH = (t: Target, h: number): number => {
-    const ev = t.gates.find((g) => g.kind === "event");
-    const rate = ev && atlas()?.events.find((e) => e.code === (ev as { code: string }).code)?.rate;
-    return rate ? (h / (55 / 60)) * (rate / 60) : 0;
-  };
   const stepOf = (t: Target, p: Plan, as: Answer, score: number, why: string, extra: Partial<Step> = {}): Step => {
     const n = last?.target === t.key ? Number(last.key.split("#").pop()) + 1 : 1;
     return { key: `${t.key}@${name}#${n}`, target: t.key, character: name, as, work: p.work, units: p.units, hours: p.hours, score, why, place: p.place, sources: p.sources, withdraw: p.withdraw, until: p.until, ...extra };
@@ -193,13 +189,14 @@ export function rank(name: string, world: World): Ranking {
   const objectives: Candidate[] = [];
   const fillers: Candidate[] = [];
   for (const t of targets) {
-    if (!t.achievement || blocked(t.key)) continue;
+    // task 013, settled point 1: a target with an event gate is never a step, live or not — its work is the interrupt's
+    if (!t.achievement || blocked(t.key) || t.gates.some((g) => g.kind === "event")) continue;
     const left = t.left - inFlight(t.key);
     if (left <= 0) continue;
     const p = planObjective(t, ch, world, left);
     if (!p) continue;
     const h = achHours(t.achievement, name, world);
-    const fit = Math.max(h, floorH(t, h)) <= calH ? 1 : 0;
+    const fit = h <= calH ? 1 : 0;
     const any = (pts(t.achievement, t.points) / Math.max(h, 0.01)) * boost(t.key);
     const what = p.work.kind === "train" ? "recycled" : unitWord(t.work);
     const why = `${achievementOf(t.achievement)?.name ?? t.achievement}: ${left} ${what} left, +${t.points} pts in ~${fmt(h)} h; ${p.units} now (${fmt(p.hours)} h)`;
@@ -224,30 +221,20 @@ export function rank(name: string, world: World): Ranking {
     const L = levelOf(ch, lane);
     const to = b.wall ?? b.next;
     const road = b.wall ? `its road ends at ${b.wall} (no XP source there; ${fmt(b.hGate)} h to the gate at the pace before it)` : `${fmt(b.hGate)} h to the gate`;
-    levelCand(lane, to, s.fit, s.any, (what, p) => `${lane} ${L} → ${b.next}: +${s.points} pts behind it (${b.behind.map((x) => x.code).join(", ")}), ${road}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
+    // task 013: an event achievement behind the gate says by how many spawns of what, with how many members
+    const evs = b.events.map((e) => `; ${e.code} behind it, by ${e.spawns} spawns of ${e.event}, about ${fmt(e.days)} days with ${e.members} ${e.members === 1 ? "member" : "members"}`).join("");
+    levelCand(lane, to, s.fit, s.any, (what, p) => `${lane} ${L} → ${b.next}: +${s.points} pts behind it (${b.behind.map((x) => x.code).join(", ")}), ${road}${evs}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
   }
 
   // Gear by need (section 4) and supply through the bank (section 3).
-  const { needs } = gearNeeds(world, name);
-  const pieces = new Map<string, { copies: Map<string, number>; works: Map<string, string>; best: (typeof needs)[number] }>();
-  for (const n of needs) {
-    if (!n.offered) continue; // section 7: the crafter is not on
-    for (const [code, k] of n.pieces) {
-      const e = pieces.get(code) ?? { copies: new Map(), works: new Map(), best: n };
-      e.copies.set(n.for, Math.max(e.copies.get(n.for) ?? 0, k));
-      e.works.set(n.for, e.works.has(n.for) ? `${e.works.get(n.for)}; ${n.work}` : n.work); // task 011: each copy says whose work it is
-      if (n.fit > e.best.fit || (n.fit === e.best.fit && n.any > e.best.any)) e.best = n;
-      pieces.set(code, e);
-    }
-  }
   const parents: Parent[] = objectiveParents(world, name, calH);
   const supply: Candidate[] = [];
-  for (const [code, { copies, works, best: n }] of pieces) {
+  for (const [code, piece] of gearPieces(world, name)) {
+    const { copies, works, best: n } = piece;
     const r = item(code)!.craft!;
     const qty = [...copies.values()].reduce((s, x) => s + x, 0) - inFlight(`gear:${code}`);
     if (qty <= 0) continue;
-    const demand = recipeDemand(code, qty);
-    parents.push({ key: `gear:${code}`, label: `${itemName(code)} for ${n.for} (${n.work})`, points: n.points, fit: n.fit, any: n.any, hours: n.hours, demand, gated: billOf(world, name, demand).gated });
+    parents.push(pieceParent(code, piece, qty, world, name));
     if (crafterOf(r.skill, world) !== name) continue;
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
@@ -263,7 +250,8 @@ export function rank(name: string, world: World): Ranking {
     supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }), fit: n.fit * boost(key), any: n.any * boost(key) });
   }
   for (const s of supplyNeeds(world, name, parents, srcInFlight)) {
-    if (blocked(s.key)) continue;
+    // task 013, settled point 1: an event-only material is the event interrupt's work, never a step
+    if (blocked(s.key) || s.gates.some((g) => g.kind === "event")) continue;
     const par = s.parent;
     const t: Target = { key: s.key, points: 0, work: s.work, left: s.short, gates: s.gates, filler: false };
     let p: Plan | undefined, node = "";
@@ -292,7 +280,8 @@ export function rank(name: string, world: World): Ranking {
     if (!p) continue;
     const unit = s.kind === "src" ? (p.work.kind === "kill" ? "kills" : "gathers") : "made";
     const why = `${itemName(s.code)}: ${fmt(s.short)} ${s.kind === "src" ? "actions" : ""} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h)${node}; ${p.units} ${unit} now (${fmt(p.hours)} h)`;
-    supply.push({ target: t, step: stepOf(t, p, "supply", par.fit * boost(s.key), `supply: ${why.replace("  ", " ")}`, { parent: par.key }), fit: par.fit * boost(s.key), any: par.any * boost(s.key) });
+    // task 013, settled point 9: the answer is prefixed once, where the chosen step's why is made ("supply: supply:")
+    supply.push({ target: t, step: stepOf(t, p, "supply", par.fit * boost(s.key), why.replace("  ", " "), { parent: par.key }), fit: par.fit * boost(s.key), any: par.any * boost(s.key) });
   }
   // Task 012, settled point 8: a craft of a parent's chain gated at a level nobody that may craft it has — the level is
   // a candidate for this lane's role holders, carrying the parent's score (as a crafter's missing level for gear).

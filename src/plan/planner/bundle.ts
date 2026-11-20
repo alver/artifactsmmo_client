@@ -5,10 +5,16 @@
 // Task 009 section 2: a win gate's level is solved for this character (reach.ts winLevel: the first level up to ten
 // above at which its pool wins the monster safely) — none: the achievement waits for gear and is in no bundle. A
 // material made by another craft adds the gates of its bill (supply.ts), as deep as the recipes go.
+//
+// Task 013, settled point 7: an `event` gate is a calendar, not a wall — an achievement whose other missing gates are
+// this lane's sits behind its level like any other; its own hours are the event work's character-hours, and it fits
+// when the road plus its calendar does (eventPart; events.ts calendar with the members at that level).
 
 import { levelOf, hoursOf, hoursToLevel } from "./cost";
+import { calendar, eventWork, membersAt } from "./events";
 import { unmetGates } from "./gates";
 import { winLevel } from "./reach";
+import { rolesFor } from "./roles";
 import { available } from "./stock";
 import { billOf } from "./supply";
 import { targetsOf } from "./targets";
@@ -21,7 +27,9 @@ export interface Bundle {
   behind: { code: string; points: number }[];  // the achievements up to it (points × weight)
   hGate: number;                               // hours to the gate — or to the wall — for this character (∞: no candidate)
   wall?: number;                               // the first level on the road with no XP source (section 2): the level target stops there
-  hs: number[];                                // their own hours, in `behind` order
+  hs: number[];                                // their own hours, in `behind` order (task 013: an event's work in character-hours)
+  cal: number[];                               // task 013: the hours each needs after the road to fit (its own, or its event's calendar)
+  events: { code: string; event: string; spawns: number; days: number; members: number }[]; // task 013: the event achievements behind it
 }
 
 interface Ctx {
@@ -92,15 +100,24 @@ export function bundleOf(lane: Lane, name: string, world: World): Bundle | undef
     if (g.kind === "win" && lane === "combat") { const at = winLevel(c.ch, world, g.monster); return at != null && at > L ? at : undefined; }
     return undefined;
   };
-  const behind: { code: string; at: number; points: number }[] = [];
-  for (const [code, gs] of unmetOf(name, world)) {
+  const behind: { code: string; at: number; points: number; ev?: { h: number; cal: number; note?: Bundle["events"][number] } }[] = [];
+  const evOn = !!(world.config.events ?? 1);
+  for (const [code, all] of unmetOf(name, world)) {
     // filler is ranked on its own tiers (rule 4, decide.ts): its hours do not drag a bundle down, its points do not pull one
     if (world.config.filler.includes(code)) continue;
+    // task 013, settled point 7: an event is a calendar — an achievement whose other missing gates are this lane's sits
+    // behind its level like any other (a gathering lane's: only for the lane's role holders, the calendar's members)
+    const isEv = evOn && all.some((g) => g.kind === "event");
+    if (isEv && lane !== "combat" && !rolesFor(world)[name]?.includes(lane)) continue;
+    const gs = isEv ? all.filter((g) => g.kind !== "event") : all;
     // a win gate is looked at only when every other missing gate is a level of this lane (the solves are dear)
     if (!gs.length || !gs.every((g) => (g.kind === "level" && g.lane === lane) || (g.kind === "win" && lane === "combat"))) continue;
     const at = gs.map(inLane);
     if (at.some((x) => x == null)) continue;
-    behind.push({ code, at: Math.max(...(at as number[])), points: pts(code, c.byAch.get(code)![0].points) });
+    const level = Math.max(...(at as number[]));
+    const ev = isEv ? eventPart(code, lane, level, c, world) : undefined;
+    if (isEv && !ev) continue; // nobody at that level can ever be a member: a wall, as before
+    behind.push({ code, at: level, points: pts(code, c.byAch.get(code)![0].points), ev });
   }
   let out: Bundle | undefined;
   if (behind.length) {
@@ -118,17 +135,36 @@ export function bundleOf(lane: Lane, name: string, world: World): Bundle | undef
     }
     if (wall === L) hGate = Infinity;
     else if (wall != null) hGate += (next - wall) * last;
-    out = { lane, next, behind: bundle.map(({ code, points }) => ({ code, points })), hGate, wall, hs: bundle.map((b) => achHours(b.code, name, world)) };
+    const hs = bundle.map((b) => b.ev?.h ?? achHours(b.code, name, world));
+    out = { lane, next, behind: bundle.map(({ code, points }) => ({ code, points })), hGate, wall, hs, cal: bundle.map((b, i) => b.ev?.cal ?? hs[i]), events: bundle.flatMap((b) => (b.ev?.note ? [b.ev.note] : [])) };
   }
   c.bundles.set(lane, out ?? null);
   return out;
+}
+
+/** Task 013, settled point 7: an event achievement in a bundle at `level` — its own hours are the event work's
+ *  character-hours plus its other objectives' (non-event targets), and it fits when its calendar does (several events:
+ *  the longest calendar, they run side by side). Its members are the characters at the gate at that level (events.ts
+ *  membersAt). Only a material of it waits for spawns: its own hours (the parent's calendar is supply's business).
+ *  Undefined: nobody at that level can be a member. */
+function eventPart(code: string, lane: Lane, level: number, c: Ctx, world: World): { h: number; cal: number; note?: Bundle["events"][number] } | undefined {
+  let h = 0, own = 0, cal = 0, note: Bundle["events"][number] | undefined;
+  for (const t of c.byAch.get(code) ?? []) {
+    const w = eventWork(t);
+    if (!w) { if (t.work.kind !== "level") own += hoursOf(t, c.ch, world); continue; }
+    const k = calendar(w.ev, w.actions, membersAt(w.ev, lane, level, world));
+    if (!Number.isFinite(k.hours)) return undefined;
+    h += k.charH;
+    if (k.hours >= cal) { cal = k.hours; note = { code, event: w.ev.name, spawns: k.spawns, days: k.hours / 24, members: k.members }; }
+  }
+  return { h: h + own, cal: Math.max(cal, own), note };
 }
 
 /** The bundle's score parts over `hours` more than its own (the gate, or gear and the gate): Σ points that fit the
  *  deadline, and Σ points; both ÷ (extra + their own hours). */
 export function bundleScore(b: Bundle, extra: number, calH: number): { fit: number; any: number; points: number; hours: number } {
   const hours = extra + b.hs.reduce((s, x) => s + x, 0);
-  const fitPts = b.behind.reduce((s, x, i) => s + (extra + b.hs[i] <= calH ? x.points : 0), 0);
+  const fitPts = b.behind.reduce((s, x, i) => s + (extra + b.cal[i] <= calH ? x.points : 0), 0);
   const points = b.behind.reduce((s, x) => s + x.points, 0);
   return { fit: fitPts / hours, any: points / hours, points, hours };
 }

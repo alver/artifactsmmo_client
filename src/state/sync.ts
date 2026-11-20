@@ -30,7 +30,7 @@ import { resumeHive } from "./hive";
 import { resumeQueue } from "./queue";
 import { resumePlanner } from "./planner";
 import { eventKey } from "./events";
-import { reactToEvents } from "./eventorders";
+import { eventPollMs, reactToEvents } from "./eventorders";
 import { api, getAllPages, hasToken, setToken } from "../api/client";
 import { loadCatalog } from "../catalog";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
@@ -53,17 +53,18 @@ export async function boot(): Promise<void> {
 
 /**
  * Map events can't be seen in action echoes and spawn ~daily for 60–90 min, so
- * they get the one standing poll: GET /events/active every 5 min. It is a DATA
- * endpoint (2,000/h per IP) — 12 calls an hour never touch the 300/h account
- * bucket. (The realtime websocket that pushes event_spawn is members-only.)
+ * they get the one standing poll: GET /events/active every 5 min — task 013:
+ * every 2 min while the planner's characters have event-gated demand open
+ * (eventorders.ts eventPollMs). It is a DATA endpoint (2,000/h per IP) — 12 or
+ * 30 calls an hour never touch the 300/h account bucket. (The realtime
+ * websocket that pushes event_spawn is members-only.)
  */
-const EVENTS_POLL_MS = 5 * 60_000;
 let eventsTimer: ReturnType<typeof setTimeout> | undefined;
 
 function watchEvents(): void {
   clearTimeout(eventsTimer);
   reactToEvents();
-  eventsTimer = setTimeout(() => void refreshEvents(), EVENTS_POLL_MS);
+  eventsTimer = setTimeout(() => void refreshEvents(), eventPollMs());
 }
 
 async function refreshEvents(): Promise<void> {

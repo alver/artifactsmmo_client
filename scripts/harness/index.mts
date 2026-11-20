@@ -220,6 +220,24 @@ export const merchantEvent = (code: string, x: number, y: number, minutes = 60):
   map: { map_id: 0, name: code, skin: code, x, y, layer: "overworld", access: { type: "standard", conditions: [] }, interactions: { content: { type: "npc", code }, transition: null } },
 });
 
+/** Task 013: a monster or resource event of public/data/events.json that spawns `from` minutes after the scenario starts
+ *  at its tile (x, y) and is up for `minutes`; push it into `t.world.events` (or the world's `events`) to have it spawn. */
+export const fieldEvent = (code: string, content: { type: "monster" | "resource"; code: string }, x: number, y: number, from = 0, minutes = 60): ActiveEvent => ({
+  name: code, code, duration: minutes, previous_map: null,
+  created_at: new Date(T0 + from * 60_000).toISOString(), expiration: new Date(T0 + (from + minutes) * 60_000).toISOString(),
+  map: { map_id: 0, name: code, skin: code, x, y, layer: "overworld", access: { type: "standard", conditions: [] }, interactions: { content, transition: null } },
+});
+
+/** Task 013: `k` copies of a set that wins the bandit lizard safely at combat 40 (bestInSlot over every item; no potions —
+ *  the executor takes a potion stack whole and banks the rest, a bounce), for the bank. */
+export const lizardSet = (k = 1): Record<string, number> => Object.fromEntries(Object.entries({
+  mithril_sword: 1, greater_healing_rune: 1, air_shield: 1, mithril_helm: 1, mithril_platebody: 1, mithril_platelegs: 1, mithril_boots: 1,
+  mithril_ring: 2, greater_ruby_amulet: 1, altar_totem: 1, emerald_book: 1, ruby_book: 1,
+}).map(([c, q]) => [c, q * k]));
+
+/** Task 013: the `plan: event …` lines of the dev log, without the prefix. */
+export const eventLines = (t: Scenario): string[] => t.devlog().flatMap((l) => (l.includes(" plan: event ") ? [l.slice(l.indexOf(" plan: event ") + " plan: ".length)] : []));
+
 export async function scenario(def: ScenarioDef, body: (t: Scenario) => Promise<void> | void): Promise<never> {
   world.onFatal = die;
   (globalThis as { fetch: unknown }).fetch = fakeFetch;

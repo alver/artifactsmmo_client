@@ -23,9 +23,11 @@ import { STAT_CODES } from "../src/sim/types";
 import { GEAR_SLOTS } from "../src/types/api";
 import type { GearRecommendation } from "../src/plan/types";
 import { itemsOf } from "../src/plan/planner/compile";
-import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
+import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
 import { actionSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec } from "../src/plan/planner/cost";
-import { bundleOf } from "../src/plan/planner/bundle";
+import { bundleOf, bundleScore } from "../src/plan/planner/bundle";
+import { calendar, contentOf, eventDemand, eventMembers, eventOf, eventPlans, gapSec, possibleMembers, spawnOf, usableSec } from "../src/plan/planner/events";
+import type { Played } from "../src/plan/planner/forward";
 import { decide, met, rank } from "../src/plan/planner/decide";
 import { advance, bankPlus, drinksOf, forward, pointsOf, waitingOf, wear } from "../src/plan/planner/forward";
 import { gearNeeds, piecesFor } from "../src/plan/planner/gear";
@@ -33,11 +35,11 @@ import type { Need } from "../src/plan/planner/gear";
 import { recordFight, simAccuracy, simDeviations } from "../src/sim/validate";
 import { isOn } from "../src/plan/planner/gates";
 import { pickMonster, pickNode, pickRecipe, pickSource } from "../src/plan/planner/pick";
-import { bankSec, chAt, fightRec, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setWisdom, travel } from "../src/plan/planner/reach";
+import { bankSec, chAt, fightRec, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setWisdom, travel, winLevel } from "../src/plan/planner/reach";
 import { crafterOf, rolesFor } from "../src/plan/planner/roles";
 import { available, floor, poolBank } from "../src/plan/planner/stock";
 import { billOf, gateRoad, objectiveParents, recipeDemand, tradeOf } from "../src/plan/planner/supply";
-import { sourceFor, targetsOf, unhandledOf } from "../src/plan/planner/targets";
+import { isDone, sourceFor, targetsOf, unhandledOf } from "../src/plan/planner/targets";
 import { catalog, item, itemName, monster as monsterOfCode, resource as resourceOf, tileAt } from "../src/catalog";
 import type { ActiveEvent, AccountAchievement, BankItem, Character, FightResult } from "../src/types/api";
 import type { GameMap } from "../src/types/catalog";
@@ -117,6 +119,7 @@ const INV = [
   "15 bank stock never below zero or a floor",
   "16 a piece made is worn by its fighter within a day",
   "17 a craft, trade or gear step costs its fixed seconds",
+  "18 no character's event shares sum to its whole time",
 ] as const;
 const inv = new Map<string, { n: number; fails: number; bad: string[] }>(INV.map((k) => [k, { n: 0, fails: 0, bad: [] }]));
 const check = (k: (typeof INV)[number], ok: boolean, detail: () => string): void => {
@@ -165,8 +168,11 @@ interface Run {
   uncovered: Map<string, number>;  // task 012: "<potion>.<ingredient>" covered at the start → the day it no longer was
   covered0?: string[];             // task 012: what was covered at the start (row A)
   supplyBy?: Map<string, number>;  // task 012: a supply step's "<target> for <parent>" → hours
+  evBy: Map<string, { actions: number; hours: Map<string, number> }>; // task 013: event code → actions, each member's hours
+  evDone: { code: string; event: string; at: number }[];             // task 013: achievements an event step completed
+  world30?: World;                 // task 013: the world when the first step ends past day 30
 }
-const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0, byproducts: new Map(), toolDup: new Map(), atLevel: new Map(), drunk: new Map(), gained: new Map(), checkpoints: new Map(), uncovered: new Map() });
+const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0, byproducts: new Map(), toolDup: new Map(), atLevel: new Map(), drunk: new Map(), gained: new Map(), checkpoints: new Map(), uncovered: new Map(), evBy: new Map(), evDone: [] });
 /** Task 012: every ingredient of a potion recipe, and the stock the forward model counts (bank less the floor). */
 const POTION_INGS = new Set([...catalog().items.values()].filter((it) => it.type === "utility" && it.craft).flatMap((it) => it.craft!.items.map((g) => g.code)));
 const stockOf = (w: World, code: string): number => w.bank.reduce((s, b) => s + (b.code === code ? b.quantity : 0), 0);
@@ -318,7 +324,7 @@ function ended(after: World, step: Step, before: World, run: Run): void {
   const ch = after.characters.find((c) => c.name === step.character)!;
   for (const L of [25, 30, 35, 40]) if (ch.level >= L && !run.reached.has(`${ch.name}:${L}`)) run.reached.set(`${ch.name}:${L}`, after.clock?.[ch.name] ?? after.now);
   // task 011: a gathering lane at 40 (the specialists' layer)
-  for (const lane of GATHER_LANES) if (levelOf(ch, lane) >= 40 && !run.reached.has(`${ch.name}:${lane}:40`)) run.reached.set(`${ch.name}:${lane}:40`, after.clock?.[ch.name] ?? after.now);
+  for (const lane of GATHER_LANES) for (const L of [35, 40]) if (levelOf(ch, lane) >= L && !run.reached.has(`${ch.name}:${lane}:${L}`)) run.reached.set(`${ch.name}:${lane}:${L}`, after.clock?.[ch.name] ?? after.now);
   if (RECORD_LEVELS) for (const L of [25, 28, 30, 35]) if (ch.level >= L && !run.atLevel.has(`${ch.name}:${L}`)) run.atLevel.set(`${ch.name}:${L}`, levelLine(ch, after));
   // task 012, settled point 6: what the fights drank (the same call advance made on `before`), what reached the bank
   const drank = drinksOf(before, step);
@@ -329,6 +335,9 @@ function ended(after: World, step: Step, before: World, run: Run): void {
   }
   const end = after.clock?.[step.character] ?? after.now;
   for (const d of CHECK_DAYS) if (!run.checkpoints.has(d) && end >= NOW + d * DAY) run.checkpoints.set(d, totals(after, run));
+  // task 013: what an event step completed, and the world a month in (the event demands that do not fit then)
+  if (step.target.startsWith("event:")) for (const a of after.achievements) if (isDone(a) && !before.achievements.some((b) => b.code === a.code && isDone(b))) run.evDone.push({ code: a.code, event: step.target.slice(6), at: end });
+  if (!run.world30 && end >= NOW + 30 * DAY) run.world30 = after;
   if (RECORD_LEVELS) {
     const cov = new Set(coveredIn(after));
     for (const pair of run.covered0 ?? (run.covered0 = coveredIn(before))) if (!cov.has(pair) && !run.uncovered.has(pair)) run.uncovered.set(pair, end);
@@ -375,23 +384,38 @@ function wornCheck(run: Run, end: World): string[] {
 const playOut = (w: World, until: number, run = newRun(w)) => {
   if (!run.checkpoints.has(0)) run.checkpoints.set(0, totals(w, run));
   const r = forward(w, until, (x, s) => verify(x, s, run), (a, s, b) => ended(a, s, b, run));
+  // task 013: the events each step attended — invariant 18, and the event hours by code and member
+  for (const p of r.played) {
+    const S = (p.events ?? []).reduce((s, e) => s + e.share, 0);
+    check(INV[17], S < 1, () => `${p.step.key} on day ${day(p.at)}: shares ${S.toFixed(2)}`);
+    for (const e of p.events ?? []) {
+      const b = run.evBy.get(e.code) ?? { actions: 0, hours: new Map<string, number>() };
+      b.actions += e.actions;
+      b.hours.set(p.step.character, (b.hours.get(p.step.character) ?? 0) + e.hours);
+      run.evBy.set(e.code, b);
+    }
+  }
   return { ...r, run };
 };
+/** Task 013: the hours a played step's character gave to events. */
+const evHours = (p: Played): number => (p.events ?? []).reduce((s, e) => s + e.hours, 0);
 
 const DEADLINE = Date.parse(DEFAULTS.deadline);
 // Task 012, section 6: A the default (stock is free, the forward model drinks); B potions free (the upper bound); C the
 // field price always (report 011's row A with sections 2, 3 and 5: the lower bound); D a win is enough, on A's price.
-const ROWS: { label: string; potionK: number; potionStock: number; risk: PlannerConfig["risk"] }[] = [
-  { label: "A (default: stock is free, the fights drink)", potionK: 1, potionStock: 1, risk: "safe" },
-  { label: "B (potions free)", potionK: 0, potionStock: 1, risk: "safe" },
-  { label: "C (the field price always)", potionK: 1, potionStock: 0, risk: "safe" },
-  { label: "D (a win is enough)", potionK: 1, potionStock: 1, risk: "win" },
+// Task 013: events attended by expectation in every row but E (no events: report 012's row A, the anchor).
+const ROWS: { label: string; potionK: number; potionStock: number; risk: PlannerConfig["risk"]; events: number }[] = [
+  { label: "A (default: stock is free, the fights drink, events attended)", potionK: 1, potionStock: 1, risk: "safe", events: 1 },
+  { label: "B (potions free)", potionK: 0, potionStock: 1, risk: "safe", events: 1 },
+  { label: "C (the field price always)", potionK: 1, potionStock: 0, risk: "safe", events: 1 },
+  { label: "D (a win is enough)", potionK: 1, potionStock: 1, risk: "win", events: 1 },
+  { label: "E (no events: report 012's row A)", potionK: 1, potionStock: 1, risk: "safe", events: 0 },
 ];
 let RECORD_LEVELS = false; // row A records each fighter's pick at combat 25, 28, 30 and 35 (ended → levelLine)
 // A child of the replay (section 6): one row, its section, its invariant counts on the last line.
 if (process.env.AMMO_PLANNER_ROW != null) {
-  const points = replayRow(ROWS[Number(process.env.AMMO_PLANNER_ROW)]);
-  console.log(`##ROW ${JSON.stringify({ points, inv: [...inv] })}`);
+  const { points, days } = replayRow(ROWS[Number(process.env.AMMO_PLANNER_ROW)]);
+  console.log(`##ROW ${JSON.stringify({ points, days, inv: [...inv] })}`);
   process.exit(0);
 }
 
@@ -546,9 +570,11 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   const a = steps1(w0, "Fifth");
   const b = steps1({ ...w0, now: NOW + 51 * 60e3 }, "Fifth");
   const node = (s: Step): string => (s.work.kind === "gather" ? s.work.resource : s.work.kind);
-  cases.push(["a miner at 35, Strange Apparition live → the event node", node(a) === "strange_rocks" && !!a.until && a.until <= Date.parse(live.expiration)]);
+  const plan = eventMembers(live, w0);
+  // task 013, settled point 1: the event's work is the interrupt's — no step on strange_miner, live or not
+  cases.push(["a miner at 35, Strange Apparition live → no step on its objective; the miner is the event's member", !a.target.startsWith("ach:strange_miner") && plan.members.some((m) => m.name === "Fifth")]);
   cases.push(["…the event expired → the gold rocks", node(b) === "gold_rocks"]);
-  console.log(`  miner at 35, event live at (${tile.x}, ${tile.y}): ${a.why}\n  event expired: ${b.why}`);
+  console.log(`  miner at 35, event live at (${tile.x}, ${tile.y}): ${a.why}\n     the event: ${plan.line}\n  event expired: ${b.why}`);
 }
 {
   // Task 009's worlds: Second the weaponcrafter (combat 5, so no level-10 weapon is its own), Fifth a fighter at 20 with
@@ -890,8 +916,216 @@ function killParts(who: string, level: number, monster: string, pieces: Record<s
   console.log(`     the gate: diamond_in_the_sky's chain ~${f1(par?.hours ?? NaN)} h, of it the road to mining 35 ${f1(road?.hours ?? NaN)} h by ${road?.who}; Fourth's level candidate: ${lv ? `score ${lv.fit.toPrecision(3)} — ${lv.step.why}` : "none"}; nobody with a route: waits for "${waitsV}"`);
 }
 
-// ── 6. the replay to the deadline: four rows in four child processes ─────────
+// ── 5d. task 013: events ─────────────────────────────────────────────────────
+/** Section 1: every distinct spawn the event poll logged (logs/dev.log, the `⚡` lines, 2026-11-17 10:51:33 to 11-20
+ *  08:06:13 UTC — the first read by a :5199 run; the two lines the 4 Hz clock's pruning logged again left out). */
+const SPAWNS: [code: string, at: string, x: number, y: number][] = [
+  ["nomadic_merchant", "2026-11-17T10:51:33Z", 3, 2], ["strange_apparition", "2026-11-17T11:03:18Z", -4, 12], ["corrupted_owlbear", "2026-11-17T20:06:32Z", 10, 2],
+  ["portal_demon", "2026-11-17T23:21:46Z", -3, 7], ["nomadic_merchant", "2026-11-17T23:31:47Z", 3, 2], ["corrupted_ogre", "2026-11-17T23:41:47Z", 8, -4],
+  ["corrupted_owlbear", "2026-11-18T00:31:50Z", 10, 2], ["portal_efreet_sultan", "2026-11-18T01:46:56Z", -4, 6], ["fish_merchant", "2026-11-18T02:36:59Z", 2, 5],
+  ["small_becomes_great", "2026-11-18T04:22:07Z", 8, 4], ["herbal_merchant", "2026-11-18T04:27:07Z", 7, -1], ["corrupted_portal", "2026-11-18T06:12:14Z", 4, 10],
+  ["herbal_merchant", "2026-11-18T08:52:25Z", 7, -1], ["fish_merchant", "2026-11-18T10:32:41Z", 2, 5], ["portal_demon", "2026-11-18T11:47:46Z", -3, 9],
+  ["sunsting_awakening", "2026-11-18T12:52:50Z", -1, 19], ["portal_demon", "2026-11-18T14:20:48Z", -3, 9], ["portal_demon", "2026-11-18T16:42:30Z", -3, 7],
+  ["timber_merchant", "2026-11-18T18:02:35Z", 2, 4], ["silent_night", "2026-11-18T18:22:36Z", -3, 5], ["strange_apparition", "2026-11-18T19:47:44Z", 9, 11],
+  ["full_moon", "2026-11-18T20:09:33Z", 10, 8], ["out_of_the_ground", "2026-11-18T22:59:47Z", -1, 19], ["herbal_merchant", "2026-11-19T02:40:08Z", 7, -1],
+  ["sunsting_awakening", "2026-11-19T03:05:10Z", -1, 19], ["timber_merchant", "2026-11-19T08:05:37Z", 2, 4], ["herbal_merchant", "2026-11-19T09:31:14Z", 7, -1],
+  ["full_moon", "2026-11-19T11:31:22Z", 10, 8], ["portal_demon", "2026-11-19T12:31:26Z", -1, 5], ["sunsting_awakening", "2026-11-19T18:12:42Z", 0, 18],
+  ["portal_demon", "2026-11-19T18:52:47Z", -3, 9], ["cult_of_darkness", "2026-11-19T23:26:15Z", -1, 12], ["corrupted_owlbear", "2026-11-20T01:11:23Z", 10, 2],
+];
+const SPAWN_SPAN_H = (Date.parse("2026-11-20T08:06:13Z") - Date.parse("2026-11-17T10:51:33Z")) / 3.6e6;
+/** The docs' expectation over the log's span for an event: span ÷ (rate + duration) minutes (SPAWN_LOG left out). */
+const docsExpected = (code: string): number => (SPAWN_SPAN_H * 60) / (eventOf(code)!.rate + eventOf(code)!.duration);
+const EXPECTED_ALL = [...catalog().events.keys()].reduce((s, c) => s + docsExpected(c), 0);
+cases.push(["task 013: SPAWN_LOG is the docs' expected spawns over the log's span ÷ the spawns it holds", Math.abs(SPAWN_LOG - Math.round((100 * EXPECTED_ALL) / SPAWNS.length) / 100) < 1e-9]);
+/** The fleet at the log's end (2026-11-20 08:06 UTC): combat by the snapshot's XP plus every combat XP logged since (fights
+ *  and combat offerings, levelled by the atlas's xpNeeded); mining and alchemy as the plan lines state them (07:44, 07:57,
+ *  06:35); the pieces crafted to 11-19 19:21 in the bank; every other skill the snapshot's. */
+const END_LEVELS: Record<string, number> = { First: 23, Second: 25, Third: 22, Fourth: 23, Fifth: 23 };
+const END_SKILLS: Record<string, Record<string, number>> = { First: { mining_level: 23 }, Fifth: { mining_level: 25 }, Third: { alchemy_level: 19 } };
+function endWorld(): World {
+  const w = realWorld(END_LEVELS, LOG_PIECES);
+  return { ...w, characters: w.characters.map((c) => ({ ...c, ...(END_SKILLS[c.name] ?? {}) }) as Character) };
+}
+/** A spawn of a code at a tile, up from `at` for its duration (a scenario's spawn, seen at once). */
+function liveAt(code: string, x: number, y: number, at: number): ActiveEvent {
+  const ev = eventOf(code)!, tile = tileAt(x, y, ev.maps.find((m) => m.x === x && m.y === y)?.layer ?? "overworld")!;
+  return { name: ev.name, code, map: { ...tile, interactions: { content: { type: ev.content.type, code: ev.content.code }, transition: null } }, previous_map: tile, duration: ev.duration, expiration: new Date(at + ev.duration * 60e3).toISOString(), created_at: new Date(at).toISOString() } as ActiveEvent;
+}
+/** A set that wins the bandit lizard safely at combat 40 (bestInSlot over every item; one copy). */
+const LIZARD_SET: Record<string, number> = { mithril_sword: 1, greater_healing_rune: 1, air_shield: 1, mithril_helm: 1, mithril_platebody: 1, mithril_platelegs: 1, mithril_boots: 1, mithril_ring: 2, greater_ruby_amulet: 1, altar_totem: 1, emerald_book: 1, ruby_book: 1, enhanced_health_potion: 100, greater_health_potion: 100 };
+const bankOf = (m: Record<string, number>, k = 1): BankItem[] => Object.entries(m).map(([code, q]) => ({ code, quantity: q * k }));
+const lizards = (n: number): AccountAchievement => ({ code: "made_up_lizards", name: "made up", description: "", points: 2, completed_at: null, objectives: [{ type: "combat_kill", target: "bandit_lizard", total: n, progress: 0 }] } as AccountAchievement);
+const bars = (n: number): AccountAchievement => ({ code: "made_up_bars", name: "made up", description: "", points: 3, completed_at: null, objectives: [{ type: "crafting", target: "strangold_bar", total: n, progress: 0 }] } as AccountAchievement);
+{
+  // Section 2: eventMembers. Two fighters at 40, stripped, one lizard set in the bank: the first member takes it, the
+  // second has no safe win on the pool the first left.
+  const two = ["First", "Second"].map((n) => ({ ...stripped(chars.find((c) => c.name === n)!, 40), mining_level: 35 }) as Character);
+  const camp = liveAt("bandit_camp", 4, 5, NOW);
+  const w1: World = { ...base, characters: two, bank: bankOf(LIZARD_SET), achievements: [...only([]), lizards(500)], events: [camp] };
+  const p1 = eventMembers(camp, w1);
+  const set1 = p1.members[0]?.set ?? {};
+  cases.push(["task 013: the gear of the first member is not counted for the second", p1.members.length === 1 && Object.values(set1).includes("mithril_sword") && p1.others.some((o) => o.why.includes("no safe win on the pool the members before it left"))]);
+  console.log(`  task 013, one lizard set for two fighters: ${p1.line}`);
+  const w1b: World = { ...w1, bank: bankOf(LIZARD_SET, 2) };
+  const p1b = eventMembers(camp, w1b);
+  cases.push(["…two sets: both go (500 kills is more than one brings)", p1b.members.length === 2]);
+  // Two spawns at once: the demand with the better score takes its members first.
+  const rocks = liveAt("strange_apparition", -4, 12, NOW);
+  const w2: World = { ...w1b, achievements: [...only(["strange_miner"]), lizards(500)], events: [camp, rocks] };
+  const p2 = eventPlans([rocks, camp], w2);
+  const first = p2[0], second = p2[1];
+  cases.push(["task 013: two spawns at once — the better-scoring demand takes its members first, the other's line says they are on that trip", first?.code === "bandit_camp" && first.members.length === 2 && !!second && !second.members.length && second.others.every((o) => o.why === "on the trip to bandit_camp")]);
+  console.log(`  two spawns: ${p2.map((p) => `${p.code} (score ${p.demand.score.toPrecision(3)}): ${p.members.map((m) => m.name).join(", ") || "nobody"}`).join(" · ")}\n     ${second?.line}`);
+  // A demand that does not fit: ten days to the deadline, 3,000 strange ore, one miner.
+  const short: PlannerConfig = { ...ALL_ON, deadline: new Date(NOW + 10 * DAY).toISOString() };
+  const w3: World = { ...base, characters: [{ ...chars.find((c) => c.name === "Fifth")!, mining_level: 35 } as Character], achievements: only(["strange_miner"]), events: [rocks], config: short };
+  const p3 = eventMembers(rocks, w3);
+  cases.push(["task 013: a demand that does not fit calls nobody, and the line says the spawns needed and expected", !p3.members.length && /does not fit .*spawns needed, [\d.]+ expected by the deadline/.test(p3.line)]);
+  console.log(`  ten days left, one miner: ${p3.line}`);
+  // A demand that is a material of a gear need: the fighters of the log's end, a gear need whose piece wants an event material.
+  const we = endWorld();
+  const evNeed = gearNeeds(we).needs.find((n) => [...n.pieces.keys()].some((c) => eventMat(c)));
+  const evCode = evNeed && [...catalog().events.values()].find((ev) => eventDemand(ev, we).items.some((i) => i.key === `gear:${[...evNeed.pieces.keys()].find((c) => eventMat(c))}`));
+  console.log(`  a gear need with an event material at the log's end: ${evNeed ? `${evNeed.for}, ${evNeed.work}: ${[...evNeed.pieces.keys()].join(" + ")} (${[...evNeed.pieces.keys()].map(eventMat).filter(Boolean).join("; ")}) → ${evCode ? `in ${evCode.code}'s demand` : "in no event's demand"}` : "none"}`);
+  // …made up, as the log's fleet has none: a miner (First, the role, at 40 with the lizard set, which also wins demons) on
+  // 20,000 gold ore, the gold pickaxe (−40% a gather; two demon horns) its tool by need — the Portal (Demon)'s demand
+  const miner40 = { ...two[0], mining_level: 30, woodcutting_level: 30, alchemy_level: 30 } as Character;
+  const smith = { ...chars.find((c) => c.name === "Second")!, weaponcrafting_level: 30 } as Character;
+  const ore: AccountAchievement = { code: "made_up_gold", name: "made up", description: "", points: 3, completed_at: null, objectives: [{ type: "gathering", target: "gold_ore", total: 20_000, progress: 0 }] } as AccountAchievement;
+  // the pickaxe's other materials in the bank (its magical cure costs tasks coins: stock counts, a bill takes it)
+  const wG: World = { ...base, characters: [miner40, smith], bank: [...bankOf(LIZARD_SET), ...bankOf({ magical_cure: 2, gold_bar: 7, dead_wood_plank: 2, topaz: 1 })], achievements: [...only([]), ore], config: { ...ALL_ON, on: { First: true, Second: true } } };
+  const toolNeed = gearNeeds(wG).needs.find((n) => n.pieces.has("gold_pickaxe"));
+  const dG = eventDemand(eventOf("portal_demon")!, wG);
+  cases.push(["task 013: a material of a gear need (demon horns for First's gold pickaxe) is the Portal (Demon)'s demand", !!toolNeed && dG.items.some((i) => i.key === "gear:gold_pickaxe" && i.what.includes("Demon Horn"))]);
+  console.log(`  a gear need with demon horns: ${toolNeed ? `${toolNeed.for}, ${toolNeed.work}: H0 ${f1(toolNeed.H0)} h, H1 ${f1(toolNeed.H1)} h, G ${f1(toolNeed.G)} h` : `none (rejected: ${gearNeeds(wG).rejected.filter((r) => r.piece === "gold_pickaxe").map((r) => r.why).join("; ") || "not a candidate"})`} → the demon portal's demand: ${dG.items.map((i) => `${i.what} for ${i.for} (fits ${i.fits})`).join("; ") || "none"}`);
+  // …and an objective parent's: five strangold bars (gold ore + strange ore), First a miner at 35
+  const wBars: World = { ...base, characters: chars.map((c) => (c.name === "First" ? ({ ...c, mining_level: 35 } as Character) : c)), achievements: [...only([]), bars(5)] };
+  const dBars = eventDemand(eventOf("strange_apparition")!, wBars);
+  cases.push(["task 013: a material an open parent is short of (strange ore for strangold bars) is the Strange Apparition's demand", dBars.items.some((i) => i.key === "ach:made_up_bars:0" && i.what === "30 Strange Ore")]);
+  console.log(`  a parent short of strange ore: ${dBars.items.map((i) => `${i.what} for ${i.for} (${f1(i.actions)} gathers, fits ${i.fits})`).join("; ")}`);
+}
+{
+  // Section 3: an event in the score. strange_miner behind mining 35: in the bundle of a role holder, nobody else's.
+  const at30 = (names: string[], on: string[], deadline = DEFAULTS.deadline): World => ({ ...base, characters: chars.map((c) => (names.includes(c.name) ? ({ ...c, mining_level: 30 } as Character) : c)), achievements: only(["strange_miner"]), config: { ...ALL_ON, deadline, on: Object.fromEntries(on.map((n) => [n, true])) } });
+  const w = at30(NAMES, NAMES);
+  const bF = bundleOf("mining", "Fifth", w), bS = bundleOf("mining", "Second", w);
+  cases.push(["task 013: an event achievement behind a gathering level is in that lane's bundle for a role holder, for nobody else", !!bF?.behind.some((x) => x.code === "strange_miner") && bF.events.length === 1 && !bS]);
+  const lv = rank("Fifth", w).levels.find((c) => c.target.key === "lvl:mining:35");
+  console.log(`  strange_miner behind mining 35: Fifth's bundle ${bF ? `${bF.behind.map((x) => x.code).join(", ")}, ${JSON.stringify(bF.events)}` : "none"}; Second's ${bS ? "has one" : "none"}\n     Fifth's level candidate: ${lv?.step.why ?? "none"}`);
+  // one member against three: the deadline between the two calendars
+  const one = at30(NAMES, ["Fifth"]), b1 = bundleOf("mining", "Fifth", one)!, b3 = bF!;
+  const i1 = b1.behind.findIndex((x) => x.code === "strange_miner"), i3 = b3.behind.findIndex((x) => x.code === "strange_miner");
+  const calH = b3.hGate + (b1.cal[i1] + b3.cal[i3]) / 2;
+  const dl = new Date(NOW + calH * 3.6e6).toISOString();
+  const s1 = bundleScore(bundleOf("mining", "Fifth", at30(NAMES, ["Fifth"], dl))!, b1.hGate, calH), s3 = bundleScore(bundleOf("mining", "Fifth", at30(NAMES, NAMES, dl))!, b3.hGate, calH);
+  cases.push(["…with one member it does not fit, with three it does", s1.fit === 0 && s1.any > 0 && s3.fit > 0]);
+  console.log(`     one miner on: ${b1.events[0]?.spawns} spawns, ${f1(b1.events[0]?.days ?? NaN)} days; three: ${b3.events[0]?.spawns} spawns, ${f1(b3.events[0]?.days ?? NaN)} days; deadline ${f1(calH / 24)} days away → fit ${s1.fit.toPrecision(2)} / ${s3.fit.toPrecision(2)}`);
+  // an event monster's achievement behind a combat level by winLevel
+  const f31 = stripped(chars.find((c) => c.name === "First")!, 31);
+  const wB: World = { ...base, characters: [f31], bank: bankOf(LIZARD_SET), achievements: only(["the_new_bandit"]), config: { ...ALL_ON, on: { First: true } } };
+  const at = winLevel(f31, wB, "bandit_lizard");
+  const bB = bundleOf("combat", "First", wB);
+  cases.push(["task 013: an event monster's achievement sits behind the combat level its win comes at (winLevel)", at != null && at > 31 && bB?.next === at && bB.behind.some((x) => x.code === "the_new_bandit") && bB.events.length === 1]);
+  console.log(`  the_new_bandit for First at 31 (a level-40 set in the bank): wins the lizard at ${at}; bundle ${bB ? `combat → ${bB.next}: ${bB.behind.map((x) => x.code).join(", ")}, ${JSON.stringify(bB.events)}` : "none"}`);
+  // a parent with an event material: its hours include the calendar; it waits only when nobody can ever be a member
+  const wP: World = { ...base, characters: chars.map((c) => (c.name === "First" ? ({ ...c, mining_level: 35 } as Character) : c)), achievements: [...only([]), bars(5)] };
+  const calP = (DEADLINE - NOW) / 3.6e6;
+  const par = objectiveParents(wP, "First", calP).find((p) => p.key === "ach:made_up_bars:0");
+  const bill = billOf(wP, "First", par?.demand ?? []);
+  // nobody can ever be a member: only Second is on (no mining role), at mining 30
+  const wN: World = { ...wP, characters: chars.map((c) => (c.name === "Second" ? ({ ...c, mining_level: 30 } as Character) : c)), config: { ...ALL_ON, on: { Second: true } } };
+  const waitsN = waitingOf(wN).find((x) => x.achievement === "made_up_bars")?.waits;
+  cases.push(["task 013: a parent with an event material has the material's calendar in its hours; it waits for an event only when nobody can ever be a member", !!par && bill.events.length === 1 && Number.isFinite(bill.events[0].hours) && par.hours >= bill.events[0].hours && !objectiveParents(wN, "Second", calP).some((p) => p.key === "ach:made_up_bars:0") && waitsN === "an event"]);
+  console.log(`  five strangold bars: the parent ${par ? `~${f1(par.hours)} h, of it the strange ore's calendar ${f1(bill.events[0]?.hours ?? NaN)} h (${bill.events.map((e) => `${e.qty} ${e.code} at ${e.event}`).join(", ")})` : "none"}; with nobody that can mine strange rocks on: waits for "${waitsN}"`);
+}
+{
+  // Section 5, settled point 9: what is in flight for an ach: target is what a running step still has to do — the runtime's
+  // worldOf hands rank() the step with its units less those done (the planner-inflight-left scenario runs it); here the
+  // core: Second decides while First's 55-pig step stands at 47 of 55, 30 pigs open by the read (11-20 06:09 UTC, smaller).
+  const pigs: AccountAchievement = { code: "made_up_pigs", name: "made up", description: "", points: 2, completed_at: null, objectives: [{ type: "combat_kill", target: "pig", total: 77, progress: 47 }] } as AccountAchievement;
+  const wI: World = { ...realWorld(LOG_LEVELS), achievements: [...only([]), pigs] };
+  const firstStep = { key: "ach:made_up_pigs:0@First#1", target: "ach:made_up_pigs:0", character: "First", as: "objective", work: { kind: "kill", monster: "pig" }, units: 55, hours: 1, score: 1, why: "made up" } as Step;
+  const unitsOf = (w: World): number | undefined => rank("Second", w).objectives.find((c) => c.target.key === "ach:made_up_pigs:0")?.step.units;
+  const whole = unitsOf({ ...wI, current: { First: firstStep } }), left = unitsOf({ ...wI, current: { First: { ...firstStep, units: 55 - 47 } } });
+  cases.push(["task 013: the second decides while the first stands at 47 of 55 — it plans what is really left (22), not nothing", left === 22 && whole === undefined]);
+  console.log(`  pigs: 30 open by the read, First's step at 47 of 55: Second plans ${left ?? "none"} (the whole step in flight: ${whole ?? "none"})`);
+}
+
+// Task 013, sections 1 and 3: the tables (`npm run check -- planner`).
+/** Settled point 7's check: per event code the spawns seen over the log's span against the docs' expectation. */
+function spawnTable(): void {
+  console.log(`\n## The mean time between spawns (task 013): the spawns logs/dev.log holds over ${f1(SPAWN_SPAN_H)} h against the docs (a 1/rate chance a minute while not up)`);
+  const seen = new Map<string, number>();
+  for (const [c] of SPAWNS) seen.set(c, (seen.get(c) ?? 0) + 1);
+  for (const ev of [...catalog().events.values()].sort((a, b) => a.rate - b.rate || (a.code < b.code ? -1 : 1))) {
+    console.log(`  ${pad(ev.code, 22)} rate ${pad(ev.rate, 5)} up ${pad(ev.duration, 3)} min, cooldown ${ev.cooldown} min (gems)  seen ${pad(seen.get(ev.code) ?? 0, 2)} expected ${f1(docsExpected(ev.code))}  mean gap: docs ${f1((ev.rate + ev.duration) / 60)} h, planner ${f1(gapSec(ev) / 3600)} h`);
+  }
+  console.log(`  all: seen ${SPAWNS.length}, expected ${f1(EXPECTED_ALL)} (± ${f1(Math.sqrt(EXPECTED_ALL))}) → SPAWN_LOG ${SPAWN_LOG}; monster and resource events ${SPAWNS.filter(([c]) => contentOf(eventOf(c)!)).length} against ${f1([...catalog().events.values()].filter((e) => contentOf(e)).reduce((s, e) => s + docsExpected(e.code), 0))}, merchants ${SPAWNS.filter(([c]) => !contentOf(eventOf(c)!)).length} against ${f1([...catalog().events.values()].filter((e) => !contentOf(e)).reduce((s, e) => s + docsExpected(e.code), 0))}`);
+}
+/** Section 1: every logged monster or resource spawn under settled points 2–4, on the fleet as it stood then (the
+ *  snapshot before 11-19 09:15 UTC; the levels of 11-19 19:21 on 11-19; the log's end on 11-20). */
+function spawnsTable(): void {
+  console.log(`\n## Every logged spawn under the new rule (task 013, section 1): the demand, who would have gone, the units`);
+  const fleets: [number, World][] = [[Date.parse("2026-11-19T09:15:00Z"), base], [Date.parse("2026-11-20T00:00:00Z"), realWorld(LOG_LEVELS, LOG_PIECES)], [Infinity, endWorld()]];
+  for (const [code, at, x, y] of SPAWNS) {
+    const ev = eventOf(code)!;
+    if (!contentOf(ev)) continue;
+    const t = Date.parse(at), w0 = fleets.find(([until]) => t < until)![1];
+    const e = liveAt(code, x, y, t - 60e3);
+    const p = eventMembers(e, { ...w0, now: t, events: [e] });
+    console.log(`  ${at.slice(5, 16).replace("T", " ")} ${p.line}`);
+  }
+}
+/** Section 3: per event code on a fleet — content and gate, the open demand, members now (a spawn assumed live) and at
+ *  the gate, what a member brings a spawn, the spawns needed and expected, the calendar, fits. */
+function eventTable(w: World, label: string): void {
+  console.log(`\n## Events in the score (task 013, section 3) — ${label}`);
+  for (const ev of catalog().events.values()) {
+    const c = contentOf(ev);
+    if (!c) continue;
+    const gate = c.type === "resource" ? `${resourceOf(c.code)!.skill} ${resourceOf(c.code)!.level}` : `${monsterOfCode(c.code)!.type} ${monsterOfCode(c.code)!.level}, a safe win`;
+    const d = eventDemand(ev, w), pm = possibleMembers(ev, w);
+    const e = spawnOf(ev, w.now);
+    const now = e ? eventMembers(e, { ...w, events: [...w.events, e] }, {}, d).members : [];
+    const use = usableSec(ev);
+    console.log(`  ${ev.code} (${c.type} ${c.code}, ${gate}; ${f1(use / 60)} usable min a spawn, one every ${f1(gapSec(ev) / 3600)} h, ${f1(d.expected)} by the deadline)`);
+    console.log(`     members now: ${now.map((m) => m.name).join(", ") || "none"}; at the gate (who can ever be one): ${pm.map((m) => `${m.name}${m.level != null && m.level > (w.characters.find((x) => x.name === m.name)?.level ?? 0) ? ` at ${m.level}` : ""} ${f1(use / m.sec)} a spawn`).join(", ") || "nobody"}`);
+    for (const i of d.items) {
+      const k = calendar(ev, i.actions, pm);
+      console.log(`     ${i.what} for ${i.for}: ${f1(i.actions)} actions, ${f1(k.spawns)} spawns, ${f1(k.hours / 24)} days → ${i.fits ? "fits" : "does not fit"}`);
+    }
+    if (!d.items.length) console.log("     no open demand");
+  }
+}
+/** Section 3: every level candidate whose bundle gained an event achievement (events 0 → 1), and every parent that no
+ *  longer waits for an event; gear by need for an event monster's kill objective. */
+function gainTable(w: World, label: string): void {
+  const w0: World = { ...w, config: { ...w.config, events: 0 } };
+  const calH = (Date.parse(w.config.deadline) - w.now) / 3.6e6;
+  console.log(`\n## What events add to the score (task 013, section 3) — ${label}`);
+  let any = false;
+  for (const ch of w.characters) for (const lane of rolesFor(w)[ch.name] ?? []) {
+    const b0 = bundleOf(lane, ch.name, w0), b1 = bundleOf(lane, ch.name, w);
+    if (!b1?.events.length) continue;
+    any = true;
+    const s0 = b0 && bundleScore(b0, b0.hGate, calH), s1 = bundleScore(b1, b1.hGate, calH);
+    console.log(`  ${ch.name} ${lane}: before ${b0 && s0 ? `→ ${b0.next} (${b0.behind.map((x) => x.code).join(", ")}): ${s0.points} pts, ${f1(s0.hours)} h, score ${s0.fit.toPrecision(3)}` : "no bundle"} · after → ${b1.next} (${b1.behind.map((x) => x.code).join(", ")}): ${s1.points} pts, ${f1(s1.hours)} h, score ${s1.fit.toPrecision(3)} (${b1.events.map((e) => `${e.code}: ${e.spawns} spawns of ${e.event}, ${f1(e.days)} days with ${e.members}`).join("; ")})`);
+  }
+  if (!any) console.log("  no level candidate's bundle holds an event achievement at these levels (the next gates are below the events')");
+  const p0 = new Set(objectiveParents(w0, "", calH).map((p) => p.key)), p1 = objectiveParents(w, "", calH);
+  for (const p of p1.filter((x) => !p0.has(x.key))) console.log(`  parent no longer waits: ${p.key} — ~${f1(p.hours)} h, fit ${p.fit > 0 ? "yes" : "no"} (${billOf(w, "", p.demand).events.map((e) => `${e.qty} ${e.code}: ${f1(e.hours)} h at ${e.event}`).join(", ")})`);
+  if (!p1.some((x) => !p0.has(x.key))) console.log("  no objective parent changed (every event material's parent waits for something else too, or nobody can be a member)");
+  const r0 = new Set(gearNeeds(w0).rejected.map((r) => `${r.for}|${r.piece}`));
+  const r1 = new Set(gearNeeds(w).rejected.map((r) => `${r.for}|${r.piece}`));
+  const opened = [...r0].filter((k) => !r1.has(k));
+  console.log(`  gear pieces no longer rejected for an event material: ${opened.length} (${opened.slice(0, 12).join(", ")}${opened.length > 12 ? ", …" : ""})`);
+  const evNeeds = gearNeeds(w).needs.filter((n) => targetsOf(w).some((t) => t.key === n.key && t.gates.some((g) => g.kind === "event")) || [...n.pieces.keys()].some((c) => eventMat(c)));
+  console.log(`  gear by need for an event monster's kill or with an event material: ${evNeeds.map((n) => `${n.for}: ${n.work} — ${[...n.pieces].map(([c, k]) => (k > 1 ? `${c}×${k}` : c)).join(" + ")}, H0 ${f1(n.H0)} h, H1 ${f1(n.H1)} h, G ${f1(n.G)} h`).join(" | ") || "none"}`);
+}
+
+// ── 6. the replay to the deadline: five rows in five child processes ─────────
 const results: number[] = [];
+const rowDays: Record<string, number>[] = [];
 if (VERBOSE) {
   const outs = await Promise.all(ROWS.map((_, i) => new Promise<string>((resolve) => {
     // each row its own storage file beside this one's (the fight-record case above wrote to this one: SQLite locks it)
@@ -906,9 +1140,18 @@ if (VERBOSE) {
     const line = out.split("\n").find((l) => l.startsWith("##ROW "));
     console.log(out.split("\n").filter((l) => !l.startsWith("##ROW ")).join("\n").trimEnd());
     if (!line) { cases.push([`replay row ${ROWS[i].label} ran`, false]); continue; }
-    const got = JSON.parse(line.slice(6)) as { points: number; inv: [string, { n: number; fails: number; bad: string[] }][] };
+    const got = JSON.parse(line.slice(6)) as { points: number; days: Record<string, number>; inv: [string, { n: number; fails: number; bad: string[] }][] };
     results.push(got.points);
+    rowDays.push(got.days);
     for (const [k, v] of got.inv) { const r = inv.get(k)!; r.n += v.n; r.fails += v.fails; r.bad.push(...v.bad.slice(0, 5 - r.bad.length)); }
+  }
+  // task 013, section 4: what the events cost — row A (attended) against row E (none) on the same days
+  const [a, , , , e] = rowDays;
+  if (a && e) {
+    console.log(`\n## What the events cost (task 013): row A against row E (no events)`);
+    for (const d of ["7", "14", "30", "60"]) console.log(`  day ${pad(d, 3)} A ${pad(a[d], 4)} E ${pad(e[d], 4)} ${a[d] < e[d] ? "← A below E" : ""}`);
+    console.log(`  deadline A ${results[0]} E ${results[4]}`);
+    cases.push(["task 013: row E (no events) ends where report 012's row A did (63)", results[4] === 63]);
   }
   safeTable(base, "the snapshot");
   drinkTable();
@@ -926,25 +1169,36 @@ if (VERBOSE) {
   makeTable();
   coverTable();
   nodeTable(latest, `the fleet at ${LOG_AT} (combat levels of the log; the snapshot's gathering levels)`);
+  // task 013, sections 1 and 3
+  spawnTable();
+  spawnsTable();
+  const end = endWorld();
+  eventTable(end, `the fleet at the log's end (2026-11-20 08:06 UTC: combat ${NAMES.map((n) => `${n} ${END_LEVELS[n]}`).join(", ")}; mining First 23, Fifth 25)`);
+  gainTable(end, "the fleet at the log's end");
+  // the same about a week on (row A: the role holders reach 30 on days 3–7, the fighters 28 on days 13–15)
+  const roles0 = rolesFor(end);
+  const ahead: World = { ...end, characters: end.characters.map((c) => ({ ...chAt(c, 28), ...(roles0[c.name].includes("mining") ? { mining_level: 30 } : {}), ...(roles0[c.name].includes("woodcutting") ? { woodcutting_level: 30 } : {}) }) as Character) };
+  gainTable(ahead, "the fleet at the log's end with every fighter at combat 28 and the mining and woodcutting role holders at 30");
 }
 
-function replayRow(row: (typeof ROWS)[number]): number {
+function replayRow(row: (typeof ROWS)[number]): { points: number; days: Record<number, number> } {
   {
-    const config: PlannerConfig = { ...ALL_ON, potionK: row.potionK, potionStock: row.potionStock, risk: row.risk };
+    const config: PlannerConfig = { ...ALL_ON, potionK: row.potionK, potionStock: row.potionStock, risk: row.risk, events: row.events };
     RECORD_LEVELS = row.label.startsWith("A");
     const t = performance.now();
     const r = playOut({ ...base, config }, DEADLINE);
     const sec = (performance.now() - t) / 1000;
     const pts = (d: number): number => pointsOf(base) + r.completed.filter((c) => c.at <= NOW + d * DAY).reduce((s, c) => s + c.points, 0);
     const m = memoSizes();
-    console.log(`\n## Replay ${row.label}: potionK ${row.potionK}, potionStock ${row.potionStock}, risk ${row.risk} (${sec.toFixed(0)} s, ${r.played.length} decisions, ${m.fights} full and ${m.plans} planning-grade solves cached at the end)`);
+    console.log(`\n## Replay ${row.label}: potionK ${row.potionK}, potionStock ${row.potionStock}, risk ${row.risk}, events ${row.events} (${sec.toFixed(0)} s, ${r.played.length} decisions, ${m.fights} full and ${m.plans} planning-grade solves cached at the end)`);
     console.log(`  points: day 7 ${pts(7)} · day 14 ${pts(14)} · day 30 ${pts(30)} · day 60 ${pts(60)} · deadline ${pointsOf(r.world)}`);
     console.log(`  completed: ${r.completed.map((c) => `${c.code} +${c.points} (${day(c.at)})`).join(", ")}`);
-    const total = [...r.run.hours.values()].reduce((s, x) => s + x, 0);
+    const evH = r.played.reduce((s, p) => s + evHours(p), 0);
+    const total = [...r.run.hours.values()].reduce((s, x) => s + x, 0) + evH;
     console.log(`  character-hours: ${[...r.run.hours].sort((a, b) => b[1] - a[1]).map(([k, h]) => `${k} ${((100 * h) / total).toFixed(1)}%`).join(" · ")}`);
     const byAnswer = new Map<string, number>();
     for (const [k, h] of r.run.hours) { const a = k.split(" ")[0]; byAnswer.set(a, (byAnswer.get(a) ?? 0) + h); }
-    console.log(`  hours by answer (task 011): ${["objective", "level", "supply", "filler", "fallback"].map((a) => `${a} ${((100 * (byAnswer.get(a) ?? 0)) / total).toFixed(1)}%`).join(" · ")}`);
+    console.log(`  hours by answer (task 011; task 013: the event hours their own line): ${["objective", "level", "supply", "filler", "fallback"].map((a) => `${a} ${((100 * (byAnswer.get(a) ?? 0)) / total).toFixed(1)}%`).join(" · ")} · events ${((100 * evH) / total).toFixed(1)}% (${f1(evH)} h${r.run.evBy.size ? `: ${[...r.run.evBy].map(([c, b]) => `${c} ${f1([...b.hours.values()].reduce((s, x) => s + x, 0))} h`).join(", ")}` : ""})`);
     console.log(`  potion making (task 010): ${f1(r.run.potionHours)} of ${f1(r.run.fightHours)} fight hours, ${((100 * r.run.potionHours) / Math.max(1e-9, r.run.fightHours)).toFixed(1)}% (a potion at ${row.potionK} × ${row.potionStock ? "the price with the stock counted" : "the field price"})`);
     const craftLv = r.played.filter((p) => p.step.as === "level" && [...GEAR_CRAFT, "cooking"].includes(p.step.target.split(":")[1]));
     console.log(`  crafting levels taken: ${craftLv.length} steps of ${r.played.length} (${f1(craftLv.reduce((s, p) => s + p.step.hours, 0))} h): ${[...new Set(craftLv.map((p) => p.step.target))].join(", ") || "none"}`);
@@ -956,7 +1210,8 @@ function replayRow(row: (typeof ROWS)[number]): number {
       console.log(`  ${pad(c.name, 7)} combat ${at}; at the end waits for: ${waits}`);
     }
     const roles = rolesFor(base);
-    console.log(`  a gathering role at 40 (task 011): ${NAMES.flatMap((n) => roles[n].filter((l) => GATHER_LANES.includes(l)).map((l) => `${n} ${l} ${r.run.reached.has(`${n}:${l}:40`) ? `day ${day(r.run.reached.get(`${n}:${l}:40`)!)}` : levelOf(chars.find((c) => c.name === n)!, l) >= 40 ? "at start" : "—"}`)).join(" · ")}`);
+    const atL = (n: string, l: Lane, L: number): string => (r.run.reached.has(`${n}:${l}:${L}`) ? `day ${day(r.run.reached.get(`${n}:${l}:${L}`)!)}` : levelOf(chars.find((c) => c.name === n)!, l) >= L ? "at start" : "—");
+    console.log(`  a gathering role at 35 / 40 (task 011; 013: 35): ${NAMES.flatMap((n) => roles[n].filter((l) => GATHER_LANES.includes(l)).map((l) => `${n} ${l} ${atL(n, l, 35)} / ${atL(n, l, 40)}`)).join(" · ")}`);
     console.log(`  gear made (task 011): ${r.run.made.filter((g) => g.bank! <= NOW + 8 * DAY).length} pieces in the first eight days, ${r.run.made.length} to the deadline (report 009: 67); supply ${f1(byAnswer.get("supply") ?? 0)} character-hours`);
     console.log(`  supply hours by target and parent (task 012; the ten largest): ${[...(r.run.supplyBy ?? new Map<string, number>())].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([k, h]) => `${k} ${f1(h)} h`).join(" · ") || "none"}`);
     if (r.run.toolDup.size) console.log(`  work (c): a gathering objective asking a tool of several holders at once: ${[...r.run.toolDup].map(([k, n]) => `${k} (${n})`).join(", ")}; tools made for gathering objectives: ${r.run.made.filter((g) => g.work.endsWith(", tool)")).map((g) => `${g.code} for ${g.for} (${g.work})`).join(", ") || "none"}`);
@@ -991,8 +1246,40 @@ function replayRow(row: (typeof ROWS)[number]): number {
       for (const l of lines.slice(0, 15)) console.log(`     ${l}`);
     }
     if (row.label.startsWith("A")) safeTable(r.world, "where row A leaves each fighter");
-    return pointsOf(r.world);
+    if (row.events && row.label.startsWith("A")) eventRowTable(r);
+    return { points: pointsOf(r.world), days: Object.fromEntries([7, 14, 30, 60].map((d) => [d, pts(d)])) };
   }
+}
+
+/** Task 013, section 4: row A per event code — the spawns expected to the deadline, each member's attendance (spawns of
+ *  its usable seconds), character-hours, actions; what event steps completed; the gear made from event materials; the
+ *  event demands that did not fit at the start and a month in. */
+function eventRowTable(r: { run: Run; world: World }): void {
+  console.log(`  events (task 013; per code: spawns expected to the deadline, each member's spawns attended — its event hours ÷ a spawn's usable seconds — character-hours, actions):`);
+  for (const [code, b] of [...r.run.evBy].sort((a, c) => c[1].actions - a[1].actions)) {
+    const ev = eventOf(code)!;
+    const hrs = [...b.hours.values()].reduce((s, x) => s + x, 0);
+    const done = r.run.evDone.filter((x) => x.event === code).map((x) => `${x.code} (day ${day(x.at)})`);
+    console.log(`     ${pad(code, 20)} ${f1((DEADLINE - NOW) / 1000 / gapSec(ev))} spawns expected; ${[...b.hours].map(([n, h]) => `${n} ${f1((h * 3600) / usableSec(ev))}`).join(", ")}; ${f1(hrs)} character-hours, ${Math.round(b.actions)} ${contentOf(ev)?.type === "monster" ? "kills" : "gathers"}; completed: ${done.join(", ") || "nothing"}`);
+  }
+  if (!r.run.evBy.size) console.log("     none attended");
+  const made = r.run.made.filter((g) => eventMat(g.code));
+  console.log(`  gear made from event materials: ${made.map((g) => `${g.code} for ${g.for} (day ${day(g.bank!)}; ${eventMat(g.code)})`).join(", ") || "none"}`);
+  for (const [label, w] of [["at the start", base], ["a month in", r.run.world30]] as const) {
+    if (!w) continue;
+    const late = [...catalog().events.values()].flatMap((ev) => eventDemand(ev, w).items.filter((i) => !i.fits).map((i) => `${ev.code}: ${i.what} for ${i.for} — ${f1(i.spawns)} spawns needed, ${f1(eventDemand(ev, w).expected)} expected`));
+    console.log(`  event demands that do not fit ${label}: ${late.join(" · ") || "none"}`);
+  }
+}
+/** The event-only materials somewhere in a recipe's tree, or "" (task 013). */
+function eventMat(code: string, depth = 0): string {
+  const out = new Set<string>();
+  for (const g of item(code)?.craft?.items ?? []) {
+    const s = sourceFor(g.code);
+    if (typeof s !== "string" && s.gates.some((x) => x.kind === "event")) out.add(g.code);
+    else if (depth < 5) for (const c of eventMat(g.code, depth + 1).split(", ").filter(Boolean)) out.add(c);
+  }
+  return [...out].join(", ");
 }
 
 // ── 8. what a potion costs (task 010) ────────────────────────────────────────

@@ -3,7 +3,7 @@
 // behind which open achievements sit. Every objective of an open achievement becomes a target or is
 // listed by unhandledOf() with a reason. Pure.
 
-import { atlas, atlasMonster } from "../../catalog/atlas";
+import { atlasMonster } from "../../catalog/atlas";
 import { catalog, item, monster as monsterOf } from "../../catalog";
 import { gatherSec } from "../xp";
 import { CITY, staticTiles, travel } from "./reach";
@@ -21,8 +21,11 @@ export const perUnit = (drops: { code: string; rate: number; min_quantity: numbe
 export function placeGates(type: string, code: string): Gate[] | string {
   const tiles = staticTiles(type, code).filter((t) => t.access?.type !== "blocked");
   if (!tiles.length) {
-    const ev = atlas()?.events.find((e) => e.content.type === type && e.content.code === code);
-    return ev ? [{ kind: "event", code: ev.code }] : `no ${type} ${code} on the map`;
+    const ev = [...catalog().events.values()].find((e) => e.content.type === type && e.content.code === code);
+    if (!ev) return `no ${type} ${code} on the map`;
+    // task 013: an event whose tiles no free route reaches (the island's, the lava underground's) has a layer gate too
+    const free = ev.maps.some((m) => travel(CITY, { x: m.x, y: m.y, layer: m.layer }) != null);
+    return free ? [{ kind: "event", code: ev.code }] : [{ kind: "event", code: ev.code }, { kind: "layer", type, code }];
   }
   const free = tiles.filter((t) => travel(CITY, { x: t.x, y: t.y, layer: t.layer }) != null);
   if (!free.length) return [{ kind: "layer", type, code }];

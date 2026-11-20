@@ -17,6 +17,17 @@ import { loadCatalogFile } from "./load";
 import { loadAtlas } from "./atlas";
 import { titleCase } from "../lib/util";
 
+/** An event of public/data/events.json (task 013: the planner needs its tiles and cooldown, which the atlas lacks). */
+export interface GameEvent {
+  code: string;
+  name: string;
+  content: { type: string; code: string };
+  maps: { x: number; y: number; layer: string }[];
+  duration: number; // minutes up
+  rate: number;     // a 1/rate chance a minute (docs/api/openapi.json EventSchema)
+  cooldown: number; // minutes before it can be spawned with gems (the same schema)
+}
+
 export interface Catalog {
   items: Map<string, Item>;
   monsters: Map<string, Monster>;
@@ -27,6 +38,7 @@ export interface Catalog {
   achievements: Map<string, Achievement>;
   tasks: Map<string, Task>;
   npcs: Map<string, Npc>;
+  events: Map<string, GameEvent>;
 }
 
 let _catalog: Catalog | null = null;
@@ -36,7 +48,7 @@ const byCode = <T extends { code: string }>(arr: T[]): Map<string, T> =>
 
 export async function loadCatalog(): Promise<Catalog> {
   if (_catalog) return _catalog;
-  const [items, monsters, resources, maps, effects, achievements, tasks, npcs] = await Promise.all([
+  const [items, monsters, resources, maps, effects, achievements, tasks, npcs, events] = await Promise.all([
     loadCatalogFile<Item>("items"),
     loadCatalogFile<Monster>("monsters"),
     loadCatalogFile<Resource>("resources"),
@@ -45,6 +57,7 @@ export async function loadCatalog(): Promise<Catalog> {
     loadCatalogFile<Achievement>("achievements"),
     loadCatalogFile<Task>("tasks"),
     loadCatalogFile<Npc>("npcs"),
+    loadCatalogFile<GameEvent>("events"),
     loadAtlas(),
   ]);
 
@@ -66,6 +79,7 @@ export async function loadCatalog(): Promise<Catalog> {
     achievements: byCode(achievements),
     tasks: byCode(tasks),
     npcs: byCode(npcs),
+    events: byCode(events),
   };
   return _catalog;
 }

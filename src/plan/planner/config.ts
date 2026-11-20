@@ -44,6 +44,9 @@ export const DEFAULTS: PlannerConfig = {
   // Task 012: 1 = an ingredient the stock covers for 100 runs is free (xp.ts potionPriceOf, reach.ts potionPrice); 0 =
   // the field price always — the replay's row C only, with the same rules as potionK.
   potionStock: 1,
+  // Task 013: 1 = an event is priced by its calendar (events.ts) and the forward model attends it by expectation; 0 = an
+  // event is a wall and the forward model has none — the replay's row E only, with the same rules as potionK.
+  events: 1,
 };
 
 /** Task 012, settled point 4: the bank actions of a craft, trade or gear step (the reset's deposit and swap, the
@@ -62,5 +65,17 @@ export const NEED_RATIO = 0.85;
 // rest at 5 HP a second.
 export const KILL_LOG = 0.88;
 export const GATHER_LOG = 1.05; // 30.6 s against the formula's 30–39 s
+
+/** Task 013: a spawn is seen half a poll late on average (the 2-minute poll while event demand is open, sync.ts). */
+export const EVENT_SEEN_SEC = 60;
+/** Task 013, settled point 3: a member goes only with at least this much of the spawn left after the walk and the reset. */
+export const EVENT_MIN_SEC = 15 * 60;
+/** Task 013, settled point 7: the docs' mean time between two spawns of an event — a 1/rate chance a minute while it is
+ *  not up (docs/api/openapi.json EventSchema; `cooldown` is the wait before one can be spawned with gems, not a natural
+ *  spawn's) — is (rate + duration) minutes. × this: the spawns the docs expect over the log's span ÷ the spawns it holds
+ *  — logs/dev.log 2026-11-17 10:51 to 11-20 08:06 UTC (69.2 h, the event poll's whole span): 54.2 expected, 33 seen,
+ *  about three standard deviations short, so the log decides. One number for every event; scripts/check-planner.mts
+ *  prints the samples per code. */
+export const SPAWN_LOG = 1.64;
 export const TASK_SEC = 1.95 * 3600; // log: hours per task
 export const GUESS_KILL = 300; // seconds a kill with no forecast and no atlas time (the map's guess)

@@ -82,7 +82,10 @@ export function worldOf(now: number): World {
   const st = planner.value;
   const config = configOf(st.config);
   const current: World["current"] = {};
-  for (const [n, r] of Object.entries(st.current)) if (config.on[n] && r) current[n] = r.step;
+  // task 013, settled point 9: a running ach: step is in flight only for what it still has to do — the achievements read
+  // already counts what it did (its counter is actions: a drop's fights, a gather's gathers)
+  const left = (r: Running): Step => (r.step.target.startsWith("ach:") ? { ...r.step, units: Math.max(0, r.step.units - r.units / perOf(r.step.work)) } : r.step);
+  for (const [n, r] of Object.entries(st.current)) if (config.on[n] && r) current[n] = left(r);
   return {
     now, characters: characterList(), bank: bankItems.value, bankGold: bankDetails.value?.gold ?? 0,
     achievements: achievements.value ?? NONE, events: liveEvents(), current, costs: st.costs, blocked: st.blocked, config,

@@ -20,10 +20,12 @@ export function met(g: Gate, ch: Character, world: World): boolean {
   }
 }
 
-/** A target's gates this character does not meet; a safe win is solved only when every other gate is met. */
+/** A target's gates this character does not meet; a safe win is solved only when every other gate missing is a level
+ *  (task 013: or an event — an event achievement sits behind its win like any other, bundle.ts). */
 export function unmetGates(gates: Gate[], ch: Character, world: World): Gate[] {
   const out: Gate[] = gates.filter((g) => g.kind !== "win" && !met(g, ch, world));
-  return out.some((g) => g.kind !== "level") ? out : [...out, ...gates.filter((g) => g.kind === "win" && !met(g, ch, world))];
+  const ev = !!(world.config.events ?? 1);
+  return out.some((g) => g.kind !== "level" && !(ev && g.kind === "event")) ? out : [...out, ...gates.filter((g) => g.kind === "win" && !met(g, ch, world))];
 }
 
 /** Why a field source is out of reach for everyone for now (an event that is not live, a boss, another layer, an

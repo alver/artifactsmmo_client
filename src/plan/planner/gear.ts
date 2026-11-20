@@ -42,6 +42,7 @@ import { gatherCut, nearestSpot, placeOf, planRec, potionPrice, safeWin, setWisd
 import { crafterOf, rolesFor } from "./roles";
 import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
+import type { Parent } from "./supply";
 import { targetsOf } from "./targets";
 import { SLOTS_FOR_TYPE } from "../../types/api";
 import type { Character } from "../../types/api";
@@ -93,9 +94,10 @@ export function candidatesOf(ch: Character, world: World): Cands {
     const bill = billOf(world, ch.name, recipeDemand(it.code, 1));
     if (bill.out.length) { rejected.push({ for: ch.name, piece: it.code, why: bill.out.join("; ") }); continue; }
     if (!Number.isFinite(bill.hours)) {
-      const who = [...bill.leaves.values()].filter((l) => l.kind === "src" && !Number.isFinite(fleetSec(l.work, l.gates, world))).map((l) => itemName(l.code));
+      const who = [...bill.leaves.values()].filter((l) => l.kind === "src" && !l.gates.some((g) => g.kind === "event") && !Number.isFinite(fleetSec(l.work, l.gates, world))).map((l) => itemName(l.code));
       const road = bill.gated.filter((g) => !Number.isFinite(g.hours)).map((g) => `${g.lane} ${g.level} for ${itemName(g.code)}`); // task 012
-      rejected.push({ for: ch.name, piece: it.code, why: [who.length ? `nobody that is on sources ${who.join(", ")} yet` : "", road.length ? `no XP source on the way to ${road.join(", ")}` : ""].filter(Boolean).join("; ") });
+      const ev = bill.events.filter((e) => !Number.isFinite(e.hours)).map((e) => `${itemName(e.code)} (${e.event})`); // task 013
+      rejected.push({ for: ch.name, piece: it.code, why: [who.length ? `nobody that is on sources ${who.join(", ")} yet` : "", road.length ? `no XP source on the way to ${road.join(", ")}` : "", ev.length ? `nobody can ever be a member of the event for ${ev.join(", ")}` : ""].filter(Boolean).join("; ") });
       continue;
     }
     if (it.subtype === "tool") tools.push(it.code);
@@ -280,7 +282,9 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
     const left = t.left - inFlight(t.key);
     if (!m || left <= 0) continue;
     const per = perOf(t.work);
-    const able = world.characters.filter((ch) => isOn(ch.name, world) && t.gates.every((g) => g.kind === "win" || met(g, ch, world)));
+    // task 013: an event monster's kill objective is a need like any other — its work is done at the spawns
+    const evOn = !!(world.config.events ?? 1);
+    const able = world.characters.filter((ch) => isOn(ch.name, world) && t.gates.every((g) => g.kind === "win" || (evOn && g.kind === "event") || met(g, ch, world)));
     let H0 = Infinity;
     for (const ch of able) if (safeWin(ch, world, m.code)) H0 = Math.min(H0, (left * actionSec(t.work, ch, world) * per) / 3600);
     let best: Need | undefined;
@@ -299,4 +303,27 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
   const out = { needs, rejected };
   byName.set(name, out);
   return out;
+}
+
+/** A piece the offered needs ask for: the copies per fighter, whose work each copy is, the best-scoring need. */
+export interface Piece { copies: Map<string, number>; works: Map<string, string>; best: Need }
+/** The pieces of every offered need (rank()'s gear parents; task 013: also the event demand's, events.ts). */
+export function gearPieces(world: World, name = ""): Map<string, Piece> {
+  const pieces = new Map<string, Piece>();
+  for (const n of gearNeeds(world, name).needs) {
+    if (!n.offered) continue; // section 7: the crafter is not on
+    for (const [code, k] of n.pieces) {
+      const e = pieces.get(code) ?? { copies: new Map(), works: new Map(), best: n };
+      e.copies.set(n.for, Math.max(e.copies.get(n.for) ?? 0, k));
+      e.works.set(n.for, e.works.has(n.for) ? `${e.works.get(n.for)}; ${n.work}` : n.work); // task 011: each copy says whose work it is
+      if (n.fit > e.best.fit || (n.fit === e.best.fit && n.any > e.best.any)) e.best = n;
+      pieces.set(code, e);
+    }
+  }
+  return pieces;
+}
+/** A piece as a parent of supply: its copies less `inFlight` (the others' gear steps on it), its recipe's materials. */
+export function pieceParent(code: string, p: Piece, qty: number, world: World, name: string): Parent {
+  const demand = recipeDemand(code, qty);
+  return { key: `gear:${code}`, label: `${itemName(code)} for ${p.best.for} (${p.best.work})`, points: p.best.points, fit: p.best.fit, any: p.best.any, hours: p.best.hours, demand, gated: billOf(world, name, demand).gated };
 }

@@ -6,10 +6,14 @@
 // and crafts is in the bank when it ends, at the expected quantities (fractions kept); a craft takes its materials
 // from the bank, a buy its currency; a crafted gear piece is bank stock.
 // Left out, on purpose: the XP of offerings and of an active favor (conservative; the favors are dropped from the
-// World); events (none spawn); what a `train` step sources and recycles inside its item; utility potions, runes,
+// World); what a `train` step sources and recycles inside its item; utility potions, runes,
 // artifacts and bags (not worn by the model). Task 012: a kill step's potions leave the bank when it ends (drinksOf:
 // the brewed potion first, then its ingredients), so a covered ingredient's stock runs out as in play; a combat XP gain
-// counts the worn set's wisdom. A level-up adds 5 max HP (the atlas's 115 + 5·L).
+// counts the worn set's wisdom. A level-up adds 5 max HP (the atlas's 115 + 5·L). Task 013, settled point 8: events
+// are attended by expectation, no dice — per event code with open demand that can still pay, each member (the rule of
+// settled point 3, the spawn assumed live: events.ts sharesOf) gives the share usable seconds a spawn ÷ the mean seconds
+// between spawns of its time; the step under it takes that much longer (stretch) and the event's work — kills, drops at
+// their expected rates, XP, the potions drunk — is applied after it as a kill or gather step's; demand met, the share ends.
 
 import { atlas } from "../../catalog/atlas";
 import { item, monster as monsterOf, resource as resourceOf } from "../../catalog";
@@ -18,13 +22,14 @@ import { GEAR_SLOTS, slotCode } from "../../types/api";
 import { fightXp } from "../xp";
 import { craftsPerLevel, hoursToLevel, levelOf, perOf } from "./cost";
 import { decide, met } from "./decide";
+import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
 import { fightRec, winLevel } from "./reach";
 import { available } from "./stock";
 import { billOf } from "./supply";
 import { isDone, targetsOf, unhandledOf } from "./targets";
 import { craftXpOf, gatherXp } from "./xp";
 import type { AccountAchievement, BankItem, Character, GearSlot } from "../../types/api";
-import type { Gate, Lane, Step, Work, World } from "./types";
+import type { Gate, Lane, Step, Target, Work, World } from "./types";
 
 /** The slots the model wears (runes, artifacts, utilities and bags stay as they are). */
 const WORN: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag" && g !== "rune");
@@ -195,19 +200,24 @@ export function advance(world: World, step: Step): World {
   return { ...world, characters, achievements, bank: bankPlus(world.bank, delta), clock: { ...world.clock, [ch.name]: end } };
 }
 
-export interface Played { at: number; step: Step }
+/** Task 013: an event the character attended while the step ran — its share of the time, the actions and hours it took. */
+export interface Attended { code: string; share: number; actions: number; hours: number }
+export interface Played { at: number; step: Step; events?: Attended[] }
 export interface Forward { world: World; played: Played[]; completed: { code: string; points: number; at: number }[] }
 
 /**
  * decide → wear → advance until `until`: the character free first decides next (ties in account order), seeing the
  * others' running steps as `current` and its own last one; its set goes on at once; a step is applied when it ends.
- * Steps still running at `until` are not counted. `onEnd` sees the world just after a step was applied.
+ * Steps still running at `until` are not counted. `onEnd` sees the world just after a step was applied — and after each
+ * event step (task 013: the events the character attended while its step ran, by expectation — events.ts sharesOf; the
+ * step takes that much longer, events.ts stretch, and the event's work is applied after it like a kill or gather step's).
  */
 export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void): Forward {
   const names = world.characters.map((c) => c.name);
   let w: World = { ...world, clock: { ...world.clock }, favors: undefined }; // the forward model ignores favors
   const free: Record<string, number> = Object.fromEntries(names.map((n) => [n, w.clock![n] ?? w.now]));
   const pending: Record<string, Step | undefined> = {};
+  const attends: Record<string, { hours: number; events: Attended[] } | undefined> = {};
   const last: Record<string, Step | undefined> = { ...world.current };
   const played: Played[] = [];
   const completed: Forward["completed"] = [];
@@ -219,19 +229,29 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
     if (pending[name]) {
       const before = new Set(w.achievements.filter(isDone).map((a) => a.code));
       // task 012: every running step as `current`, so what a step's fights drink leaves the others' reservations alone
-      const prev: World = { ...w, current: { ...pending } };
-      w = advance(prev, pending[name]!);
+      let prev: World = { ...w, current: { ...pending } };
+      const at = attends[name];
+      w = advance(prev, at ? { ...pending[name]!, hours: at.hours } : pending[name]!);
       onEnd?.(w, pending[name]!, prev);
+      for (const e of at?.events ?? []) {
+        const s = eventStep(name, e.code, e.actions);
+        if (!s) continue;
+        prev = { ...w, current: { ...pending } };
+        w = advance(prev, s);
+        onEnd?.(w, s, prev);
+      }
       for (const a of w.achievements) if (isDone(a) && !before.has(a.code)) completed.push({ code: a.code, points: a.points, at: t });
     }
     const current = Object.fromEntries(names.map((n) => [n, n === name ? last[n] : pending[n]]));
     w = { ...w, now: t, current, clock: { ...w.clock, [name]: t } };
     const step = decide(name, w);
     onDecide?.(w, step);
+    const st = stretch(step.hours, sharesOf(name, w));
     w = wear(w, step);
-    played.push({ at: t, step });
+    played.push(st.events.length ? { at: t, step, events: st.events } : { at: t, step });
     last[name] = pending[name] = step;
-    free[name] = finish(t, step.hours, w).end;
+    attends[name] = st.events.length ? st : undefined;
+    free[name] = finish(t, st.hours, w).end;
   }
   return { world: w, played, completed };
 }
@@ -245,6 +265,18 @@ export function waitingOf(world: World): { achievement: string; points: number; 
   const targets = targetsOf(world);
   const unhandled = unhandledOf(world);
   const top = (lane: Lane): number => Math.max(...world.characters.map((c) => levelOf(c, lane)));
+  const calH = Math.max(0, (Date.parse(world.config.deadline) - world.now) / 3.6e6);
+  const isEv = (g: Gate): boolean => g.kind === "event";
+  /** Task 013, settled point 7: an event is waited for only when nobody can ever be a member or its calendar does not fit
+   *  — an event objective's at its content, an event-only material's (a direct input or a leaf of a crafted one). */
+  const evStuck = (ts: Target[]): boolean => !(world.config.events ?? 1) || ts.some((t) => {
+    const w = eventWork(t);
+    if (w && !(calendar(w.ev, w.actions, possibleMembers(w.ev, world)).hours <= calH)) return true;
+    return (t.inputs ?? []).some((i) => {
+      const leaves = i.source.kind === "craft" ? [...billOf(world, "", [[i.code, i.per * t.left]], undefined, false).leaves.values()] : [{ code: i.code, qty: i.per * t.left, gates: i.gates }];
+      return leaves.some((l) => l.gates.some(isEv) && !(materialCal(l.code, l.qty, world).hours <= calH));
+    });
+  });
   const out: ReturnType<typeof waitingOf> = [];
   for (const a of world.achievements) {
     if (isDone(a)) continue;
@@ -263,7 +295,7 @@ export function waitingOf(world: World): { achievement: string; points: number; 
       (g.kind === "level" && g.lane === "combat" && g.level > top("combat") && !world.characters.some((c) => Number.isFinite(hoursToLevel("combat", c.level, g.level, world, c))))
       || (g.kind === "win" && !world.characters.some((c) => winLevel(c, world, g.monster) != null)));
     const waits =
-      has("layer") ? "another layer" : has("event") ? "an event" : has("group") ? "a group"
+      has("layer") ? "another layer" : has("event") && evStuck(ts) ? "an event" : has("group") ? "a group"
       : ts.some((t) => t.work.kind === "use") ? "use" : ts.every((t) => t.work.kind === "favor") ? "offerings"
       : combatGear ? "gear (no safe win within ten levels)"
       : noRoad ? "a level with no XP source on the way"
@@ -285,7 +317,7 @@ export function outlook(world: World, n: number): Outlook {
     next, expected: pointsOf(r.world), completed: r.completed,
     notes: [
       "offerings count their favors and their time, not their XP; an active favor's XP is not counted",
-      "events are not simulated",
+      "events are attended by expectation: a member of an event with open demand gives it the share of its time a spawn takes (usable seconds ÷ the mean seconds between spawns), and the work is applied as a kill or gather step's",
       "a potion a fight drinks is priced at what making another takes, an ingredient the bank covers for 100 runs free (xp.ts potionPriceOf); a kill step's potions leave the bank when it ends — the brewed potion first, then its ingredients",
       "gear is made by need and worn; what a step gathers, drops and crafts is in the bank when it ends (expected quantities)",
     ],
