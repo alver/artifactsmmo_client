@@ -3,7 +3,10 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-20 (morning), after report 012 was accepted, Alex restarted the service (run `[yewz]`,
+Last updated: 2026-11-20 (midday), after report 013 was accepted, Alex restarted the service (run `[wj59]`, seen at
+09:54 UTC) and task 014 was written. Earlier that day Alex was told to restart the service (the
+log's tail at 09:44 UTC still carried run `[yewz]`, 012's code). Before that, in the morning: report 012 was
+accepted, Alex restarted the service (run `[yewz]`,
 07:31:51 UTC) and task 013 was written.
 
 ## The goal (Alex, 2026-11-18)
@@ -71,6 +74,19 @@ Last updated: 2026-11-20 (morning), after report 012 was accepted, Alex restarte
   points are behind layers and events, as before. **63 leans on a shortcut** (the forward model keeps one
   potion of a brewed stack so that potion fights stay plannable): until potions are supply through the bank,
   play lies between rows C and A.
+- **What task 013 found (2026-11-20).** Events are a calendar, not a wall: the spawns an objective needs × the
+  mean time between spawns (the log's: 64% longer than the docs', 33 spawns in 69 hours). The replay: **77 / 85 /
+  63 / 86 / 63** (default with events attended, potions free, the field price always, a win is enough, no
+  events); the last row is report 012's 63 to the day. Events pay 15 points directly on 1.3% of the fleet's
+  time: 7 by gathers at the two apparitions (mining and woodcutting 35; three role holders each, days 5-10),
+  8 by event fights from about day 15; and they open the gold set at 30 (demon horns, capes, lizard parts),
+  which brings 4 more. The price comes first: the gathering lanes outrank the combat road in the first
+  fortnight and row A is 1-2 points below "no events" on days 7 and 14. **Today nobody is a member of any
+  spawn**: mining 22-25, combat 22-25, and no fighter wins an event monster within ten levels. **77 leans on
+  potions as 63 did**: at the field price (row C) only the apparitions are attended and the row ends at 63,
+  7 above report 012's C. Play lies between C and A until the consumables round. Open at the deadline in every
+  row: 73 points behind another layer; the fighters reach 40 on days 56-81 by default, 12-16 with free
+  potions.
 - **One planner decides what the fleet does next and moves on by itself** — "the roadmap". Alex at most adjusts
   priorities, and doubts there is much to adjust.
 - **No manual queues in the UI.** Alex hardly used them; if something has to be done by hand, the planner is wrong
@@ -609,6 +625,89 @@ Last updated: 2026-11-20 (morning), after report 012 was accepted, Alex restarte
     - Riding along: in flight for an `ach:` target is what a running step still has to do (the runtime's World
       only; the pigs of 06:09 UTC); `supply: supply:`; `CLAUDE.md`'s gap rule.
     - Out: merchants, gems, boss events, events behind a toll, potions as supply, food, spending.
+34. **Report 013 accepted (2026-11-20).** Checked in the chat: both commits in `.git/logs/HEAD` (`a7a1fe5` Rework
+    notes, `c8266ac` 013); `src/plan/planner/events.ts`, `src/state/eventorders.ts`, `src/plan/planner/config.ts`
+    and `src/state/planner.ts` read in full: `gapSec`, `usableSec`, `possibleMembers`, `calendar`, `eventDemand`
+    with "can still pay", `eventMembers` (one at a time on the pool less the earlier members' sets, 15 minutes
+    left after the walk and the reset), `tripOf` ending in the step's own reset, `ownedEvents` / `busyOf` / `sent`
+    / `eventPollMs`, and `worldOf`'s in-flight rule for `ach:` steps are as the report says. Not checked there:
+    `decide.ts`, `bundle.ts`, `supply.ts`, `gear.ts`, `gates.ts`, `targets.ts`, `forward.ts`, the check script,
+    the scenarios, the check runs, the typecheck, the build (Claude Code ran them). **Engine change: Alex was
+    told to restart the service on 2026-11-20 (midday)**; the log's tail at 09:44 UTC still carried `[yewz]`
+    (First, Fourth and Fifth on coal for `lvl:mining:35`, Second on birch, Third on green slimes for
+    `lvl:alchemy:20`, fight 416 of 503 at +0 XP). The next look at the log confirms the restart and reads the
+    report's acceptance step 7. The report's two decisions are not Alex's; answered in the chat:
+    - **The spawn rate is the log's**: `SPAWN_LOG` 1.64 stays and is measured again at every log read (each
+      spawn now writes a `plan: event` line). It is a factor without a mechanism: three spawns overlapped on
+      11-17 23:21-23:41 UTC, so "one event at a time" is out; a cap on concurrent events or a slower roll are
+      not. It flips no fit today: strange_miner needs 12 spawns of 42 expected, magic_harvester 19 of 42.
+      The one place it could: corruption_eradicator. A month in it needs 185 spawns at the ogre or 122 at the
+      owlbear against 56 expected of each, and each event's calendar is taken alone (`eventDemand`); across
+      both events it is about 74 of each, which the docs' rate (92 expected) would cover and the log's does
+      not. Looked at again when the rate has more spawns behind it; an objective that two events serve is
+      then priced across both.
+    - **The trip ends with the step's own bank reset**, as built; `queue.ts` and `exec.ts` stay untouched.
+    The readings, as the chat takes them:
+    - **77 against 63 is half firm.** The 7 points of the apparitions are gathers and need a third to a half
+      of the spawns expected. The 8 points of event fights, and the gold set they feed, are priced with
+      potions free inside the hour; row C (the field price always) attends the apparitions only and ends at
+      63. Play lies between C and A, as before.
+    - **What goes live with the restart is small**: the poll every 2 minutes, one `plan: event` line a spawn,
+      the apparitions' points behind mining and woodcutting 35 in the bundles. No spawn has a member yet.
+    - **The early price is accepted**: A is below E on days 7 and 14 (32 / 36 against 33 / 38) and 14 above at
+      the deadline.
+    - **An event fight's potions** (read in the chat, `events.ts contentSec`): the membership gate prices them
+      at nothing, and the executor brews in the field when the bank holds none, so a member could spend its
+      hour on sunflowers. The first fight members come about day 15: the consumables round has to be in
+      service before.
+    - **The Nomadic Merchant trip of 11-17 23:31** (72,000 gold withdrawn, nothing bought) is task 003's `buy`
+      defect, repaired on 11-18; not a new one.
+    - **Two miners on `lvl:mining:35` for one craft's points**: with strange_miner behind that level asking
+      for three members it is what the fleet wants; left.
+    - **The order stays: 014 the consumables round, 015 keys, tolls and what is spent.** Row B over row A is 8
+      points in today's replay, but what it moves is the day the fighters reach 40 (12-16 against 56-81), and
+      that day decides whether the 73 points behind a layer come into reach this season. Bag stock (below)
+      rides along in 014.
+35. **Task 014, settled in the chat** (2026-11-20; in the task file as "What is settled"). The restart is
+    confirmed: the log's tail at 09:54:09 UTC carries run `[wj59]` (First, Fourth and Fifth on coal, Second on
+    birch, Third at fight 460 of 503 against green slimes at +0 XP); `[yewz]` wrote its last line seen at
+    09:44:09. Read in the chat for the task: `stock.ts`, `reach.ts`, `forward.ts`, `supply.ts`, `decide.ts`,
+    `cost.ts`, `types.ts`, `compile.ts` of the core; `src/plan/xp.ts`, `bis.ts`, `consumables.ts`;
+    `src/state/exec.ts`.
+    - **What is wrong is one thing: nobody plans consumables.** The core prices a potion at the fighter's own
+      field seconds (`xp.ts fieldSec`: no tool, the surest node) and plans one only while the pool holds it; in
+      play a fight item brews only when the potion has no supply anywhere and the fighter's own alchemy meets
+      the recipe (`exec.ts provisionPotions`), so for the fighters at alchemy 16-19 nobody brews a level-20
+      potion at all; the forward model bridges that with `drinksOf`'s shortcuts. Food is the fight item's own
+      business (`provisionFood`: bank, cook, gather and cook), priced as rest × 0.88.
+    - **One writer**: an owned character's fight item never brews, cooks or gathers an ingredient. Characters
+      the planner does not own keep today's behaviour.
+    - **By need, as gear**: a potion or a food is needed for a run of fights when making it and fighting with
+      it takes at most `NEED_RATIO` of the hours without; a recipe nobody meets is a need all the same and its
+      level a candidate of the lane's role holders.
+    - **Through the bank, for a horizon**: the need is a parent of supply (`mat:` by whoever may craft, `src:`
+      by whoever reaches the ingredient) with the score of the work the fights are for; the demand is what the
+      next two chunks drink and eat for each character on the work, plus a fifth. Stock is shared from the
+      best-scoring parent down: that answers "who drinks first".
+    - **A fight step takes what it planned** (its `withdraw`, the quantity, not the stack) and is as long as
+      that covers; **running dry ends the step**, it blocks nothing.
+    - **One price, the chain's**, by the best-placed maker with its tools; healing priced as eating or rest;
+      `KILL_LOG` measured again for that reading.
+    - **An event's fights are stocked for one spawn**, as a reserve no other bill takes; nothing is brewed on
+      a trip.
+    - **The forward model brews, cooks, drinks and eats through the bank**; `consumables: 0` is report 013's
+      model whole and must still end at 77. Rows: A default, B consumables free, C report 013's model, D a win
+      is enough, E no events, F all five hold the alchemy role.
+    - Riding along: what lies in a bag is stock on its way (the bills count it; a withdrawal still waits for
+      the bank).
+    - **The question behind the task is its section 2**: what the potion wall is made of. If it is the
+      ingredient gathers whoever does them, the round moves who makes potions and when, not how much they
+      cost, and the lever is elsewhere (a higher tier, a tool, gear, gold). The section prints each lever as
+      hours a combat level and what gold would buy; nothing is bought before 015.
+    - Guesses of the chat, to be looked at with the replay: the horizon of two chunks, the margin of a fifth,
+      `NEED_RATIO` reused for consumables, the event reserve of one spawn.
+    - Out: any purchase, keys and tolls, the merchants, a `mat:` step that gathers its own inputs, `SPAWN_LOG`
+      (the new ratio is printed, the constant stays unless it left 1.3-2.0).
 
 ## Tasks
 | # | What | State |
@@ -625,15 +724,20 @@ Last updated: 2026-11-20 (morning), after report 012 was accepted, Alex restarte
 | 010 | The live round (decision 27): what a potion costs, the brake per target, offerings that catch up, the first hours of the chains read from the log | done, `93790c7`. Accepted 2026-11-19 (decision 28). **Engine change, live: Alex restarted the service on 2026-11-19 at 16:22 UTC**, before the commit, on the final working tree. |
 | 011 | The calibration round (decision 29): what a fight drinks, filler before a road that does not fit, an objective is the fleet's work, the hours since 16:43 UTC read from the log | done, `f4d4118`. Accepted 2026-11-19 (decision 30). **Engine change, live: Alex restarted the service on 2026-11-19 at about 20:05 UTC** (run `[50ry]`). |
 | 012 | The prices round (decisions 30, 31): fight XP and kill seconds against the log, a step's fixed cost, stock is free and the forward model drinks, the node of a `src:` gather, a gated craft in a chain | done, `1d76174`. Accepted 2026-11-20 (decision 32). **Engine change: Alex restarted the service on 2026-11-20 at 07:31:51 UTC** (run `[yewz]`); all five steps re-attached. |
-| 013 | The fleet on events (decision 33): who goes to a spawn, an event in the score, events in the forward model; in flight for an `ach:` target | written 2026-11-20, `tasks/013-events.md`; not run yet. **Engine change: restart after it is accepted.** |
-| 014 | The consumables round (decisions 32, 33): potions and food as supply through the bank, before the fighters pass 28 | |
+| 013 | The fleet on events (decision 33): who goes to a spawn, an event in the score, events in the forward model; in flight for an `ach:` target | done, `c8266ac`. Accepted 2026-11-20 (decision 34). **Engine change: Alex restarted the service on 2026-11-20 between 09:44 and 09:54 UTC** (run `[wj59]`). |
+| 014 | The consumables round (decision 35): potions and food by need, made through the bank and taken by the step that planned them; one price; an event's fights stocked for one spawn; bag stock; what the potion wall is made of | written 2026-11-20, `tasks/014-consumables.md`; not run yet. **Engine change: restart after it is accepted.** |
 | 015 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
 | 016… | The clean-up → the Roadmap as home, a cut-down outlook → group boss fights | |
 
 ## Open questions
 - **Who brews and cooks for the fighters, and who drinks first?** The wall at combat 33–35 is the potion's
   price (decision 32). The consumables round (014).
-- **What do events pay this season, and do they take time from better work?** 013's replay: row A against
+- **Does the event rule hold in play?** After the restart: `api GET /events/active` about every 2 minutes, one
+  `plan: event` line a spawn (expected for now: "nobody needs it", "does not fit" or "members: none"), and the
+  first member at an apparition once a role holder stands at mining or woodcutting 35. Read by 014, section 1.
+- **How often do events really spawn?** `SPAWN_LOG` 1.64 rests on 33 spawns in 69 hours (decision 34);
+  measured again at every log read.
+- Answered by 013 (decision 34): what events pay this season and what they cost early. It was: row A against
   row E (no events), per event code.
 - **Does 012's acceptance step 7 hold in play?** The restart is confirmed (07:31:51 UTC on 11-20, `[yewz]`).
   Read by 013, section 1, with the night of 11-19 to 11-20 (the offerings at 00:05 UTC, how the diamond chain
@@ -840,6 +944,25 @@ Last updated: 2026-11-20 (morning), after report 012 was accepted, Alex restarte
   - Guesses in the numbers, most doubtful first: `KILL_LOG` 0.88 on reconstructed sets; zero XP more than 10
     levels above (gaps 11–16 unseen); the one-unit stack; `STEP_BANK_SEC` 42 s; the log's bank of the
     by-product ingredients.
+
+- From report 013, not fixed (and see decision 34):
+  - Bag stock is not stock: the bill counts the bank only (`src/plan/planner/stock.ts:43-46`); a 210-gather
+    diamond chunk was planned 34 minutes after the last stone lay in a bag. For 014.
+  - An event fight's potions are free in the membership gate and brewed in the field by the executor; the
+    executor takes a utility potion stack whole and banks most of it at a reset. Both: 014.
+  - A trip fights or gathers until the tile goes, also when the demand was a handful of drops (two demon
+    horns); read in the chat (`tripOf`: `times: 0`). The forward model caps the event work at the demand.
+  - An event trip is not a `Step`: its set is not reserved between the poll and the member's reset (the
+    executor's 404 / 478 handling covers the race), and the forward model's events wear the step's set.
+    `sent` lives in the process: after a restart a member whose trip was removed can be sent to the same
+    spawn once more.
+  - Closing the gate is in no calendar while one of its three monsters has no member, so its 500 demons are
+    never fought for it (the rule as settled: the achievement must complete).
+  - A mixed fleet: once the core has evaluated a spawn, the old `fieldOrder` sends no non-owned character to
+    it. Not the case today; goes with the clean-up.
+  - Guesses in the numbers, most doubtful first: `SPAWN_LOG` 1.64; the kill seconds at an event (no event
+    fight was ever logged); usable seconds (both walks taken as the tile's walk to its bank); the shares
+    assume no two spawns overlap; "can ever be a member" looks ten levels up with today's pool.
 
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
