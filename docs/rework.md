@@ -3,8 +3,11 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-21 (night), after Alex restarted the service on report 014's code (run `[tdhi]`, 23:32:54 UTC
-on 11-20) and task 015 was written (decision 41). On the evening of 11-20 report 014 was accepted (decision 40);
+Last updated: 2026-11-21 (morning), after Alex restarted the service on report 015's code (run `[lxra]`,
+08:49:13 UTC) and task 016 was written (decision 43). Before that, the same morning: report 015 was accepted
+(decision 42) and Alex was told to restart the
+service; the log's tail at 08:36 UTC still carried run `[tdhi]` (014's code). In the night before: Alex restarted
+the service on report 014's code (run `[tdhi]`, 23:32:54 UTC on 11-20) and task 015 was written (decision 41). On the evening of 11-20 report 014 was accepted (decision 40);
 the log's tail at 18:13 UTC still carried run `[wj59]` (013's code). At midday: report 013 was accepted,
 Alex restarted the service (run `[wj59]`, seen at 09:54 UTC) and task 014 was written. Earlier that day Alex was told to restart the service (the
 log's tail at 09:44 UTC still carried run `[yewz]`, 012's code). Before that, in the morning: report 012 was
@@ -137,7 +140,9 @@ accepted, Alex restarted the service (run `[yewz]`,
   the engine is accepted.
 - The planning chat tells Alex when it is time to start a new chat.
 - **The chat can read the service's state** (found 2026-11-21): copy `.ammo/storage.db` and `.ammo/storage.db-wal`
-  to the chat's own machine and open the copy with sqlite (never the files in place). The table
+  to the chat's own machine and open the copy with sqlite (never the files in place). The same copy works for
+  any file of about a megabyte (source files, a report, an hourly log file from task 016 on): copied, it can be
+  searched there. The table
   `nodejs_webstorage` holds UTF-16 keys and values: `ammo:v1:state` (the characters, `bankItems`, `bankDetails`,
   the account's points, the last sync), `ammo:v1:planner` (the running steps with their why, `blocked`, the
   config patch, the costs), `ammo:v1:simdev` (the record of `validate.ts`). `ammo:v1:token` is the game's token:
@@ -927,6 +932,78 @@ accepted, Alex restarted the service (run `[yewz]`,
     - Guesses of the chat: the thresholds 15 and 10; the level margin of ten; "no solve today picks it" as the
       test of use (a piece's element may fit a monster the fleet meets later; Alex's "it is made again" covers
       it).
+42. **Report 015 accepted (2026-11-21, morning).** Checked in the chat: the commits in `.git/logs/HEAD` (`1b80879`
+    Rework notes, `e66621e` 015: bank), `HEAD` on `rework`, `refs/remotes/origin/rework` at `e66621e`, `main` still
+    at `edaaf23`; `src/plan/planner/bank.ts` and `stock.ts` read in full; `loopkit.ts` (`freeSlots`, `noSlotFor`,
+    `deposit`, `depositAll`); `exec.ts` (`bankOff`, the guard in `gearSwapStep`, the swap's deposit); in
+    `src/state/queue.ts` the `deposit-all`, `recycle` and `expand` items, the reset's food cap, the claim's deposit
+    and `runLoop`'s `bankFull`; `src/state/planner.ts` (the no-block after a refusal, the hook, `bankCheck`, the
+    `bank` class, the boot call); `decide.ts` (the tidy first, the stuck filter); `compile.ts` (the tidy's items);
+    `src/plan/events.ts` (`merchantOrder`); `consumables.ts` (`poolFoods`, `poolFood`, `fightTake`, `useOf`). They
+    are as the report says. Not checked there: `reach.ts`, the core's `events.ts`, `config.ts`, `types.ts`, the
+    check script, the scenarios, the fake, the check runs, the typecheck, the build (Claude Code ran them).
+    **Engine change: Alex was told to restart the service on 2026-11-21 (morning)**; the log's tail at 08:36 UTC
+    still carried `[tdhi]`. The next look at the log confirms the restart and reads the report's acceptance step 7.
+    - **The bank stood at 106 of 110 at 08:36 UTC** (the state's copy; gold 232,916): four free slots under 014's
+      code, which meets a 462 with a pause and a 6-hour block. New codes since the night: health splash potions
+      (94), a full moon vampire cape, rat hide, a golden egg, a sunflower. After the restart the running steps
+      re-attach, so the first tidy step comes at the first crafter's step end (Fourth at about 09:10 UTC, Second
+      09:25, Third 10:00, by their paces at 08:36). From four free the tidy needs eleven slots net: about 13-15 of
+      the 22 outdated codes.
+    - **Sap: 575 at 23:32 UTC on 11-20, 303 at 08:36.** Not traced in the log; it fits the old order selling down
+      to its floor of 300 once more, plus three from the birch. 015 ends that.
+    - **The report's decision 1 (gear with a rare ingredient is not recycled) is Alex's** (what is destroyed for
+      good): asked on 11-21 with the default "keep the rule". Today it holds one slot (the wooden staff ×2). The
+      default stands until he answers.
+    - **Its decision 2 (the cap) needs nothing today**, and it is the answer to Alex's "at which point to stop":
+      the ladder doubles (3,500 · 7,000 · 14,000 · 28,000 · 56,000 · 112,000 · 224,000); 60,000 buys two more
+      (150 slots, 84,000 gold); the third costs 112,000 and the model wants it about mid-December. Before that 017
+      decides what non-gear stock goes (58 of the 102 codes of 11-20 were not gear).
+    - **The replay moved and the moves are not attributed**: A 87 → 86, B 94 → 90, C 77 → 78 (the sell floor,
+      shown), F 86 → 91, D and E as they were; in row A First (the cook) reaches combat 40 on day 71.8 instead of
+      40.0, in row B it never reaches 30. Not held against the report: a few points between runs is the greedy's
+      path (decision 30 has the same), and the rows' differences are what is read. For the next replay round
+      (017): why B fell with consumables free, and First's road.
+    - **Found in the chat's read** (none of it holds the restart back):
+      - After a 462, `deposit()` sets the local `slots` to the codes the engine knows, and nothing reads
+        `/my/bank` again until an expansion or a restart: the count can stay a slot or two under the real one
+        (the safe side), and "of N slots" in the bank's lines is then that number. One read after a 462 ends it.
+      - `planMake`'s odd ingredient (the report's note) bit again under 014's code: `ach:alchemist:2@Third` was
+        blocked for 6 h, "no Nettle Leaf (need 2) for Health Splash Potion", until 08:33 UTC on 11-21. Twice in
+        a day: the repair rides along in 016.
+      - A tidy's why counts the codes that go, not the new codes that come back ("frees 3" can be 2 net).
+      - A tidy step has no reset, so it starts with the last step's bag (a level step leaves its ore there); the
+        `recycle` item banks off when the bag is full (`src/state/queue.ts:361-368`). No scenario runs that.
+    - **The order stays**: 016 the journal, written once the restart shows in the log, with the boot line and
+      the first tidy steps read; 017 keys, tolls and what is spent.
+43. **Task 016, settled in the chat** (2026-11-21, morning; in the task file as "What is settled"). The restart
+    is confirmed: `[lxra] server start` at 08:49:13.136 UTC, all five steps re-attached (`lvl:mining:35` for
+    First, Fourth and Fifth, `ach:intermediate_lumberjack:0` for Second, `src:nettle_leaf` for Third); `[tdhi]`
+    wrote its last line at 08:48:52.584. The boot's bank line (08:49:17.778): 106 of 110 slots, 4 free, the next
+    expansion 28,000, gold 232,916, 24 outdated codes. No decision of 015's code was seen (the tail ended at
+    08:51:42; the first crafter's step ends at about 09:10): 016 reads the first tidy steps.
+    - **Alex on report 015's decision 1 (2026-11-21): gear with a rare ingredient is kept "for a while"; decided
+      later.** The rule stays (`autoRecyclable`); the question comes back with 017, when more than the wooden
+      staff falls under it.
+    - **The raw log goes into hourly files after all** (decision 37 said a file a day, and that hourly files do
+      not help): the chat can copy a file of about a megabyte to its own machine and search it there, as it did
+      with the state on 11-21; a day of raw log is about 21 MB and may not copy. `logs/dev.log` gets no more
+      lines and stays as the archive.
+    - **The journal is written by the runtime from what the engine knows**, one JSON record a line, a file a
+      day; the plain `plan` lines stay in the raw log. Where a step's seconds went comes from one meter on every
+      action's echo (the cooldown's seconds by its reason), cut at step and interrupt boundaries.
+    - **A status file every minute, a World snapshot a day**, and a reader (`npm run journal`) that prints what
+      each task's "read the log" section printed; from 017 on that section is the reader's output.
+    - Riding along: a craft step planned in whole runs (`planMake`); one read of the bank after a 462; an `api`
+      line's body cut at 600 characters; and one question with a conditional repair: whether `bankCheck`'s
+      "something is left to tidy" (`tidyVerdicts` with no name) can hold while no character's `tidyStep` takes
+      the code, in which case no expansion would ever be bought.
+    - **Seen in the boot line, for 016's read**: Wooden Shield ×5 and Iron Armor ×8 are named outdated; report
+      015's table (the bank of 23:32 UTC) kept both for a solve (the_reaper, First and Second). The verdicts move
+      with the solves. If a piece goes today that a solve picks tomorrow, gear by need makes it again (Alex's
+      rule); how often that happens is what the journal's `step` records will show.
+    - Out of 016: deleting old logs, any UI for the journal, an alert when the service stops, a replay started
+      from a snapshot (the Lab and the outlook take that), the replay's unexplained moves of report 015 (017).
 
 ## Tasks
 | # | What | State |
@@ -945,12 +1022,18 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 012 | The prices round (decisions 30, 31): fight XP and kill seconds against the log, a step's fixed cost, stock is free and the forward model drinks, the node of a `src:` gather, a gated craft in a chain | done, `1d76174`. Accepted 2026-11-20 (decision 32). **Engine change: Alex restarted the service on 2026-11-20 at 07:31:51 UTC** (run `[yewz]`); all five steps re-attached. |
 | 013 | The fleet on events (decision 33): who goes to a spawn, an event in the score, events in the forward model; in flight for an `ach:` target | done, `c8266ac`. Accepted 2026-11-20 (decision 34). **Engine change: Alex restarted the service on 2026-11-20 between 09:44 and 09:54 UTC** (run `[wj59]`). |
 | 014 | The consumables round (decision 35): potions and food by need, made through the bank and taken by the step that planned them; one price; an event's fights stocked for one spawn; bag stock; what the potion wall is made of | done, `edaaf23`. Accepted 2026-11-20 (decision 40). **Engine change: Alex restarted the service on 2026-11-20 at 23:32:54 UTC** (run `[tdhi]`); all five steps re-attached. |
-| 015 | The bank (decision 39): a full bank is answered, not met; outdated gear is recycled; the planner buys an expansion under a price cap; sap is no longer sold from under the recipes; the branch `rework` and the first push; riding along (decision 40): a bag cap on planned food, the food that fits the fight, room for the replay check | written 2026-11-21, `tasks/015-bank.md` (decision 41); not run yet. **Engine change: restart after it is accepted.** |
-| 016 | The journal (decision 37): a journal of decisions and step results beside the raw log, the raw log a file a day, a status file, a daily snapshot of the World | after 014's report. **Engine change.** |
+| 015 | The bank (decision 39): a full bank is answered, not met; outdated gear is recycled; the planner buys an expansion under a price cap; sap is no longer sold from under the recipes; the branch `rework` and the first push; riding along (decision 40): a bag cap on planned food, the food that fits the fight, room for the replay check | done, `e66621e` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 42). **Engine change: Alex restarted the service on 2026-11-21 at 08:49:13 UTC** (run `[lxra]`); all five steps re-attached. |
+| 016 | The journal (decisions 37, 43): a journal of decisions and step results, the raw log in hourly files, a status file, a daily snapshot of the World, a reader; riding along (decision 42): `planMake` in whole runs, one read of the bank after a 462, `bankCheck` and `tidyStep` on the same verdicts | written 2026-11-21, `tasks/016-journal.md` (decision 43); not run yet. **Engine change: restart after it is accepted.** |
 | 017 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
 | 018… | The clean-up → the Roadmap as home, a cut-down outlook → the Lab (decision 36) → group boss fights | |
 
 ## Open questions
+- **Does 015 hold in play?** After the restart (report 015, acceptance step 7): the boot's `plan: bank` line;
+  tidy steps until 15 slots are free, one character at a time, and no `bank/buy_expansion` while something is
+  outdated; no `npc/sell` of sap or shell; a kill step's food within a third of the bag; a 462 followed by a
+  deposit of the held codes and no pause.
+- **Is gear with a rare ingredient recycled when it falls ten levels behind?** Alex, 2026-11-21: kept for a
+  while, decided later (decision 43). Back with 017.
 - **Does 014 hold in play?** After the restart (report 014, acceptance step 7): a kill step's `plan` line names
   the potions and food it takes and its reset withdraws those quantities; no `restock`, `craft` or `gather` of a
   consumable inside an owned fight item; `mat:` and `src:` lines name the work they are for; "ran dry" without a
@@ -1213,6 +1296,21 @@ accepted, Alex restarted the service (run `[yewz]`,
   - Guesses in the numbers, most doubtful first: `KILL_LOG` 1 (eight decomposed steps, median 1.087; 1.27 over
     23 samples with the in-item food making left in); the cache shortcuts that keep a row inside the backstop;
     `HORIZON` 2, `MARGIN` a fifth, `NEED_RATIO` 0.85 for consumables; `USE_SEC` 4.5 s.
+
+- From report 015, not fixed (and see decision 42):
+  - Worn-only codes move through the bank: every reset strips the worn set into it, so the free count moves by a
+    few slots a reset (`TIDY_BELOW` 15 absorbs it); with no slot the stripped piece stays in the bag.
+  - `planMake` sources an ingredient per product, not per run (61 runs need 122 nettle, 121 gathered): 016.
+  - Fifth's second ogre fight of 11-20 22:41 UTC was lost with 8 of 9 worn potions drunk: a forecast miss, not a
+    stack run out; only the record of `validate.ts` says how far off.
+  - A supply line's "N short" sums every parent's shortfall and names the best parent.
+  - The forward model raises max HP with a level but not the bag: its food cap stays a third of the first bag.
+  - An `api` line's body is cut at 160 characters, so a reset's potions cannot be read from the log. The journal
+    (016) records what a step took.
+  - The three changes that reach the replay (the bag cap, the food that fits, the sell floor) were not run apart.
+  - Guesses in the numbers, most doubtful first: the ladder doubles (two purchases and today's price); the
+    season's codes (the forward model: 179 with the tidy); `TIDY_BELOW` 15, `EXPAND_BELOW` 10, `TIDY_MARGIN` 10;
+    "no solve today picks it" (not gear by need's own solves, not a level's next pick); a recycle's returns.
 
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
