@@ -14,6 +14,7 @@ All of them are under `logs/` (ignored by git), and all times are UTC.
 | `logs/journal/<YYYY-MM-DD>.jsonl` | the journal: one record a line | at once, to the file of the record's own day |
 | `logs/status.json` | what each character is on now | rewritten whole every minute and at every `step` and `end`, through `status.json.tmp` and a rename |
 | `logs/world/<YYYY-MM-DD>.json` | the day's snapshot of the World | once a day: at the first minute after 00:00 UTC, and at boot when the day has none (after the first achievements read) |
+| `logs/market/<YYYY-MM-DD>.jsonl` | task 017: the market read, the Grand Exchange's orders summed per code (below, "The market") | a line a poll: at boot, then every 10 minutes (20 when the orders take more than 10 pages) |
 
 - `logs/dev.log` gets no more lines. It is the archive from 2026-11-13 to the restart of task 016.
 - A service on any port other than 5173 (a smoke test with throwaway storage) writes under `logs/port-<N>/` instead.
@@ -105,7 +106,7 @@ The working tree may differ from the commit: the service runs `src/` as it is.
 ### `block`, `flap`, `nostep`, `defect`, `stopped`: the planner's defensive lines (`planner.ts`)
 - `block`: a target is blocked for a character (`blockStep`). Keys: `who`, `target`, `key` (the step), `until`, `why`, and `strikes` (the blocks in a row).
   The third strike blocks it for everyone (`all: true`) until the next UTC day or a level-up of `lanes`.
-- `flap`: the brake (`start`). Keys: `who`, `target`, `n` (starts in 10 min), `until`. The ceiling has no `target`; it has `targets` (how many were held) and `keys` (the recent starts).
+- `flap`: the brake (`start`). Keys: `who`, `target`, `n` (starts in 10 min), `until`. The ceiling has no `target`; it has `targets` (how many were held) and `keys` (the recent starts). Task 017: `spin: true` — past the ceiling the last steps ended at once (every item skipped), and the next decision waits a minute (`until`).
 - `nostep`: no decision could be made. Keys: `who`, `why` (the exception).
 - `defect`: a decision while a step item is queued. Keys: `who`, `what`.
 - `stopped`: the heartbeat found an owned queue with items stopped, and started it. Keys: `who`, `head`.
@@ -165,6 +166,17 @@ There is one record per spawn, and another only when the verdict changes: a memb
 Keys: `who`, `skill` (`combat` for the character level), `lv` (the new level).
 ```json
 {"t":"2026-11-21T09:31:07.200Z","run":"lxra","k":"level","who":"Fourth","skill":"mining","lv":29}
+```
+
+### `spend`: a unit spent (task 017; `src/lib/journal.ts spent`, from the action's echo)
+- `who`;
+- `what`, one of `fare` (a transition's gold), `key` (the item a transition consumed), `coins` (a purchase paid in tasks coins), `expansion` (a bank expansion's gold);
+- `code` (`gold`, the key's code, `tasks_coin`) and `q` (the quantity);
+- `for`: the bucket the action belonged to — the step's `pl:<key>` or the interrupt's `pl:int:<cls>:<what>`;
+- `via`: a transition's tile (`<layer>:<x>,<y>`); `item`: what the coins bought.
+```json
+{"t":"2026-01-15T12:01:28.300Z","run":"6aux","k":"spend","who":"Wil","what":"fare","code":"gold","q":1000,"for":"pl:src:palm_wood@Wil#1","via":"overworld:2,16"}
+{"t":"2026-01-15T12:00:58.350Z","run":"f0eu","k":"spend","who":"Cat","what":"coins","code":"tasks_coin","q":8,"for":"pl:mat:jasper_crystal@Cat#1","item":"jasper_crystal"}
 ```
 
 ### `pause` and `server`: errors
@@ -267,6 +279,29 @@ tables:
 - where the time goes (the meter's groups, in percent);
 - the kill steps' planned potions and food against what they did;
 - the events and the spawn ratio, beside `SPAWN_LOG`;
-- levels, achievements, the bank, the config, server errors.
+- levels, achievements, the bank;
+- what was spent (task 017: the `spend` records, and their sums);
+- the config, server errors.
 
 Try it on the fixture: `npm run journal -- --file scripts/fixtures/journal-2026-01-15.jsonl --from 2026-01-15T00:00Z`.
+
+## The market (`logs/market/<day>.jsonl`, task 017)
+
+`src/state/market.ts` reads `GET /grandexchange/orders` (every page; a public data endpoint, the docs' `data` bucket of
+200 a minute and 2,000 an hour per IP) at boot and then every 10 minutes, every 20 when the orders take more than 10
+pages of 100. Nothing reads it back: the planner does not use the market, and nothing is bought or sold. A line:
+- `t`, `run`; `n`: the orders; `pages`;
+- `full: true` on the first line of a run and of a UTC day: `c` holds every code;
+- otherwise `c` holds only the codes whose numbers changed since the last line, and `gone` the codes no order names any more;
+- `c`: code → `[ask, at ask, on sale, sells, bid, at bid, wanted, buys]` — the lowest ask, the quantity at it, the whole
+  quantity on sale and the number of sell orders, then the highest bid, the quantity at it, the whole quantity wanted and
+  the number of buy orders (`null` and zeros: no order of that side).
+
+A failed poll writes nothing. The reader:
+```
+npm run market -- [--from <ISO>] [--to <ISO>] [--code a,b] [--all] [--dir <dir> | --file <file.jsonl>]
+```
+per code over the window: the lowest ask (first, last, lowest, median, highest), the quantity on sale and the highest bid
+at the end; by default the potions and food with a recipe and their ingredients; beside each, from the day's snapshot,
+the fleet's own seconds a unit and what a fleet-hour of that making costs at the last ask. Try it on the fixture:
+`npm run market -- --file scripts/fixtures/market-2026-11-21.jsonl`.

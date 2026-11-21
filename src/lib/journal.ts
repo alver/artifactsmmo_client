@@ -24,6 +24,7 @@ interface Sinks {
   status?: (json: string) => void;
   world?: (day: string, json: string) => void;
   hasWorld?: (day: string) => boolean;
+  market?: (line: string, t: number) => void;
 }
 let sinks: Sinks = {};
 const last: Rec = {}; // the last `pause` and `server` record (the status shows them)
@@ -74,6 +75,15 @@ export function writeWorld(day: string, snapshot: () => Rec): boolean {
   }
 }
 
+/** Task 017, settled point 14: one line of the market read (src/state/market.ts), into market/<day>.jsonl by its time. */
+export function writeMarket(rec: Rec): void {
+  try {
+    sinks.market?.(JSON.stringify(rec), Date.parse(String(rec.t)) || Date.now());
+  } catch {
+    /* as above */
+  }
+}
+
 /** Where the files go: `append` adds to a file, `replace` writes a file whole (the service: a temporary file and a
  *  rename, so a reader never sees half a status), `exists` asks. Paths use "/" under `root`. */
 export interface Disk {
@@ -87,7 +97,7 @@ const STAMP = /^\d{4}-\d\d-\d\dT\d\d/;
 
 /**
  * Settled point 1: every file of the journal under `root` (logs/), all in UTC — `journal/<day>.jsonl` by the record's
- * time, `status.json`, `world/<day>.json`. Returns the raw log's sink for setDevlogSink: each line goes to
+ * time, `status.json`, `world/<day>.json`, and (task 017) `market/<day>.jsonl` by the line's time. Returns the raw log's sink for setDevlogSink: each line goes to
  * `raw/<day>/<HH>.log` by its own time stamp (a line without one — a stack's next line — goes with the line before), so
  * an hour's or a day's turn needs no timer: the first line of the new hour opens the new file.
  */
@@ -97,6 +107,7 @@ export function fileSinks(disk: Disk, root: string): (lines: string) => void {
     status: (json) => disk.replace(`${root}/status.json`, json),
     world: (day, json) => disk.replace(`${root}/world/${day}.json`, json),
     hasWorld: (day) => disk.exists(`${root}/world/${day}.json`),
+    market: (line, t) => disk.append(`${root}/market/${dayOf(t)}.jsonl`, line + "\n"),
   };
   return (lines) => {
     const byHour = new Map<string, string[]>();
@@ -205,6 +216,7 @@ export function meterEcho(name: string, key: string, action: string, body: unkno
   if (action === "bank/withdraw/item") for (const i of stacks(body)) addTo(m, "wd", i.code, i.quantity);
   if (action === "bank/deposit/gold") addTo(m, "dep", "gold", (body as { quantity: number }).quantity);
   if (action === "bank/withdraw/gold") addTo(m, "wd", "gold", (body as { quantity: number }).quantity);
+  spent(name, key, action, data, prev);
   if (!prev || !after) return;
   if (!action.startsWith("bank/") || action === "bank/buy_expansion") {
     const d = after.gold - prev.gold;
@@ -218,6 +230,22 @@ export function meterEcho(name: string, key: string, action: string, body: unkno
     if (xp > 0) addTo(m, "xp", s, xp);
     if (L1 > L0) journal("level", { who: name, skill: s, lv: L1 });
   }
+}
+
+/**
+ * Task 017, settled point 12: every unit spent is a `spend` record — a transition's fare (`fare`, gold) or key (`key`, the
+ * code it consumed), a purchase paid in tasks coins (`coins`), a bank expansion (`expansion`, gold) — who, what, the code
+ * and quantity, and what for: the bucket the action belongs to (the step's or interrupt's `pl:` key), and for a transition
+ * the tile it was taken on. From the echo alone (the transition's own conditions, the purchase's transaction).
+ */
+function spent(name: string, key: string, action: string, data: ActionResult, prev: Character | undefined): void {
+  const d = data as ActionResult & { transition?: { conditions?: { code: string; operator: string; value: number }[] }; transaction?: { code?: string; currency?: string; total_price?: number; price?: number } };
+  const at = prev ? `${(prev as { layer?: string }).layer ?? "overworld"}:${prev.x},${prev.y}` : undefined;
+  if (action === "transition") for (const c of d.transition?.conditions ?? []) {
+    if (c.operator === "cost") journal("spend", { who: name, what: c.code === "gold" ? "fare" : "key", code: c.code, q: c.value, for: key || undefined, via: at });
+  }
+  if (action === "npc/buy" && d.transaction?.currency === "tasks_coin") journal("spend", { who: name, what: "coins", code: "tasks_coin", q: d.transaction.total_price, for: key || undefined, item: d.transaction.code });
+  if (action === "bank/buy_expansion") journal("spend", { who: name, what: "expansion", code: "gold", q: d.transaction?.price, for: key || undefined });
 }
 
 const r1 = (x: number): number => Math.round(x * 10) / 10;

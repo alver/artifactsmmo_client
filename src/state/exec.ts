@@ -16,7 +16,7 @@ import { simulate } from "../sim/combat";
 import { jobGear, nextGearAction } from "../plan/jobgear";
 import { carriedFood, foodPlan, foodQuantity, gatherSourceFor } from "../plan/consumables";
 import { bankDetails, bankItems, characters } from "./store";
-import { BankFullError, bankQty, deposit, depositAll, isAt, moveTo, nearest, nearestBank, noSlotFor, reportNoSlot, step } from "./loopkit";
+import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, moveTo, nearest, nearestBank, noSlotFor, reportNoSlot, step } from "./loopkit";
 import { slotCode } from "../types/api";
 import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
 import type { Place } from "../plan/route";
@@ -43,6 +43,7 @@ export interface StepCtx {
   keep?: string[]; // never auto-deposited when banking off overflow
   food?: boolean; // keep the fighter fed: eat before resting, provision when out (bank → cook → gather)
   fightsLeft?: number; // fights the current item still owes — sizes the food restock
+  gold?: number; // task 017: a trip's fares — pocket gold no bank-off sweeps
   bought?: () => void; // called the moment an npc/buy succeeds, before its cooldown is waited out
   note: (text: string) => void; // short human status shown on the card
 }
@@ -54,10 +55,11 @@ export interface StepCtx {
  * leg away takes several calls: each walks one leg, the one that arrives
  * deposits (callers re-check the full bag first thing every tick).
  */
-export async function bankOff(name: string, keep: string[] | undefined, note: StepCtx["note"]): Promise<void> {
+export async function bankOff(name: string, keep: string[] | undefined, note: StepCtx["note"], gold = 0): Promise<void> {
   const ch = characters.value[name];
   const bank = ch && nearestBank(ch);
-  if (!bank) throw new Error("inventory full and no bank found on the map");
+  // task 017: no bank reachable (behind a transition it cannot pay) ends the item (runLoop skips it), never a pause
+  if (!bank) throw new NoRouteError("inventory full and no bank reachable — behind a transition it cannot pass now");
   const loose = (ch.inventory || []).filter((it) => it.code && it.quantity > 0 && !keep?.includes(it.code)).map((it) => it.code);
   if (keep?.length && !loose.length) {
     throw new Error("inventory full of protected working stock");
@@ -69,7 +71,7 @@ export async function bankOff(name: string, keep: string[] | undefined, note: St
     throw new BankFullError(`the bag is full and the bank has no slot for ${stuck.map(itemName).join(", ")}`);
   }
   note("→ bank (full)");
-  if (await moveTo(name, bank)) await depositAll(name, keep?.length ? new Set(keep) : undefined);
+  if (await moveTo(name, bank)) await depositAll(name, keep?.length ? new Set(keep) : undefined, gold);
 }
 
 /** One healing action: eat the given food when it covers the deficit, else rest. */
@@ -152,7 +154,7 @@ export async function gearSwapStep(
   ch: Character,
   desired: Partial<Record<GearSlot, string>>,
   ctx: StepCtx,
-  opts?: { junk?: boolean; reset?: boolean; utility?: Record<string, number> },
+  opts?: { junk?: boolean; reset?: boolean; utility?: Record<string, number>; gold?: number },
 ): Promise<"done" | "acted"> {
   // Provisioning-in-progress stock is working stock — neither a reset's stash
   // nor a make-room deposit may take a pending brew's ingredients or the next
@@ -160,12 +162,12 @@ export async function gearSwapStep(
   // task 015, settled point 1: a code the bank has no slot for stays in the bag — never a deposit the bank refuses
   const extra = [...brewKeep(ch, desired), ...(ctx.food ? foodKeep(ch) : []), ...noSlotFor((ch.inventory ?? []).filter((s) => s.code && s.quantity > 0 && !ctx.keep?.includes(s.code)).map((s) => s.code))];
   const keep = extra.length ? [...new Set([...(ctx.keep ?? []), ...extra])] : ctx.keep;
-  const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset, utility: opts?.utility });
+  const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset, utility: opts?.utility, gold: opts?.gold });
   if (!act) return "done";
 
   const toBank = async (): Promise<boolean> => {
     const bank = nearestBank(ch);
-    if (!bank) throw new Error("no bank found on the map");
+    if (!bank) throw new NoRouteError("no bank reachable — behind a transition it cannot pass now"); // task 017: a skip, not a pause
     if (isAt(ch, bank)) return false;
     ctx.note("→ bank (gear)");
     await moveTo(name, bank);
@@ -314,7 +316,7 @@ export async function runStep(name: string, ch: Character, s: AcquisitionStep, c
       // For "train": one gather per tick; the caller notices the level echo
       // and drops the step by itself (no polling).
       // The full bag first: a bank trip of several legs must not turn back toward the node between them.
-      if (invCount(characters.value[name] ?? ch) >= ch.inventory_max_items) { await bankOff(name, keep, ctx.note); return { did: "banked" }; }
+      if (invCount(characters.value[name] ?? ch) >= ch.inventory_max_items) { await bankOff(name, keep, ctx.note, ctx.gold); return { did: "banked" }; }
       ctx.note(s.kind === "train" ? `train ${s.skill}${s.toLevel > 0 ? ` → Lv ${s.toLevel}` : ""}` : `gather ${itemName(s.code)}`);
       if (!(await moveTo(name, s.at))) return { did: "moved" };
       await step(name, () => actions.gather(name));
@@ -499,7 +501,7 @@ export async function fightRound(
     await healOnce(name, ch, food, ctx.note);
     return "acted";
   }
-  if (invCount(ch) >= ch.inventory_max_items) { await bankOff(name, ctx.keep, ctx.note); return "acted"; }
+  if (invCount(ch) >= ch.inventory_max_items) { await bankOff(name, ctx.keep, ctx.note, ctx.gold); return "acted"; }
   if (!isAt(ch, tile)) { ctx.note("→ monster"); await moveTo(name, tile); return "acted"; }
   // Re-forecast with actual current gear; refuse a fight that isn't a win.
   if (!simulate(currentFighter(ch), m).win) return "no-win";

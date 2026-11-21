@@ -8,6 +8,7 @@ import { catalog, item, monster as monsterOf } from "../../catalog";
 import { gatherSec } from "../xp";
 import { CITY, staticTiles, travel } from "./reach";
 import { GUESS_KILL } from "./config";
+import { tradeOf } from "./supply";
 import type { AccountAchievement, AchievementObjectiveProgress } from "../../types/api";
 import type { Gate, Input, Lane, Target, Work, World } from "./types";
 
@@ -88,14 +89,15 @@ function fieldSource(code: string): { work: Work; gates: Gate[] } | string {
 
 /** A recipe's inputs: each material with its field source, or — made by another craft — `source` a craft work
  *  (supply.ts opens it through the bank, task 009 section 3). A string: a material with neither, and why. */
-export function inputsOf(code: string): Input[] | string {
+export function inputsOf(code: string, coins = false): Input[] | string {
   const r = item(code)?.craft;
   if (!r) return `${code} has no recipe`;
   const inputs: Input[] = [];
   for (const ing of r.items) {
     const s = sourceFor(ing.code);
     if (typeof s !== "string") inputs.push({ code: ing.code, per: ing.quantity / r.quantity, source: s.work, gates: s.gates });
-    else if (item(ing.code)?.craft) inputs.push({ code: ing.code, per: ing.quantity / r.quantity, source: { kind: "craft", code: ing.code }, gates: [] });
+    // task 017, settled point 11: a material the Tasks Trader sells for tasks coins is opened by supply as a trade (a mat: step)
+    else if (item(ing.code)?.craft || (coins && tradeOf(ing.code, true))) inputs.push({ code: ing.code, per: ing.quantity / r.quantity, source: { kind: "craft", code: ing.code }, gates: [] });
     else return `material ${ing.code}: ${s}`;
   }
   return inputs;
@@ -104,7 +106,7 @@ export function inputsOf(code: string): Input[] | string {
 interface Static { work: Work; gates: Gate[]; inputs?: Input[] }
 
 /** What one objective is, independent of progress. A string = unhandled, with the reason. */
-function staticOf(o: AchievementObjectiveProgress): Static | string {
+function staticOf(o: AchievementObjectiveProgress, coins: boolean): Static | string {
   const t = o.target ?? "";
   switch (o.type) {
     case "favor": return { work: { kind: "favor" }, gates: [] };
@@ -138,7 +140,7 @@ function staticOf(o: AchievementObjectiveProgress): Static | string {
       if (!r) return `${t} has no recipe`;
       const g = placeGates("workshop", r.skill);
       if (typeof g === "string") return g;
-      const inputs = inputsOf(t);
+      const inputs = inputsOf(t, coins);
       if (typeof inputs === "string") return inputs;
       return { work: { kind: "craft", code: t }, gates: [{ kind: "level", lane: r.skill as Lane, level: r.level }, ...g], inputs };
     }
@@ -163,10 +165,10 @@ function staticOf(o: AchievementObjectiveProgress): Static | string {
 }
 
 const staticMemo = new Map<string, Static | string>();
-const staticFor = (o: AchievementObjectiveProgress): Static | string => {
-  const k = `${o.type}:${o.target}:${o.total}`;
+const staticFor = (o: AchievementObjectiveProgress, coins: boolean): Static | string => {
+  const k = `${coins ? "c|" : ""}${o.type}:${o.target}:${o.total}`;
   let s = staticMemo.get(k);
-  if (s === undefined) staticMemo.set(k, (s = staticOf(o)));
+  if (s === undefined) staticMemo.set(k, (s = staticOf(o, coins)));
   return s;
 };
 
@@ -189,7 +191,7 @@ function build(world: World): { targets: Target[]; unhandled: Unhandled[] } {
       if (o.progress >= o.total) return;
       const key = `ach:${a.code}:${i}`;
       if (world.config.exclude.includes(a.code)) return void unhandled.push({ key, achievement: a.code, points: a.points, why: "excluded by config" });
-      const s = staticFor(o);
+      const s = staticFor(o, !!(world.config.tolls ?? 1));
       if (typeof s === "string") return void unhandled.push({ key, achievement: a.code, points: a.points, why: s });
       const left = s.work.kind === "level" ? 1 : Math.ceil(o.total - o.progress); // the forward model's progress is fractional (expected drops)
       targets.push({ key, achievement: a.code, objective: i, points: a.points, work: s.work, left, gates: s.gates, inputs: s.inputs, filler: world.config.filler.includes(a.code) });

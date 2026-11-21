@@ -9,6 +9,7 @@ import { catalog, item, monster as monsterOf } from "../../catalog";
 import { applyGear, baseStats } from "../../sim/stats";
 import { simulate } from "../../sim/combat";
 import { FREE, route, travelSec } from "../route";
+import type { May } from "../route";
 import { bestInSlot, canEquip, killSeconds } from "../bis";
 import type { Food } from "../bis";
 import type { FightForecast } from "../../sim/combat";
@@ -19,9 +20,9 @@ import { consPrice, potionCands } from "./consumables";
 import { available, poolBank } from "./stock";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../types/api";
 import type { BankItem, Character } from "../../types/api";
-import type { GameMap } from "../../types/catalog";
+import type { GameMap, Transition } from "../../types/catalog";
 import type { GearRecommendation } from "../types";
-import type { Place, World } from "./types";
+import type { Place, Toll, World } from "./types";
 
 export const placeOf = (ch: Character): Place => ({ x: ch.x, y: ch.y, layer: (ch as { layer?: string }).layer ?? "overworld" });
 const pkey = (p: Place): string => `${p.layer}:${p.x},${p.y}`;
@@ -53,51 +54,171 @@ export function eventTiles(type: string, code: string, world: World): { tile: Ga
   return out;
 }
 
+// ── task 017: the transitions a character's plan may open ────────────────────
+
+/** The conditional transitions of the map (a tile with a transition that has conditions), once per catalog. */
+const condMemo = new WeakMap<GameMap[], { tile: GameMap; t: Transition; id: string }[]>();
+function conditional(): { tile: GameMap; t: Transition; id: string }[] {
+  const maps = catalog().maps;
+  let c = condMemo.get(maps);
+  if (!c) condMemo.set(maps, (c = maps.filter((m) => m.interactions?.transition?.conditions?.length).map((m) => ({ tile: m, t: m.interactions.transition!, id: `${m.layer}:${m.x},${m.y}` }))));
+  return c;
+}
+/** A transition's id: the tile it is taken on. */
+const tid = (t: Transition): string | undefined => conditional().find((c) => c.t === t)?.id;
+/** A gold fare's way back: nothing when a free route leads home (the city) from where it lands, else (shortcut: the way
+ *  back costs what the way in did — the island's boat both ways, the only paid way back on the map) the same fare. */
+const backFare = (c: { tile: GameMap; t: Transition }, gold: number): number =>
+  route({ x: c.t.x, y: c.t.y, layer: c.t.layer }, CITY, FREE) ? 0 : gold;
+const mays = new Map<string, May>([["", FREE]]);
+const mayKeys = new WeakMap<May, string>([[FREE, ""]]);
+const mayMemo = new WeakMap<World, Map<string, May>>();
+const done = (world: World, code: string): boolean => world.achievements.some((a) => a.code === code && (!!a.completed_at || a.objectives.every((o) => o.progress >= o.total)));
+/**
+ * Task 017, settled point 2: the transitions this character's plan may open — the free ones; one whose every condition
+ * the plan can meet: an achievement that is done; a key (`cost` with an item) or a carried item (`has_item`) it may take
+ * (stock.ts available, plus its own bag, plus its worn set for a carried item); a fare (`cost` with gold) the gold budget
+ * covers with the way back (stock.ts available("gold"): bank gold less the others' reservations less GOLD_FLOOR).
+ * config.tolls 0 or no name: FREE. One May object per set of open transitions (route.ts keeps its hops per May).
+ */
+export function mayOf(world: World, name?: string): May {
+  if (!name || !(world.config.tolls ?? 1)) return FREE;
+  let byName = mayMemo.get(world);
+  if (!byName) mayMemo.set(world, (byName = new Map()));
+  let may = byName.get(name);
+  if (may) return may;
+  const ch = world.characters.find((c) => c.name === name);
+  const held = (code: string, worn: boolean): number =>
+    available(code, world, name) + (ch ? (ownedQtyOf(ch, []).get(code) ?? 0) - (worn ? 0 : GEAR_SLOTS.reduce((t, g) => t + (slotCode(ch, g) === code ? 1 : 0), 0)) : 0);
+  const open = conditional().filter((c) => c.t.conditions!.every((k) =>
+    k.operator === "achievement_unlocked" ? done(world, k.code)
+    : k.operator === "cost" && k.code === "gold" ? available("gold", world, name) >= k.value + backFare(c, k.value)
+    : k.operator === "cost" ? held(k.code, false) >= k.value
+    : k.operator === "has_item" ? held(k.code, true) >= k.value
+    : false)).map((c) => c.id);
+  const key = open.join(";");
+  may = mays.get(key);
+  if (!may) {
+    const set = new Set(open);
+    mays.set(key, (may = (t) => FREE(t) || set.has(tid(t) ?? "")));
+    mayKeys.set(may, key);
+  }
+  byName.set(name, may);
+  return may;
+}
+
 const routeMemo = new Map<string, number | null>();
-/** Seconds from `from` to `to` by a free route, or undefined. */
-export function travel(from: Place, to: Place): number | undefined {
-  const k = `${pkey(from)}>${pkey(to)}`;
+/** Seconds from `from` to `to` by a route through the transitions `may` opens (default: the free ones), or undefined. */
+export function travel(from: Place, to: Place, may: May = FREE): number | undefined {
+  const k = `${mayKeys.get(may) ?? "?"}|${pkey(from)}>${pkey(to)}`;
   let s = routeMemo.get(k);
   if (s === undefined) {
-    const legs = route(from, to, FREE);
+    const legs = route(from, to, may);
     s = remember(routeMemo, k, legs ? travelSec(legs) : null);
   }
   return s ?? undefined;
 }
 
-export interface Spot { place: Place; sec: number; until?: number; event?: string }
-/** The nearest tile carrying the content that `from` reaches by a free route: static, or a live event's. */
-export function nearestSpot(from: Place, type: string, code: string, world: World): Spot | undefined {
+/** Task 017: a spot behind conditional transitions carries the toll of its round trip (tollOf). */
+export interface Spot { place: Place; sec: number; until?: number; event?: string; toll?: Toll }
+/** The nearest tile carrying the content that `from` reaches: static, or a live event's — by a free route, or (task 017,
+ *  `name` given) through the transitions that character's plan may open (mayOf), its toll on the spot. */
+export function nearestSpot(from: Place, type: string, code: string, world: World, name?: string): Spot | undefined {
+  const may = mayOf(world, name);
   let best: Spot | undefined;
   const consider = (t: GameMap, until?: number, event?: string): void => {
     if (t.access?.type === "blocked") return;
     const place = { x: t.x, y: t.y, layer: t.layer };
-    const sec = travel(from, place);
+    const sec = travel(from, place, may);
     if (sec != null && (!best || sec < best.sec)) best = { place, sec, until, event };
   };
   for (const t of staticTiles(type, code)) consider(t);
   for (const e of eventTiles(type, code, world)) consider(e.tile, e.until, e.event);
+  if (best && may !== FREE) {
+    const toll = tollOf(best.place, world, name!);
+    if (toll?.via.length) best = { ...best, toll };
+  }
   return best;
 }
 
 /** The city bank: where "reachable from the city" is asked when nobody in particular stands anywhere. */
 export const CITY: Place = { x: 4, y: 1, layer: "overworld" };
 
-const bankMemo = new Map<string, number>();
-/** Seconds from a place to the nearest bank it reaches (the island's conditional bank is never taken, as `nearestBank`). */
-export function bankSec(p: Place): number {
-  const k = pkey(p);
+const bankMemo = new Map<string, { sec: number; place?: Place }>();
+/** The nearest bank a place reaches through `may` (the island's conditional bank is never taken, as `nearestBank`). */
+function nearestBankOf(p: Place, may: May): { sec: number; place?: Place } {
+  const k = `${mayKeys.get(may) ?? "?"}|${pkey(p)}`;
   let s = bankMemo.get(k);
-  if (s == null) {
-    s = Infinity;
+  if (!s) {
+    s = { sec: Infinity };
     for (const t of catalog().maps) {
       if (t.interactions?.content?.type !== "bank" || t.access?.type === "conditional") continue;
-      const sec = travel(p, { x: t.x, y: t.y, layer: t.layer });
-      if (sec != null && sec < s) s = sec;
+      const place = { x: t.x, y: t.y, layer: t.layer };
+      const sec = travel(p, place, may);
+      if (sec != null && sec < s.sec) s = { sec, place };
     }
     remember(bankMemo, k, s);
   }
   return s;
+}
+/** Seconds from a place to the nearest bank it reaches by a free route (or through `may`). */
+export const bankSec = (p: Place, may: May = FREE): number => nearestBankOf(p, may).sec;
+
+const tollMemo = new WeakMap<World, Map<string, Toll | null>>();
+/**
+ * Task 017, settled points 2 and 3: the round trip a step behind conditional transitions makes — from the bank nearest the
+ * place (its reset), to the place and back — through the transitions this character's plan may open: the fares of both
+ * ways, the keys the transitions consume, the item a transition wants carried (kept), the whole trip's seconds, and the
+ * transitions' tiles. `via` empty: no conditional transition on the way. Undefined: no round trip.
+ */
+export function tollOf(place: Place, world: World, name: string): Toll | undefined {
+  let byKey = tollMemo.get(world);
+  if (!byKey) tollMemo.set(world, (byKey = new Map()));
+  const k = `${name}|${pkey(place)}`;
+  const hit = byKey.get(k);
+  if (hit !== undefined) return hit ?? undefined;
+  const may = mayOf(world, name);
+  const bank = nearestBankOf(place, may).place;
+  const out = bank && route(place, bank, may), back = bank && route(bank, place, may);
+  let toll: Toll | null = null;
+  if (out && back) {
+    toll = { gold: 0, keys: {}, carried: {}, sec: travelSec(out) + travelSec(back), via: [] };
+    for (const l of [...back, ...out]) {
+      if (l.kind !== "transition" || !l.to.conditions?.length) continue;
+      toll.via.push(`${l.layer}:${l.x},${l.y}`);
+      for (const c of l.to.conditions) {
+        if (c.operator === "cost" && c.code === "gold") toll.gold += c.value;
+        else if (c.operator === "cost") toll.keys[c.code] = (toll.keys[c.code] ?? 0) + c.value;
+        else if (c.operator === "has_item") toll.carried[c.code] = Math.max(toll.carried[c.code] ?? 0, c.value);
+      }
+    }
+  }
+  byKey.set(k, toll);
+  return toll ?? undefined;
+}
+const GOLD_OPEN: May = (t) => FREE(t) || (t.conditions ?? []).every((c) => c.operator === "cost" && c.code === "gold");
+mayKeys.set(GOLD_OPEN, "gold");
+/** Task 017, settled point 4: how much gold the budget lacks for the cheapest round trip (from the city bank) to a tile
+ *  carrying the content through free and paid transitions only; undefined: none that fares alone open (or tolls off). */
+export function fareShort(world: World, type: string, code: string): number | undefined {
+  if (!(world.config.tolls ?? 1)) return undefined;
+  let best: number | undefined;
+  for (const t of staticTiles(type, code)) {
+    const p = { x: t.x, y: t.y, layer: t.layer }, there = route(CITY, p, GOLD_OPEN), back = route(p, CITY, GOLD_OPEN);
+    if (!there || !back) continue;
+    let fare = 0;
+    for (const l of [...there, ...back]) if (l.kind === "transition") for (const c of l.to.conditions ?? []) if (c.code === "gold") fare += c.value;
+    if (best == null || fare < best) best = fare;
+  }
+  return best == null ? undefined : best - available("gold", world, "");
+}
+
+/** Task 017: what a toll takes out of the bank — added to a step's `withdraw` (the reservation). */
+export function withToll(withdraw: Record<string, number> | undefined, toll: Toll | undefined): Record<string, number> | undefined {
+  if (!toll?.via.length) return withdraw;
+  const out = { ...withdraw };
+  for (const [c, q] of [["gold", toll.gold] as [string, number], ...Object.entries(toll.keys), ...Object.entries(toll.carried)]) if (q > 0) out[c] = (out[c] ?? 0) + q;
+  return out;
 }
 
 // ── memoised solver calls ────────────────────────────────────────────────────

@@ -58,8 +58,10 @@ started queue pauses on its first action ("mock API: actions refused").
   running, live `note`, per-item `done`/`error`), `characters[name]`, `log`
   (activity entries, newest first), `hive`, `skillPins`, `bankItems`, …;
   later lines carry only the signals that changed.
-- Post-mortem: `logs/dev.log` (every API call, note change, rpc failure; a
-  per-process tag per service start).
+- Post-mortem: the raw log, `logs/raw/<YYYY-MM-DD>/<HH>.log` by each line's UTC
+  hour (every API call, note change, rpc failure; a per-process tag per service
+  start) — a service on another port writes under `logs/port-<N>/raw/`;
+  `logs/dev.log` is the archive to 2026-11-21.
 - Actions are cooldown-paced (3–25s each). A full bank reset ≈ 5–8 actions ≈
   1–2 min; budget generous timeouts.
 

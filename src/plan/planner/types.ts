@@ -72,7 +72,12 @@ export interface Step {
   wear?: Record<string, string>; // slot → code: the set its job wears, out of the others' pool while it is not on yet (stock.ts)
   parent?: string;        // a supply step: the key of the parent it is for (the best-scoring one)
   for?: string;           // a gear step: the character the piece is made for
+  toll?: Toll;            // task 017: the conditional transitions of its round trip (bank → place → bank), in `withdraw` too
 }
+
+/** Task 017: what a round trip through conditional transitions takes — the fares (gold), the keys it consumes, the item it
+ *  carries and keeps, its transitions' seconds, and which transitions (their tiles). */
+export interface Toll { gold: number; keys: Record<string, number>; carried: Record<string, number>; sec: number; via: string[] }
 
 export interface PlannerConfig {
   deadline: string;                       // "2027-02-24T00:00:00Z"
@@ -92,6 +97,9 @@ export interface PlannerConfig {
   events: number;                         // task 013: 1 = an event is a calendar (events.ts) and the forward model attends it; 0 = a wall, no events (row E only)
   consumables: number;                    // task 014: 1 = potions and food by need, through the bank (consumables.ts); 0 = report 013's model whole (row C only)
   expansionCap: number;                   // task 015: the most gold one bank expansion may cost (Alex's number; not in the UI)
+  tolls: number;                          // task 017: 1 = conditional transitions open, tasks coins spent; 0 = report 016's model whole (the replay's row only)
+  goldPerHour: number;                    // task 017: gold a character-hour is worth (design D.2): a fare's price in hours
+  sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;

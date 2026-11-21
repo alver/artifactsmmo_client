@@ -38,8 +38,8 @@ import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
 import type { Place } from "../plan/route";
-import { slotCode, slotQuantity } from "../types/api";
-import type { BankDetails, BankItem, Character, CharacterOfferings, OfferingFavor, SeasonalOffering } from "../types/api";
+import { GEAR_SLOTS, slotCode, slotQuantity } from "../types/api";
+import type { BankDetails, BankItem, Character, CharacterOfferings, GearSlot, OfferingFavor, SeasonalOffering } from "../types/api";
 import type { CraftRecipe, DropRate, Monster, Resource } from "../types/catalog";
 import type { FightForecast } from "../sim/combat";
 
@@ -216,15 +216,41 @@ const pinnedAt = (it: { x?: number; y?: number; layer?: string }): Place | undef
  *  the fight item right behind it (a step's reset, a trip's reset, a trip's way back into its step). Undefined: not
  *  the planner's (a character it does not own never carries one), and today's provisioning applies. */
 function takeOf(name: string, it: QueueItem): Record<string, number> | undefined {
-  if (it.kind === "fight") return it.take;
+  if (it.kind === "fight" || it.kind === "gather") return it.take;
   if (it.kind !== "gear" || !it.id.startsWith("pl:")) return undefined;
   const items = queues.value[name]?.items ?? [];
   const next = items[items.findIndex((x) => x.id === it.id) + 1];
-  return next?.kind === "fight" && next.id.startsWith("pl:") ? next.take : undefined;
+  // task 017: a gather item's take is its toll
+  return (next?.kind === "fight" || next?.kind === "gather") && next.id.startsWith("pl:") ? next.take : undefined;
 }
+/** Task 017: a take's consumables (potions and food) — not a toll's gold, keys or carried item. */
+const eaten = (c: string): boolean => c !== "gold" && ["utility", "consumable"].includes(itemOf(c)?.type ?? "");
 /** Task 014, settled point 5: a planned potion is all drunk, or the planned food all eaten. */
 function ranDry(ch: Character, take: Record<string, number>): boolean {
-  return Object.keys(take).some((c) => invQty(ch, c) + (["utility1", "utility2"] as const).reduce((t, g) => t + (slotCode(ch, g) === c ? slotQuantity(ch, g) : 0), 0) === 0);
+  return Object.keys(take).filter(eaten).some((c) => invQty(ch, c) + (["utility1", "utility2"] as const).reduce((t, g) => t + (slotCode(ch, g) === c ? slotQuantity(ch, g) : 0), 0) === 0);
+}
+
+const offPlan = new Set<string>(); // the items whose planned set could not be worn (one raw line each)
+/**
+ * Task 017, settled point 13: the set a planner's fight item (and its reset) wears is the one its step planned — `wear`
+ * and the planned potions in the utility slots — never a fresh solve on the bank of the moment (11-21 11:47 UTC: First's
+ * reset solved again and wore a battlestaff and a mushmush jacket against its step's steel battleaxe and iron armor).
+ * A piece nowhere to be had (worn, in the bag or in the bank) falls back to the executor's own solve, with one raw line.
+ */
+function plannedSet(name: string, ch: Character, it: QueueItem & { wear?: Record<string, string> }, take: Record<string, number> | undefined): Partial<Record<GearSlot, string>> | undefined {
+  const wear = it.wear;
+  if (!wear || !Object.keys(wear).length) return undefined;
+  const want = new Map<string, number>();
+  for (const c of Object.values(wear)) want.set(c, (want.get(c) ?? 0) + 1);
+  const have = (c: string): number => invQty(ch, c) + bankQty(c) + GEAR_SLOTS.filter((g) => slotCode(ch, g) === c).length;
+  const missing = [...want].filter(([c, n]) => have(c) < n).map(([c]) => c);
+  if (missing.length) {
+    const stepOf = it.id.slice(0, it.id.lastIndexOf(":")); // one line a step (its reset and its fight item)
+    if (!offPlan.has(stepOf)) { offPlan.add(stepOf); devlog(`plan ${name}: the planned set needs ${missing.map(itemName).join(", ")}, which the bank no longer holds — ${stepOf} wears the executor's own solve`); }
+    return undefined;
+  }
+  const pots = Object.keys(take ?? {}).filter((c) => itemOf(c)?.type === "utility");
+  return { ...(wear as Partial<Record<GearSlot, string>>), utility1: pots[0] ?? "", utility2: pots[1] ?? "" };
 }
 
 function keepOf(it: QueueItem, ch: Character): string[] | undefined {
@@ -240,16 +266,20 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
     : it.kind === "train" ? trainKeep(ch, it)
     : it.kind === "offering" ? offeringKeep(ch, it)
     : undefined;
-  // Task 014: an owned step's reset keeps exactly the food it planned (the next reset banks what is left)
+  // Task 014: an owned step's reset keeps exactly the food it planned (the next reset banks what is left). Task 017,
+  // settled point 6: the keys and the carried item of a trip ride the keep list of its reset and its field item
   const take = it.kind === "gear" ? takeOf(ch.name, it) : undefined;
-  if (take) return [...(base ?? []), ...Object.keys(take).filter((c) => itemOf(c)?.type !== "utility")];
+  if (take) return [...(base ?? []), ...Object.keys(take).filter((c) => c !== "gold" && itemOf(c)?.type !== "utility")];
+  const toll = (it.kind === "fight" || it.kind === "gather") && it.take ? Object.keys(it.take).filter((c) => c !== "gold" && !eaten(c)) : [];
+  if (toll.length && it.kind === "gather") return [...(base ?? []), ...toll];
+  const withToll = (k: string[] | undefined): string[] | undefined => (toll.length ? [...(k ?? []), ...toll] : k);
   // Carried between-fight food is working stock too — a loot bank-off or the
   // job-start gear reset must not stash the fighter's rations.
   if (it.kind === "fight" || it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight") || (it.kind === "train" && it.skill === "combat")) {
     const food = foodInHand(ch)?.code;
-    if (food) return [...(base ?? []), food];
+    if (food) return withToll([...(base ?? []), food]);
   }
-  return base;
+  return withToll(base);
 }
 
 function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
@@ -259,6 +289,7 @@ function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
   const fed = it.kind === "fight" ? !it.take && it.food !== false : it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "train" && it.skill === "combat") ? true : undefined;
   return {
     keep: keepOf(it, ch),
+    gold: (it.kind === "fight" || it.kind === "gather") ? it.take?.gold : undefined, // task 017: the fares stay in the pocket
     food: fed,
     fightsLeft:
       it.kind === "fight" ? (it.times > 0 ? Math.max(1, it.times - it.done) : 50)
@@ -484,7 +515,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // and swap (memoized per bank reference — free when nothing changed).
       // Planned-but-unowned utility potions get brewed (provisionPotions).
       if (it.gear) {
-        const desired = desiredForJob(name, ch, { kind: "fight", monster: it.monster }, it.take);
+        const desired = plannedSet(name, ch, it, it.take) ?? desiredForJob(name, ch, { kind: "fight", monster: it.monster }, it.take);
         // task 014, settled points 1 and 4: an owned step's utility slots are its reset's — a round never refills them
         // from the bank, and nothing is brewed (provisionPotions is for the items the planner does not write)
         const round = it.take && desired ? Object.fromEntries(Object.entries(desired).filter(([g]) => !g.startsWith("utility"))) : desired;
@@ -516,7 +547,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
     }
     case "gear": {
       const take = takeOf(name, it);
-      const desired = it.desired ?? (it.job ? desiredForJob(name, ch, it.job, take) : undefined);
+      const desired = it.desired ?? plannedSet(name, ch, it, take) ?? (it.job ? desiredForJob(name, ch, it.job, take) : undefined);
       if (it.reset) {
         // Full bank reset. Fight jobs always get a set (best-effort when no
         // winnable one exists) — desired is only missing for an UNKNOWN
@@ -526,10 +557,22 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         }
         // Utility strip as an UNDERLAY: a fight set's potion picks override it.
         const total = { ...RESET_UTILITY_STRIP, ...(desired ?? stripAllMap()) };
-        if ((await gearSwapStep(name, ch, total, ctx, { reset: true, utility: take })) === "acted") return false;
+        if ((await gearSwapStep(name, ch, total, ctx, { reset: true, utility: take, gold: take?.gold })) === "acted") return false;
         // task 014, settled point 4: an owned step's reset puts exactly its planned potions on (utility, above) and its
         // planned food into the bag — task 015, settled point 7: never more than a third of the bag, whatever the item says
         for (const [code, q] of Object.entries(take ?? {})) {
+          if (code === "gold") {
+            // task 017, settled point 6: the trip's fares into the pocket (the swap above left them there); a bank that
+            // cannot pay them is no pause — the field item finds no route and ends with one line
+            const short = q - ch.gold, bank = nearestBank(ch);
+            if (short > 0 && bank && (bankDetails.value?.gold ?? 0) >= short) {
+              if (!isAt(ch, bank)) { await moveTo(name, bank); return false; }
+              ctx.note("withdraw the fares");
+              await step(name, () => actions.withdrawGold(name, short));
+              return false;
+            }
+            continue;
+          }
           if (itemOf(code)?.type === "utility") continue;
           const short = Math.min(q, Math.floor(ch.inventory_max_items / 3)) - invQty(ch, code), banked = bankQty(code), bank = nearestBank(ch);
           if (short > 0 && banked > 0 && freeSpace(ch) > 0 && bank) {

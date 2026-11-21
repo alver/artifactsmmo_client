@@ -436,7 +436,8 @@ export function reservable(world: World, name: string, code: string, fit: number
 /** A fight step's consumables (settled point 4). */
 export interface Take {
   kills: number;                     // what the reservable stock covers (the kills asked when no potion is in the set)
-  sec?: number;                      // a kill's seconds when the set changed (its potions could not be stocked)
+  stock?: number;                    // task 017: the kills the bank's potions cover, the others' running steps off (none: no potion in the set)
+  sec?: number;                    // a kill's seconds when the set changed (its potions could not be stocked)
   rec?: GearRecommendation;          // that set
   withdraw?: Record<string, number>; // the potions and food the step takes from the bank (its expected units + MARGIN)
   note: string;                      // for the why
@@ -456,7 +457,12 @@ export function fightTake(world: World, ch: Character, monster: string, kills: n
   const res = new Map(used.map(([p]) => [p, reservable(world, ch.name, p, fit, any)]));
   // a utility slot holds STACK of a potion (the game's 484): a step carries no more
   for (const [p, u] of used) K = Math.min(K, Math.floor(Math.min(res.get(p)!, STACK) / (u * MARGIN) + 1e-9));
+  // task 017, settled point 13: what the bank holds of its potions less the others' running steps (stock.ts available) —
+  // the sliver test (decide.ts fightPlan); not what better works' demand leaves, which starves a fighter's road
+  let stock: number | undefined;
+  if (used.length) stock = used.reduce((k, [p, u]) => Math.min(k, Math.floor(Math.min(available(p, world, ch.name), STACK) / (u * MARGIN) + 1e-9)), kills);
   if (used.length && K < 1) {
+    stock = undefined;
     w = gearWorld(world); // the set of the gear alone (one World a decision, shared with the bundles' gates)
     const r2 = fightRec(ch, w, monster);
     if (!r2 || !wins(r2, w)) return undefined;
@@ -487,7 +493,7 @@ export function fightTake(world: World, ch: Character, monster: string, kills: n
   const bagNote = capped && food ? `; the bag caps it at ${K} kills (${n} ${itemName(food.code)} a kill, ${bag} is a third of ${ch.inventory_max_items})` : "";
   const note = took.length ? ` with ${took.join(" and ")} from the bank` + (withdraw[food?.code ?? ""] ? bagNote : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "")
     : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "";
-  return { kills: K, ...(changed ? { sec: freeSec(r.forecast, ch, w, monster, food), rec: r } : {}), withdraw: took.length ? withdraw : undefined, note };
+  return { kills: K, stock, ...(changed ? { sec: freeSec(r.forecast, ch, w, monster, food), rec: r } : {}), withdraw: took.length ? withdraw : undefined, note };
 }
 /** Why a fight rests (settled point 6's "rest otherwise", made-up case "no cook at the level"). */
 function restWhy(world: World, ch: Character, lost: number): string {
@@ -508,6 +514,8 @@ export function consumed(world: World, step: Step): Map<string, number> {
   const out = new Map<string, number>();
   if (step.work.kind !== "kill") return out;
   for (const [code, q] of Object.entries(step.withdraw ?? {})) {
+    // task 017: a toll's gold, keys and carried item ride in the withdraw too; advance pays the toll itself
+    if (code === "gold" || (step.toll && (code in step.toll.keys || code in step.toll.carried))) continue;
     const n = Math.min(q / MARGIN, Math.max(0, available(code, world, step.character)));
     if (n > 1e-9) out.set(code, n);
   }

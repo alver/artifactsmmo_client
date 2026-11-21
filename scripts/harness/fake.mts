@@ -9,8 +9,11 @@
 // price from the character's gold, the next price doubled unless the scenario gives
 // a ladder) and `recycling` (on the item's workshop at its level; per item
 // xp.ts recycleReturn units of the recipe's ingredients, dealt in recipe order).
-// Not modelled: XP and levels (a level is what the scenario set), gated tiles
-// (always locked), achievement conditions of transitions (always unmet), task /
+// Task 017: a gated tile opens on the scenario's achievements (the Tasks Trader), a
+// `has_item` transition counts the bag and the worn set (the docs), and the public
+// market read `GET /grandexchange/orders` answers from `world.ge` (its own counter).
+// Not modelled: XP and levels (a level is what the scenario set), achievement
+// conditions of transitions (always unmet), task /
 // give actions, `use` of anything but food,
 // group fights. Achievements are what the scenario wrote (`world.achievements`;
 // it moves progress by hand — nothing the fake does counts toward them).
@@ -93,6 +96,10 @@ export const world = {
   altar: new Map<string, SelectedOffering[]>(),
   trace: [] as Call[],
   reads: [] as string[],
+  /** Task 017: the Grand Exchange's orders (GET /grandexchange/orders), how often they were read, reads to refuse. */
+  ge: [] as { id: string; type: "sell" | "buy"; account: string; code: string; quantity: number; price: number; created_at: string }[],
+  geReads: 0,
+  geFail: 0,
   ended: false,
   /** What each gather of a resource / kill of a monster yields; unset = the catalog default (see yieldOf). */
   yields: new Map<string, ItemStack[]>(),
@@ -342,8 +349,9 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
     if (!tile) throw new GameError(404, "Map not found.");
     if (d.ch.x === body.x && d.ch.y === body.y) throw new GameError(490, "The character is already at the destination.");
     if (tileAt(body.x, body.y, d.ch.layer)?.access?.type === "blocked") throw new GameError(596, "The map is blocked and cannot be accessed.");
-    // guess: achievements are not modelled, so a gated tile is always locked [3.2].
-    if (tile.access?.type === "conditional") throw new GameError(496, "Conditions not met.");
+    // A gated tile opens on the scenario's achievements (task 017: the Tasks Trader behind tasks_farmer); else locked [3.2].
+    const done = (code: string): boolean => !!world.achievements.find((a) => a.code === code)?.completed_at;
+    if (tile.access?.type === "conditional" && !((tile.access.conditions ?? []) as { code: string; operator: string }[]).every((c) => c.operator === "achievement_unlocked" && done(c.code))) throw new GameError(496, "Conditions not met.");
     const dist = pathLength(d.ch, tile);
     if (dist == null) throw new GameError(595, "No path available to the destination map.");
     Object.assign(d.ch, { x: body.x, y: body.y, map_id: tile.map_id });
@@ -362,7 +370,8 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
         d.ch.gold -= c.value;
       } else if (c.operator === "cost") take(d.ch, c.code, c.value);
       else if (c.operator === "has_item") {
-        if (held(d.ch, c.code) < c.value) throw new GameError(478, MISSING);
+        // the docs: "You must possess (inventory or equipped) the specified item" — not consumed (task 017)
+        if (held(d.ch, c.code) + GEAR_SLOTS.filter((g) => slotCode(d.ch, g) === c.code).length < c.value) throw new GameError(478, MISSING);
       } else throw new GameError(496, "Conditions not met.");
     }
     Object.assign(d.ch, { x: tr.x, y: tr.y, layer: tr.layer, map_id: tr.map_id });
@@ -692,6 +701,14 @@ export async function fakeFetch(input: unknown, init: { method?: string; body?: 
   if (url.origin !== API_BASE) fatal(`request to ${url.origin}${url.pathname} — a scenario has no real network`);
   if (world.ended) throw new Error("fake game: the scenario has ended");
   const method = init.method ?? "GET";
+  // Task 017: the public market read — counted apart from `reads` (the account's), answered from `world.ge`; `geFail`
+  // refuses the next n reads (a failed poll)
+  if (method === "GET" && url.pathname === "/grandexchange/orders") {
+    world.geReads++;
+    if (world.geFail > 0) return world.geFail--, refuse(500, "injected fault 500");
+    const size = Number(url.searchParams.get("size")) || 50, n = Number(url.searchParams.get("page")) || 1;
+    return reply({ data: world.ge.slice((n - 1) * size, n * size), total: world.ge.length, page: n, size, pages: Math.max(1, Math.ceil(world.ge.length / size)) });
+  }
   if (method === "GET") return reply(read(url));
   const m = method === "POST" ? /^\/my\/([^/]+)\/action\/(.+)$/.exec(url.pathname) : null;
   if (!m) return fatal(`${method} ${url.pathname} is not implemented`);

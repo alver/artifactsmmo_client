@@ -7,12 +7,14 @@
 import { atlas } from "../../catalog/atlas";
 import { catalog, item, monster as monsterOf, resource as resourceOf } from "../../catalog";
 import { CRAFT_SEC, autoRecyclable, fightXp, gatherSec } from "../xp";
-import { GATHER_LANES, GATHER_LOG, GEAR_CRAFT, STEP_BANK_SEC, TASK_SEC, killLog } from "./config";
+import { COINS_PER_TASK, GATHER_LANES, GATHER_LOG, GEAR_CRAFT, STEP_BANK_SEC, TASK_SEC, killLog } from "./config";
 import { craftXpOf } from "./xp";
 import { CITY, bankSec, chAt, fightRec, fightSecOf, firstWin, gatherCut, nearestSpot, openOf, placeOf, planRec, setWisdom } from "./reach";
 import { pickMonster, pickNode, pickRecipe } from "./pick";
 import { rolesFor } from "./roles";
 import { atlasKillSec, perUnit, sourceFor } from "./targets";
+import { available } from "./stock";
+import { coinsOn, tradeOf } from "./supply";
 import type { Character } from "../../types/api";
 import type { Costs, Lane, Place, Target, Work, World } from "./types";
 
@@ -46,13 +48,28 @@ export function sample(costs: Costs, key: string, sec: number, n: number, at = 0
 const itemsPerAction = (drops: { rate: number; min_quantity: number; max_quantity: number }[]): number =>
   drops.reduce((t, d) => t + (d.min_quantity + d.max_quantity) / 2 / d.rate, 0);
 
-/** Walking per action: the round trip from the work's tile to the nearest bank, once per bagful. */
+/** Walking per action: the round trip from the work's tile to the nearest bank, once per bagful. Task 017, settled points 3
+ *  and 5: behind conditional transitions the round trip is the toll's (its seconds) and its fares are hours at
+ *  config.goldPerHour — one trip a bagful, the step being at most one bag. */
 function walkPerAction(ch: Character, world: World, type: string, code: string, drops: Parameters<typeof itemsPerAction>[0]): number {
-  const spot = nearestSpot(placeOf(ch), type, code, world) ?? nearestSpot(CITY, type, code, world);
+  const spot = nearestSpot(placeOf(ch), type, code, world, ch.name) ?? nearestSpot(CITY, type, code, world);
   if (!spot) return 0;
   const perBag = Math.max(1, ch.inventory_max_items / Math.max(0.01, itemsPerAction(drops)));
+  if (spot.toll) return (spot.toll.sec + fareSec(spot.toll.gold, world)) / perBag;
   const bank = bankSec(spot.place);
   return Number.isFinite(bank) ? (2 * bank) / perBag : 0;
+}
+/** Task 017, settled point 5: a fare's gold as seconds at config.goldPerHour. */
+export const fareSec = (gold: number, world: World): number => (gold * 3600) / (world.config.goldPerHour || 300);
+/** Task 017: the fare's share of one action of a work behind a toll — in its price (walkPerAction), not in its time. */
+export function fareShare(ch: Character, w: Work, gold: number, world: World): number {
+  const drops = w.kind === "kill" ? monsterOf(w.monster)?.drops : w.kind === "gather" ? resourceOf(w.resource)?.drops : undefined;
+  return drops ? fareSec(gold, world) / Math.max(1, ch.inventory_max_items / Math.max(0.01, itemsPerAction(drops))) : 0;
+}
+/** Task 017, settled point 3: the actions one bag carries of a kill or gather work (its every drop by its odds). */
+export function bagActions(ch: Character, w: Work): number {
+  const drops = w.kind === "kill" ? monsterOf(w.monster)?.drops : w.kind === "gather" ? resourceOf(w.resource)?.drops : undefined;
+  return drops ? Math.max(1, Math.floor(ch.inventory_max_items / Math.max(0.01, itemsPerAction(drops)))) : Infinity;
 }
 
 /**
@@ -107,6 +124,12 @@ export function codeSec(code: string, ch: Character, world: World, depth = 0): n
   const s = sourceFor(code);
   if (typeof s !== "string") return actionSec(s.work, ch, world) * perOf(s.work);
   const r = item(code)?.craft;
+  // task 017, settled point 11: a material only a trader sells (the Tasks Trader's crystals for tasks coins) — a buy (5 s),
+  // its currency free while the bank covers it (stock is free, task 012), else that currency's own seconds
+  const t = !r && coinsOn(world) ? tradeOf(code, true) : undefined;
+  if (t && depth <= 4) return 5 + (available(t.work.currency, world, ch.name) >= t.work.price ? 0 : t.work.price * codeSec(t.work.currency, ch, world, depth + 1));
+  // a tasks coin comes from tasks: a task's seconds ÷ the coins a task pays
+  if (code === "tasks_coin" && coinsOn(world)) return (measured(world.costs, "task") ?? TASK_SEC) / COINS_PER_TASK;
   if (!r || depth > 4) return Infinity;
   return (CRAFT_SEC + r.items.reduce((t, g) => t + g.quantity * codeSec(g.code, ch, world, depth + 1), 0)) / Math.max(1, r.quantity);
 }
@@ -205,7 +228,7 @@ function roadRate(ch: Character, world: World, L: number): number {
     for (const m of catalog().monsters.values()) {
       // shortcut: a monster above the road's top level is not looked at; upgrade if a fighter ever farms one 10 levels up
       if (m.type === "boss" || m.type === "raid_boss" || m.level > top || fightXp(m.level, m.hp, m.type, ch.level + 1) <= 0) continue;
-      if (!nearestSpot(placeOf(ch), "monster", m.code, world)) continue;
+      if (!nearestSpot(placeOf(ch), "monster", m.code, world, ch.name)) continue;
       const at = firstWin(ch, world, m.code);
       if (at == null) continue;
       const r = planRec(chAt(ch, at), world, m.code)!;

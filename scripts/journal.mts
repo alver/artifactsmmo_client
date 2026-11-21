@@ -5,7 +5,7 @@
 // printed from the raw log: the restarts; per character the steps in order; every block, flap, no step, defect, stopped
 // queue, pause and removed interrupt; the interrupts; lost fights by step; the samples against their estimates; where the
 // time goes per character (the meter's groups); what each kill step planned to drink and eat against what it did; the
-// events and the spawn ratio; the levels; the achievements; the bank's lines. Writes nothing.
+// events and the spawn ratio; the levels; the achievements; the bank's lines; (task 017) what was spent. Writes nothing.
 
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -168,6 +168,15 @@ table(["time", "what"], of("ach").map((r) => [hm(r.t), r.claim ? `${r.who} claim
 console.log("## The bank");
 table(["time", "what", "used / slots (free)", "next", "gold", "the rest"], of("bank").map((r) => [hm(r.t), r.what, r.slots != null && !Array.isArray(r.slots) ? `${r.used ?? "?"} / ${r.slots} (${r.free ?? r.slots - r.used})` : Array.isArray(r.slots) ? `slots ${r.slots.join(" → ")}` : "", r.next ?? "", r.gold ?? "",
   [r.who, r.price != null ? `price ${r.price}` : "", r.codes?.join(", "), r.why, r.outdated ? `outdated: ${codes(r.outdated)}` : "", r.bags?.length ? `kept in bags: ${r.bags.join(", ")}` : ""].filter(Boolean).join("; ")]));
+// ── task 017, settled point 12: what was spent ──────────────────────────────
+console.log("## Spent");
+const spends = of("spend");
+table(["time", "who", "what", "code", "quantity", "for"], spends.map((r) => [hm(r.t), r.who, r.what, r.code, r.q ?? "?", [r.for, r.via ? `at ${r.via}` : "", r.item ? `for ${r.item}` : ""].filter(Boolean).join("; ")]));
+if (spends.length) {
+  const sum = new Map<string, number>();
+  for (const r of spends) sum.set(`${r.what} ${r.code}`, (sum.get(`${r.what} ${r.code}`) ?? 0) + (r.q ?? 0));
+  console.log(`In all: ${[...sum].map(([k, q]) => `${k} ${q}`).join(", ")}\n`);
+}
 if (of("config").length) {
   console.log("## Config");
   table(["time", "what"], of("config").map((r) => [hm(r.t), r.patch ? `patch ${JSON.stringify(r.patch)}` : `${r.who} ${r.on ? `on${r.dropped?.length ? `, dropped ${r.dropped.length} item(s)` : ""}` : "handed back"}`]));

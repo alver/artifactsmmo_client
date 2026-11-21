@@ -9,15 +9,16 @@
 import * as actions from "../api/actions";
 import { catalog } from "../catalog";
 import { ApiError, api, getAllPages } from "../api/client";
-import { bankDetails, bankItems, characters } from "./store";
+import { achievements, bankDetails, bankItems, characters } from "./store";
 import { liveEvents } from "./events";
 import { cooldownRemaining } from "../lib/util";
 import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { FREE, route, travelSec } from "../plan/route";
-import type { Place } from "../plan/route";
+import type { May, Place } from "../plan/route";
+import { GEAR_SLOTS, slotCode } from "../types/api";
 import type { BankDetails, BankItem, Character } from "../types/api";
-import type { GameMap } from "../types/catalog";
+import type { GameMap, Transition } from "../types/catalog";
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -59,6 +60,45 @@ export class NoRouteError extends Error {}
 
 const at = (p: Place): string => `(${p.x}, ${p.y}) ${p.layer}`;
 
+const backMemo = new WeakMap<Transition, boolean>();
+/** Whether a free route leads home (the city bank) from where a transition lands: then its fare is all it takes. */
+const freeBack = (t: Transition): boolean => {
+  let b = backMemo.get(t);
+  if (b === undefined) backMemo.set(t, (b = !!route({ x: t.x, y: t.y, layer: t.layer }, { x: 4, y: 1, layer: "overworld" }, FREE)));
+  return b;
+};
+const mays = new Map<string, May>([["", FREE]]);
+/**
+ * Task 017, settled point 6: the transitions a character may take NOW — the free ones, and every one whose conditions it
+ * meets: a fare the gold in its pocket pays with the way back (shortcut: a paid way back costs what the way in did — the
+ * island's boat, the only one on the map), a key in its bag, a carried item in its bag or worn, an achievement of the
+ * account. So nobody is stranded: a character goes behind a paid transition only with its way out in its pocket.
+ */
+export function mayFor(ch: Character): May {
+  const held = (code: string, worn: boolean): number =>
+    (ch.inventory ?? []).reduce((s, i) => s + (i.code === code ? i.quantity : 0), 0) + (worn ? GEAR_SLOTS.filter((g) => slotCode(ch, g) === code).length : 0);
+  const open: string[] = [];
+  for (const m of catalog().maps) {
+    const t = m.interactions?.transition;
+    if (!t?.conditions?.length) continue;
+    const ok = t.conditions.every((c) =>
+      c.operator === "achievement_unlocked" ? !!achievements.value?.find((a) => a.code === c.code)?.completed_at
+      : c.operator === "cost" && c.code === "gold" ? ch.gold >= c.value * (freeBack(t) ? 1 : 2)
+      : c.operator === "cost" ? held(c.code, false) >= c.value
+      : c.operator === "has_item" ? held(c.code, true) >= c.value
+      : false);
+    if (ok) open.push(`${m.layer}:${m.x},${m.y}`);
+  }
+  const key = open.join(";");
+  let may = mays.get(key);
+  if (!may) {
+    const set = new Set(open);
+    const byT = new Map(catalog().maps.filter((m) => m.interactions?.transition).map((m) => [m.interactions.transition!, `${m.layer}:${m.x},${m.y}`]));
+    mays.set(key, (may = (t) => FREE(t) || set.has(byT.get(t) ?? "")));
+  }
+  return may;
+}
+
 /**
  * One leg toward `to` (a `move` or a `transition`, and its cooldown); true once
  * the character stands on `to` — at once, with no call, when it already does.
@@ -70,8 +110,8 @@ export async function moveTo(name: string, to: Place): Promise<boolean> {
   if (!ch) return false;
   if (isAt(ch, to)) return true;
   const from = placeOf(ch);
-  const legs = route(from, to, FREE);
-  if (!legs) throw new NoRouteError(`${at(to)} is not reachable from ${at(from)} — another layer, behind a transition this client does not use`);
+  const legs = route(from, to, mayFor(ch));
+  if (!legs) throw new NoRouteError(`${at(to)} is not reachable from ${at(from)} — another layer, behind a transition it cannot pass now (no key, carried item or fare for the way there and back)`);
   const leg = legs[0];
   if (leg.kind === "transition") await step(name, () => actions.transition(name));
   else {
@@ -101,12 +141,13 @@ export async function walkTo(name: string, to: Place): Promise<void> {
  */
 export function nearest(type: string, code: string | null, who: Character, ok?: (m: GameMap) => boolean): GameMap | undefined {
   const from = placeOf(who);
+  const may = mayFor(who); // task 017: through the transitions it may take now
   let best: GameMap | undefined;
   let bestT = Infinity;
   const consider = (m: GameMap) => {
     const c = m.interactions?.content;
     if (!c || c.type !== type || (code != null && c.code !== code) || (ok && !ok(m))) return;
-    const legs = route(from, m, FREE);
+    const legs = route(from, m, may);
     const t = legs ? travelSec(legs) : Infinity;
     if (t < bestT) {
       bestT = t;
@@ -122,7 +163,7 @@ export function nearest(type: string, code: string | null, who: Character, ok?: 
 export function missingText(type: string, code: string, who: Character): string {
   const is = (m: GameMap) => m.interactions?.content?.type === type && m.interactions.content.code === code;
   return catalog().maps.some(is) || liveEvents().some((e) => is(e.map))
-    ? `no ${code} reachable — only on another layer, behind a transition this client does not use (from ${at(placeOf(who))})`
+    ? `no ${code} reachable — only on another layer, behind a transition it cannot pass now (from ${at(placeOf(who))})`
     : `no ${code} on the map (event over?)`;
 }
 
@@ -215,12 +256,13 @@ async function readBankAfter462(): Promise<void> {
  * every visit too (buy steps withdraw their cost back on demand — see
  * exec.ts runStep "buy"). A code the bank has no slot for stays in the bag (deposit).
  */
-export async function depositAll(name: string, except?: Set<string>): Promise<void> {
+export async function depositAll(name: string, except?: Set<string>, keepGold = 0): Promise<void> {
   const ch = characters.value[name];
   const items = (ch?.inventory || [])
     .filter((s) => s.code && s.quantity > 0 && !except?.has(s.code))
     .map((s) => ({ code: s.code, quantity: s.quantity }));
   if (items.length) await deposit(name, items);
-  const gold = characters.value[name]?.gold ?? 0;
+  // task 017, settled point 6: the sweep leaves a trip's fares in the pocket
+  const gold = (characters.value[name]?.gold ?? 0) - keepGold;
   if (gold > 0) await step(name, () => actions.depositGold(name, gold));
 }

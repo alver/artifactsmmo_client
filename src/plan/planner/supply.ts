@@ -98,21 +98,25 @@ export function fleetSec(work: Work, gates: Gate[], world: World): number {
 }
 
 const tradeMemo = new Map<string, { work: Work & { kind: "buy" }; gates: Gate[] } | null>();
-/** An NPC that sells the code for another item (not gold, not tasks coins), on a tile with a free route: the trade.
+/** An NPC that sells the code for another item (not gold), on a tile with a free route: the trade. Task 017, settled
+ *  point 11: tasks coins too when `coins` (config.tolls 1; coinsOn) — the Tasks Trader's crystals, cure and fabric.
  *  Static per catalog, memoised for good. */
-export function tradeOf(code: string): { work: Work & { kind: "buy" }; gates: Gate[] } | undefined {
-  let t = tradeMemo.get(code);
+export function tradeOf(code: string, coins = false): { work: Work & { kind: "buy" }; gates: Gate[] } | undefined {
+  const k = `${coins ? "c" : ""}${code}`;
+  let t = tradeMemo.get(k);
   if (t === undefined) {
     t = null;
     for (const n of catalog().npcs.values()) {
-      const o = (n.items ?? []).find((x) => x.code === code && x.buy_price != null && x.currency !== "gold" && x.currency !== "tasks_coin");
+      const o = (n.items ?? []).find((x) => x.code === code && x.buy_price != null && x.currency !== "gold" && (coins || x.currency !== "tasks_coin"));
       const g = o && placeGates("npc", n.code);
       if (o && g && typeof g !== "string") { t = { work: { kind: "buy", code, npc: n.code, currency: o.currency, price: o.buy_price! }, gates: g }; break; }
     }
-    tradeMemo.set(code, t);
+    tradeMemo.set(k, t);
   }
   return t ?? undefined;
 }
+/** Task 017, settled point 11: whether tasks coins are spent (on an objective's own material, a needed piece's). */
+export const coinsOn = (world: World): boolean => !!(world.config.tolls ?? 1);
 
 /** Why a code with no field source and no recipe cannot be had, with its price where there is one. */
 export function priceOf(code: string, qty: number): string {
@@ -191,9 +195,9 @@ export function billOf(world: World, name: string, demand: [string, number][], v
       for (const g of r.items) need(g.code, g.quantity * runs, depth + 1);
       return;
     }
-    // A trade for another item (hard leather for cowhide, cloth for wool): no gold, no tasks coins — its currency is
-    // demand in turn, and the trade is a mat: step (withdraw, buy, deposit-all). Gold and tasks coins are not spent.
-    const t = tradeOf(code);
+    // A trade for another item (hard leather for cowhide, cloth for wool): no gold — its currency is demand in turn, and
+    // the trade is a mat: step (withdraw, buy, deposit-all). Task 017: tasks coins too, from the bank down to COIN_FLOOR.
+    const t = tradeOf(code, coinsOn(world));
     if (t && depth < 6) {
       const why = outOfReach(t.gates, world);
       if (why) return void bill.out.push(`${itemName(code)}: the trader is behind ${why}`);
@@ -203,6 +207,8 @@ export function billOf(world: World, name: string, demand: [string, number][], v
       need(t.work.currency, t.work.price * n, depth + 1);
       return;
     }
+    // task 017, settled point 11: the honest reason where the coins are short (the bank's above the floor, of the demand)
+    if (code === "tasks_coin" && coinsOn(world)) return void bill.out.push(`tasks coins: ${Math.floor(have)} of ${Math.ceil(have + q)}`);
     bill.out.push(priceOf(code, q));
   };
   for (const [code, q] of demand) need(code, q, 0);
@@ -317,7 +323,7 @@ export function mayCraft(lane: Lane, level: number, name: string, world: World):
 export function feedable(code: string, world: World, name: string): number {
   const r = item(code)?.craft;
   if (!r) {
-    const t = tradeOf(code);
+    const t = tradeOf(code, coinsOn(world));
     return t ? Math.floor(available(t.work.currency, world, name) / t.work.price + 1e-9) : 0;
   }
   return Math.min(...r.items.map((g) => Math.floor(available(g.code, world, name) / g.quantity + 1e-9)));

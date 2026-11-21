@@ -144,6 +144,8 @@ const BRAKE_WINDOW = 10 * 60_000;
 const BRAKE_HOLD = 30 * 60_000;
 const BLOCK_MS = 6 * 3_600_000; // guess: long enough for an event, a bank refill or a level to change things
 const STALL_SEC = 20 * 60; // guess: max(20 min, 5 × the unit estimate) of running time without the counter moving
+const SPIN_HOLD = 60_000; // task 017: a character whose steps end at once waits this long before the next decision
+const holdUntil = new Map<string, number>();
 
 /** Decide for a character that has no step; its items go behind whatever is queued (interrupts), then run. */
 function start(name: string): void {
@@ -155,6 +157,15 @@ function start(name: string): void {
   }
   const now = Date.now();
   const recent = (starts.get(name) ?? []).filter((s) => now - s.at < BRAKE_WINDOW);
+  // Task 017: a character whose every step ends at once (each item skipped: no route off a paid isle without the fare)
+  // would be decided for again and again inside one second; past the ceiling it waits a minute, with one line.
+  if ((holdUntil.get(name) ?? 0) > now) return;
+  if (recent.length >= BRAKE_ALL && now - recent[recent.length - 1].at < 1000) {
+    holdUntil.set(name, now + SPIN_HOLD);
+    plog(name, `spinning — ${recent.length} starts in 10 min, the last ones ending at once; the next decision in a minute`);
+    journal("flap", { who: name, n: recent.length, until: iso(now + SPIN_HOLD), spin: true });
+    return;
+  }
   let step: Step;
   let items: QueueItem[];
   const hold = (keys: string[]): void => {
@@ -273,6 +284,14 @@ let snapDay = "";
  *  the live events, the last pause or server record. Rewritten whole every minute and at every step and end. */
 function statusNow(): void {
   if (!IS_SERVER) return;
+  // task 017, settled point 13: a status that cannot be built is dropped like one that cannot be written
+  try {
+    statusOf();
+  } catch {
+    /* the next minute's goes through */
+  }
+}
+function statusOf(): void {
   const now = Date.now(), st = planner.value, d = bankDetails.value, info = runInfo();
   const done = achievements.value?.filter(isDone);
   const codes = new Set(bankItems.value.map((b) => b.code)).size;
@@ -326,8 +345,15 @@ function measure(r: Running, ch: Character): { counter: number; units: number } 
   // the step's last item that counts: a supply step ends in a deposit-all, which has none (task 009)
   const counts = itemsOf(r.step, ch).filter((it) => it.kind !== "deposit-all").pop()?.id;
   const last = mine.find((it) => it.id === counts);
+  // task 017, settled point 13: a tidy step's units are the copies of all its codes (a finished recycle item: its quantity)
+  const tidy = r.step.as === "tidy" ? itemsOf(r.step, ch).reduce((s, it) => {
+    if (it.kind !== "recycle") return s;
+    const live = mine.find((x) => x.id === it.id);
+    return s + (live?.kind === "recycle" ? live.done : it.quantity);
+  }, 0) : undefined;
   const units =
     w.kind === "train" ? (levelOf(ch, w.lane) > (r.from ?? Infinity) ? 1 : 0)
+    : tidy != null ? tidy
     : !last ? r.units
     : last.kind === "buy" ? (last.bought ? last.quantity : 0)
     : "done" in last ? last.done : 0;

@@ -15,7 +15,7 @@
 // achievement in its bundle (bundle.ts, membersAt), an event-only material in a bill (supply.ts, materialCal), the
 // runtime's "can still pay" (eventDemand, possibleMembers) and the forward model's share (sharesOf, forward.ts).
 
-import { catalog, itemName, monster as monsterOf, resource as resourceOf, tileAt } from "../../catalog";
+import { catalog, item, itemName, monster as monsterOf, resource as resourceOf, tileAt } from "../../catalog";
 import type { GameEvent } from "../../catalog";
 import { killSeconds } from "../bis";
 import { jobGear } from "../jobgear";
@@ -26,7 +26,7 @@ import { isOn } from "./gates";
 import { gearPieces, pieceParent } from "./gear";
 import { CITY, bankSec, chAt, fightRec, openOf, placeOf, planRec, potionPrice, safeWin, travel, winLevel, wins } from "./reach";
 import { rolesFor } from "./roles";
-import { poolBank } from "./stock";
+import { available, poolBank } from "./stock";
 import { potionSet, takeOf, useOf } from "./consumables";
 import { objectiveParents, supplyNeeds } from "./supply";
 import { perUnit, sourceFor, targetsOf, unhandledOf } from "./targets";
@@ -69,7 +69,7 @@ const tilesOf = (ev: GameEvent, from: Place = CITY): Place[] =>
  *  (to the bank, and from it to the nearest of the event's tiles).
  *  shortcut: both walks are taken as the tile's own walk to its nearest bank; upgrade if members come from far away */
 export function usableSec(ev: GameEvent): number {
-  const walk = Math.min(...tilesOf(ev).map(bankSec));
+  const walk = Math.min(...tilesOf(ev).map((p) => bankSec(p)));
   return Number.isFinite(walk) ? Math.max(0, ev.duration * 60 - EVENT_SEEN_SEC - STEP_BANK_SEC - 2 * walk) : 0;
 }
 
@@ -395,8 +395,15 @@ export function eventMembers(e: ActiveEvent, world: World, busy: Record<string, 
     const x = rest.splice(b.i, 1)[0];
     const set = setOf(content, x.ch, w);
     // task 014, settled point 7: the trip's reset takes what the hour drinks and eats (its set's potions, its pool's food)
-    const perKill = content.type === "monster" ? useOf(w, x.ch, content.code) : undefined, take = takeOf(perKill, b.n);
-    members.push({ name: x.ch.name, member: true, why: `≈${f0(b.n)} ${unit} in ${Math.round(x.sec / 60)} min${take ? ` with ${Object.entries(take).map(([c, q]) => `${q} ${itemName(c)}`).join(" and ")}` : ""}`, actions: b.n, use: x.sec, set, perKill, take });
+    const perKill = content.type === "monster" ? useOf(w, x.ch, content.code) : undefined;
+    // task 017, settled point 13: what the trip plans is what the bank holds for it — the stock this member may take (the
+    // others' running steps and the members before it off), the food at most a third of the bag (the reset's cap); the
+    // full moon trip of 01:12 UTC on 11-21 planned 100 + 100 potions and 72 trout of a bank that held 54, 0 and 9
+    const want = takeOf(perKill, b.n);
+    const take = want && (world.config.tolls ?? 1)
+      ? Object.fromEntries(Object.entries(want).map(([c, q]) => [c, Math.min(q, Math.floor(available(c, w, x.ch.name) + 1e-9), item(c)?.type === "utility" ? q : Math.floor(x.ch.inventory_max_items / 3))]).filter(([, q]) => (q as number) > 0))
+      : want;
+    members.push({ name: x.ch.name, member: true, why: `≈${f0(b.n)} ${unit} in ${Math.round(x.sec / 60)} min${take && Object.keys(take).length ? ` with ${Object.entries(take).map(([c, q]) => `${q} ${itemName(c)}`).join(" and ")}` : ""}`, actions: b.n, use: x.sec, set, perKill, take });
     left -= b.n;
     w = withSet(w, x.ch.name, set, take);
   }
@@ -424,9 +431,11 @@ export function eventPlans(events: ActiveEvent[], world: World, busy: Record<str
  *  0: the missing map target skips it), everything banked: `back`, the step underneath's own bank reset (it banks the
  *  drops too and puts the step's set back on — a craft item has no gear self-heal and resumed in the trip's set, the
  *  event-fleet-monster scenario), else deposit-all. */
-export function tripOf(c: Content, back?: QueueItemInput, take?: Record<string, number>): QueueItemInput[] {
+export function tripOf(c: Content, back?: QueueItemInput, take?: Record<string, number>, wear?: Record<string, string>): QueueItemInput[] {
   const end: QueueItemInput = back ?? { kind: "deposit-all" };
-  if (c.type === "monster") return [{ kind: "gear", job: { kind: "fight", monster: c.code }, reset: true }, { kind: "fight", monster: c.code, times: 0, done: 0, gear: true, take: take ?? {} }, end];
+  // task 017, settled point 13: the member's planned set is the trip's (`wear`, the executor's own solve only as a fallback)
+  const w = wear && Object.keys(wear).length ? { wear } : {};
+  if (c.type === "monster") return [{ kind: "gear", job: { kind: "fight", monster: c.code }, reset: true, ...w }, { kind: "fight", monster: c.code, times: 0, done: 0, gear: true, take: take ?? {}, ...w }, end];
   const r = resourceOf(c.code);
   const drop = [...(r?.drops ?? [])].sort((a, b) => a.rate - b.rate)[0]?.code ?? c.code;
   return [{ kind: "gear", job: { kind: "gather", skill: r?.skill ?? "" }, reset: true }, { kind: "gather", code: drop, resource: c.code, times: 0, done: 0, gear: true }, end];

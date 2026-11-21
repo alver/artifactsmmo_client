@@ -15,9 +15,9 @@ import { inputsOf, placeGates } from "./targets";
 import { met } from "./gates";
 import { craftXpOf, gatherXp } from "./xp";
 import type { Character } from "../../types/api";
-import type { Input, Lane, Place, Work, World } from "./types";
+import type { Input, Lane, Place, Toll, Work, World } from "./types";
 
-export interface MonsterPick { monster: string; xp: number; sec: number; rate: number; place: Place; until?: number }
+export interface MonsterPick { monster: string; xp: number; sec: number; rate: number; place: Place; until?: number; toll?: Toll }
 
 /** Task 010: the XP multiplier of the character's active favor on this target (an accepted offering's), else 1. */
 const favorXp = (world: World, name: string, type: "monster" | "resource", code: string): number =>
@@ -36,18 +36,18 @@ export function pickMonster(ch: Character, world: World, bonus: Set<string>): Mo
   for (const m of catalog().monsters.values()) {
     if (m.type === "boss" || m.type === "raid_boss" || m.level > ch.level + 10) continue;
     if (fightXp(m.level, m.hp, m.type, ch.level) <= 0) continue;
-    const spot = nearestSpot(placeOf(ch), "monster", m.code, world);
+    const spot = nearestSpot(placeOf(ch), "monster", m.code, world, ch.name); // task 017: through the transitions it may open
     if (!spot || !safeWin(ch, world, m.code)) continue;
     // task 012: with the wisdom of the set the fight is planned with
     const xp = fightXp(m.level, m.hp, m.type, ch.level, setWisdom(ch, fightRec(ch, world, m.code))) * favorXp(world, ch.name, "monster", m.code);
     const sec = actionSec({ kind: "kill", monster: m.code }, ch, world);
     const rate = (xp / sec) * (bonus.has(m.code) ? 1.25 : 1);
-    if (!best || rate > best.rate || (rate === best.rate && m.code < best.monster)) best = { monster: m.code, xp, sec, rate, place: spot.place, until: spot.until };
+    if (!best || rate > best.rate || (rate === best.rate && m.code < best.monster)) best = { monster: m.code, xp, sec, rate, place: spot.place, until: spot.until, toll: spot.toll };
   }
   return best;
 }
 
-export interface NodePick { resource: string; drop: string; xp: number; sec: number; xph: number; place: Place; until?: number }
+export interface NodePick { resource: string; drop: string; xp: number; sec: number; xph: number; place: Place; until?: number; toll?: Toll }
 
 /**
  * The node to level a gathering skill on: XP per hour (docs formula) over the gather's cost, among nodes of
@@ -60,12 +60,12 @@ export function pickNode(skill: string, level: number, ch: Character, world: Wor
     if (r.skill !== skill || r.level > level) continue;
     const xp = gatherXp(r.level, level) * favorXp(world, ch.name, "resource", r.code);
     if (xp <= 0 && !any) continue;
-    const spot = nearestSpot(placeOf(ch), "resource", r.code, world);
+    const spot = nearestSpot(placeOf(ch), "resource", r.code, world, ch.name);
     if (!spot) continue;
     const sec = actionSec({ kind: "gather", resource: r.code, drop: "" }, ch, world);
     const xph = (xp / sec) * 3600 + (any ? r.level / 1000 : 0); // the fallback: XP first, then the highest node
     const drop = [...r.drops].sort((a, b) => a.rate - b.rate)[0]?.code ?? r.code;
-    if (!best || xph > best.xph || (xph === best.xph && r.code < best.resource)) best = { resource: r.code, drop, xp, sec, xph, place: spot.place, until: spot.until };
+    if (!best || xph > best.xph || (xph === best.xph && r.code < best.resource)) best = { resource: r.code, drop, xp, sec, xph, place: spot.place, until: spot.until, toll: spot.toll };
   }
   return best;
 }
@@ -103,7 +103,7 @@ export function pickRecipe(lane: Lane, ch: Character, world: World): RecipePick 
 
 export interface SourcePick {
   work: Work & { kind: "gather" | "kill" };
-  place: Place; until?: number;
+  place: Place; until?: number; toll?: Toll;
   sec: number;      // seconds an action
   per: number;      // actions an item
   net: number;      // seconds an item × (1 − share)
@@ -137,23 +137,23 @@ export function pickSource(code: string, ch: Character, world: World): SourcePic
   for (const r of catalog().resources.values()) {
     const lane = r.skill as Lane, L = levelOf(ch, lane);
     if (!r.drops.some((d) => d.code === code) || L < r.level) continue;
-    const spot = nearestSpot(placeOf(ch), "resource", r.code, world);
+    const spot = nearestSpot(placeOf(ch), "resource", r.code, world, ch.name);
     if (!spot || !open("resource", r.code)) continue;
     const work = { kind: "gather" as const, resource: r.code, drop: code };
     const sec = actionSec(work, ch, world), xp = gatherXp(r.level, L) * favorXp(world, ch.name, "resource", r.code);
     if (!(sec <= 2 * CHUNK_SEC)) continue; // a step holds at least one action (decide.ts planMake's guard)
     const top = roles.includes(lane) && xp > 0 ? pickNode(lane, L, ch, world) : undefined;
-    consider({ work, place: spot.place, until: spot.until, sec, per: perOf(work), xp, lane, share: top?.xph ? Math.min(1, ((xp / sec) * 3600) / top.xph) : 0 }, r.name);
+    consider({ work, place: spot.place, until: spot.until, toll: spot.toll, sec, per: perOf(work), xp, lane, share: top?.xph ? Math.min(1, ((xp / sec) * 3600) / top.xph) : 0 }, r.name);
   }
   for (const m of catalog().monsters.values()) {
     if (m.type === "boss" || m.type === "raid_boss" || !m.drops.some((d) => d.code === code)) continue;
-    const spot = nearestSpot(placeOf(ch), "monster", m.code, world);
+    const spot = nearestSpot(placeOf(ch), "monster", m.code, world, ch.name);
     if (!spot || !open("monster", m.code) || !safeWin(ch, world, m.code)) continue;
     const work = { kind: "kill" as const, monster: m.code, drop: code };
     const sec = actionSec(work, ch, world), xp = fightXp(m.level, m.hp, m.type, ch.level, setWisdom(ch, fightRec(ch, world, m.code))) * favorXp(world, ch.name, "monster", m.code);
     if (!(sec <= 2 * CHUNK_SEC)) continue; // a kill longer than two chunks (potions at the field price) is no source of a step
     const top = xp > 0 ? pickMonster(ch, world, NO_BONUS) : undefined;
-    consider({ work, place: spot.place, until: spot.until, sec, per: perOf(work), xp, lane: "combat", share: top ? Math.min(1, xp / sec / (top.xp / top.sec)) : 0 }, m.name);
+    consider({ work, place: spot.place, until: spot.until, toll: spot.toll, sec, per: perOf(work), xp, lane: "combat", share: top ? Math.min(1, xp / sec / (top.xp / top.sec)) : 0 }, m.name);
   }
   const b = best as SourcePick | undefined, c = cheap as { gross: number; name: string } | undefined;
   return b && c && c.gross < b.sec * b.per - 1e-9 ? { ...b, over: c.name } : b;

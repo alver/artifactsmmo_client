@@ -15,7 +15,8 @@ export function met(g: Gate, ch: Character, world: World): boolean {
     case "win": return (monsterOf(g.monster)?.level ?? 99) <= ch.level + 10 && safeWin(ch, world, g.monster);
     case "achievement": return world.achievements.some((a) => a.code === g.code && isDone(a));
     case "event": return world.events.some((e) => e.code === g.code && Date.parse(e.expiration) > world.now);
-    case "layer": return !!nearestSpot(placeOf(ch), g.type, g.code, world);
+    // task 017, settled point 2: a route through the transitions this character's plan may open (reach.ts mayOf)
+    case "layer": return !!nearestSpot(placeOf(ch), g.type, g.code, world, ch.name);
     case "group": return false;
   }
 }
@@ -34,7 +35,8 @@ export function outOfReach(gates: Gate[], world: World): string | undefined {
   for (const g of gates) {
     if (g.kind === "event" && !world.events.some((e) => e.code === g.code && Date.parse(e.expiration) > world.now)) return `an event (${g.code})`;
     if (g.kind === "group") return "a boss (group fight)";
-    if (g.kind === "layer") return "another layer";
+    // task 017: another layer is out of reach only while no character that is on may open the way there
+    if (g.kind === "layer" && !world.characters.some((c) => isOn(c.name, world) && met(g, c, world))) return "another layer";
     if (g.kind === "achievement" && !world.achievements.some((a) => a.code === g.code && isDone(a))) return `the achievement ${g.code}`;
   }
   return undefined;

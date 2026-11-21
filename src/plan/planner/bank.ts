@@ -210,7 +210,10 @@ export function tidyStep(world: World, name: string): Step | undefined {
 /** Task 016, settled point 12: "something is left to tidy" is "somebody that is on has a tidy step" — the question tidyStep
  *  asks (its own verdicts, what it may recycle, the copies the others did not reserve, its blocks), not tidyVerdicts
  *  without a name, which can call a code outdated that no character's step takes (state/planner.ts bankCheck). */
-export const tidyLeft = (world: World): boolean => world.characters.some((c) => isOn(c.name, world) && !!tidyStep(world, c.name));
+// Task 017, settled point 13: a tidy step in flight counts too — tidyStep gives nobody a step while another's runs, so
+// during a character's last tidy step the others' codes would read as nothing left and an expansion be bought early.
+export const tidyLeft = (world: World): boolean =>
+  world.characters.some((c) => isOn(c.name, world) && (world.current[c.name]?.as === "tidy" || !!tidyStep(world, c.name)));
 
 /** Settled point 5: whether the next expansion may be bought — at most config.expansionCap, the bank keeping GOLD_FLOOR. */
 export function expansionOk(world: World): { ok: boolean; price: number; why?: string } {

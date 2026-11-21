@@ -310,6 +310,8 @@ export interface GearActionOpts {
   /** Task 014, settled point 4: what a utility slot takes, per potion (default a whole stack, 100): an owned step's
    *  reset puts exactly its planned quantity on, topping a worn stack of the same potion up or taking the excess off. */
   utility?: Record<string, number>;
+  /** Task 017, settled point 6: the pocket gold a reset leaves — a trip's fares (withdrawn by the step's reset). */
+  gold?: number;
 }
 
 export type GearAction =
@@ -520,7 +522,7 @@ export function nextGearAction(
       if (excess > 0) stash.push({ code, quantity: excess });
     }
     if (stash.length) return { kind: "deposit", items: stash };
-    if (ch.gold > 0) return { kind: "deposit-gold", quantity: ch.gold };
+    if (ch.gold > (opts.gold ?? 0)) return { kind: "deposit-gold", quantity: ch.gold - (opts.gold ?? 0) };
   }
 
   // Which desired slots actually need work, and is their item obtainable?

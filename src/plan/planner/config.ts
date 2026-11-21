@@ -54,7 +54,19 @@ export const DEFAULTS: PlannerConfig = {
   // Task 015, settled point 5: the most one bank expansion may cost (Alex, 2026-11-20: 60,000; his to move with a patch).
   // The price doubles with each (7,000 → 14,000 → 28,000 in the log), so 60,000 buys the next two.
   expansionCap: 60_000,
+  // Task 017, settled point 10: 1 = the conditional transitions open to the planner and the runner, tasks coins are spent
+  // on an objective's own material, a kill step the stock caps to a sliver is no candidate, the forward model's gold
+  // moves; 0 = report 016's model whole — the replay's row only, with the same rules as potionK (not in the UI).
+  tolls: 1,
+  // Task 017, settled point 5 (design D.2: a character-hour of fights earns about 236 gold, of tasks 124): a fare's gold
+  // counts as hours at this rate in the score of the step and of the chain it serves.
+  goldPerHour: 300,
 };
+
+/** Task 017, settled point 11: the tasks coins the bank keeps (a task's cancel fee needs one; a guess). */
+export const COIN_FLOOR = 50;
+/** Task 017: the tasks coins a task pays — the mean of public/data/tasks.json's 85 tasks (2 to 5 each). */
+export const COINS_PER_TASK = 3.69;
 
 /** Task 012, settled point 4: the bank actions of a craft, trade or gear step (the reset's deposit and swap, the
  *  withdrawal, the closing deposit) — the median of the 13 `mat:` / `gear:` steps of logs/dev.log on 11-19 (12–165 s;

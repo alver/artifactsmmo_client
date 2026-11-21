@@ -23,14 +23,14 @@ import { achievement as achievementOf, item, itemName, resource as resourceOf } 
 import { CRAFT_SEC } from "../xp";
 import { jobGear } from "../jobgear";
 import { CHUNK_SEC, GATHER_LANES, TRAIN_LANES } from "./config";
-import { actionSec, craftsPerLevel, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
+import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { bankStuck, newCodes, tidyStep } from "./bank";
 import { met } from "./gates";
 import { consParents, fightTake, gearWorld } from "./consumables";
 import { gearPieces, pieceParent } from "./gear";
 import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
-import { fightRec, nearestSpot, placeOf } from "./reach";
+import { fightRec, nearestSpot, placeOf, withToll } from "./reach";
 import { crafterOf, rolesFor } from "./roles";
 import { available, poolBank } from "./stock";
 import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
@@ -38,21 +38,29 @@ import { sourceFor, targetsOf } from "./targets";
 import { GEAR_SLOTS } from "../../types/api";
 import type { Parent } from "./supply";
 import type { Character, GearSlot } from "../../types/api";
-import type { Answer, Input, Lane, Place, Source, Step, Target, Work, World } from "./types";
+import type { Answer, Input, Lane, Place, Source, Step, Target, Toll, Work, World } from "./types";
 
 export { met } from "./gates";
 
+/** Task 017, settled point 13: a kill step the potion stock caps below this many kills (and a third of its chunk) is a
+ *  sliver — every one in the journal of 11-21 was one or two kills; section 1's own mark is five. */
+const SLIVER = 5;
+
 const fmt = (h: number): string => (!Number.isFinite(h) ? "∞" : h < 10 ? h.toFixed(1) : String(Math.round(h)));
 
-interface Plan { work: Work; units: number; hours: number; place?: Place; until?: number; sources?: Source[]; withdraw?: Record<string, number> }
+interface Plan { work: Work; units: number; hours: number; place?: Place; until?: number; sources?: Source[]; withdraw?: Record<string, number>; toll?: Toll }
 
-/** A chunk of an action work (kills, gathers): about CHUNK_SEC, at least 1, at most `left`, and inside an event's time. */
-function chunk(work: Work, sec: number, left: number, world: World, spot: { place: Place; until?: number }): Plan | undefined {
+/** A chunk of an action work (kills, gathers): about CHUNK_SEC, at least 1, at most `left`, and inside an event's time.
+ *  Task 017, settled point 3: behind conditional transitions (`spot.toll`) one trip, as much work as it carries — what one
+ *  bag carries (`per` actions a unit), at most two chunks — so one fare pays one trip; the toll rides on the plan. `sec`
+ *  holds the fare's price (the score's); the step's hours are its time, without it. */
+function chunk(work: Work, sec: number, left: number, world: World, spot: { place: Place; until?: number; toll?: Toll }, ch: Character, per = perOf(work)): Plan | undefined {
   if (!Number.isFinite(sec) || sec <= 0) return undefined;
-  let units = Math.min(left, Math.max(1, Math.round(CHUNK_SEC / sec)));
-  if (spot.until) units = Math.min(units, Math.floor((spot.until - world.now) / 1000 / sec));
+  const real = spot.toll ? Math.max(1e-6, sec - fareShare(ch, work, spot.toll.gold, world) * per) : sec;
+  let units = spot.toll ? Math.min(left, Math.floor(bagActions(ch, work) / per + 1e-9), Math.max(1, Math.floor((2 * CHUNK_SEC) / real))) : Math.min(left, Math.max(1, Math.round(CHUNK_SEC / sec)));
+  if (spot.until) units = Math.min(units, Math.floor((spot.until - world.now) / 1000 / real));
   units = Math.floor(units);
-  return units >= 1 ? { work, units, hours: (units * sec) / 3600, place: spot.place, until: spot.until } : undefined;
+  return units >= 1 ? { work, units, hours: (units * real) / 3600, place: spot.place, until: spot.until, toll: spot.toll } : undefined;
 }
 
 /**
@@ -102,8 +110,9 @@ function planObjective(t: Target, ch: Character, world: World, left: number): Pl
   const here = placeOf(ch);
   switch (w.kind) {
     case "kill": case "gather": {
-      const spot = w.kind === "kill" ? nearestSpot(here, "monster", w.monster, world) : nearestSpot(here, "resource", w.resource, world);
-      return spot && chunk(w, unitSec(t, ch, world), left, world, spot);
+      // task 017: through the transitions this character's plan may open
+      const spot = w.kind === "kill" ? nearestSpot(here, "monster", w.monster, world, ch.name) : nearestSpot(here, "resource", w.resource, world, ch.name);
+      return spot && chunk(w, unitSec(t, ch, world), left, world, spot, ch);
     }
     case "craft": case "buy": return planMake(w, t.inputs ?? [], ch, world, left, inStep(t, world));
     case "task": return { work: w, units: 1, hours: unitSec(t, ch, world) / 3600 };
@@ -127,7 +136,7 @@ function planLevel(lane: Lane, ch: Character, world: World, bonus: Set<string>):
   const L = levelOf(ch, lane);
   if (lane === "combat") {
     const p = pickMonster(ch, world, bonus);
-    const c = p && chunk({ kind: "kill", monster: p.monster }, p.sec, Infinity, world, p);
+    const c = p && chunk({ kind: "kill", monster: p.monster }, p.sec, Infinity, world, p, ch);
     return c && { ...c, what: `${monsterName(p.monster)} at ${(p.xp / p.sec).toFixed(2)} XP/s` };
   }
   if (GATHER_LANES.includes(lane)) {
@@ -138,7 +147,7 @@ function planLevel(lane: Lane, ch: Character, world: World, bonus: Set<string>):
       return c && { ...c, what: `no node gives XP: ${itemName(r.code)} at ${Math.round(r.xph)} XP/h` };
     }
     const w: Work = { kind: "gather", resource: p.resource, drop: p.drop };
-    const c = chunk(w, p.sec * perOf(w), Infinity, world, p);
+    const c = chunk(w, p.sec * perOf(w), Infinity, world, p, ch);
     return c && { ...c, what: `${itemName(p.drop)} at ${Math.round(p.xph)} XP/h` };
   }
   if (TRAIN_LANES.includes(lane)) {
@@ -193,7 +202,9 @@ export function rank(name: string, world: World): Ranking {
   const boost = (key: string): number => (last?.target === key ? 1.1 : 1);
   const stepOf = (t: Target, p: Plan & { wear?: Record<string, string> }, as: Answer, score: number, why: string, extra: Partial<Step> = {}): Step => {
     const n = last?.target === t.key ? Number(last.key.split("#").pop()) + 1 : 1;
-    return { key: `${t.key}@${name}#${n}`, target: t.key, character: name, as, work: p.work, units: p.units, hours: p.hours, score, why, place: p.place, sources: p.sources, withdraw: p.withdraw, until: p.until, ...(p.wear ? { wear: p.wear } : {}), ...extra };
+    // task 017, settled point 2: the toll of the round trip (fares, keys, the carried item) is withdrawn — and reserved — by the step
+    const tw = p.toll ? ` — the round trip through ${p.toll.via.length} conditional transition${p.toll.via.length === 1 ? "" : "s"} takes ${[...(p.toll.gold ? [`${p.toll.gold} gold`] : []), ...Object.entries({ ...p.toll.keys, ...p.toll.carried }).map(([c, q]) => `${q} ${itemName(c)}`)].join(" and ")}` : "";
+    return { key: `${t.key}@${name}#${n}`, target: t.key, character: name, as, work: p.work, units: p.units, hours: p.hours, score, why: why + tw, place: p.place, sources: p.sources, withdraw: withToll(p.withdraw, p.toll), until: p.until, ...(p.wear ? { wear: p.wear } : {}), ...(p.toll ? { toll: p.toll } : {}), ...extra };
   };
   /** Task 014, settled point 4: a kill plan's consumables — its `withdraw`, its kills capped at what the stock a work of
    *  this score may reserve covers (`per` kills a unit); a set without potions when they cannot be stocked; undefined: no
@@ -202,10 +213,18 @@ export function rank(name: string, world: World): Ranking {
     if (p.work.kind !== "kill") return { ...p, note: "" };
     const tk = fightTake(world, ch, p.work.monster, p.units * per, fit, any);
     if (!tk) return undefined;
-    const unit = tk.sec != null ? tk.sec * per : (p.hours * 3600) / p.units;
-    const asked = tk.sec != null ? Math.max(1, Math.min(left, Math.round(CHUNK_SEC / unit))) : p.units;
+    // task 017: a step behind a toll is timed without the fare's price (in tk.sec through killWalk) and stays one bag
+    const fare = p.toll ? fareShare(ch, p.work, p.toll.gold, world) * per : 0;
+    const unit = tk.sec != null ? Math.max(1e-6, tk.sec * per - fare) : (p.hours * 3600) / p.units;
+    const asked = tk.sec != null && !p.toll ? Math.max(1, Math.min(left, Math.round(CHUNK_SEC / unit))) : p.toll ? Math.min(p.units, Math.max(1, Math.floor((2 * CHUNK_SEC) / unit))) : p.units;
     const units = Math.min(asked, Math.max(Math.floor(tk.kills / per + 1e-9), tk.kills >= 1 ? 1 : 0));
     if (units < 1) return undefined;
+    // task 017, settled point 13: no kill step for a sliver — the bank's potions, the others' running steps off, cover less
+    // than a third of its chunk and fewer than SLIVER kills: no candidate (the potions are a need; supply serves it first).
+    // Not a bag cap, and not what better works' demand leaves. A third of a chunk alone starved the roads in the replay
+    // (row E: no fighter past 30; row A: three of five) — potions trickle in and a road's chunk asks fifty kills
+    const covered = tk.stock != null ? Math.floor(tk.stock / per + 1e-9) : Infinity;
+    if ((cfg.tolls ?? 1) && covered < asked / 3 && covered < (cfg.sliver ?? SLIVER)) return undefined;
     if (tk.sec == null && units === p.units && !tk.withdraw) return { ...p, note: tk.note }; // nothing changed (consumables 0: always)
     const k = (units * per) / Math.max(1, tk.kills); // the withdrawal was sized for tk.kills
     const withdraw = tk.withdraw && Object.fromEntries(Object.entries(tk.withdraw).map(([c, q]) => [c, Math.min(q, Math.ceil(q * k - 1e-9))]));
@@ -295,7 +314,7 @@ export function rank(name: string, world: World): Ranking {
       if (!src) continue;
       const items = s.short / perOf(s.work); // short is in actions of the static source (supplyNeeds)
       const acts = Math.ceil(items * src.per - 1e-9);
-      const c = chunk(src.work, src.sec, acts, world, src);
+      const c = chunk(src.work, src.sec, acts, world, src, ch, 1);
       const f = c && fightPlan(c, 1, par.fit * boost(s.key), par.any * boost(s.key), acts);
       if (!f) continue;
       p = f;
@@ -364,7 +383,7 @@ function fallback(ch: Character, world: World, last: Step | undefined): Step {
     const p = pickNode(skill, levelOf(ch, skill), ch, world, true);
     if (!p) continue;
     const work: Work = { kind: "gather", resource: p.resource, drop: p.drop };
-    const c = chunk(work, p.sec * perOf(work), Infinity, world, p);
+    const c = chunk(work, p.sec * perOf(work), Infinity, world, p, ch);
     if (!c) continue;
     const b = world.blocked[`fallback:${skill}@${ch.name}`];
     opts.push({ skill, until: b && b.until > world.now ? b.until : 0, c, p });
@@ -376,6 +395,7 @@ function fallback(ch: Character, world: World, last: Step | undefined): Step {
   return {
     key: `${key}@${ch.name}#${n}`, target: key, character: ch.name, as: "fallback", work: o.c.work, units: o.c.units, hours: o.c.hours, score: 0,
     why: `fallback (nothing else is open to ${ch.name}${o.until ? "; every fallback is blocked, this one ends first" : ""}): ${itemName(o.p.drop)} at ${o.skill} ${levelOf(ch, o.skill)}, ${o.c.units} now`, place: o.c.place, until: o.c.until,
+    ...(o.c.toll ? { toll: o.c.toll, withdraw: withToll(undefined, o.c.toll) } : {}),
   };
 }
 

@@ -3,8 +3,8 @@
 //            then do exactly ONE authoritative sync of the per-account state.
 // After that, nothing polls the account — state stays current from action
 // responses (state/apply.ts). The user can force another sync with reconcile().
-// The one standing read is the map-event poll (refreshEvents): a public DATA
-// endpoint, not the scarce account bucket.
+// The standing reads are the map-event poll (refreshEvents) and, task 017, the
+// market read (market.ts): public DATA endpoints, not the scarce account bucket.
 
 import { IS_SERVER, expose, rpc } from "../lib/remote";
 import {
@@ -31,6 +31,7 @@ import { resumeQueue } from "./queue";
 import { resumePlanner } from "./planner";
 import { eventKey } from "./events";
 import { eventPollMs, reactToEvents } from "./eventorders";
+import { startMarket } from "./market";
 import { api, getAllPages, hasToken, setToken } from "../api/client";
 import { loadCatalog } from "../catalog";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
@@ -48,6 +49,7 @@ export async function boot(): Promise<void> {
     resumePlanner({ loadAchievements, loadPendingRewards }); // the planner's characters: re-attach, take over, or decide after its first read
     resumeHive(); // re-attach the hive AFTER the queues are back (it observes them)
     watchEvents(); // events already up get their orders; then poll for new ones
+    startMarket(); // task 017: the second standing poll, the Grand Exchange's orders into logs/market/ (market.ts)
   }
 }
 
@@ -183,6 +185,7 @@ export async function login(): Promise<void> {
     resumePlanner({ loadAchievements, loadPendingRewards });
     resumeHive();
     watchEvents();
+    startMarket();
   }
 }
 

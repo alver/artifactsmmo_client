@@ -24,7 +24,7 @@ import { GEAR_SLOTS } from "../src/types/api";
 import type { GearRecommendation } from "../src/plan/types";
 import { itemsOf } from "../src/plan/planner/compile";
 import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, KILL_LOG_013, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
-import { actionSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec } from "../src/plan/planner/cost";
+import { actionSec, bagActions, fareSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec, unitSec } from "../src/plan/planner/cost";
 import { bundleOf, bundleScore } from "../src/plan/planner/bundle";
 import { chainSec, consFree, consParents, consumableNeeds, fightTake, poolFood, poolFoods, reservable } from "../src/plan/planner/consumables";
 import { EXPAND_BELOW, TIDY_BELOW, backText, bankStuck, expansionOk, freeSlots, isGear, newCodes, tidyLeft, tidyStep, tidyVerdicts, usedSlots } from "../src/plan/planner/bank";
@@ -38,12 +38,12 @@ import type { Need } from "../src/plan/planner/gear";
 import { recordFight, simAccuracy, simDeviations } from "../src/sim/validate";
 import { isOn } from "../src/plan/planner/gates";
 import { pickMonster, pickNode, pickRecipe, pickSource } from "../src/plan/planner/pick";
-import { bankSec, chAt, fightRec, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setWisdom, travel, winLevel } from "../src/plan/planner/reach";
+import { bankSec, chAt, fightRec, mayOf, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setWisdom, tollOf, travel, winLevel } from "../src/plan/planner/reach";
 import { crafterOf, rolesFor } from "../src/plan/planner/roles";
 import { available, floor, poolBank } from "../src/plan/planner/stock";
 import { billOf, feedable, gateRoad, mayCraft, objectiveParents, recipeDemand, supplyNeeds, tradeOf } from "../src/plan/planner/supply";
 import type { Parent } from "../src/plan/planner/supply";
-import { isDone, sourceFor, targetsOf, unhandledOf } from "../src/plan/planner/targets";
+import { isDone, placeGates, sourceFor, targetsOf, unhandledOf } from "../src/plan/planner/targets";
 import { catalog, item, itemName, itemUses, monster as monsterOfCode, resource as resourceOf, tileAt } from "../src/catalog";
 import type { ActiveEvent, AccountAchievement, BankItem, Character, FightResult } from "../src/types/api";
 import type { GameMap } from "../src/types/catalog";
@@ -107,7 +107,7 @@ const pad = (s: string | number, n: number): string => String(s).padEnd(n);
 // ── invariants ───────────────────────────────────────────────────────────────
 const INV = [
   "1 a step for every free character",
-  "2 no place without a free route",
+  "2 no place without a route the plan may open (task 017: free, or keyed, carried, paid within the budget)",
   "3 every kill a win as config.risk asks (ownedFightRec)",
   "4 every skill and level gate met",
   "5 no more units than the objective has left",
@@ -118,7 +118,7 @@ const INV = [
   "10 points never fall, clocks move",
   "11 the roles are the same as at the start",
   "12 no piece in two sets, no stock another reserved",
-  "13 no step over 2 chunks but a train level, a task or one item of a drop",
+  "13 no step over 2 chunks but a train level, a task, one item of a drop or one kill",
   "14 a supply step has an open parent, its crafter on",
   "15 bank stock never below zero or a floor",
   "16 a piece made is worn by its fighter within a day",
@@ -188,8 +188,13 @@ interface Run {
    *  with and without the tidy rule applied (rows A and C). */
   food: { ate: number; rested: number; capped: number; ex: string[] };
   codes?: { at: Map<string, { n: number; tidy: number }>; max: { n: number; at: number; world?: World } };
+  /** Task 017: per conditional transition (its tiles) the steps that crossed it — the first day, the trips, the gold, the
+   *  targets; the bank's gold on the check days; First's hours per ten days by answer. */
+  tolls: Map<string, { first: number; trips: number; gold: number; keys: number; targets: Set<string> }>;
+  gold: Map<number, number>;
+  first: Map<number, Map<string, number>>;
 }
-const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0, byproducts: new Map(), toolDup: new Map(), atLevel: new Map(), drunk: new Map(), gained: new Map(), checkpoints: new Map(), uncovered: new Map(), evBy: new Map(), evDone: [], cons: { hours: new Map(), made: new Map(), waited: new Map(), refused: new Map() }, food: { ate: 0, rested: 0, capped: 0, ex: [] } });
+const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0, byproducts: new Map(), toolDup: new Map(), atLevel: new Map(), drunk: new Map(), gained: new Map(), checkpoints: new Map(), uncovered: new Map(), evBy: new Map(), evDone: [], cons: { hours: new Map(), made: new Map(), waited: new Map(), refused: new Map() }, food: { ate: 0, rested: 0, capped: 0, ex: [] }, tolls: new Map(), gold: new Map([[0, w.bankGold]]), first: new Map() });
 /** Task 015: the codes a bank holds in whole units — its used slots (the forward model banks expected fractions). */
 const codesOf = (w: World): number => w.bank.filter((b) => b.quantity >= 1 - 1e-9).length;
 /** …and with the tidy rule applied: less every gear code it calls outdated (bank.ts tidyVerdicts). */
@@ -230,8 +235,8 @@ function verify(w: World, step: Step, run: Run): void {
   check(INV[0], !!step && step.character === ch.name && step.units >= 1, tag);
   const here = placeOf(ch);
   const contentOf = (x: Step["work"]): [string, string] | undefined => (x.kind === "kill" ? ["monster", x.monster] : x.kind === "gather" ? ["resource", x.resource] : undefined);
-  const srcOk = (step.sources ?? []).every((s) => { const c = contentOf(s.work); return !c || !!nearestSpot(here, c[0], c[1], w); });
-  check(INV[1], (!step.place || travel(here, step.place) != null) && srcOk, tag);
+  const srcOk = (step.sources ?? []).every((s) => { const c = contentOf(s.work); return !c || !!nearestSpot(here, c[0], c[1], w, ch.name); });
+  check(INV[1], (!step.place || travel(here, step.place, mayOf(w, ch.name)) != null) && srcOk, tag);
   const kills = [step.work, ...(step.sources ?? []).map((s) => s.work)].filter((x) => x.kind === "kill") as { monster: string }[];
   for (const k of kills) check(INV[2], winsDirect(ch, w, k.monster), () => `${tag()}: ${k.monster}`);
   const t = targetsOf(w).find((x) => x.key === step.target);
@@ -276,7 +281,8 @@ function verify(w: World, step: Step, run: Run): void {
   const long = step.hours > (2 * CHUNK_SEC) / 3600 + 1e-9;
   // one level of `train` (also the recycling filler, whose units are the items it recycles), a single task, or (task 012)
   // a single item of a drop objective — a step is at least one unit, and one goblin guard foot is 18–25 h of kills
-  const oneDrop = step.units === 1 && step.as !== "supply" && (step.work.kind === "kill" || step.work.kind === "gather") && !!step.work.drop;
+  // task 017: or one kill — behind the boat a level-50 monster is a kill of 4.4 h at report 013's field price (row C)
+  const oneDrop = step.units === 1 && step.as !== "supply" && (step.work.kind === "kill" || (step.work.kind === "gather" && !!step.work.drop));
   check(INV[12], !long || step.work.kind === "train" || (step.units === 1 && step.work.kind === "task") || oneDrop, () => `${tag()}: ${f1(step.hours)} h`);
   if (step.as === "supply") {
     const par = step.parent ?? "";
@@ -396,6 +402,19 @@ function ended(after: World, step: Step, before: World, run: Run): void {
   }
   const end = after.clock?.[step.character] ?? after.now;
   for (const d of CHECK_DAYS) if (!run.checkpoints.has(d) && end >= NOW + d * DAY) run.checkpoints.set(d, totals(after, run));
+  // task 017: the transitions a step crossed, the bank's gold on the check days, First's hours per ten days by answer
+  if (step.toll?.via.length) {
+    const k = [...new Set(step.toll.via)].join(" + "), o = run.tolls.get(k) ?? { first: end, trips: 0, gold: 0, keys: 0, targets: new Set<string>() };
+    o.trips++; o.gold += step.toll.gold; o.keys += Object.values(step.toll.keys).reduce((s, q) => s + q, 0); o.targets.add(step.target);
+    run.tolls.set(k, o);
+  }
+  for (const d of [7, 14, 30, 60, 90]) if (!run.gold.has(d) && end >= NOW + d * DAY) run.gold.set(d, after.bankGold);
+  if (step.character === "First") {
+    const b = Math.floor((end - NOW) / DAY / 10), m = run.first.get(b) ?? new Map<string, number>();
+    const a = step.target.startsWith("event:") ? "event" : step.as;
+    m.set(a, (m.get(a) ?? 0) + step.hours);
+    run.first.set(b, m);
+  }
   // task 015, section 2: the bank's distinct codes on the check days and at its most (rows A and C)
   if (run.codes) {
     for (const d of [7, 14, 30, 60]) if (!run.codes.at.has(`day ${d}`) && end >= NOW + d * DAY) run.codes.at.set(`day ${d}`, { n: codesOf(after), tidy: tidyCodesOf(after) });
@@ -481,13 +500,15 @@ const DEADLINE = Date.parse(DEFAULTS.deadline);
 // at hand: the ceiling); C consumables 0 — report 013's row A whole, the anchor (77); D a win is enough; E no events; F all
 // five hold the alchemy role (gathering and its level roads): what self-supply by the fighters would be worth.
 const ALCHEMY_ALL: PlannerConfig["roles"] = Object.fromEntries(Object.entries(DEFAULTS.roles).map(([n, r]) => [n, { ...r, gather: [...new Set([...(r.gather ?? []), "alchemy"])] }]));
-const ROWS: { label: string; potionK: number; potionStock: number; risk: PlannerConfig["risk"]; events: number; consumables: number; roles?: PlannerConfig["roles"] }[] = [
+// Task 017: G — config.tolls 0, report 016's model whole (no conditional transition, no tasks coin): must end at 86.
+const ROWS: { label: string; potionK: number; potionStock: number; risk: PlannerConfig["risk"]; events: number; consumables: number; roles?: PlannerConfig["roles"]; tolls?: number }[] = [
   { label: "A (default: consumables by need, through the bank)", potionK: 1, potionStock: 1, risk: "safe", events: 1, consumables: 1 },
   { label: "B (consumables free)", potionK: 0, potionStock: 1, risk: "safe", events: 1, consumables: 1 },
   { label: "C (consumables 0: report 013's row A)", potionK: 1, potionStock: 1, risk: "safe", events: 1, consumables: 0 },
   { label: "D (a win is enough)", potionK: 1, potionStock: 1, risk: "win", events: 1, consumables: 1 },
   { label: "E (no events)", potionK: 1, potionStock: 1, risk: "safe", events: 0, consumables: 1 },
   { label: "F (all five hold the alchemy role)", potionK: 1, potionStock: 1, risk: "safe", events: 1, consumables: 1, roles: ALCHEMY_ALL },
+  { label: "G (tolls 0: report 016's row A)", potionK: 1, potionStock: 1, risk: "safe", events: 1, consumables: 1, tolls: 0 },
 ];
 let RECORD_LEVELS = false; // row A records each fighter's pick at combat 25, 28, 30 and 35 (ended → levelLine)
 // A child of the replay (section 6): one row, its section, its invariant counts on the last line.
@@ -500,7 +521,8 @@ if (process.env.AMMO_PLANNER_ROW != null) {
 // named check's backstop (scripts/check.mts) and not what the sections leave of it.
 // Task 015, settled point 8: rows A, B, C and E by default; D (a win is enough) and F (alchemy for all) only with
 // AMMO_PLANNER_ROWS=all.
-const ROW_ON = process.env.AMMO_PLANNER_ROWS === "all" ? ROWS.map((_, i) => i) : [0, 1, 2, 4];
+// Task 017: G (tolls 0) by default too.
+const ROW_ON = process.env.AMMO_PLANNER_ROWS === "all" ? ROWS.map((_, i) => i) : [0, 1, 2, 4, 6];
 const rows: Promise<[number, string][]> = !VERBOSE ? Promise.resolve([]) : Promise.all(ROW_ON.map((i) => new Promise<[number, string]>((resolve) => {
   // each row its own storage file beside this one's (the fight-record case above wrote to this one: SQLite locks it)
   const args = process.execArgv.map((a) => (a.startsWith("--localstorage-file=") ? `${a}.row${i}` : a));
@@ -1459,6 +1481,73 @@ const BANK_NOW = bankWorld();
   console.log(`  one copy of each outdated code reserved by Fifth's running step: outdated without a name ${stillOld}, a tidy step for anyone ${anyStep}, tidyLeft ${tidyLeft(held)} (before: "${stillOld ? "something is left to tidy" : "nothing"}", no expansion)`);
 }
 
+// ── 5h. task 017: keys and tolls, what is spent ─────────────────────────────
+{
+  console.log(`\n## Task 017: keys, tolls and what is spent (made-up cases)`);
+  const fisher = { level: 30, fishing_level: 50 };
+  // a keyed place, the key in the bank: the step withdraws (reserves) it; a second character is refused the same key
+  const lava = made("made_up_lavafish", 5, "gathering", "lava_fish", 30);
+  const wk = consWorld({ sonnengott_key: 1 }, [lava], ["First", "Second"], { First: fisher, Second: fisher });
+  const k1 = decide("First", wk);
+  cases.push(["task 017: a keyed place with a key in the bank — the step goes, withdraws the key and carries it in its toll", k1.target === "ach:made_up_lavafish:0" && k1.withdraw?.sonnengott_key === 1 && k1.toll?.keys.sonnengott_key === 1]);
+  const k2 = decide("Second", { ...wk, current: { First: k1 } });
+  cases.push(["…a second character is refused the same key (reserved by the first's step)", k2.target !== "ach:made_up_lavafish:0"]);
+  const capped = k1.units <= bagActions(wk.characters.find((c) => c.name === "First")!, k1.work) / perOf(k1.work) + 1e-9;
+  cases.push(["…and its step is at most one bag (one trip a key)", capped]);
+  console.log(`  keyed: First ${k1.key} (${k1.units} units, ${f1(k1.hours)} h, toll ${JSON.stringify(k1.toll)}) — ${k1.why}`);
+  console.log(`  keyed, the key reserved: Second ${k2.key} — ${k2.why.slice(0, 120)}`);
+  // a fare inside and outside the budget (the isle: 1,000 each way, 2,000 a round trip, over GOLD_FLOOR)
+  const palm = made("made_up_palm", 5, "gathering", "palm_wood", 50);
+  const cutter = { level: 30, woodcutting_level: 50 };
+  const inW = { ...consWorld({}, [palm], ["First"], { First: cutter }), bankGold: 22_000 };
+  const outW = { ...inW, bankGold: 21_500 };
+  const pin = decide("First", inW), pout = decide("First", outW);
+  cases.push(["task 017: a fare inside the budget — the isle's step withdraws the round trip's 2,000 gold", pin.target === "ach:made_up_palm:0" && pin.withdraw?.gold === 2000 && pin.toll?.gold === 2000]);
+  const wOut = waitingOf(outW).find((x) => x.achievement === "made_up_palm")?.waits;
+  cases.push(["…outside it (500 short): no step behind the boat, and waitingOf says \"gold: 500 short for the fare\"", pout.target !== "ach:made_up_palm:0" && wOut === "gold: 500 short for the fare"]);
+  console.log(`  a fare inside the budget (22,000 gold): ${pin.key} withdraw ${JSON.stringify(pin.withdraw)} — ${pin.why}`);
+  console.log(`  outside it (21,500): ${pout.key}; waits: ${wOut}`);
+  // the fare's hours in a score: an action behind the boat costs the round trip's fares ÷ goldPerHour ÷ a bag's actions more
+  const tgt = targetsOf(inW).find((x) => x.key === "ach:made_up_palm:0")!;
+  const cutterCh = inW.characters.find((c) => c.name === "First")!;
+  const freeGold = { ...inW, config: { ...inW.config, goldPerHour: 1e15 } };
+  const dSec = unitSec(tgt, cutterCh, inW) - unitSec(tgt, cutterCh, freeGold);
+  const want = (perOf(tgt.work) * fareSec(2000, inW)) / bagActions(cutterCh, tgt.work); // a bag's actions, floored: within 5%
+  cases.push(["task 017: a fare has a price in the score — 2,000 gold at 300 an hour over a bag's actions", Math.abs(dSec - want) < 0.05 * want]);
+  console.log(`  the fare's price: ${f1(dSec)} s more a palm wood (2,000 gold ÷ 300 an hour = ${f1(fareSec(2000, inW) / 3600)} h a trip, over ${bagActions(cutterCh, tgt.work)} gathers a bag); the step's score ${pin.score.toPrecision(3)}`);
+  // a carried item: the Rosenblood House wants a cultist cloak carried (kept): the layer gate opens with one the plan may
+  // take, the round trip carries it, nothing is paid
+  const g = placeGates("monster", "cultist_alchemist");
+  const lg = Array.isArray(g) ? g.find((x) => x.kind === "layer") : undefined;
+  const cloak = consWorld({ cultist_cloak: 1 }, [], ["First"], { First: { level: 40 } }), noCloak = consWorld({}, [], ["First"], { First: { level: 40 } });
+  const f40 = (w: World): Character => w.characters.find((c) => c.name === "First")!;
+  const tc = tollOf({ x: 0, y: 13, layer: "interior" }, cloak, "First");
+  cases.push(["task 017: a carried item — the layer gate is met with the cloak in the bank, not without; the trip carries it, pays nothing", !!lg && met(lg, f40(cloak), cloak) && !met(lg, f40(noCloak), noCloak) && tc?.carried.cultist_cloak === 1 && tc.gold === 0 && !Object.keys(tc.keys).length]);
+  console.log(`  carried: the cultist alchemists' layer gate with the cloak ${lg && met(lg, f40(cloak), cloak)}, without ${lg && met(lg, f40(noCloak), noCloak)}; the round trip ${JSON.stringify(tc)}`);
+  // a boss behind a key still waits for its group: the lich, 24 keys in the bank
+  const lich = made("made_up_lich", 5, "combat_kill", "lich", 1);
+  const wl = consWorld({ lich_tomb_key: 24 }, [lich], ["First"], { First: { level: 50 } });
+  const lw = waitingOf(wl).find((x) => x.achievement === "made_up_lich")?.waits;
+  cases.push(["task 017: a boss behind a key (the lich, 24 keys banked) still waits for its group", lw === "a group" && decide("First", wl).target !== "ach:made_up_lich:0"]);
+  console.log(`  the lich with 24 keys in the bank: waits for ${lw}`);
+  // config.tolls 0: report 016's model — no conditional transition opens
+  const t0 = { ...inW, config: { ...inW.config, tolls: 0 } };
+  const pt0 = decide("First", t0);
+  cases.push(["task 017: config.tolls 0 — the same isle world plans nothing behind the boat, and the palms wait for another layer", pt0.target !== "ach:made_up_palm:0" && !pt0.toll && waitingOf(t0).find((x) => x.achievement === "made_up_palm")?.waits === "another layer"]);
+  console.log(`  tolls 0: ${pt0.key}`);
+  // settled point 13: tidy-left-in-flight — during a character's last tidy step, once its copies left the bank, the others'
+  // tidy steps are held back by it (bank.ts tidyStep, its second line): "something is left" must still hold
+  const t3 = tidyStep(BANK_NOW, "Third");
+  if (t3) {
+    // its last tidy step: every code Third may tidy (gearcrafting) has left the bank
+    const codes = tidyVerdicts(BANK_NOW, "Third").filter((v) => v.outdated && item(v.code)?.craft?.skill === "gearcrafting").map((v) => v.code);
+    const inFlight: World = { ...BANK_NOW, bank: BANK_NOW.bank.filter((b) => !codes.includes(b.code)), current: { ...BANK_NOW.current, Third: t3 } };
+    const before = inFlight.characters.some((c) => isOn(c.name, inFlight) && !!tidyStep(inFlight, c.name));
+    cases.push(["task 017: tidy-left-in-flight — a tidy step in flight counts as something left to tidy (016's test said nothing)", tidyLeft(inFlight) && !before]);
+    console.log(`  tidy left with Third's last tidy step in flight (${codes.join(", ")} out of the bank): 016's test ${before}, now ${tidyLeft(inFlight)}`);
+  }
+}
+
 // ── 9. task 014, section 2: what consumables cost, and which lever moves the wall ────────────────────────────────
 const POTIONS14 = [...catalog().items.values()].filter((it) => it.type === "utility" && it.craft).map((it) => it.code);
 const FOODS14 = [...catalog().items.values()].filter((it) => it.type === "consumable" && it.subtype === "food" && it.craft).filter((it) => !itemUsesOf(it.code)).map((it) => it.code);
@@ -1635,7 +1724,19 @@ if (VERBOSE) {
     console.log(`  deadline A ${results[0]} E ${results[4]}`);
     // task 015: the sell floors are no planning floor any more (settled point 6) — with them, row C ends at 77 as before.
     // Task 016, settled point 10: a craft step planned in whole runs (decide.ts planMake) moved it from 78 to 73.
-    cases.push(["task 015/016: row C (consumables 0, report 013's model) ends at 73 (78 before whole runs, 77 with the old sell floors)", results[2] === 73]);
+    // Task 017: row C opens the conditional transitions and spends tasks coins too (config.tolls 1) and moves with them; the
+    // anchor of report 016's model is row G (tolls 0), pinned below. Row C is printed, not pinned.
+    console.log(`  row C (consumables 0, report 013's model, tolls 1) ends at ${results[2]} (73 in report 016, tolls 0)`);
+  }
+  // task 017, settled point 10: config.tolls 0 is report 016's model whole — row G ends at report 016's row A
+  if (results[6] != null) {
+    cases.push(["task 017: row G (tolls 0) ends at report 016's row A, 86", results[6] === 86]);
+    const g = rowDays[6];
+    if (a && g) {
+      console.log(`\n## What keys, tolls and coins paid (task 017): row A against row G (tolls 0, report 016's model)`);
+      for (const d of ["7", "14", "30", "60"]) console.log(`  day ${pad(d, 3)} A ${pad(a[d], 4)} G ${pad(g[d], 4)} ${a[d] < g[d] ? "← A below G" : ""}`);
+      console.log(`  deadline A ${results[0]} G ${results[6]}`);
+    }
   }
   // task 014, section 5: what the round paid — row A (consumables by need) against row C (report 013's model)
   const c14 = rowDays[2];
@@ -1683,18 +1784,20 @@ if (VERBOSE) {
 
 function replayRow(row: (typeof ROWS)[number]): { points: number; days: Record<number, number> } {
   {
-    const config: PlannerConfig = { ...ALL_ON, potionK: row.potionK, potionStock: row.potionStock, risk: row.risk, events: row.events, consumables: row.consumables, ...(row.roles ? { roles: row.roles } : {}) };
-    RECORD_LEVELS = row.label.startsWith("A");
+    const config: PlannerConfig = { ...ALL_ON, potionK: row.potionK, potionStock: row.potionStock, risk: row.risk, events: row.events, consumables: row.consumables, tolls: row.tolls ?? 1, ...(row.roles ? { roles: row.roles } : {}) };
+    // task 017: row G records what row A records while it plays — the records' own solves (levelLine, tidyVerdicts) move the
+    // solve caches, and the replay's greedy path with them (report 016's code without them ends at 89, with them at 86)
+    RECORD_LEVELS = row.label.startsWith("A") || row.label.startsWith("G");
     const t = performance.now();
     const w0: World = { ...base, config };
     const run0 = newRun(w0);
-    // task 015, section 2: rows A and C record the bank's distinct codes
-    if (row.label.startsWith("A") || row.label.startsWith("C")) run0.codes = { at: new Map([["day 0", { n: codesOf(w0), tidy: tidyCodesOf(w0) }]]), max: { n: codesOf(w0), at: NOW } };
+    // task 015, section 2: rows A and C record the bank's distinct codes (task 017: and G, as A)
+    if (row.label.startsWith("A") || row.label.startsWith("C") || row.label.startsWith("G")) run0.codes = { at: new Map([["day 0", { n: codesOf(w0), tidy: tidyCodesOf(w0) }]]), max: { n: codesOf(w0), at: NOW } };
     const r = playOut(w0, DEADLINE, run0);
     const sec = (performance.now() - t) / 1000;
     const pts = (d: number): number => pointsOf(base) + r.completed.filter((c) => c.at <= NOW + d * DAY).reduce((s, c) => s + c.points, 0);
     const m = memoSizes();
-    console.log(`\n## Replay ${row.label}: potionK ${row.potionK}, potionStock ${row.potionStock}, risk ${row.risk}, events ${row.events}, consumables ${row.consumables} (${sec.toFixed(0)} s, ${r.played.length} decisions, ${m.fights} full and ${m.plans} planning-grade solves cached at the end)`);
+    console.log(`\n## Replay ${row.label}: potionK ${row.potionK}, potionStock ${row.potionStock}, risk ${row.risk}, events ${row.events}, consumables ${row.consumables}, tolls ${row.tolls ?? 1} (${sec.toFixed(0)} s, ${r.played.length} decisions, ${m.fights} full and ${m.plans} planning-grade solves cached at the end)`);
     console.log(`  points: day 7 ${pts(7)} · day 14 ${pts(14)} · day 30 ${pts(30)} · day 60 ${pts(60)} · deadline ${pointsOf(r.world)}`);
     console.log(`  completed: ${r.completed.map((c) => `${c.code} +${c.points} (${day(c.at)})`).join(", ")}`);
     const evH = r.played.reduce((s, p) => s + evHours(p), 0);
@@ -1772,7 +1875,31 @@ function replayRow(row: (typeof ROWS)[number]): { points: number; days: Record<n
       console.log(`  ${n}: ${lines.length} runs of steps; the first 15:`);
       for (const l of lines.slice(0, 15)) console.log(`     ${l}`);
     }
-    if (row.label.startsWith("A")) safeTable(r.world, "where row A leaves each fighter");
+    if (row.label.startsWith("A")) {
+      // task 017, section 6: what the opened transitions paid; the bank's gold over the season; First's hours by answer
+      console.log(`  the conditional transitions used (task 017; first day, trips, gold, keys, the points of the objectives its steps worked on):`);
+      for (const [k, o] of r.run.tolls) {
+        const achs = new Set([...o.targets].filter((x) => x.startsWith("ach:")).map((x) => x.split(":")[1]));
+        const pts = r.completed.filter((c) => achs.has(c.code)).reduce((s, c) => s + c.points, 0);
+        console.log(`     ${k}: day ${day(o.first)}, ${o.trips} trips, ${o.gold} gold, ${o.keys} keys, ${pts} points — ${[...o.targets].join(", ")}`);
+      }
+      if (!r.run.tolls.size) console.log(`     none`);
+      r.run.gold.set(Math.round((DEADLINE - NOW) / DAY), r.world.bankGold);
+      console.log(`  the bank's gold (task 017; the forward model's: its kills' mean gold in, fares out, nothing else): ${[...r.run.gold].map(([d, g]) => `day ${d} ${Math.round(g)}`).join(" · ")}`);
+      for (const p of r.played) if (p.step.character === "First") for (const e of p.events ?? []) {
+        const b = Math.floor((p.at - NOW) / DAY / 10), m = r.run.first.get(b) ?? new Map<string, number>();
+        m.set("event", (m.get("event") ?? 0) + e.hours);
+        r.run.first.set(b, m);
+      }
+      const A = ["objective", "level", "supply", "tidy", "filler", "fallback", "event"];
+      console.log(`  First's hours per ten days by answer (task 017; the step's planned hours, an event's share of them on its own column):`);
+      console.log(`     | days | ${A.join(" | ")} | all |`);
+      for (const [b, m] of [...r.run.first].sort((x, y) => x[0] - y[0])) {
+        const all = [...m.values()].reduce((s, h) => s + h, 0);
+        console.log(`     | ${b * 10}–${b * 10 + 10} | ${A.map((a) => f1(m.get(a) ?? 0)).join(" | ")} | ${f1(all)} |`);
+      }
+      safeTable(r.world, "where row A leaves each fighter");
+    }
     if (row.events && row.label.startsWith("A")) eventRowTable(r);
     return { points: pointsOf(r.world), days: Object.fromEntries([7, 14, 30, 60].map((d) => [d, pts(d)])) };
   }

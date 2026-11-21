@@ -24,7 +24,7 @@ import { craftsPerLevel, hoursToLevel, levelOf, perOf } from "./cost";
 import { decide, met } from "./decide";
 import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
 import { consFree, consumed } from "./consumables";
-import { fightRec, winLevel } from "./reach";
+import { fareShort, fightRec, winLevel } from "./reach";
 import { available } from "./stock";
 import { billOf } from "./supply";
 import { isDone, targetsOf, unhandledOf } from "./targets";
@@ -136,10 +136,16 @@ export function advance(world: World, step: Step): World {
   const odds = (d: { rate: number; min_quantity: number; max_quantity: number }): number => (d.min_quantity + d.max_quantity) / 2 / d.rate;
   const delta = new Map<string, number>(); // the bank at the step's end
   const put = (code: string, q: number): void => void delta.set(code, (delta.get(code) ?? 0) + q);
+  // Task 017, settled point 9: the gold moves (config.tolls 1) — a kill earns its monster's mean gold (min..max), a
+  // round trip pays its fares and consumes its keys. Tasks' gold, sales and expansions are left out.
+  const tolls = !!(world.config.tolls ?? 1);
+  let gold = tolls ? -(step.toll?.gold ?? 0) : 0;
+  if (tolls) for (const [k, q] of Object.entries(step.toll?.keys ?? {})) put(k, -q);
   const field = (w: Work, actions: number): void => {
     if (w.kind === "kill") {
       const m = monsterOf(w.monster);
       if (!m) return;
+      if (tolls) gold += (actions * ((m.min_gold ?? 0) + (m.max_gold ?? 0))) / 2;
       add(`combat_kill:${m.code}`, actions);
       for (const d of m.drops) { add(`combat_drop:${d.code}`, actions * odds(d)); put(d.code, actions * odds(d)); }
       gain("combat", actions * fightXp(m.level, m.hp, m.type, ch.level, ch.wisdom ?? 0)); // task 012: the worn set's wisdom (wear keeps the stat)
@@ -201,7 +207,7 @@ export function advance(world: World, step: Step): World {
     const b = { ...a, objectives };
     return isDone(b) ? { ...b, completed_at: new Date(end).toISOString() } : b;
   });
-  return { ...world, characters, achievements, bank: bankPlus(world.bank, delta), clock: { ...world.clock, [ch.name]: end } };
+  return { ...world, characters, achievements, bank: bankPlus(world.bank, delta), clock: { ...world.clock, [ch.name]: end }, ...(gold ? { bankGold: world.bankGold + gold } : {}) };
 }
 
 /** Task 013: an event the character attended while the step ran — its share of the time, the actions and hours it took. */
@@ -298,8 +304,13 @@ export function waitingOf(world: World): { achievement: string; points: number; 
     const combatGear = gs.some((g) =>
       (g.kind === "level" && g.lane === "combat" && g.level > top("combat") && !world.characters.some((c) => Number.isFinite(hoursToLevel("combat", c.level, g.level, world, c))))
       || (g.kind === "win" && !world.characters.some((c) => winLevel(c, world, g.monster) != null)));
+    // task 017, settled points 4 and 11: a fare the gold budget cannot pay, coins the bank is short of
+    const fare = has("layer") ? gs.map((g) => (g.kind === "layer" ? fareShort(world, g.type, g.code) : undefined)).find((s) => s != null && s > 0) : undefined;
+    const coins = ts.flatMap((t) => (t.work.kind === "craft" || t.work.kind === "buy" ? billOf(world, "", (t.inputs ?? []).map((i): [string, number] => [i.code, i.per * t.left]), undefined, false).out : [])).find((o) => o.startsWith("tasks coins:"));
     const waits =
-      has("layer") ? "another layer" : has("event") && evStuck(ts) ? "an event" : has("group") ? "a group"
+      fare != null ? `gold: ${Math.ceil(fare)} short for the fare`
+      : has("layer") ? "another layer" : has("event") && evStuck(ts) ? "an event" : has("group") ? "a group"
+      : coins ? coins
       : ts.some((t) => t.work.kind === "use") ? "use" : ts.every((t) => t.work.kind === "favor") ? "offerings"
       : combatGear ? "gear (no safe win within ten levels)"
       : noRoad ? "a level with no XP source on the way"

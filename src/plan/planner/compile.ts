@@ -16,16 +16,27 @@ const jobOf = (w: Work): GearJob =>
 
 /** The field item of a kill or a gather work, `times` actions. Task 014: a planner's fight item carries `take`, the
  *  consumables its step planned (none: {}) — the plan is their one writer. */
-const fieldItem = (w: Work, times: number, take: Record<string, number> = {}): QueueItemInput =>
-  w.kind === "kill" ? { kind: "fight", monster: w.monster, times, done: 0, gear: true, take }
-  : w.kind === "gather" ? { kind: "gather", code: w.drop, resource: w.resource, times, done: 0, gear: true }
+const fieldItem = (w: Work, times: number, take: Record<string, number> = {}, wear?: Record<string, string>, toll?: Record<string, number>): QueueItemInput =>
+  w.kind === "kill" ? { kind: "fight", monster: w.monster, times, done: 0, gear: true, take, ...(wear ? { wear } : {}) }
+  : w.kind === "gather" ? { kind: "gather", code: w.drop, resource: w.resource, times, done: 0, gear: true, ...(toll ? { take: toll } : {}) }
   : (() => { throw new Error(`no field item for ${w.kind}`); })();
+
+/** Task 017, settled point 6: what a toll takes along — the fares (`gold`), the keys and the carried item. */
+const tollTake = (step: Step): Record<string, number> | undefined => {
+  const t = step.toll;
+  if (!t?.via.length) return undefined;
+  const out: Record<string, number> = { ...t.keys, ...t.carried };
+  if (t.gold) out.gold = t.gold;
+  return out;
+};
 
 /** The queue items of a step for its character. */
 export function itemsOf(step: Step, ch: Character): QueueItem[] {
   if (step.character !== ch.name) throw new Error(`step ${step.key} is not ${ch.name}'s`);
   const w = step.work;
-  const reset = (x: Work): QueueItemInput => ({ kind: "gear", job: jobOf(x), reset: true });
+  // task 017, settled point 13: a kill step's reset and fight item wear the set the step planned (`wear`)
+  const wear = w.kind === "kill" && step.wear && Object.keys(step.wear).length ? step.wear : undefined;
+  const reset = (x: Work): QueueItemInput => ({ kind: "gear", job: jobOf(x), reset: true, ...(wear && x === w ? { wear } : {}) });
   const sources = (step.sources ?? []).map((s) => fieldItem(s.work, s.times));
   let out: QueueItemInput[];
   // Task 009: a supply step (src:, mat:, gear:) is [gear reset, the field item or the craft, deposit-all] — what it
@@ -34,7 +45,8 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
   const supply = step.as === "supply";
   switch (w.kind) {
     case "kill": case "gather":
-      out = [reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9)), step.withdraw), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
+      // task 017: a fight item's take is the step's withdraw (its consumables and its toll); a gather item's, its toll
+      out = [reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9)), step.withdraw, wear, tollTake(step)), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
       break;
     case "craft": {
       if (supply) {

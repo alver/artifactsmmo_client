@@ -22,9 +22,12 @@ export type QueueItem = { id: string; error?: string } & (
   // `take` (task 014, the planner's items only): the potions and food its step planned — the step's bank reset puts
   // exactly those into the utility slots and the bag; the item never brews, cooks or gathers them, and it ends when they
   // are gone and its fresh forecast is no win. Present (even empty) = the plan is the consumables' one writer.
-  | { kind: "fight"; monster: string; times: number; done: number; food?: boolean; keep?: string[]; gear?: boolean; take?: Record<string, number> }
-  // times 0 = infinite. `gear` ⇒ keep the bank gathering set for the resource's skill on.
-  | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; layer?: string; gear?: boolean }
+  // Task 017: `take` may hold the trip's toll too — `gold` (the fares, kept in the pocket), the keys a transition consumes
+  // and the item one wants carried (kept in the bag); `wear` (the planner's items): the set its step planned, worn instead
+  // of a fresh solve (a piece nowhere to be had: the executor's own solve, one raw line).
+  | { kind: "fight"; monster: string; times: number; done: number; food?: boolean; keep?: string[]; gear?: boolean; take?: Record<string, number>; wear?: Record<string, string> }
+  // times 0 = infinite. `gear` ⇒ keep the bank gathering set for the resource's skill on. `take` (task 017): a toll, as a fight's.
+  | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; layer?: string; gear?: boolean; take?: Record<string, number> }
   // quantity 0 = infinite: withdraw a bagful of materials from the bank, craft,
   // deposit, repeat — completes when the bank can no longer feed the recipe.
   // `wait` (hive pipelining): when bag + bank can't feed one run, hold and look
@@ -58,7 +61,7 @@ export type QueueItem = { id: string; error?: string } & (
   // run time (hand-added). `reset` ⇒ full bank reset first: deposit EVERYTHING
   // (inventory + gold), strip every slot incl. utilities, then wear the job
   // set from the bank. Completes when the worn gear matches desired ∩ available.
-  | { kind: "gear"; desired?: Partial<Record<GearSlot, string>>; job?: GearJob; keep?: string[]; reset?: boolean }
+  | { kind: "gear"; desired?: Partial<Record<GearSlot, string>>; job?: GearJob; keep?: string[]; reset?: boolean; wear?: Record<string, string> }
   // Accept a new task from the given Tasks Master. Skip-if-satisfied: already
   // carrying ANY task (either type) counts as done.
   | { kind: "accept-task"; master: "monsters" | "items" }

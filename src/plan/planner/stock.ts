@@ -7,6 +7,7 @@
 
 import { item } from "../../catalog";
 import { GOLD_FLOOR } from "../events";
+import { COIN_FLOOR } from "./config";
 import { ownedQtyOf } from "../jobgear";
 import { SLOTS_FOR_TYPE } from "../../types/api";
 import type { BankItem } from "../../types/api";
@@ -14,7 +15,7 @@ import type { World } from "./types";
 
 /** What the bank keeps of a code: the gold floor (src/plan/events.ts). Task 015, settled point 6: a sell floor is not a
  *  planning floor — the merchant's floors (SELL_FLOORS: 300 sap, 50 shells) no longer come off what a step may plan with. */
-export const floor = (code: string): number => (code === "gold" ? GOLD_FLOOR : 0);
+export const floor = (code: string): number => (code === "gold" ? GOLD_FLOOR : code === "tasks_coin" ? COIN_FLOOR : 0);
 
 const memo = new WeakMap<World, Map<string, Map<string, number>>>();
 /** What the current steps of every character but `except` will withdraw: materials, a buy's currency, and the
@@ -40,9 +41,10 @@ export function reserved(world: World, except?: string): Map<string, number> {
   return out;
 }
 
-/** Bank stock of a code this character may plan with: bank − what the others' steps reserved − the floor. */
+/** Bank stock of a code this character may plan with: bank − what the others' steps reserved − the floor. Task 017,
+ *  settled point 4: "gold" is the bank's gold — the gold budget. */
 export function available(code: string, world: World, forName: string): number {
-  const bank = world.bank.reduce((t, b) => t + (b.code === code ? b.quantity : 0), 0);
+  const bank = code === "gold" ? world.bankGold : world.bank.reduce((t, b) => t + (b.code === code ? b.quantity : 0), 0);
   return Math.max(0, bank - (reserved(world, forName).get(code) ?? 0) - floor(code));
 }
 
