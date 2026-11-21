@@ -18,9 +18,10 @@ const bank: BankItem[] = [{ code: "sap", quantity: 2913 }, { code: "shell", quan
 const fails: string[] = [];
 const want = (why: string, got: string | undefined, exp: string | undefined) => { if (got !== exp) fails.push(`${why}: got "${got}", want "${exp}"`); };
 
-// Merchants, on the 2026-11-17 bank: whitelist sells down to floors, gear (forest rings) never sold.
-want("timber", merchantOrder("timber_merchant", bank, 107_469, fleet)?.text, "sell 2613 Sap");
-want("fish", merchantOrder("fish_merchant", bank, 107_469, fleet)?.text, "sell 6 Golden Shrimp · sell 167 Shell");
+// Merchants, on the 2026-11-17 bank: whitelist sells down to floors, gear (forest rings) never sold; task 015, settled
+// point 6: nothing a recipe uses (sap: potions; shell: the iron knife) is sold at all.
+want("timber", merchantOrder("timber_merchant", bank, 107_469, fleet)?.text, undefined);
+want("fish", merchantOrder("fish_merchant", bank, 107_469, fleet)?.text, "sell 6 Golden Shrimp");
 want("gemstone", merchantOrder("gemstone_merchant", bank, 107_469, fleet)?.text, undefined);
 // 107k + 3k eggs − 20k floor buys the 5 maps.
 want("nomadic", merchantOrder("nomadic_merchant", bank, 107_469, fleet)?.text, "sell 3 Golden Egg · buy 5 Lost World Map");

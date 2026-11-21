@@ -71,13 +71,25 @@ export function foodCands(ch: Character): { code: string; hp: number }[] {
   if (!out) foodMemo.set(ch.level, (out = healingFoods(ch).filter(({ it }) => it.craft && !it.craft.items.some((g) => gearMaterial(g.code))).map(({ it, heal }) => ({ code: it.code, hp: heal }))));
   return out;
 }
-/** The food in the plan: the best-healing food the pool this character may plan with holds (row B: the best it may eat). */
-export function poolFood(world: World, name: string): Food | undefined {
-  const ch = world.characters.find((c) => c.name === name);
-  if (!ch) return undefined;
-  for (const { it, heal } of healingFoods(ch)) if (consFree(world) ? !!it.craft : available(it.code, world, name) > 0) return { code: it.code, hp: heal };
-  return undefined;
+const foodsMemo = new WeakMap<World, Map<string, Food[]>>();
+/** The foods the pool this character may plan with holds, best heal first (row B: every food with a recipe it may eat).
+ *  Memoised per World and name. */
+export function poolFoods(world: World, name: string): Food[] {
+  let byName = foodsMemo.get(world);
+  if (!byName) foodsMemo.set(world, (byName = new Map()));
+  let out = byName.get(name);
+  if (!out) {
+    const ch = world.characters.find((c) => c.name === name);
+    out = ch ? healingFoods(ch).filter(({ it }) => (consFree(world) ? !!it.craft : available(it.code, world, name) > 0)).map(({ it, heal }) => ({ code: it.code, hp: heal })) : [];
+    byName.set(name, out);
+  }
+  return out;
 }
+/** Task 015, settled point 7: the food in the plan of a fight that loses `lost` HP — the best-healing food of the pool the
+ *  loss covers at least once (a bigger one is not eaten: the executor eats only under a deficit of one unit's heal). */
+export const poolFood = (world: World, name: string, lost: number): Food | undefined => poolFoods(world, name).find((f) => f.hp <= lost);
+/** The HP a forecast fight loses. */
+export const lostOf = (f: FightForecast): number => f.maxHp - f.hpRemaining;
 
 // ── the price (settled point 6) ──────────────────────────────────────────────
 
@@ -113,7 +125,7 @@ export function consPrice(world: World, name: string): Price {
     if (s == null) memo.set(code, (s = free || available(code, world, name) > 0 ? 0 : chainSec(world, name, code)));
     return s;
   };
-  return { key: free ? "free" : "cons", price, covered: [], tag: free ? "free" : "cons", food: poolFood(world, name) };
+  return { key: free ? "free" : "cons", price, covered: [], tag: free ? "free" : "cons", food: (lost) => poolFood(world, name, lost) };
 }
 
 // ── the needs (settled points 2, 3, 7) ───────────────────────────────────────
@@ -208,9 +220,9 @@ function judgeRun(w: Work0, world: World, kills: number, h0: number): ConsNeed[]
   const out: ConsNeed[] = [];
   const { ch, monster } = w;
   const r1 = potionSet(ch, world, monster);
-  const food0 = potionPrice(world, ch.name).food;
+  const food0 = (f: FightForecast): Food | undefined => potionPrice(world, ch.name).food?.(lostOf(f));
   if (r1) {
-    const sec1 = freeSec(r1.forecast, ch, world, monster, food0);
+    const sec1 = freeSec(r1.forecast, ch, world, monster, food0(r1.forecast));
     for (const [p, u] of Object.entries(r1.forecast.used)) {
       const n = needOf(w, world, p, false, u, kills, available(p, world, ch.name) > 0 ? h0Without(w, world, p, kills, h0) : h0, (kills * sec1) / 3600, sec1);
       if (n) out.push(n);
@@ -220,7 +232,7 @@ function judgeRun(w: Work0, world: World, kills: number, h0: number): ConsNeed[]
   if (base) {
     const lost = base.forecast.maxHp - base.forecast.hpRemaining, pick = foodFor(ch, world, lost, w.by);
     if (pick) {
-      const secF = freeSec(base.forecast, ch, world, monster, pick), sec0 = freeSec(base.forecast, ch, world, monster, food0);
+      const secF = freeSec(base.forecast, ch, world, monster, pick), sec0 = freeSec(base.forecast, ch, world, monster, food0(base.forecast));
       const n = needOf(w, world, pick.code, true, pick.n, kills, (kills * sec0) / 3600, (kills * secF) / 3600, secF);
       if (n) out.push(n);
     }
@@ -303,7 +315,7 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
     for (const mc of [...new Set([cur?.monster ?? "", ...flips])].filter(Boolean)) {
       const r1 = potionSet(ch, world, mc);
       if (!r1) continue;
-      const sec1 = freeSec(r1.forecast, ch, world, mc, potionPrice(world, ch.name).food);
+      const sec1 = freeSec(r1.forecast, ch, world, mc, potionPrice(world, ch.name).food?.(lostOf(r1.forecast)));
       const r = road(mc, sec1, setWisdom(ch, r1), true);
       const ns = Object.entries(r1.forecast.used).flatMap(([p, u]) => { const n = needOf({ ...w, monster: mc }, world, p, false, u, r.kills, H0, r.h, sec1); return n ? [score(n)] : []; });
       const h = ns.reduce((s, n) => Math.min(s, n.G + n.H1), Infinity);
@@ -317,7 +329,7 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
       const lost = base.forecast.maxHp - base.forecast.hpRemaining, f = foodFor(ch, world, lost, name);
       if (f) {
         const wis = setWisdom(ch, base);
-        const r0 = road(pick.monster, freeSec(base.forecast, ch, world, pick.monster, potionPrice(world, ch.name).food), wis, false);
+        const r0 = road(pick.monster, freeSec(base.forecast, ch, world, pick.monster, potionPrice(world, ch.name).food?.(lost)), wis, false);
         const secF = freeSec(base.forecast, ch, world, pick.monster, f), r1 = road(pick.monster, secF, wis, false);
         const n = needOf({ ...w, monster: pick.monster }, world, f.code, true, f.n, r1.kills, r0.h, r1.h, secF);
         if (n) out.push(score(n));
@@ -454,17 +466,26 @@ export function fightTake(world: World, ch: Character, monster: string, kills: n
     K = kills;
     changed = true;
   }
+  // Task 015, settled point 7: the food is the best-healing one of the stock a work of this score may reserve that the
+  // fight's loss covers at least once; at most a third of the bag, and the kills are capped by it as by a potion stack
+  const lost = lostOf(r.forecast);
+  const food = poolFoods(world, ch.name).find((f) => f.hp <= lost && reservable(world, ch.name, f.code, fit, any) >= 1);
+  const n = food ? Math.floor(lost / food.hp) : 0;
+  const bag = Math.floor(ch.inventory_max_items / 3);
+  let capped = false;
+  if (food && n > 0 && Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(reservable(world, ch.name, food.code, fit, any))) > bag) {
+    const Kf = Math.floor(bag / (n * MARGIN) + 1e-9);
+    if (Kf >= 1 && Kf < K) { K = Kf; capped = true; }
+  }
   const withdraw: Record<string, number> = {};
   for (const [p, u] of used) withdraw[p] = Math.min(Math.ceil(u * K * MARGIN - 1e-9), Math.floor((res.get(p) ?? Infinity) + 1e-9)); // whole units the stock holds
-  const food = potionPrice(world, ch.name).food;
-  const lost = r.forecast.maxHp - r.forecast.hpRemaining;
-  const n = food ? Math.floor(lost / food.hp) : 0;
   if (food && n > 0) {
-    const q = Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(reservable(world, ch.name, food.code, fit, any)));
+    const q = Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(reservable(world, ch.name, food.code, fit, any)), bag);
     if (q > 0) withdraw[food.code] = q;
   }
   const took = Object.entries(withdraw).map(([c, q]) => `${q} ${itemName(c)}`);
-  const note = took.length ? ` with ${took.join(" and ")} from the bank` + (withdraw[food?.code ?? ""] ? "" : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "")
+  const bagNote = capped && food ? `; the bag caps it at ${K} kills (${n} ${itemName(food.code)} a kill, ${bag} is a third of ${ch.inventory_max_items})` : "";
+  const note = took.length ? ` with ${took.join(" and ")} from the bank` + (withdraw[food?.code ?? ""] ? bagNote : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "")
     : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "";
   return { kills: K, ...(changed ? { sec: freeSec(r.forecast, ch, w, monster, food), rec: r } : {}), withdraw: took.length ? withdraw : undefined, note };
 }
@@ -499,7 +520,7 @@ export function useOf(world: World, ch: Character, monster: string): Record<stri
   if (!r) return undefined;
   const out: Record<string, number> = {};
   for (const [p, u] of Object.entries(r.forecast.used)) if (u > 0) out[p] = u;
-  const food = potionPrice(world, ch.name).food, n = food ? Math.floor((r.forecast.maxHp - r.forecast.hpRemaining) / food.hp) : 0;
+  const lost = lostOf(r.forecast), food = potionPrice(world, ch.name).food?.(lost), n = food ? Math.floor(lost / food.hp) : 0;
   if (food && n > 0) out[food.code] = n;
   return Object.keys(out).length ? out : undefined;
 }

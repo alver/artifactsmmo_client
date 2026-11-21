@@ -6,14 +6,15 @@
 // plans its gear with is the bank less every reservation of the others, plus what it holds (`poolBank`).
 
 import { item } from "../../catalog";
-import { GOLD_FLOOR, SELL_FLOORS } from "../events";
+import { GOLD_FLOOR } from "../events";
 import { ownedQtyOf } from "../jobgear";
 import { SLOTS_FOR_TYPE } from "../../types/api";
 import type { BankItem } from "../../types/api";
 import type { World } from "./types";
 
-/** What the bank keeps of a code: the merchant's sell floors and the gold floor (src/plan/events.ts). */
-export const floor = (code: string): number => (code === "gold" ? GOLD_FLOOR : (SELL_FLOORS[code] ?? 0));
+/** What the bank keeps of a code: the gold floor (src/plan/events.ts). Task 015, settled point 6: a sell floor is not a
+ *  planning floor — the merchant's floors (SELL_FLOORS: 300 sap, 50 shells) no longer come off what a step may plan with. */
+export const floor = (code: string): number => (code === "gold" ? GOLD_FLOOR : 0);
 
 const memo = new WeakMap<World, Map<string, Map<string, number>>>();
 /** What the current steps of every character but `except` will withdraw: materials, a buy's currency, and the

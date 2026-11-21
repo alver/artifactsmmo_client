@@ -3,7 +3,7 @@
 // merchant and buy the wishlist, or farm an event monster / node. The runtime
 // (state/eventorders.ts) picks who runs them and puts them ahead of a queue.
 
-import { item, itemName, monster as monsterOf, npc as npcOf, resource as resourceOf } from "../catalog";
+import { item, itemName, itemUses, monster as monsterOf, npc as npcOf, resource as resourceOf } from "../catalog";
 import { canEquip, killSeconds } from "./bis";
 import { ownedFightRec } from "./jobgear";
 import { GEAR_SLOTS, slotCode } from "../types/api";
@@ -11,9 +11,9 @@ import type { QueueItemInput } from "./queue";
 import type { ActiveEvent, BankItem, Character } from "../types/api";
 
 /** What an event merchant may take from the bank, down to a floor — a
- *  whitelist: nothing else is ever sold. Floors keep what recipes still use
- *  (sap: small antidote + health potions; shell: iron knife); eggs and golden
- *  shrimp feed no recipe. */
+ *  whitelist: nothing else is ever sold. Task 015, settled point 6: and never a
+ *  code any recipe uses (merchantOrder), so sap (potions) and shell (iron knife)
+ *  are no longer sold; eggs and golden shrimp feed no recipe. */
 export const SELL_FLOORS: Record<string, number> = { sap: 300, shell: 50, golden_shrimp: 0, golden_egg: 0 };
 
 /** Gold the vault keeps after a shopping trip (tolls, runes, the next merchant). */
@@ -60,7 +60,8 @@ export function merchantOrder(npc: string, bank: BankItem[], bankGold: number, f
   let budget = bankGold - GOLD_FLOOR;
   for (const o of shop) {
     const qty = owned(o.code, bank, []) - (SELL_FLOORS[o.code] ?? Infinity);
-    if (!o.sell_price || o.currency !== "gold" || qty <= 0) continue;
+    // task 015, settled point 6: nothing a recipe can use is sold
+    if (!o.sell_price || o.currency !== "gold" || qty <= 0 || itemUses(o.code).recipes.length) continue;
     items.push({ kind: "sell", code: o.code, quantity: qty, done: 0, npc, partial: true });
     text.push(`sell ${qty} ${itemName(o.code)}`);
     budget += qty * o.sell_price;

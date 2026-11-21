@@ -20,7 +20,8 @@ export type Work =
   | { kind: "craft"; code: string }
   | { kind: "buy"; code: string; npc: string; currency: string; price: number }
   | { kind: "sell"; code: string; npc: string }
-  | { kind: "task" } | { kind: "recycle" } | { kind: "favor" }
+  | { kind: "task" } | { kind: "favor" }
+  | { kind: "recycle"; codes?: Record<string, number> } // the recycling objective; task 015: a tidy step's codes and copies
   | { kind: "use"; code: string }
   | { kind: "level"; lane: Lane; to: number }
   | { kind: "train"; lane: Lane };                     // one level of a workshop skill through the `train` item
@@ -45,8 +46,9 @@ export interface Target {
   filler: boolean;
 }
 
-/** "supply": a `src:` / `mat:` / `gear:` step — material or a gear piece for an open parent (task 009). */
-export type Answer = "objective" | "level" | "filler" | "fallback" | "supply";
+/** "supply": a `src:` / `mat:` / `gear:` step — material or a gear piece for an open parent (task 009). "tidy": outdated
+ *  gear recycled to free bank slots (task 015, bank.ts). */
+export type Answer = "objective" | "level" | "filler" | "fallback" | "supply" | "tidy";
 
 export interface Place { x: number; y: number; layer: string }
 
@@ -89,6 +91,7 @@ export interface PlannerConfig {
   potionStock: number;                    // task 012: 1 = an ingredient the stock covers is free (reach.ts potionPrice); 0 = the field price always (row C only)
   events: number;                         // task 013: 1 = an event is a calendar (events.ts) and the forward model attends it; 0 = a wall, no events (row E only)
   consumables: number;                    // task 014: 1 = potions and food by need, through the bank (consumables.ts); 0 = report 013's model whole (row C only)
+  expansionCap: number;                   // task 015: the most gold one bank expansion may cost (Alex's number; not in the UI)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;
@@ -112,6 +115,10 @@ export interface World {  // everything decide() reads — a snapshot, so it run
    *  way to the bank (the runtime's worldOf; the forward model banks at a step's end). The bills count it; a step's
    *  withdrawal and what a craft can feed now (stock.ts available) do not. */
   bags?: Record<string, number>;
+  /** Task 015, settled point 2: the bank's slots (BankDetails.slots) and the next expansion's price — the runtime's World
+   *  only. A slot is a code, whatever the quantity (bank.ts freeSlots). The forward model has none: no tidy, no purchase. */
+  bankSlots?: number;
+  nextExpansion?: number;
 }
 
 /** An accepted offering's favor: × `xp` XP (and × `drop` drops) on its target for that character until `until` (ms). */

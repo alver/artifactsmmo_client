@@ -4,9 +4,14 @@
 // Every rule nobody confirmed is marked `guess:` — the same list is in the
 // task report (tasks/002-runner-harness.report.md, "Fidelity").
 //
-// Not modelled: XP and levels (a level is what the scenario set), bank capacity
-// (462), gated tiles (always locked), achievement conditions of transitions
-// (always unmet), task / recycle / give actions, `use` of anything but food,
+// Task 015: the bank's slots (a slot is a code; a deposit of a code the bank holds
+// no stack of answers 462 when none is free), `bank/buy_expansion` (+20 slots, the
+// price from the character's gold, the next price doubled unless the scenario gives
+// a ladder) and `recycling` (on the item's workshop at its level; per item
+// xp.ts recycleReturn units of the recipe's ingredients, dealt in recipe order).
+// Not modelled: XP and levels (a level is what the scenario set), gated tiles
+// (always locked), achievement conditions of transitions (always unmet), task /
+// give actions, `use` of anything but food,
 // group fights. Achievements are what the scenario wrote (`world.achievements`;
 // it moves progress by hand — nothing the fake does counts toward them).
 // The altar knows only what the scenario's `offerings` list holds: no favor
@@ -15,7 +20,7 @@
 import { API_BASE } from "../../src/api/client";
 import { catalog, item, monster, npc, resource, tileAt } from "../../src/catalog";
 import { canEquip } from "../../src/plan/bis";
-import { fightSec, gatherSec } from "../../src/plan/xp";
+import { fightSec, gatherSec, recycleReturn } from "../../src/plan/xp";
 import { simulate } from "../../src/sim/combat";
 import { restSeconds } from "../../src/sim/cost";
 import { currentFighter } from "../../src/sim/stats";
@@ -37,6 +42,11 @@ export interface WorldInit {
   pending?: PendingItem[];
   /** Today's offerings at the seasonal altar, the same for every character. */
   offerings?: SeasonalOffering[];
+  /** Task 015: the bank's slots (default 500: room for any scenario that does not ask), the next expansion's price
+   *  (default 4,500) and the prices after it (default: doubling). */
+  slots?: number;
+  nextExpansion?: number;
+  ladder?: number[];
 }
 /** One action call as the game saw it. `code` 200 = ok; "network" = an injected transport failure. */
 export interface Call {
@@ -70,6 +80,11 @@ export const world = {
   chars: new Map<string, Char>(),
   bank: new Map<string, number>(),
   gold: 0,
+  /** Task 015: the bank's slots, expansions bought, the next one's price and the prices after it. */
+  slots: 500,
+  expansions: 0,
+  nextCost: 4500,
+  ladder: [] as number[],
   events: [] as ActiveEvent[],
   achievements: [] as AccountAchievement[],
   pending: [] as PendingItem[],
@@ -174,6 +189,9 @@ export function seedWorld(init: WorldInit): void {
   world.achievements = init.achievements ?? [];
   world.pending = init.pending ?? [];
   world.offerings = init.offerings ?? [];
+  world.slots = init.slots ?? 500;
+  world.nextCost = init.nextExpansion ?? 4500;
+  world.ladder = [...(init.ladder ?? [])];
 }
 
 /** The world as JSON, for a second boot of the engine in a new process (index.mts restart()). Pending faults and
@@ -181,9 +199,10 @@ export function seedWorld(init: WorldInit): void {
 export const saveWorld = (): unknown => ({
   chars: [...world.chars], bank: [...world.bank], gold: world.gold, events: world.events, achievements: world.achievements,
   pending: world.pending, offerings: world.offerings, altar: [...world.altar], trace: world.trace, counts: [...counts],
+  slots: world.slots, expansions: world.expansions, nextCost: world.nextCost, ladder: world.ladder,
 });
 export function loadWorld(s: ReturnType<typeof JSON.parse>): void {
-  Object.assign(world, { chars: new Map(s.chars), bank: new Map(s.bank), gold: s.gold, events: s.events, achievements: s.achievements, pending: s.pending, offerings: s.offerings, altar: new Map(s.altar), trace: s.trace });
+  Object.assign(world, { chars: new Map(s.chars), bank: new Map(s.bank), gold: s.gold, events: s.events, achievements: s.achievements, pending: s.pending, offerings: s.offerings, altar: new Map(s.altar), trace: s.trace, slots: s.slots, expansions: s.expansions, nextCost: s.nextCost, ladder: s.ladder });
   for (const [k, v] of s.counts as [string, number][]) counts.set(k, v);
 }
 
@@ -383,6 +402,8 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
     standingOn(d.ch, "bank", "Bank");
     for (const s of stacks(body)) {
       take(d.ch, s.code, s.quantity);
+      // task 015: a code the bank holds no stack of takes a slot (guess: the whole deposit is refused, as any refusal)
+      if (!d.bank.has(s.code) && d.bank.size >= world.slots) throw new GameError(462, "Your bank is full.");
       d.bank.set(s.code, (d.bank.get(s.code) ?? 0) + s.quantity);
     }
     return { seconds: 3 * body.length, reason: "deposit_item", data: { items: body, bank: bankList(d.bank) } }; // 3 s × items [1.2]
@@ -416,6 +437,40 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
     d.gold -= body.quantity;
     d.ch.gold += body.quantity;
     return { seconds: 3, reason: "withdraw_gold", data: { bank: { quantity: d.gold } } }; // guess: the minimum cooldown
+  },
+
+  // Task 015: +20 slots for the next price, paid from the character's gold (docs/api/openapi.json: 492 for the character's
+  // gold). The echo carries the price, no bank details. guess: 3 s; the slots change when the action is committed.
+  "bank/buy_expansion"(d) {
+    standingOn(d.ch, "bank", "Bank");
+    const price = world.nextCost;
+    if (d.ch.gold < price) throw new GameError(492, "The character does not have enough gold.");
+    d.ch.gold -= price;
+    world.slots += 20;
+    world.expansions += 1;
+    world.nextCost = world.ladder.shift() ?? 2 * price;
+    return { seconds: 3, reason: "buy_bank_expansion", data: { transaction: { price } } };
+  },
+
+  // Task 015: recycling on the workshop that crafts the item, at its level (493), a recyclable item (473). guess: per item
+  // xp.ts recycleReturn(the recipe's ingredient units) units, dealt over the recipe's ingredients in order, unit by unit;
+  // 5 s an item, as a craft.
+  recycling(d, body: { code: string; quantity?: number }) {
+    const it = item(body.code);
+    const recipe = it?.craft;
+    if (!it || !recipe) throw new GameError(404, "Item not found.");
+    standingOn(d.ch, "workshop", "Workshop", recipe.skill);
+    if (!it.recyclable) throw new GameError(473, "This item cannot be recycled.");
+    if (num(d.ch)[`${recipe.skill}_level`] < recipe.level) throw new GameError(493, "The character's skill level is too low.");
+    const n = body.quantity ?? 1;
+    take(d.ch, body.code, n);
+    const units = recipe.items.flatMap((g) => Array<string>(g.quantity).fill(g.code));
+    const back = new Map<string, number>();
+    for (let i = 0; i < n * recycleReturn(units.length); i++) back.set(units[i % units.length], (back.get(units[i % units.length]) ?? 0) + 1);
+    const items = [...back].map(([code, quantity]) => ({ code, quantity }));
+    fits(d.ch, items.reduce((s, x) => s + x.quantity, 0));
+    for (const s of items) give(d.ch, s.code, s.quantity);
+    return { seconds: 5 * n, reason: "recycling", data: { details: { items } } };
   },
 
   equip(d, body: { code: string; slot: GearSlot; quantity?: number }[]) {
@@ -599,7 +654,7 @@ function read(url: URL): unknown {
     return { data: all.slice((n - 1) * size, n * size), total: all.length, page: n, size, pages: Math.max(1, Math.ceil(all.length / size)) };
   };
   if (p === "/my/characters") return { data: [...world.chars.values()] };
-  if (p === "/my/bank") return { data: { slots: 50, expansions: 0, next_expansion_cost: 4500, gold: world.gold } };
+  if (p === "/my/bank") return { data: { slots: world.slots, expansions: world.expansions, next_expansion_cost: world.nextCost, gold: world.gold } };
   if (p === "/my/bank/items") return page(bankList(world.bank));
   if (p === "/events/active") return page(world.events.filter(liveEvent));
   // The scenario's achievements, pending rewards and offerings (empty unless it gave some).

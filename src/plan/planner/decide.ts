@@ -25,6 +25,7 @@ import { jobGear } from "../jobgear";
 import { CHUNK_SEC, GATHER_LANES, TRAIN_LANES } from "./config";
 import { actionSec, craftsPerLevel, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
+import { bankStuck, newCodes, tidyStep } from "./bank";
 import { met } from "./gates";
 import { consParents, fightTake, gearWorld } from "./consumables";
 import { gearPieces, pieceParent } from "./gear";
@@ -166,8 +167,11 @@ export function rank(name: string, world: World): Ranking {
   const ch = world.characters.find((c) => c.name === name);
   if (!ch) throw new Error(`no character ${name}`);
   const cfg = world.config;
-  const targets = targetsOf(world);
   const lanes = rolesFor(world)[name] ?? ["combat"];
+  // Task 015, settled point 4: while fewer than TIDY_BELOW bank slots are free, a tidy step goes before any other
+  const tidy = tidyStep(world, name);
+  if (tidy) return { step: tidy, objectives: [], levels: [], supply: [], fillers: [], lanes };
+  const targets = targetsOf(world);
   const calH = Math.max(0, (Date.parse(cfg.deadline) - world.now) / 3.6e6);
   const last = world.current[name];
   const others = Object.entries(world.current).filter(([n, s]) => n !== name && s).map(([, s]) => s!);
@@ -326,7 +330,11 @@ export function rank(name: string, world: World): Ranking {
     const best = pool.filter((c) => c[k] > 0).sort(byScore(k))[0];
     return best && { ...best, step: { ...best.step, score: best[k], why: k === "any" ? `${best.step.why} (nothing fits the deadline: points per hour)` : best.step.why } };
   };
-  const real = [...objectives, ...levels, ...supply];
+  // Task 015, settled point 5: no slot, nothing to tidy, no purchase — a step that would bring a new code is no candidate
+  const stuck = bankStuck(world, name);
+  const fresh = (c: Candidate): boolean => !stuck || !newCodes(c.step, world).length;
+  const real = [...objectives, ...levels, ...supply].filter(fresh);
+  if (stuck) fillers.splice(0, fillers.length, ...fillers.filter(fresh));
   const firsts = real.filter((c) => c.target.achievement && cfg.first.includes(c.target.achievement));
   // Task 011, settled point 1: filler that fits goes before a road that fits nothing (the road takes the fallback's hours)
   const realAny = real.some((c) => c.any > 0);

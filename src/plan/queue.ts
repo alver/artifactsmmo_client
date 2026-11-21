@@ -93,6 +93,10 @@ export type QueueItem = { id: string; error?: string } & (
   // Claim every pending reward (achievement payouts) at the bank, then deposit what was claimed (`got`: the
   // codes, "gold" for pocket gold). The planner's `claim` interrupt; done when no row and nothing claimed is left.
   | { kind: "claim"; got?: string[] }
+  // Task 015: buy one bank expansion (+20 slots) at the bank, paying the price from the character's gold (withdrawn
+  // first). The planner's `bank` interrupt; `price` is what it agreed to pay — a higher next price ends the item unbought.
+  // `bought` as for `buy`: set the moment the purchase succeeds, checked first, never twice.
+  | { kind: "expand"; price: number; bought?: boolean }
 );
 
 export type QueueItemKind = QueueItem["kind"];
@@ -143,6 +147,7 @@ export function queueItemText(it: QueueItem): string {
     case "offering": return "Today's seasonal offerings";
     case "prepare": return `Prepare to fight ${monsterOf(it.monster)?.name ?? titleCase(it.monster)} (gear, potions, walk, rest — then stop)`;
     case "claim": return "Claim pending rewards";
+    case "expand": return `Buy a bank expansion (${it.price.toLocaleString("en-US")} gold)`;
   }
 }
 
@@ -150,5 +155,5 @@ export const queueItemIcon: Record<QueueItemKind, string> = {
   "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
   "train": "🎓", "gear": "🧰", "accept-task": "📜", "work-task": "⚒", "deliver": "🤝", "turn-in": "✅",
-  "task-loop": "🔁", "offering": "🛐", "prepare": "🛡", "claim": "🎁",
+  "task-loop": "🔁", "offering": "🛐", "prepare": "🛡", "claim": "🎁", "expand": "🏦",
 };

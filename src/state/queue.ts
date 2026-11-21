@@ -19,7 +19,7 @@
 import { effect, signal } from "@preact/signals";
 import { IS_SERVER, expose, rpc } from "../lib/remote";
 import * as actions from "../api/actions";
-import { ApiError } from "../api/client";
+import { ApiError, api } from "../api/client";
 import { catalog, item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
 import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, ownedFightForecast, stripAllMap } from "../plan/jobgear";
@@ -28,9 +28,9 @@ import { trainingResourceFor } from "../plan/hive/skills";
 import { CRAFT_SEC, FIGHT_SEC, autoRecyclable, craftXp, fightXp, gatherSec, recycleReturn } from "../plan/xp";
 import { killSeconds } from "../plan/bis";
 import { titleCase } from "../lib/util";
-import { CRAFT_TRAIN_SKILLS, bankItems, characters, isOwned, pendingRewards, pushLog, skillKey, skillPins } from "./store";
+import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendingRewards, pushLog, skillKey, skillPins } from "./store";
 import { devlog } from "../lib/devlog";
-import { NoRouteError, bankQty, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, sleep, step, walkTo } from "./loopkit";
+import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
 import { categoryLevel, loadOfferings, offeringSlots, todayOfferings } from "./offerings";
 import type { StepCtx } from "./exec";
@@ -38,7 +38,7 @@ import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
 import type { Place } from "../plan/route";
 import { slotCode, slotQuantity } from "../types/api";
-import type { BankItem, Character, CharacterOfferings, OfferingFavor, SeasonalOffering } from "../types/api";
+import type { BankDetails, BankItem, Character, CharacterOfferings, OfferingFavor, SeasonalOffering } from "../types/api";
 import type { CraftRecipe, DropRate, Monster, Resource } from "../types/catalog";
 import type { FightForecast } from "../sim/combat";
 
@@ -500,8 +500,13 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       return false;
     }
     case "deposit-all": {
-      if (invCount(ch) === 0 && ch.gold === 0) return true; // bag empty AND pockets empty
-      await bankOff(name, undefined, ctx.note);
+      // done: nothing in the bag the bank has a slot for (task 015, settled point 1: the rest stays) and pockets empty
+      const codes = (ch.inventory ?? []).filter((s) => s.code && s.quantity > 0).map((s) => s.code);
+      if (noSlotFor(codes).length === codes.length && ch.gold === 0) return true;
+      const bank = nearestBank(ch);
+      if (!bank) return skipItem(name, it, "no bank on the map");
+      ctx.note("→ bank (deposit)");
+      if (await moveTo(name, bank)) await depositAll(name);
       return false;
     }
     case "gear": {
@@ -518,10 +523,10 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         const total = { ...RESET_UTILITY_STRIP, ...(desired ?? stripAllMap()) };
         if ((await gearSwapStep(name, ch, total, ctx, { reset: true, utility: take })) === "acted") return false;
         // task 014, settled point 4: an owned step's reset puts exactly its planned potions on (utility, above) and its
-        // planned food into the bag
+        // planned food into the bag — task 015, settled point 7: never more than a third of the bag, whatever the item says
         for (const [code, q] of Object.entries(take ?? {})) {
           if (itemOf(code)?.type === "utility") continue;
-          const short = q - invQty(ch, code), banked = bankQty(code), bank = nearestBank(ch);
+          const short = Math.min(q, Math.floor(ch.inventory_max_items / 3)) - invQty(ch, code), banked = bankQty(code), bank = nearestBank(ch);
           if (short > 0 && banked > 0 && freeSpace(ch) > 0 && bank) {
             await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(short, banked, freeSpace(ch)), at: bank }, ctx);
             return false;
@@ -577,7 +582,43 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       }
       const items = got.filter((c) => c !== "gold").map((code) => ({ code, quantity: invQty(ch, code) }));
       ctx.note("deposit what was claimed");
-      await step(name, () => (items.length ? actions.depositItems(name, items) : actions.depositGold(name, ch.gold)));
+      // task 015: a code the bank has no slot for stays in the bag, and the claim no longer waits for it
+      const left = items.length ? await deposit(name, items) : (await step(name, () => actions.depositGold(name, ch.gold)), []);
+      if (left.length) patchItem(name, it.id, { got: (it.got ?? []).filter((c) => !left.includes(c)) });
+      return false;
+    }
+    case "expand": {
+      // Task 015, settled point 5: one bank expansion. Done once bought (recorded before the cooldown, checked first).
+      if (it.bought) return true;
+      const bank = nearestBank(ch);
+      if (!bank) return skipItem(name, it, "no bank on the map");
+      if (!isAt(ch, bank)) { ctx.note("→ bank to buy an expansion"); await moveTo(name, bank); return false; }
+      const d = bankDetails.value;
+      const price = d?.next_expansion_cost ?? it.price;
+      if (price > it.price) return skipItem(name, it, `the next expansion costs ${price.toLocaleString("en-US")} gold, ${it.price.toLocaleString("en-US")} was agreed`);
+      // the game takes the price from the character's gold (docs/api/openapi.json: 492 "the character does not have enough gold")
+      if (ch.gold < price) {
+        const missing = price - ch.gold;
+        if ((d?.gold ?? 0) < missing) throw new Error(`not enough gold in the bank for a bank expansion (${price.toLocaleString("en-US")})`);
+        ctx.note("withdraw gold");
+        await step(name, () => actions.withdrawGold(name, missing));
+        return false;
+      }
+      ctx.note("buy a bank expansion");
+      let paid = price;
+      await step(name, async () => {
+        const r = await actions.buyExpansion(name);
+        patchItem(name, it.id, { bought: true }); // before the cooldown: a restart inside it must not buy again
+        paid = (r as { transaction?: { price?: number } }).transaction?.price ?? price;
+      });
+      // the echo carries no bank details: one read of them (a purchase is rare); unread, the slots +20 and the price doubled
+      // (the ladder the log shows: 7,000 → 14,000 → 28,000)
+      const local = d && { ...d, slots: d.slots + 20, expansions: d.expansions + 1, next_expansion_cost: 2 * paid };
+      bankDetails.value = await api<BankDetails>("/my/bank").catch(() => local ?? null);
+      const after = bankDetails.value;
+      const text = `bought a bank expansion for ${paid.toLocaleString("en-US")} gold: slots ${d?.slots ?? "?"} → ${after?.slots ?? "?"}, the next costs ${after?.next_expansion_cost?.toLocaleString("en-US") ?? "?"}`;
+      devlog(`plan: bank — ${name} ${text}`);
+      log(name, text, "ok");
       return false;
     }
     case "work-task":
@@ -1543,6 +1584,26 @@ async function runLoop(name: string): Promise<void> {
         lastHead.set(name, item.id);
         devlog(`head ${name}: [${item.id}] ${queueItemText(item)}`);
       }
+      const finish = (): void => {
+        const cur = queues.value[name];
+        if (cur?.items[0]?.id === item.id) {
+          const rest = cur.items.slice(1);
+          // 🔁 wipes progress; done/from/geared/bought don't exist on every kind, hence the double cast.
+          const again = { ...item, done: 0, from: undefined, geared: undefined, bought: undefined, error: undefined } as unknown as QueueItem;
+          // A finished `prepare` stops the queue: the character holds on the boss tile for the group fight.
+          const ready = item.kind === "prepare";
+          // An event trip (ev:* ids, state/eventorders.ts) is one-off — 🔁 never brings it back.
+          const recycle = cur.repeat && !ready && !item.id.startsWith("ev:");
+          setQueue(name, { items: recycle ? [...rest, again] : rest, note: undefined, ...(ready ? { running: false } : {}) });
+          if (ready) log(name, `ready to fight ${monsterOf(item.monster)?.name ?? item.monster} — queue stopped`, "ok");
+        }
+        S(name).losses = 0;
+      };
+      // Task 015, settled point 1: a bag full of codes the bank has no slot for ends the item — never a pause.
+      const bankFull = (e: BankFullError): void => {
+        log(name, `bank full — ${queueItemText(item)} ends: ${e.message}`, "bad");
+        finish();
+      };
       try {
         // No route to the item's place (a pinned x, y on a layer this character cannot reach): skipped like a vanished target.
         // 598 "… not found on this map" at action time is a vanished target too (an event tile gone between the look
@@ -1559,24 +1620,11 @@ async function runLoop(name: string): Promise<void> {
         });
         if (!vanished) lost = undefined;
         busy = 0;
-        if (done) {
-          const cur = queues.value[name];
-          if (cur?.items[0]?.id === item.id) {
-            const rest = cur.items.slice(1);
-            // 🔁 wipes progress; done/from/geared/bought don't exist on every kind, hence the double cast.
-            const again = { ...item, done: 0, from: undefined, geared: undefined, bought: undefined, error: undefined } as unknown as QueueItem;
-            // A finished `prepare` stops the queue: the character holds on the boss tile for the group fight.
-            const ready = item.kind === "prepare";
-            // An event trip (ev:* ids, state/eventorders.ts) is one-off — 🔁 never brings it back.
-            const recycle = cur.repeat && !ready && !item.id.startsWith("ev:");
-            setQueue(name, { items: recycle ? [...rest, again] : rest, note: undefined, ...(ready ? { running: false } : {}) });
-            if (ready) log(name, `ready to fight ${monsterOf(item.monster)?.name ?? item.monster} — queue stopped`, "ok");
-          }
-          S(name).losses = 0;
-        }
+        if (done) finish();
       } catch (e) {
+        if (e instanceof BankFullError) { bankFull(e); continue; }
         if (isInventoryFull(e)) {
-          try { await bankOff(name, keepOf(item, ch), (t) => setQueue(name, { note: t })); continue; } catch { /* fall through to pause */ }
+          try { await bankOff(name, keepOf(item, ch), (t) => setQueue(name, { note: t })); continue; } catch (e2) { if (e2 instanceof BankFullError) { bankFull(e2); continue; } /* else fall through to pause */ }
         }
         // Transient transport trouble (code 0: fetch kept failing / 429 storm
         // exhausted its retries) or a server-side outage (e.g. 500 "Fatal

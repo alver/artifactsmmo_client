@@ -16,13 +16,16 @@
 import { batch, effect, signal } from "@preact/signals";
 import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { devlog } from "../lib/devlog";
-import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn } from "./store";
+import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn, pushLog } from "./store";
 import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, queues, resetQueue, runQueue, setOwnedOfferings } from "./queue";
 import { hive, setHiveManual } from "./hive";
 import { liveEvents } from "./events";
 import { invCount } from "./exec";
+import { noSlotFor, setNoSlotHook } from "./loopkit";
 import { DEFAULTS } from "../plan/planner/config";
-import { item as itemOf } from "../catalog";
+import { EXPAND_BELOW, TIDY_BELOW, expansionOk, freeSlots, tidyVerdicts, usedSlots } from "../plan/planner/bank";
+import { bankSec, placeOf } from "../plan/planner/reach";
+import { item as itemOf, itemName } from "../catalog";
 import { costKey, levelHoursEstimate, levelOf, perOf, sample, unitSec } from "../plan/planner/cost";
 import { decide, rank } from "../plan/planner/decide";
 import { itemsOf } from "../plan/planner/compile";
@@ -91,6 +94,8 @@ export function worldOf(now: number): World {
     now, characters: characterList(), bank: bankItems.value, bankGold: bankDetails.value?.gold ?? 0,
     achievements: achievements.value ?? NONE, events: liveEvents(), current, costs: st.costs, blocked: st.blocked, config,
     favors: favorsOf(now), bags: bagsOf(config),
+    // task 015, settled point 2: the bank's slots and the next expansion's price
+    bankSlots: bankDetails.value?.slots, nextExpansion: bankDetails.value?.next_expansion_cost,
   };
 }
 
@@ -306,7 +311,9 @@ async function next(name: string, block?: string): Promise<void> {
     if (r && !r.over) {
       for (const it of stepItems(name, r.step.key)) dropItem(name, it.id);
       setRunning(name, { ...r, over: true });
-      if (!block && r.units === 0) block = `ended empty${skipReason(name, r.startedAt)}`;
+      // task 015, settled point 1: a step that ended because the bank had no slot is not blocked for it
+      if (!block && r.units === 0 && (noSlotAt.get(name) ?? 0) >= r.startedAt) plog(name, `${r.step.key} ended with no unit — the bank had no slot; not blocked`);
+      else if (!block && r.units === 0) block = `ended empty${skipReason(name, r.startedAt)}`;
       if (block) blockStep(name, r.step, block);
       else {
         stepSample(name, r);
@@ -399,7 +406,65 @@ function heartbeat(): void {
   }
   if (Date.now() - lastRead >= READ_EVERY) void readAchievements();
   catchUpOfferings();
+  bankCheck();
   tick();
+}
+
+// ── the bank (task 015) ──────────────────────────────────────────────────────
+
+const noSlotAt = new Map<string, number>(); // the last time the bank had no slot for a code this character carried
+const said = new Map<string, number>(); // a bank line's key → when it was written (each at most once in its period)
+const fmtG = (n: number): string => Math.round(n).toLocaleString("en-US");
+/** One `plan: bank` line, at most once per `every` ms for the same `key`; the activity log too when `activityToo`. */
+function bankLine(key: string, every: number, text: string, activityToo = false): void {
+  const now = Date.now();
+  if (now - (said.get(key) ?? -Infinity) < every) return;
+  said.set(key, now);
+  devlog(`plan: bank — ${text}`);
+  if (activityToo) pushLog({ ts: now, character: "bank", action: "bank", text, kind: "info" });
+}
+
+/** Settled point 1: the executor met a bank with no slot for these codes (any character); the planner answers at once. */
+setNoSlotHook((name, codes) => {
+  noSlotAt.set(name, Date.now());
+  const d = bankDetails.value;
+  bankLine(`refused:${name}:${[...codes].sort().join(",")}`, 3_600_000, `${name} could not bank ${codes.map((c) => itemName(c)).join(", ")}: no slot (${new Set(bankItems.value.map((b) => b.code)).size} codes of ${d?.slots ?? "?"} slots) — kept in the bag`);
+  if (active) queueMicrotask(bankCheck);
+});
+
+/**
+ * Settled points 4 and 5: the bank's state in one place. Below EXPAND_BELOW free with nothing left to tidy: one
+ * expansion — the `bank` interrupt on the owned character with the shortest walk to a bank — when the price is at most
+ * config.expansionCap and the bank keeps GOLD_FLOOR; otherwise one line a day says why (and the activity log). With no
+ * slot, nothing to tidy and no purchase: once an hour, what is stuck. The tidy itself is a step (bank.ts tidyStep).
+ */
+let bankBooted = false;
+function bankCheck(): void {
+  const names = owned();
+  if (!names.length || !bankDetails.value) return;
+  const world = worldOf(Date.now());
+  const free = freeSlots(world)!, slots = world.bankSlots!;
+  if (!bankBooted) {
+    bankBooted = true;
+    const out = free < TIDY_BELOW ? tidyVerdicts(world).filter((v) => v.outdated) : [];
+    devlog(`plan: bank — ${usedSlots(world)} of ${slots} slots used (${free} free), the next expansion ${fmtG(world.nextExpansion ?? 0)} gold, bank gold ${fmtG(world.bankGold)}; tidy below ${TIDY_BELOW} free, buy below ${EXPAND_BELOW} (cap ${fmtG(world.config.expansionCap)})${free < TIDY_BELOW ? `; outdated: ${out.length ? out.map((v) => `${itemName(v.code)} ×${v.bank}`).join(", ") : "none"}` : ""}`);
+  }
+  if (free >= EXPAND_BELOW) return;
+  if (names.some((n) => queues.value[n]?.items.some((it) => it.kind === "expand"))) return;
+  if (tidyVerdicts(world).some((v) => v.outdated)) return; // the tidy steps first (no expansion while something can be tidied)
+  const e = expansionOk(world);
+  if (e.ok) {
+    const who = [...names].sort((a, b) => bankSec(placeOf(characters.value[a]!)) - bankSec(placeOf(characters.value[b]!)) || (a < b ? -1 : 1))[0];
+    devlog(`plan: bank — ${free} of ${slots} slots free and nothing left to tidy: ${who} buys an expansion for ${fmtG(e.price)} gold (bank gold ${fmtG(world.bankGold)})`);
+    interrupt(who, "bank", [{ kind: "expand", price: e.price }], `expand${bankDetails.value.expansions}`);
+    return;
+  }
+  const day = new Date().toISOString().slice(0, 10);
+  bankLine(`no-buy:${day}`, 24 * 3_600_000, `${free} of ${slots} slots free and nothing left to tidy; the next expansion costs ${fmtG(e.price)} gold: not bought (${e.why})`, true);
+  if (free <= 0) {
+    const bags = names.flatMap((n) => noSlotFor((characters.value[n]?.inventory ?? []).filter((s) => s.code && s.quantity > 0).map((s) => s.code)).map((c) => `${n}: ${itemName(c)}`));
+    bankLine("stuck", 3_600_000, `no slot free, nothing to tidy, no expansion (${e.why}): a step that would bring a code the bank does not hold waits; nobody is paused${bags.length ? `; kept in bags: ${bags.join(", ")}` : ""}`);
+  }
 }
 
 function activate(): void {
@@ -444,8 +509,9 @@ function claimRewards(): void {
 
 // ── interrupt() ──────────────────────────────────────────────────────────────
 
-/** Design C.3, highest first. `group` is reserved (stage 4). A step is never inserted ahead of anything. */
-const CLASSES = ["group", "event", "merchant", "offering", "claim"] as const;
+/** Design C.3, highest first. `group` is reserved (stage 4). A step is never inserted ahead of anything. Task 015: `bank`
+ *  (an expansion) after the two that a spawn's clock sets, before the offerings: a full bank stops every deposit. */
+const CLASSES = ["group", "event", "merchant", "bank", "offering", "claim"] as const;
 export type InterruptClass = (typeof CLASSES)[number];
 const classOf = (id: string): number => CLASSES.indexOf(/^pl:int:([a-z]+):/.exec(id)?.[1] as InterruptClass);
 
@@ -587,6 +653,7 @@ async function bootRead(first: boolean): Promise<void> {
   }
   if (ok) ready = true;
   else if (!ready) setTimeout(() => void bootRead(false), 60_000);
+  if (ready) bankCheck(); // task 015: the bank's line at boot, and its answer
   scheduleTick();
 }
 

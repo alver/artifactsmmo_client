@@ -81,7 +81,7 @@ export function contentSec(c: Content, ch: Character, world: World, level = ch.l
   const r = at === ch ? (safeWin(ch, world, c.code) ? fightRec(ch, world, c.code) : undefined) : planRec(at, world, c.code);
   if (!r || !wins(r, world)) return Infinity;
   // task 014: the potions a member drinks are the event's reserve, made before the trip (free inside the hour); its food is eaten
-  return killSeconds(r.forecast, () => 0, potionPrice(world, ch.name).food) * killLog(world) + killWalk(ch, world, c.code);
+  return killSeconds(r.forecast, () => 0, potionPrice(world, ch.name).food?.(r.forecast.maxHp - r.forecast.hpRemaining)) * killLog(world) + killWalk(ch, world, c.code);
 }
 
 const possibleMemo = new WeakMap<World, Map<string, Member[]>>();
@@ -113,7 +113,7 @@ export function possibleMembers(ev: GameEvent, world: World): Member[] {
       // (consumables.ts potionSet, on the fleet's gear: reach.ts openOf); the spawn itself still asks for a safe win from
       // the pool (eventMembers)
       const r = !Number.isFinite(sec) && (world.config.consumables ?? 1) ? potionSet(ch, world, m.code, true) : undefined;
-      if (r) { at = ch.level; sec = killSeconds(r.forecast, () => 0, potionPrice(world, ch.name).food) * killLog(world) + killWalk(ch, world, m.code); }
+      if (r) { at = ch.level; sec = killSeconds(r.forecast, () => 0, potionPrice(world, ch.name).food?.(r.forecast.maxHp - r.forecast.hpRemaining)) * killLog(world) + killWalk(ch, world, m.code); }
       if (Number.isFinite(sec)) out.push({ name: ch.name, sec, level: at });
     }
   }

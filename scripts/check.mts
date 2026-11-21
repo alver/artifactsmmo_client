@@ -14,8 +14,9 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // real time, a backstop only — a livelock ends on a scenario's virtual limits. Task 009: the planner's first week takes
-// about two minutes, its four replay rows (`npm run check -- planner`) several more.
-const TIMEOUT_MS = process.argv[2] ? 1_800_000 : 300_000;
+// about two minutes, its replay rows (`npm run check -- planner`) several more. Task 015: 45 minutes for one named check
+// (report 014's six rows side by side took 1,716 s of 1,800; rows D and F now run only with AMMO_PLANNER_ROWS=all).
+const TIMEOUT_MS = process.argv[2] ? 2_700_000 : 300_000;
 const PARALLEL = 4;
 
 const list = (dir: string, re: RegExp): string[] => readdirSync(path.join(ROOT, dir)).filter((f) => re.test(f)).sort().map((f) => `${dir}/${f}`);

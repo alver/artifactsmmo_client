@@ -250,7 +250,9 @@ export function chAt(ch: Character, level: number): Character {
   return c;
 }
 
-export interface Price { key: string; price: (code: string) => number; covered: string[]; tag: string; food?: Food }
+/** Task 015, settled point 7: `food` — the food eaten in a fight that loses `lost` HP (consumables.ts poolFood: the best of
+ *  the pool the loss covers at least once); undefined: the fighter rests. */
+export interface Price { key: string; price: (code: string) => number; covered: string[]; tag: string; food?: (lost: number) => Food | undefined }
 const FIELD: Price = { key: "field", price: potionSec, covered: [], tag: "field" };
 const scaledMemo = new Map<string, (code: string) => number>();
 const priceMemo = new WeakMap<World, Map<string, Price>>();
@@ -289,7 +291,7 @@ export function potionPrice(world: World, name: string): Price {
  *  and its food) × the log factor of the World's config (config.ts killLog). */
 export const fightSecOf = (f: FightForecast, world: World, name: string): number => {
   const p = potionPrice(world, name);
-  return killSeconds(f, p.price, p.food) * killLog(world);
+  return killSeconds(f, p.price, p.food?.(f.maxHp - f.hpRemaining)) * killLog(world);
 };
 /** The part of a price a solve of this character's pool depends on: the covered ingredients of the potions the pool
  *  holds (bestInSlot sees owned potions only) — a stock crossing its line for a potion nobody holds changes no solve. */

@@ -51,6 +51,9 @@ export const DEFAULTS: PlannerConfig = {
   // the chain (consumables.ts); 0 = report 013's model whole — its prices, its KILL_LOG, its drinksOf — the replay's
   // row C only, with the same rules as potionK.
   consumables: 1,
+  // Task 015, settled point 5: the most one bank expansion may cost (Alex, 2026-11-20: 60,000; his to move with a patch).
+  // The price doubles with each (7,000 → 14,000 → 28,000 in the log), so 60,000 buys the next two.
+  expansionCap: 60_000,
 };
 
 /** Task 012, settled point 4: the bank actions of a craft, trade or gear step (the reset's deposit and swap, the

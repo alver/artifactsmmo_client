@@ -9,7 +9,7 @@
 import * as actions from "../api/actions";
 import { catalog } from "../catalog";
 import { ApiError } from "../api/client";
-import { bankItems, characters } from "./store";
+import { bankDetails, bankItems, characters } from "./store";
 import { liveEvents } from "./events";
 import { cooldownRemaining } from "../lib/util";
 import { FREE, route, travelSec } from "../plan/route";
@@ -137,19 +137,64 @@ export function bankQty(code: string): number {
   return bankItems.value.filter((b) => b.code === code).reduce((s, b) => s + b.quantity, 0);
 }
 
+// ── Task 015: the bank's slots. A slot is a code, whatever the quantity; a stack the bank holds needs none. ──
+
+/** The bank's free slots: its slots less the codes it holds (∞ before the first sync). */
+export const freeSlots = (): number => (bankDetails.value?.slots ?? Infinity) - new Set(bankItems.value.map((b) => b.code)).size;
+
+/** Of `codes`, the ones the bank cannot take now: a code it holds no stack of, beyond its free slots (in order). */
+export function noSlotFor(codes: string[]): string[] {
+  const held = new Set(bankItems.value.map((b) => b.code));
+  let free = freeSlots();
+  return [...new Set(codes)].filter((c) => !held.has(c) && free-- <= 0);
+}
+
+/** A bag full of codes the bank cannot take: the item ends (runLoop), never a pause, never a block. */
+export class BankFullError extends Error {}
+
+/** Who hears that the bank had no slot for a code (the planner, src/state/planner.ts): the character and the codes. */
+let onNoSlot: ((name: string, codes: string[]) => void) | undefined;
+export const setNoSlotHook = (fn: (name: string, codes: string[]) => void): void => void (onNoSlot = fn);
+export const reportNoSlot = (name: string, codes: string[]): void => void (codes.length && onNoSlot?.(name, codes));
+
+/**
+ * Every deposit of items goes through here (settled point 1). A code the bank has no slot for stays in the bag: what
+ * the bank holds a stack of is banked, the rest is kept, the caller goes on. Decided first from the bank as it is known;
+ * a 462 the game answers anyway (the bank changed under us) is the same answer: the slots are corrected to the codes it
+ * holds and the codes it holds a stack of go in one more call. Never a retry of the same deposit. Returns what was kept.
+ */
+export async function deposit(name: string, items: { code: string; quantity: number }[]): Promise<string[]> {
+  const left = new Set(noSlotFor(items.map((i) => i.code)));
+  let go = items.filter((i) => !left.has(i.code));
+  if (go.length) {
+    try {
+      await step(name, () => actions.depositItems(name, go));
+    } catch (e) {
+      if (!(e instanceof ApiError && e.code === 462)) throw e;
+      const held = new Set(bankItems.value.map((b) => b.code));
+      if (bankDetails.value) bankDetails.value = { ...bankDetails.value, slots: held.size };
+      for (const i of go) if (!held.has(i.code)) left.add(i.code);
+      go = go.filter((i) => held.has(i.code));
+      if (go.length) await step(name, () => actions.depositItems(name, go));
+    }
+  }
+  reportNoSlot(name, [...left]);
+  return [...left];
+}
+
 /**
  * Deposit everything the character is carrying (a no-op with empty inventory).
  * `except` protects working stock — food/potions/task items — from being
  * banked off with the loot. Pocket gold is swept into the vault on
  * every visit too (buy steps withdraw their cost back on demand — see
- * exec.ts runStep "buy").
+ * exec.ts runStep "buy"). A code the bank has no slot for stays in the bag (deposit).
  */
 export async function depositAll(name: string, except?: Set<string>): Promise<void> {
   const ch = characters.value[name];
   const items = (ch?.inventory || [])
     .filter((s) => s.code && s.quantity > 0 && !except?.has(s.code))
     .map((s) => ({ code: s.code, quantity: s.quantity }));
-  if (items.length) await step(name, () => actions.depositItems(name, items));
+  if (items.length) await deposit(name, items);
   const gold = characters.value[name]?.gold ?? 0;
   if (gold > 0) await step(name, () => actions.depositGold(name, gold));
 }

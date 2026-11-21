@@ -16,7 +16,7 @@ import { simulate } from "../sim/combat";
 import { jobGear, nextGearAction } from "../plan/jobgear";
 import { carriedFood, foodPlan, foodQuantity, gatherSourceFor } from "../plan/consumables";
 import { bankDetails, bankItems, characters } from "./store";
-import { bankQty, depositAll, isAt, moveTo, nearest, nearestBank, step } from "./loopkit";
+import { BankFullError, bankQty, deposit, depositAll, isAt, moveTo, nearest, nearestBank, noSlotFor, reportNoSlot, step } from "./loopkit";
 import { slotCode } from "../types/api";
 import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
 import type { Place } from "../plan/route";
@@ -58,8 +58,15 @@ export async function bankOff(name: string, keep: string[] | undefined, note: St
   const ch = characters.value[name];
   const bank = ch && nearestBank(ch);
   if (!bank) throw new Error("inventory full and no bank found on the map");
-  if (keep?.length && !(ch.inventory || []).some((it) => it.code && it.quantity > 0 && !keep.includes(it.code))) {
+  const loose = (ch.inventory || []).filter((it) => it.code && it.quantity > 0 && !keep?.includes(it.code)).map((it) => it.code);
+  if (keep?.length && !loose.length) {
     throw new Error("inventory full of protected working stock");
+  }
+  // task 015, settled point 1: nothing in the bag the bank has a slot for — no walk; the item ends (runLoop)
+  const stuck = noSlotFor(loose);
+  if (loose.length && stuck.length === loose.length) {
+    reportNoSlot(name, stuck);
+    throw new BankFullError(`the bag is full and the bank has no slot for ${stuck.map(itemName).join(", ")}`);
   }
   note("→ bank (full)");
   if (await moveTo(name, bank)) await depositAll(name, keep?.length ? new Set(keep) : undefined);
@@ -150,7 +157,8 @@ export async function gearSwapStep(
   // Provisioning-in-progress stock is working stock — neither a reset's stash
   // nor a make-room deposit may take a pending brew's ingredients or the next
   // meal being cooked.
-  const extra = [...brewKeep(ch, desired), ...(ctx.food ? foodKeep(ch) : [])];
+  // task 015, settled point 1: a code the bank has no slot for stays in the bag — never a deposit the bank refuses
+  const extra = [...brewKeep(ch, desired), ...(ctx.food ? foodKeep(ch) : []), ...noSlotFor((ch.inventory ?? []).filter((s) => s.code && s.quantity > 0 && !ctx.keep?.includes(s.code)).map((s) => s.code))];
   const keep = extra.length ? [...new Set([...(ctx.keep ?? []), ...extra])] : ctx.keep;
   const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset, utility: opts?.utility });
   if (!act) return "done";
@@ -212,7 +220,7 @@ export async function gearSwapStep(
     case "deposit": {
       if (await toBank()) return "acted";
       ctx.note("stow gear");
-      await step(name, () => actions.depositItems(name, act.items));
+      await deposit(name, act.items);
       return "acted";
     }
     case "deposit-gold": {

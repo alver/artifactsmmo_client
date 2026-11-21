@@ -60,6 +60,16 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
     case "train":
       out = [reset(w), { kind: "train", skill: w.lane, toLevel: 0, levels: 1, gear: true }];
       break;
+    case "recycle": {
+      // task 015, settled point 4: a tidy step — every copy of each code recycled (the item withdraws them a bagful at a
+      // time), what came back banked. No reset: a craft job's reset strips the worn set into a bank that is nearly full,
+      // and its wisdom pick can be the very piece to recycle (copper boots: wisdom 10).
+      const codes = Object.entries(w.codes ?? {});
+      const skill = item(codes[0]?.[0] ?? "")?.craft?.skill;
+      if (!codes.length || !skill) throw new Error(`a recycle step ${step.key} has no codes`);
+      out = [...codes.map(([code, quantity]): QueueItemInput => ({ kind: "recycle", code, quantity, done: 0, skill })), { kind: "deposit-all" }];
+      break;
+    }
     default:
       throw new Error(`a ${w.kind} step has no queue items`);
   }

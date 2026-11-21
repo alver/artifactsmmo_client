@@ -88,8 +88,14 @@ All require standing on a bank tile.
 | `bank/buy_expansion` | — | `buyExpansion` |
 
 Item deposit/withdraw are batch: cooldown 3 s × distinct items. The bank is account-wide and can
-fill up (`462`); `buy_expansion` adds 20 slots for gold (price rises each purchase; it does not
-echo bank details, so the client reconciles after it). `461` means another of your characters has
+fill up: a slot is a code, whatever the quantity, and a deposit of a code the bank holds no stack of
+answers `462` when no slot is free (the whole request is refused). Every deposit goes through
+`deposit()` in `src/state/loopkit.ts` (task 015): a code with no slot stays in the bag, the codes the
+bank holds a stack of go in, and the planner hears of it. `buy_expansion` adds 20 slots for gold,
+taken from the character's gold (`492` otherwise); the price doubles each purchase (7,000 → 14,000 →
+28,000 in the log). Its one caller is the planner's `expand` queue item (`src/state/queue.ts`, the
+`bank` interrupt of `src/state/planner.ts`, under `config.expansionCap`); the echo carries the price
+and no bank details, so the item reads `/my/bank` once after it. `461` means another of your characters has
 a bank transaction in flight — momentary, the client's `api()` waits and retries it. A withdraw
 of stock another character just took fails with `404` (whole stack gone) or `478` (not enough
 left); the runner treats both as "bank changed — replan", never as a queue-pausing error.
