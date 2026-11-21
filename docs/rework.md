@@ -3,7 +3,11 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-21 (early afternoon), after Alex restarted the service on report 016's code (run `[0gpn]`,
+Last updated: 2026-11-21 (evening), after Alex restarted the service on report 017's code (run `qf93`,
+17:01:00 UTC, commit `b322195`) and task 018 was written (decision 47). Before that, in the late afternoon:
+report 017 was accepted (decision 46) and Alex was told to
+restart the service; `logs/status.json` at 16:39 UTC still carried run `0gpn` (016's code, `c8cbd78`). Before
+that, in the early afternoon: Alex restarted the service on report 016's code (run `[0gpn]`,
 11:43:34 UTC, commit `c8cbd78`) and task 017 was written (decision 45). Before that, at midday: report 016 was
 accepted (decision 44) and Alex was told to restart
 the service; the log's tail at 11:37 UTC still carried run `[lxra]` (015's code), and `logs/` held only
@@ -1090,6 +1094,107 @@ accepted, Alex restarted the service (run `[yewz]`,
       kept only by the rare-ingredient rule (decisions 42, 43); First's hours in row A (decision 42).
     - Out of 017: any Grand Exchange purchase or sale, gold purchases from NPCs, group boss fights, raids,
       `use` objectives, selling bank stock.
+46. **Report 017 accepted (2026-11-21, late afternoon).** Checked in the chat: the commits in `.git/logs/HEAD`
+    (`1223803` Rework notes, 12:16 UTC; `b322195` 017: keys and tolls, 16:04 UTC), `HEAD` on `rework`,
+    `refs/remotes/origin/rework` at `b322195`, `main` still at `edaaf23`; read in full: `src/state/market.ts`;
+    in `src/api/client.ts` `getAllPages`; in `src/state/loopkit.ts` `freeBack`, `mayFor`, `moveTo`, `nearest`,
+    `depositAll`; in `src/state/queue.ts` `plannedSet`, `keepOf`, the `fight` case and the reset's take loop
+    (the fares). They are as the report says. Not checked there: the core (`reach.ts`, `decide.ts`, `supply.ts`,
+    `forward.ts`, `events.ts`), `exec.ts`, `jobgear.ts`, the harness, the scenarios, the check runs, the
+    typecheck, the build (Claude Code ran them). **Engine change: Alex was told to restart the service on
+    2026-11-21 (late afternoon)**; `logs/status.json` at 16:39 UTC still carried run `0gpn`, commit `c8cbd78`
+    (all five running: three on birch wood for intermediate_lumberjack, Third on nettle, Fifth on gold ore;
+    bank 93 of 110, gold 240,836; nothing blocked). The next look confirms the restart from `logs/status.json`
+    and the day's journal (the report's acceptance step 8).
+    - **016 holds in play** (the report's section 1, 11:43–15:10 UTC): no pause, block, flap, defect or server
+      error; the two-a-run craft steps did not pause (142 of 142, 4 of 4).
+    - **What changes in play after the restart**:
+      - tasks coins are spent on crystals for needed gear, down to 50 coins (584 banked): today's needs are a
+        skull ring for First, Third, Fourth and Fifth (16 coins a piece) and six pieces for Second (8–16
+        each), about 150 coins;
+      - the boat (2,000 gold a round trip) and the Enchanted Forest (5,000) are open to the plan from bank gold
+        above the 20,000 floor; nothing behind them is a target today (combat 40–55 or a gathering skill of
+        50), so no fare is expected for weeks;
+      - a `pl:` fight step wears its planned set; no kill step for fewer than five kills and a third of its
+        chunk; an event trip plans what the bank holds;
+      - the market poll: 10 requests every ten minutes into `logs/market/<day>.jsonl`.
+    - **The replay**: A 88, B 121, C 108, E 62, G (`config.tolls` 0) 86. **A replay number carries a few
+      points of noise**: the solve caches make a row's path depend on what else is solved while it plays
+      (016's own code ends at 86 or 89). Differences of two or three points between reports are not read as
+      results any more; the repair (a replay that does not depend on the order of solves) goes into the
+      clean-up, before the Lab stands on it.
+    - **What the replay says**: the opened ways are worth 28 points on paper and 2 in row A, because the
+      fighters reach combat 40 too late to use them (the boat is first taken on day 64). With consumables
+      free (row B) the same ways give 121. **The potions' ingredients are the wall now, about 33 points
+      of it**; First, who fishes the algae and cooks, spends 60–98% of its hours on supply from day 20 and
+      never reaches combat 40.
+    - **The first market read points at the same place**: algae is on sale at 2 gold (3,205 traded in a week
+      on the first page alone) against 253 s of the fleet's time a unit — 28 gold for a fleet-hour of it, a
+      tenth of `goldPerHour`. Nettle at 7 (680 gold a fleet-hour) does not pass; sap at 4 does (55). Only 86
+      algae stood at that ask, so a real supply would be buy orders, which lock gold in a character's
+      pocket. Nothing is bought: the poll collects a few days, then the analysis, then Alex decides
+      (decision 45).
+    - **The sliver rule stays as shipped** (`SLIVER` 5). In the model it costs row E 21 points at most and
+      gains row A 11, inside numbers that differ by 9 with the cache order; live, every sliver seen was an
+      objective's kill step of 1–4 kills that paid about 110 s of reset and walk for a 40 s fight. Read
+      again from the journal after a day: whether a fighter's combat road starves while potions trickle in.
+      If it does: the rule for objective and supply kills only.
+    - **From the report's notes, for the clean-up or later**: a key is not made by supply (a way whose key is
+      not banked stays shut); `mayFor` opens a paid way to any character with the fare in its pocket (nothing
+      plans such a trip); `plannedSet` leaves the bag and the artifacts as worn; a kill step has no fixed
+      cost in the plan (about 110 s measured); `codeSec` prices a source without asking whether the fleet
+      meets its level.
+    - **Seen in the chat's read** (none of it holds the restart back): the reset withdraws the fares when the
+      bank's whole gold covers them, without the floor — the floor is the plan's (`available("gold")`), so a
+      step that passed the plan is paid; `plannedSet` counts a banked piece another step may have reserved —
+      the pool is the plan's too, and a piece that is gone falls back to the executor's solve with one line.
+    - **For Alex's later decisions, unchanged**: the gear kept by the rare-ingredient rule is three codes
+      (wooden staff ×2, iron axe ×5, spruce fishing rod ×5); the bank's unused codes are the 24 lich tomb
+      keys, two small bags of gold and seven materials for recipes at crafting 25–35.
+    - **The order stays**: 018 the clean-up (with it the service's own checkout, decision 38, and the
+      replay's noise), written once the restart shows in the journal.
+47. **Task 018, settled in the chat** (2026-11-21, evening; in the task file as "What is settled"). The restart
+    is confirmed: the journal's `boot` at 17:01:00.805 UTC, run `qf93`, commit `b322195`, branch `rework`, all
+    five steps re-attached (`ach:intermediate_lumberjack:0` for First, Second and Fourth, `src:nettle_leaf`
+    for Third, `lvl:mining:35` for Fifth); the bank's boot record 93 of 110, gold 240,836;
+    `logs/market/2026-11-21.jsonl` exists (5.2 kB, a whole line by its size); `logs/status.json` rewritten at
+    17:08 UTC. Nothing else was in the journal by then: 017's acceptance step 8 is read by 018, section 4.
+    - **018 only deletes.** No file under `src/plan/planner/`, `src/sim/`, `src/api/`, `src/lib/` or
+      `src/catalog/` changes; the replay must end at 88 / 121 / 108 / 62 / 86 with the same count of invariant
+      checks; a surviving scenario's assertions are not edited. Nothing new is drawn.
+    - **What goes** (decision 15, and what only it reaches; read in the chat from the import graph of `src/`
+      at `b322195`): the hive (`src/state/hive.ts`, `src/plan/hive/*`, its panel); the pins and the training
+      loops; the helpers; 🔁; the queue editor and every "+ Queue" button; the old Roadmap
+      (`src/plan/roadmap.ts`, `src/state/roadmap.ts`, `src/plan/fleetcheck.ts`, `RoadmapTab.tsx`, its route);
+      the gear coverage view (`src/plan/coverage.ts`, its panel); the standing orders and the daily offerings
+      trigger of a character that is not the planner's; the item kinds no surviving writer writes (`move`,
+      `rest`, `accept-task`, `deliver`, `turn-in`, a `work-task` of its own, `train` of combat, gathering
+      or with `for`); their checks and scenarios; the storage keys nothing reads, dropped at boot with a line
+      each.
+    - **What stays**: the switch per character (off: the queue is emptied and stopped, and nobody writes to
+      it); the direct action buttons; the Group fight fold with `prepare`, until the group-fight round; the
+      queue table, read-only, with the planner's line; the atlas; the Sim tab.
+    - **Between 018 and the Roadmap as home the page has no Roadmap tab.** Fleet is the home; each character's
+      step and its why stay in its queue panel. Alex was told.
+    - **Inside a function that survives nothing is cut**: the executor's branches that only an old item shape
+      reaches (a `fight` without `take`, a `gear` without `wear`, a craft that waits for a hive producer) are
+      listed by 018 and decided in the chat after it. The five pairs that exist twice are not merged; each old
+      one stays only while a surviving caller calls it.
+    - **Changed against decisions 38 and 46**:
+      - **the service's own checkout is not in 018** but its own small task later (Alex, decision 38: no
+        hurry). Reason: one restart should not bring both the largest deletion and a new way to start the
+        service. The sketch for it: a git worktree `live/` inside the project at the commit the planning chat
+        names in a file at acceptance; state (`.ammo/`, `logs/`, `.env`) stays at the root; Alex's restart is
+        one command that updates `live/`, builds and starts;
+      - **the replay's noise is not repaired in 018.** Read in the chat (`reach.ts cached`, `lookup`): the
+        solve caches serve a pool from a result solved on a larger pool, by design, for speed (the solve is
+        the dearest part of a decision and the replay already takes 2,058 s of its 2,700 s). An exact cache is
+        a question of hours of replay, not a line. It goes with the Lab: there the band is measured (the same
+        row played under several cache orders) and shown beside every number, or the cache is made exact if
+        the time allows. Until then a difference of a few points between two replays is not a result.
+    - **The order after 018**: 019 the Roadmap as home with a cut-down outlook → the Lab (decision 36) → group
+      boss fights. The service's own checkout when it fits; the market analysis after a few days of
+      `logs/market/`, then Alex's decision about buying.
 
 ## Tasks
 | # | What | State |
@@ -1110,11 +1215,21 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 014 | The consumables round (decision 35): potions and food by need, made through the bank and taken by the step that planned them; one price; an event's fights stocked for one spawn; bag stock; what the potion wall is made of | done, `edaaf23`. Accepted 2026-11-20 (decision 40). **Engine change: Alex restarted the service on 2026-11-20 at 23:32:54 UTC** (run `[tdhi]`); all five steps re-attached. |
 | 015 | The bank (decision 39): a full bank is answered, not met; outdated gear is recycled; the planner buys an expansion under a price cap; sap is no longer sold from under the recipes; the branch `rework` and the first push; riding along (decision 40): a bag cap on planned food, the food that fits the fight, room for the replay check | done, `e66621e` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 42). **Engine change: Alex restarted the service on 2026-11-21 at 08:49:13 UTC** (run `[lxra]`); all five steps re-attached. |
 | 016 | The journal (decisions 37, 43): a journal of decisions and step results, the raw log in hourly files, a status file, a daily snapshot of the World, a reader; riding along (decision 42): `planMake` in whole runs, one read of the bank after a 462, `bankCheck` and `tidyStep` on the same verdicts | done, `c8cbd78` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 44). **Engine change: Alex restarted the service on 2026-11-21 at 11:43:34 UTC** (run `[0gpn]`); all five steps re-attached. |
-| 017 | Keys, tolls and what is spent (decision 45): the nine conditional transitions for the core, the forward model and the runner; a gold budget for fares with a price in the score; tasks coins on an objective's own material; a `spend` record; a standing read of the Grand Exchange into `logs/market/`; riding along (decisions 44, 45): `tidyLeft` with a tidy step in flight, a try around the status, a `pl:` fight step wears its `wear`, an event trip takes what it planned, no kill step for a sliver | written 2026-11-21, `tasks/017-keys-and-tolls.md`; not run yet. **Engine change: restart after it is accepted.** |
-| 018… | The clean-up → the Roadmap as home, a cut-down outlook → the Lab (decision 36) → group boss fights | |
+| 017 | Keys, tolls and what is spent (decision 45): the nine conditional transitions for the core, the forward model and the runner; a gold budget for fares with a price in the score; tasks coins on an objective's own material; a `spend` record; a standing read of the Grand Exchange into `logs/market/`; riding along (decisions 44, 45): `tidyLeft` with a tidy step in flight, a try around the status, a `pl:` fight step wears its `wear`, an event trip takes what it planned, no kill step for a sliver | done, `b322195` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 46). **Engine change: Alex restarted the service on 2026-11-21 at 17:01:00 UTC** (run `qf93`); all five steps re-attached. |
+| 018 | The clean-up (decisions 15, 47): the planner is the only writer; the hive, the pins and training loops, the helpers, 🔁, the queue editor, the old Roadmap, the gear coverage view, the standing orders of a character that is off, the item kinds nobody writes, their checks and their stored state are deleted; nothing in the planner's path changes and nothing new is drawn | written 2026-11-21, `tasks/018-clean-up.md`; not run yet. **Engine change: restart after it is accepted.** |
+| 019… | The Roadmap as home, a cut-down outlook → the Lab (decision 36; with it the replay's noise) → group boss fights. When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
-- **Does 016 hold in play?** The files are there since 11:43:34 UTC on 11-21 (decision 45). Read by 017,
+- **Does 017 hold in play?** Restarted at 17:01:00 UTC on 11-21 (decision 47); read by 018, section 4.
+  After the restart (report 017, acceptance step 8): a whole line in
+  `logs/market/<day>.jsonl` at boot and one about every ten minutes; a `## Spent` table from `npm run journal`
+  (the first entries expected: tasks coins for jasper crystals); no kill step of one unit while another step
+  holds its potions; a `pl:` fight step's `end` withdraws the pieces of its `wear` and no other gear. And
+  the sliver rule's price in play: does a fighter's combat road starve (decision 46)?
+- **Is the replay's noise repaired?** A few points turn on the order of solves (decision 46). Not in the
+  clean-up (decision 47): with the Lab, measured as a band or removed by an exact cache.
+- Answered by 017 (decision 46): 016 holds in play. The question was:
+  **Does 016 hold in play?** The files are there since 11:43:34 UTC on 11-21 (decision 45). Read by 017,
   section 1: the first hours through `npm run journal`, and the craft steps of a two-a-run recipe (no pause for
   one missing ingredient).
 - Answered by 016 (decision 44): 015 holds in play. Not yet exercised: a 462 (none since 11-13), an expansion,
@@ -1131,7 +1246,9 @@ accepted, Alex restarted the service (run `[yewz]`,
 - **Would the Grand Exchange sell potions, food or algae for less than the fleet's hours?** Half the season goes
   into ingredients (decision 40) and report 014 priced the NPC merchants only (events, a tenth of a day's
   need). Alex allowed the read on 2026-11-21, and a regular one (decision 45): 017 starts the poll into
-  `logs/market/`. The analysis follows after a few days of prices; buying is his decision then.
+  `logs/market/`. The analysis follows after a few days of prices; buying is his decision then. The first
+  read (report 017, decision 46): algae yes by a factor of ten (2 gold a unit, thin at the ask), sap yes,
+  nettle no, potions not on sale; the poll starts with the restart after 017.
 - Answered by 014 (decision 40): Third brews most, First cooks, the stock goes to the best-scoring work first.
   The question was: **who brews and cooks for the fighters, and who drinks first?** The wall at combat 33–35 is the potion's
   price (decision 32). The consumables round (014).
