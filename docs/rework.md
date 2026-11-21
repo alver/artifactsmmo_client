@@ -3,7 +3,11 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-21 (evening), after Alex restarted the service on report 017's code (run `qf93`,
+Last updated: 2026-11-21 (night), after Alex restarted the service on report 018's code (run `k66s`,
+18:47:56 UTC, commit `e68045a`) and task 019 was written (decision 49). Before that, in the late evening:
+report 018 was accepted (decision 48) and Alex was told to
+restart the service; `logs/status.json` at 18:37 UTC still carried run `qf93`, commit `b322195` (017's code).
+Before that, in the evening: Alex restarted the service on report 017's code (run `qf93`,
 17:01:00 UTC, commit `b322195`) and task 018 was written (decision 47). Before that, in the late afternoon:
 report 017 was accepted (decision 46) and Alex was told to
 restart the service; `logs/status.json` at 16:39 UTC still carried run `0gpn` (016's code, `c8cbd78`). Before
@@ -1195,6 +1199,100 @@ accepted, Alex restarted the service (run `[yewz]`,
     - **The order after 018**: 019 the Roadmap as home with a cut-down outlook → the Lab (decision 36) → group
       boss fights. The service's own checkout when it fits; the market analysis after a few days of
       `logs/market/`, then Alex's decision about buying.
+48. **Report 018 accepted (2026-11-21, late evening).** Checked in the chat: the commits in `.git/logs/HEAD`
+    (`d9739a2` Rework notes, 17:12 UTC; `e68045a` 018: clean-up, 18:21 UTC), `HEAD` on `rework`,
+    `refs/remotes/origin/rework` at `e68045a`, `main` still at `edaaf23`; the tree of `src/` (89 files: no
+    `plan/hive/`, no `state/hive.ts`, no roadmap, fleetcheck or coverage module, none of their panels;
+    `plan/objectives.ts` is the moved file); read in full: `src/state/sync.ts` `dropOld` and `boot`,
+    `src/state/queue.ts` `loadStored` (`GONE_KINDS`, `goneTrain`), `src/state/store.ts`,
+    `src/plan/planner/compile.ts`, `config.ts`, `types.ts`. They are as the report says. The one place a
+    deletion could have reached the planner's own items: `goneTrain` drops a stored `train` whose skill is
+    not in `CRAFT_TRAIN_SKILLS`; the planner writes `train` only for `TRAIN_LANES`, the same four skills
+    (weaponcrafting, gearcrafting, jewelrycrafting, cooking), so no `pl:` item goes at boot. Not checked
+    there: the rest of the diff, the checks, the typecheck, the build, the greps (Claude Code ran them).
+    `package.json`: `npm start` is `vite build && node scripts/serve.mjs`, so the restart builds the page too.
+    **Engine change: Alex was told to restart the service on 2026-11-21 (late evening)** and to reload the
+    page after it (a tab of the old build calls functions that are gone); `logs/status.json` at 18:37 UTC
+    still carried run `qf93`, commit `b322195` (all five running: First, Second and Fourth on birch wood for
+    intermediate_lumberjack, Third on nettle, Fifth on gold ore, mining 30; 28 points; bank 93 of 110, gold
+    240,836; nothing blocked). The next look confirms the restart from `logs/status.json`, the day's journal
+    and the boot hour's raw log (the report's acceptance step 8).
+    - **The gate**: 82 checks, 82 ok (90 less nine deleted, plus `cleanup-boot`; `repeat-spin`, the last
+      known defect, went with 🔁); the replay to the digit — 693,681 invariant checks, 88 / 121 / 108 / 62 /
+      86; nothing under `src/plan/planner/`, `src/sim/`, `src/api/`, `src/lib/`, `src/catalog/` changed.
+    - **What went**: 20 modules whole (4,929 lines), 1,485 lines net out of 21 surviving files, four checks
+      and five scenarios. `src/` is 89 files and 20,700 lines against 109 and 27,114 (−24%).
+    - **What the restart does**: three raw lines at boot (`boot: dropped ammo:v1:hive`, `…offeringsDaily`,
+      `…ammo:v1:state's pins`); no queue item is expected to go (all five queues hold `pl:` items of
+      surviving kinds); the five steps re-attach.
+    - **What the page is until 019**: Fleet · Character · Bank · Items · Monsters · Achievements · Map · Sim.
+      No Roadmap tab, no hive, no pins, no queue forms. The tab asks the service for the direct actions, the
+      reads, the 🧭 switch, an owned character's offering interrupt and the Group fight's `queuePrepare`;
+      nothing in it writes a queue.
+    - **What moves in play**: an owned character's offering interrupt comes from the planner's five-minute
+      tick, so up to five minutes after 00:05 UTC (the old 00:05 trigger is gone). Nothing else.
+    - **Where the task file was wrong**: `scripts/fixtures/roadmap-fleet.json` is `check-planner`'s too
+      (its bank of 2026-11-17); it stays.
+    - **Seen in the chat's read** (none of it holds the restart back): the reflog has a `reset: moving to
+      HEAD` at 17:46 UTC between the two commits that the report's command list does not name (a plain
+      `git reset` or a stash; the committed tree is what counts, and the gate's last runs are on it by the
+      report); the report itself is inside the task commit, against "the report last, after the commit"
+      — the task file asked for both, the next one asks for one; `package.json`'s description still names the
+      hive.
+    - **017 in play so far** (the report's section 4, 17:01–18:19 UTC): only gathers; no pause, block, flap,
+      defect or server error; the market file has a whole line and one every ten minutes (10 pages, about
+      960 orders a read). Nothing spent, no kill step yet: the Spent table, the sliver rule and a fight
+      step's `wear` are still unread (open question).
+    - **The branches only an old item shape reaches** (the report's table: a `fight` without `take`, a `gear`
+      without `wear` or `reset` or with a frozen `desired`, a craft with `wait` or quantity 0, a `sell`
+      without `partial`, an item pinned to a tile, a `train` with `for` or with helpers running, a `train`
+      of combat, an items `task-loop`): **not cut now, and not as a task of their own.** The harness writes
+      several of these shapes by hand to test the runner, and `desiredForJob` without `wear` is the
+      planner's own fallback. Each is cut when its function is next opened; the first occasion is the
+      group-fight round, which opens the runner anyway. The same for `PlannerState.optedOut` (the core's
+      type), the unused exports of the report's notes and ⏹ for a running `prepare` of a character that is
+      off.
+    - **The order stays**: 019 the Roadmap as home with a cut-down outlook, written once the restart shows
+      in the journal → the Lab → group boss fights. The service's own checkout when it fits; the market
+      analysis after a few days of `logs/market/`.
+49. **Task 019, settled in the chat** (2026-11-21, night; in the task file as "What is settled"). The restart
+    is confirmed: `logs/status.json` and the journal's `boot` at 18:47:57 UTC, run `k66s`, commit `e68045a`,
+    branch `rework`; the raw log's boot (`logs/raw/2026-11-21/18.log`) has the three `boot: dropped` lines
+    (`ammo:v1:hive`, `ammo:v1:offeringsDaily`, the state's pins) and none for a queue item; all five queues
+    resumed and all five steps re-attached (`ach:intermediate_lumberjack:0` for First, Second and Fourth,
+    `src:nettle_leaf` for Third, `lvl:mining:35@Fifth#6`); the first actions went through within two seconds;
+    bank 93 of 110, gold 240,836; 28 points. Still to read (019, section 6): the offering interrupts after
+    00:05 UTC, and what 017's step 8 waits for.
+    - **The outlook is a child process of the service**, not a cut-down run on its thread: the service hands
+      over the World as JSON and takes lines back. That makes the horizon a parameter, so the run goes to the
+      deadline (minutes on one core of twelve, below normal priority). "Cut-down" is what it shows, not how
+      far it plays: the next three steps per character, what every open achievement waits for, the expected
+      completions with dates, the points at the deadline. Cut to 21 days only if a whole run takes more than
+      20 minutes (019 measures; nobody has timed a row since 009's 216–225 s).
+    - **One pure function** (`src/plan/planner/road.ts`, new) is what the child, the script `npm run outlook`
+      and the checks call; the Lab is the same function with other knobs. The running steps are part of the
+      start: one optional parameter of `forward()` seeds what is pending, proven harmless by the replay's
+      line; if that is not sound in a few dozen lines, every character decides at `now` as the replay does.
+    - **A failing outlook never touches play.** One child at a time; started two minutes after a boot's first
+      achievements read, every three hours, 30 s after a config change, and on ↻; killed after 30 minutes.
+      `src/server/main.ts` injects the runner, as it does the file sinks, so the harness starts no process.
+    - **The forecast is kept**: one journal record a run (`outlook`: expected at the deadline, the next ten
+      completions) and a field in `logs/status.json`. A later chat holds it against what happened.
+    - **The Roadmap is the first tab and the default route**; Fleet stays as it is, second. Cards: Season
+      (points, tiers, days left, expected "by the model"), Now (per character: the step, its why in full,
+      progress, the next two steps), The road (expected completions), Open achievements (grouped by what they
+      wait for), Blocked, Priorities. Nothing computes in the tab. No chart.
+    - **Three knobs and no more**: first, exclude, weight on an open achievement, through `setPlannerConfig`
+      (design A.6, H). They act on the live planner at its next decisions; trying a knob without applying it
+      is the Lab's. Alex was told.
+    - **Not in 019**: "slower than expected" (the journal's samples table has it); a control for roles,
+      filler, risk, prices or the deadline; any change to a rule or a constant.
+    - **Riding along**: `PlannerState.optedOut` and the unused `PlannerState.outlook` leave the type;
+      `package.json`'s description. The rest of decision 48's parked list waits for the group-fight round.
+    - **The task file's rules changed against 018's**: the report is written before the task commit and is
+      part of it; every command run is listed, git's too; `npm run check -- planner` only if the core changed.
+    - **The order after 019**: the Lab (decision 36) → group boss fights. The service's own checkout when it
+      fits; the market analysis after a few days of `logs/market/`.
 
 ## Tasks
 | # | What | State |
@@ -1216,11 +1314,24 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 015 | The bank (decision 39): a full bank is answered, not met; outdated gear is recycled; the planner buys an expansion under a price cap; sap is no longer sold from under the recipes; the branch `rework` and the first push; riding along (decision 40): a bag cap on planned food, the food that fits the fight, room for the replay check | done, `e66621e` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 42). **Engine change: Alex restarted the service on 2026-11-21 at 08:49:13 UTC** (run `[lxra]`); all five steps re-attached. |
 | 016 | The journal (decisions 37, 43): a journal of decisions and step results, the raw log in hourly files, a status file, a daily snapshot of the World, a reader; riding along (decision 42): `planMake` in whole runs, one read of the bank after a 462, `bankCheck` and `tidyStep` on the same verdicts | done, `c8cbd78` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 44). **Engine change: Alex restarted the service on 2026-11-21 at 11:43:34 UTC** (run `[0gpn]`); all five steps re-attached. |
 | 017 | Keys, tolls and what is spent (decision 45): the nine conditional transitions for the core, the forward model and the runner; a gold budget for fares with a price in the score; tasks coins on an objective's own material; a `spend` record; a standing read of the Grand Exchange into `logs/market/`; riding along (decisions 44, 45): `tidyLeft` with a tidy step in flight, a try around the status, a `pl:` fight step wears its `wear`, an event trip takes what it planned, no kill step for a sliver | done, `b322195` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 46). **Engine change: Alex restarted the service on 2026-11-21 at 17:01:00 UTC** (run `qf93`); all five steps re-attached. |
-| 018 | The clean-up (decisions 15, 47): the planner is the only writer; the hive, the pins and training loops, the helpers, 🔁, the queue editor, the old Roadmap, the gear coverage view, the standing orders of a character that is off, the item kinds nobody writes, their checks and their stored state are deleted; nothing in the planner's path changes and nothing new is drawn | written 2026-11-21, `tasks/018-clean-up.md`; not run yet. **Engine change: restart after it is accepted.** |
-| 019… | The Roadmap as home, a cut-down outlook → the Lab (decision 36; with it the replay's noise) → group boss fights. When it fits: the service's own checkout (decision 47); the market analysis | |
+| 018 | The clean-up (decisions 15, 47): the planner is the only writer; the hive, the pins and training loops, the helpers, 🔁, the queue editor, the old Roadmap, the gear coverage view, the standing orders of a character that is off, the item kinds nobody writes, their checks and their stored state are deleted; nothing in the planner's path changes and nothing new is drawn | done, `e68045a` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 48). **Engine change: Alex restarted the service on 2026-11-21 at 18:47:56 UTC** (run `k66s`); all five steps re-attached. |
+| 019 | The Roadmap as home and the outlook (decision 49): a child process plays the live World to the deadline; the Roadmap tab first (Season, Now, The road, Open achievements, Blocked, Priorities); the knobs first, exclude, weight; `npm run outlook`; a journal record a run | written 2026-11-21, `tasks/019-roadmap-home.md`; not run yet. **Engine change: restart after it is accepted.** |
+| 020… | The Lab (decision 36; with it the replay's noise) → group boss fights (with it decision 48's parked cuts). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
-- **Does 017 hold in play?** Restarted at 17:01:00 UTC on 11-21 (decision 47); read by 018, section 4.
+- **How long does a forward run take, and what does the first outlook say?** Nobody has timed one row since
+  009 (216–225 s); 019, section 5, measures it from the day's snapshot and prints the first road.
+- **Does 018 hold in play?** The boot is confirmed (decision 49: run `k66s`, the three `boot: dropped` lines,
+  five steps re-attached, no pause). Still to read, by 019, section 6: the offering interrupts of the next
+  00:05 UTC (within five minutes of it), and the page (Alex's eyes). The question was: after the restart
+  (report 018, acceptance step 8): the journal's `boot` carries
+  `e68045a` and the five steps re-attach; the boot hour's raw log has `boot: dropped` lines for
+  `ammo:v1:hive`, `ammo:v1:offeringsDaily` and the state's pins, and none for a queue item; no `pause`;
+  `logs/status.json` rewritten every minute; the offering interrupts of the next 00:05 UTC come within five
+  minutes of it; the page opens on Fleet without a Roadmap tab.
+- **Does 017 hold in play?** Half answered by 018 (decision 48): 17:01–18:19 UTC was clean and the market
+  file is written as designed; nothing was spent and no kill step ran, so the rest below is still unread.
+  Restarted at 17:01:00 UTC on 11-21 (decision 47); read by 018, section 4.
   After the restart (report 017, acceptance step 8): a whole line in
   `logs/market/<day>.jsonl` at boot and one about every ten minutes; a `## Spent` table from `npm run journal`
   (the first entries expected: tasks coins for jasper crystals); no kill step of one unit while another step
@@ -1535,10 +1646,20 @@ accepted, Alex restarted the service (run `[yewz]`,
   - Guesses in the numbers, most doubtful first: the meter's side of the report's comparison (no echo in the
     old log; a round trip of 0.8–1.1 s an action taken from the smallest gaps); a made-up day of 134 kB; the
     snapshot fixture is composed, not written by the service.
+- From report 018 (decision 48), parked until the runner is next opened (the group-fight round):
+  - the branches only an old item shape reaches (the report's table under "What is left", with `path:line`);
+  - a `train` of a gathering skill or of combat now ends in `runTrainCraft` and pauses ("no Mining recipe
+    …"): nobody writes one, boot drops a stored one, only a hand-written harness queue reaches it;
+  - `PlannerState.optedOut` stays in the type and in `ammo:v1:planner`; nobody reads or writes it;
+  - `availableResources` (`src/state/events.ts`) and the exports the report's notes list are unused;
+  - a character that is off still runs a stored queue of surviving kinds after a restart, and a running
+    `prepare` of such a character has no ⏹ in the page;
+  - `package.json`'s description still names the hive; the Monsters table's last column and the skills
+    card's fifth grid track are wider than what is left in them (019 draws there anyway).
 
-## In the game's UI, for Alex (until the planner replaces these features)
-- "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
-- Hive continuous mode (⟳) off.
+## In the game's UI, for Alex
 - All five are the planner's since 2026-11-19 (decision 24): nothing to do by hand. "🧭 planner on" in a queue
-  panel hands that character back.
-- Lost World Maps: bought by the standing order; nothing to do by hand.
+  panel hands that character back; handed back, it stands still (decision 48: nobody else writes a queue).
+- From the restart on 018's code: no Roadmap tab (it comes back with 019, drawn from the planner), no hive,
+  no pins, no queue forms. Each character's step and its why are in its queue panel on the Character tab.
+- Lost World Maps: bought by the planner's merchant interrupt; nothing to do by hand.
