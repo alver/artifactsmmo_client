@@ -3,7 +3,11 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-21 (morning), after Alex restarted the service on report 015's code (run `[lxra]`,
+Last updated: 2026-11-21 (early afternoon), after Alex restarted the service on report 016's code (run `[0gpn]`,
+11:43:34 UTC, commit `c8cbd78`) and task 017 was written (decision 45). Before that, at midday: report 016 was
+accepted (decision 44) and Alex was told to restart
+the service; the log's tail at 11:37 UTC still carried run `[lxra]` (015's code), and `logs/` held only
+`dev.log`. Before that, the same morning: Alex restarted the service on report 015's code (run `[lxra]`,
 08:49:13 UTC) and task 016 was written (decision 43). Before that, the same morning: report 015 was accepted
 (decision 42) and Alex was told to restart the
 service; the log's tail at 08:36 UTC still carried run `[tdhi]` (014's code). In the night before: Alex restarted
@@ -1004,6 +1008,88 @@ accepted, Alex restarted the service (run `[yewz]`,
       rule); how often that happens is what the journal's `step` records will show.
     - Out of 016: deleting old logs, any UI for the journal, an alert when the service stops, a replay started
       from a snapshot (the Lab and the outlook take that), the replay's unexplained moves of report 015 (017).
+44. **Report 016 accepted (2026-11-21, midday).** Checked in the chat: the commits in `.git/logs/HEAD` (`f3ce840`
+    Rework notes, `c8cbd78` 016: journal, 10:22 UTC), `HEAD` on `rework`, `refs/remotes/origin/rework` at
+    `c8cbd78`, `main` still at `edaaf23`; read in full: `src/lib/journal.ts`, `src/lib/devlog.ts`,
+    `src/api/actions.ts`, `src/server/main.ts`, `src/state/planner.ts`, `docs/journal.md`; in
+    `src/state/loopkit.ts` `deposit` and `readBankAfter462`; in `decide.ts` `planMake`; in `bank.ts` `tidyStep`
+    and `tidyLeft`; in `src/state/queue.ts` the five places that hand the journal a record; the cut in
+    `src/api/client.ts`. They are as the report says. Not checked there: `eventorders.ts`, `scripts/journal.mts`,
+    the harness, the scenarios, the fixtures, the check runs, the typecheck, the build (Claude Code ran them).
+    **Engine change: Alex was told to restart the service on 2026-11-21 (midday)**; the log's tail at 11:37 UTC
+    still carried `[lxra]`. The next look confirms the restart from `logs/status.json` and the day's journal
+    (the report's acceptance step 8).
+    - **What the live path gained, and why it is safe to load**: `act()` calls the meter around every action;
+      `meterStart` reads the queue's head with optional chaining and `meterEcho` is caught, so the meter cannot
+      fail an action. Every writer is caught (`journal`, `writeStatus`, `writeWorld`, devlog's flush). `npm start`
+      runs on port 5173, so the files go under `logs/`; another port writes under `logs/port-<N>/`.
+    - **015 holds in play** (the report's section 1): six tidy steps by Fourth and Second from 09:13 to 09:36 UTC,
+      14 codes and 99 copies recycled, 4 → 15 free slots; no 462, no expansion, no sale since the restart. Ten
+      outdated codes are left, all gearcrafting (Third's), for the next time fewer than 15 are free. The 355 sap
+      went to the Timber Merchant at 08:12–08:17 under 014's code; 015's rule has held since.
+    - **The replay**: A 86, B 90 → 94, C 78 → 73, E 68. The only change that reaches a replay is `planMake`'s
+      whole runs; why C lost five points was not decomposed. It joins the replay questions of decision 42 (row
+      B, First's road) for 017.
+    - **Found in the chat's read** (none of it holds the restart back):
+      - **`tidyLeft` can say "nothing left" while the others still have tidy steps.** `tidyStep` gives nobody a
+        step while another character's tidy step runs (`bank.ts`, its second line), so during a character's
+        last tidy step, once its copies have left the bank, `tidyLeft` is false whatever the others could
+        recycle. With fewer than 10 free, a heartbeat inside those minutes buys an expansion early (28,000 now,
+        56,000 next, both under the cap). Before 016 the test without a name stayed true there. Today it cannot
+        bite: only Third has codes left. Repair in 017: a tidy step in flight counts as "something is left".
+      - `statusNow()` builds the status outside any catch (`planner.ts`, the argument of `writeStatus`). It is
+        the last line of `start` and of `endRecord`; a throw there would reject `next()` after the step's `end`
+        record and before its block or sample, and the next tick would decide again. Nothing in it is known to
+        throw (the scenarios run it at every step and end, events included). A try around it costs nothing: 017.
+      - `status.json` is replaced by a rename. On Windows the rename fails while another process holds the file
+        open; the write is dropped and the next minute's goes through. A reader that sees a status two or three
+        minutes old should look twice before calling the service down.
+      - The raw sink remembers the directories it made. A `logs/raw/<day>` deleted while the service runs loses
+        that day's later lines until the restart. Nothing deletes there today.
+    - **For 017, from the report's notes** (the executor's two defects were read from the order of actions,
+      which the journal does not keep and the raw log does):
+      - First's `ach:the_reaper:1@First#2` (01:02 UTC) banked the potions it had planned and already wore, and
+        fought without them;
+      - Second's full moon trip (01:12 UTC) planned 100 + 100 potions and 72 trout, took 54 and 9, ran dry after
+        12 fights and brought one cape of the four it went for;
+      - a tidy step's `units` is its last code's count; the verify skill still names `logs/dev.log`.
+    - **How the chat reads from now on**: `logs/status.json` (what each character is on, the bank, the blocks),
+      `logs/journal/<day>.jsonl` (about 134 kB a day), `logs/world/<day>.json`, and an hourly raw file
+      (`logs/raw/<day>/<HH>.log`, about 0.9 MB) when the order of actions matters. The schema is
+      `docs/journal.md`. A task's "read the log" section is the output of `npm run journal`.
+    - **The order stays**: 017 keys, tolls and what is spent, written once the restart shows in the journal.
+45. **Task 017, settled in the chat** (2026-11-21, early afternoon; in the task file as "What is settled"). The
+    restart is confirmed from the new files, read in the chat: `logs/journal/2026-11-21.jsonl` starts with
+    `boot` at 11:43:34.391 UTC, run `0gpn`, commit `c8cbd78…`, branch `rework`, all five steps re-attached
+    (`lvl:mining:35` for First, Fourth and Fifth, `ach:the_reaper:1` for Second, `ach:intermediate_alchemist:0`
+    for Third); the bank's boot record: 95 of 110 slots, 15 free, gold 240,489; `logs/status.json` a minute old
+    at 11:59 UTC with all five steps; `logs/raw/2026-11-21/11.log` and `logs/world/2026-11-21.json` (88 kB)
+    exist. The first `end` records are `partial`, as designed.
+    - **Alex on the Grand Exchange (2026-11-21): yes to reading it, and to reading it regularly** ("about every
+      ten minutes, to collect prices in the logs for an analysis in a few days"). 017 adds a standing poll of
+      `GET /grandexchange/orders` into `logs/market/<day>.jsonl` and a reader; one read of the orders and of
+      the seven-day history of the consumables and their ingredients goes into the report. Nothing is bought or
+      sold there; buying is Alex's decision after the analysis.
+    - **What 017 opens**: the nine conditional transitions (five keyed, three paid, one that wants a carried
+      item) and the tiles with conditional access, for the core, the forward model and the runner; bosses and
+      raids keep their gates. The bank held 24 lich tomb keys and 584 tasks coins at 11:43 UTC; `tasks_farmer`
+      is done, so the Tasks Trader is open; `clean_the_lab` and `secure_the_island` stand at 0.
+    - **What is spent**: fares from `available("gold")` (the 20,000 floor), priced in the score at
+      `config.goldPerHour` 300 (design D.2); tasks coins on an objective's own material and, if it falls out of
+      the same change, on a needed gear piece's material, down to a floor of 50 coins; every unit spent is a
+      `spend` record. `config.tolls` 0 is report 016's model, for a replay row that must end at 86. Buying a
+      material for gold from an NPC stays out; the report lists what would pass.
+    - **Seen in the journal's first hour, and riding along**: First ran two kill steps of one vampire each
+      (11:45 and 11:49 UTC; 263 s and 231 s for a fight of about 40 s) because Second's step held 84 of the
+      minor health potions: a kill step the stock caps below a third of its chunk is no candidate. The same
+      step's `wear` named steel battleaxe, iron armor and earth rings and its `end` withdrew battlestaff,
+      mushmush jacket, a life ring and a water ring: the set a `pl:` fight step wears becomes the step's
+      `wear`. With them: `tidyLeft` while a tidy step is in flight, a try around the status, the event trip
+      that took less than it planned, a tidy step's `units`, the verify skill's log name (decision 44).
+    - Read-only in 017, for Alex's later decisions: the bank's non-gear codes that nothing uses, and the gear
+      kept only by the rare-ingredient rule (decisions 42, 43); First's hours in row A (decision 42).
+    - Out of 017: any Grand Exchange purchase or sale, gold purchases from NPCs, group boss fights, raids,
+      `use` objectives, selling bank stock.
 
 ## Tasks
 | # | What | State |
@@ -1023,15 +1109,18 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 013 | The fleet on events (decision 33): who goes to a spawn, an event in the score, events in the forward model; in flight for an `ach:` target | done, `c8266ac`. Accepted 2026-11-20 (decision 34). **Engine change: Alex restarted the service on 2026-11-20 between 09:44 and 09:54 UTC** (run `[wj59]`). |
 | 014 | The consumables round (decision 35): potions and food by need, made through the bank and taken by the step that planned them; one price; an event's fights stocked for one spawn; bag stock; what the potion wall is made of | done, `edaaf23`. Accepted 2026-11-20 (decision 40). **Engine change: Alex restarted the service on 2026-11-20 at 23:32:54 UTC** (run `[tdhi]`); all five steps re-attached. |
 | 015 | The bank (decision 39): a full bank is answered, not met; outdated gear is recycled; the planner buys an expansion under a price cap; sap is no longer sold from under the recipes; the branch `rework` and the first push; riding along (decision 40): a bag cap on planned food, the food that fits the fight, room for the replay check | done, `e66621e` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 42). **Engine change: Alex restarted the service on 2026-11-21 at 08:49:13 UTC** (run `[lxra]`); all five steps re-attached. |
-| 016 | The journal (decisions 37, 43): a journal of decisions and step results, the raw log in hourly files, a status file, a daily snapshot of the World, a reader; riding along (decision 42): `planMake` in whole runs, one read of the bank after a 462, `bankCheck` and `tidyStep` on the same verdicts | written 2026-11-21, `tasks/016-journal.md` (decision 43); not run yet. **Engine change: restart after it is accepted.** |
-| 017 | Keys, tolls and `has_item` transitions; what is spent: the gold budget for fares, tasks coins on an objective's own material | |
+| 016 | The journal (decisions 37, 43): a journal of decisions and step results, the raw log in hourly files, a status file, a daily snapshot of the World, a reader; riding along (decision 42): `planMake` in whole runs, one read of the bank after a 462, `bankCheck` and `tidyStep` on the same verdicts | done, `c8cbd78` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 44). **Engine change: Alex restarted the service on 2026-11-21 at 11:43:34 UTC** (run `[0gpn]`); all five steps re-attached. |
+| 017 | Keys, tolls and what is spent (decision 45): the nine conditional transitions for the core, the forward model and the runner; a gold budget for fares with a price in the score; tasks coins on an objective's own material; a `spend` record; a standing read of the Grand Exchange into `logs/market/`; riding along (decisions 44, 45): `tidyLeft` with a tidy step in flight, a try around the status, a `pl:` fight step wears its `wear`, an event trip takes what it planned, no kill step for a sliver | written 2026-11-21, `tasks/017-keys-and-tolls.md`; not run yet. **Engine change: restart after it is accepted.** |
 | 018… | The clean-up → the Roadmap as home, a cut-down outlook → the Lab (decision 36) → group boss fights | |
 
 ## Open questions
-- **Does 015 hold in play?** After the restart (report 015, acceptance step 7): the boot's `plan: bank` line;
-  tidy steps until 15 slots are free, one character at a time, and no `bank/buy_expansion` while something is
-  outdated; no `npc/sell` of sap or shell; a kill step's food within a third of the bag; a 462 followed by a
-  deposit of the held codes and no pause.
+- **Does 016 hold in play?** The files are there since 11:43:34 UTC on 11-21 (decision 45). Read by 017,
+  section 1: the first hours through `npm run journal`, and the craft steps of a two-a-run recipe (no pause for
+  one missing ingredient).
+- Answered by 016 (decision 44): 015 holds in play. Not yet exercised: a 462 (none since 11-13), an expansion,
+  a kill step's food against a third of the bag (no kill step ran between the restart and 09:46 UTC). The
+  question was: **does 015 hold in play?** (the boot's `plan: bank` line; tidy steps until 15 slots are free;
+  no `bank/buy_expansion` while something is outdated; no `npc/sell` of sap or shell).
 - **Is gear with a rare ingredient recycled when it falls ten levels behind?** Alex, 2026-11-21: kept for a
   while, decided later (decision 43). Back with 017.
 - **Does 014 hold in play?** After the restart (report 014, acceptance step 7): a kill step's `plan` line names
@@ -1041,8 +1130,8 @@ accepted, Alex restarted the service (run `[yewz]`,
   that rest while cooked food lies in the bank.
 - **Would the Grand Exchange sell potions, food or algae for less than the fleet's hours?** Half the season goes
   into ingredients (decision 40) and report 014 priced the NPC merchants only (events, a tenth of a day's
-  need). One public read (`GET /grandexchange/orders`) would show the prices; Alex would have to allow it and
-  the spending. Looked at with 017.
+  need). Alex allowed the read on 2026-11-21, and a regular one (decision 45): 017 starts the poll into
+  `logs/market/`. The analysis follows after a few days of prices; buying is his decision then.
 - Answered by 014 (decision 40): Third brews most, First cooks, the stock goes to the best-scoring work first.
   The question was: **who brews and cooks for the fighters, and who drinks first?** The wall at combat 33–35 is the potion's
   price (decision 32). The consumables round (014).
@@ -1311,6 +1400,24 @@ accepted, Alex restarted the service (run `[yewz]`,
   - Guesses in the numbers, most doubtful first: the ladder doubles (two purchases and today's price); the
     season's codes (the forward model: 179 with the tidy); `TIDY_BELOW` 15, `EXPAND_BELOW` 10, `TIDY_MARGIN` 10;
     "no solve today picks it" (not gear by need's own solves, not a level's next pick); a recycle's returns.
+
+- From report 016, not fixed (and see decision 44):
+  - The journal keeps a step's totals, not the order of its actions: which codes a reset withdrew and wore, in
+    which order, and a walk back to the bank mid-step are in the raw log only (an `api` line's body is now cut
+    at 600 characters).
+  - The meter is in memory: a step re-attached at boot ends `partial`. `end.wall` of such a step counts the
+    downtime; the meter's `s` does not.
+  - No record for: a spawn whose verdict is never set (nobody free for its whole hour); a level passed while
+    the service is down; a merchant interrupt's sales by code (its `int-end` has the count and the gold).
+  - `made` sums what a tidy step's recycles gave back over its codes; a fight's turns and HP are not metered.
+  - The meter's bucket for characters the planner does not own is never cut (small; all five are owned).
+  - Nothing rotates the raw log: about 21 MB a day.
+  - Why the boot line of 08:49 UTC called Wooden Shield and Iron Armor outdated was reasoned (the solves moved
+    with the worn sets and the bank), not recomputed: that World is not in the log. From 016's restart on the
+    day's snapshot and a step's `wear` hold it.
+  - Guesses in the numbers, most doubtful first: the meter's side of the report's comparison (no echo in the
+    old log; a round trip of 0.8–1.1 s an action taken from the smallest gaps); a made-up day of 134 kB; the
+    snapshot fixture is composed, not written by the service.
 
 ## In the game's UI, for Alex (until the planner replaces these features)
 - "Fleet helps" and "Help X train" items are safe again: the service runs the code of 003.
