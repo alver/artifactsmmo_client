@@ -15,15 +15,16 @@
 
 import { batch, effect, signal } from "@preact/signals";
 import { IS_SERVER, expose, rpc } from "../lib/remote";
-import { devlog } from "../lib/devlog";
+import { RUN, devlog } from "../lib/devlog";
+import { journal, lastRecords, meterCut, runInfo, setMeterKey, writeStatus, writeWorld } from "../lib/journal";
 import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn, pushLog } from "./store";
-import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, queues, resetQueue, runQueue, setOwnedOfferings } from "./queue";
+import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue, setOwnedOfferings } from "./queue";
 import { hive, setHiveManual } from "./hive";
 import { liveEvents } from "./events";
 import { invCount } from "./exec";
 import { noSlotFor, setNoSlotHook } from "./loopkit";
 import { DEFAULTS } from "../plan/planner/config";
-import { EXPAND_BELOW, TIDY_BELOW, expansionOk, freeSlots, tidyVerdicts, usedSlots } from "../plan/planner/bank";
+import { EXPAND_BELOW, TIDY_BELOW, expansionOk, freeSlots, tidyLeft, tidyVerdicts, usedSlots } from "../plan/planner/bank";
 import { bankSec, placeOf } from "../plan/planner/reach";
 import { item as itemOf, itemName } from "../catalog";
 import { costKey, levelHoursEstimate, levelOf, perOf, sample, unitSec } from "../plan/planner/cost";
@@ -148,7 +149,10 @@ const STALL_SEC = 20 * 60; // guess: max(20 min, 5 × the unit estimate) of runn
 function start(name: string): void {
   const ch = characters.value[name];
   if (!ch || !isOwned(name)) return;
-  if (queues.value[name]?.items.some((it) => isStepId(it.id))) return void plog(name, "defect: a decision while a step item is queued — none made");
+  if (queues.value[name]?.items.some((it) => isStepId(it.id))) {
+    journal("defect", { who: name, what: "a decision while a step item is queued — none made" });
+    return void plog(name, "defect: a decision while a step item is queued — none made");
+  }
   const now = Date.now();
   const recent = (starts.get(name) ?? []).filter((s) => now - s.at < BRAKE_WINDOW);
   let step: Step;
@@ -164,7 +168,9 @@ function start(name: string): void {
       // the rule gives the fallback.
       plog(name, `flapping — ${recent.length} starts in 10 min, every candidate blocked 30 min (${recent.map((s) => s.key).join(", ")})`);
       const r = rank(name, worldOf(now));
-      hold([...r.objectives, ...r.levels, ...r.supply, ...r.fillers].map((c) => c.target.key));
+      const all = [...r.objectives, ...r.levels, ...r.supply, ...r.fillers].map((c) => c.target.key);
+      hold(all);
+      journal("flap", { who: name, n: recent.length, until: iso(now + BRAKE_HOLD), keys: recent.map((s) => s.key), targets: all.length });
       recent.length = 0;
     }
     step = decide(name, worldOf(now));
@@ -174,11 +180,13 @@ function start(name: string): void {
       const n = recent.filter((s) => s.target === step.target).length;
       if (n < BRAKE_N) break;
       plog(name, `flapping — ${step.target}: ${n} starts in 10 min, blocked 30 min`);
+      journal("flap", { who: name, target: step.target, n, until: iso(now + BRAKE_HOLD) });
       hold([step.target]);
       step = decide(name, worldOf(now));
     }
     items = itemsOf(step, ch);
   } catch (e) {
+    journal("nostep", { who: name, why: (e as Error).message });
     return void plog(name, `no step — ${(e as Error).message}`); // the next queue change or tick tries again
   }
   starts.set(name, [...recent, { at: now, target: step.target, key: step.key }]);
@@ -197,6 +205,114 @@ function start(name: string): void {
   });
   runQueue(name);
   plog(name, `${step.key} (${step.as}, ${step.units} units, ${fmtH(step.hours)} h) — ${step.why}`);
+  journal("step", {
+    who: name, key: step.key, target: step.target, as: step.as, work: step.work, units: step.units, h: Math.round(step.hours * 1000) / 1000,
+    score: Number(step.score.toPrecision(4)), why: step.why, parent: step.parent, for: step.for, wd: some(step.withdraw), wear: some(step.wear), until: step.until && iso(step.until),
+  });
+  statusNow();
+}
+
+// ── task 016: the journal's records of a step's end and an interrupt's ──────
+
+const iso = (t: number): string => new Date(t).toISOString();
+const some = <T extends object>(o: T | undefined): T | undefined => (o && Object.keys(o).length ? o : undefined);
+const reattached = new Set<string>(); // steps and interrupts re-attached at this boot: their end is partial (the meter is in memory)
+/** The bucket of the meter an item's actions go to (lib/journal.ts): a step's `pl:<key>`, an interrupt's `pl:int:<cls>:<what>`. */
+const bucketOf = (id: string | undefined): string => (id?.startsWith("pl:") ? id.slice(0, id.lastIndexOf(":")) : "");
+if (IS_SERVER) setMeterKey((name) => bucketOf(queues.value[name]?.items[0]?.id));
+
+/** A step is over: units done of planned, the wall, running and planned seconds, how it ended, and what its own items did. */
+function endRecord(name: string, r: Running, how: "done" | "blocked" | "empty" | "noslot" | "dropped" | "gone", why?: string): void {
+  const now = Date.now();
+  const m = meterCut(name, `pl:${r.step.key}`);
+  journal("end", {
+    who: name, key: r.step.key, units: r.units, of: r.step.units, wall: Math.round((now - r.startedAt) / 1000), ran: Math.round(r.run),
+    plan: Math.round(r.step.hours * 3600), how, why, partial: reattached.delete(`pl:${r.step.key}`) || undefined, m,
+  });
+  statusNow();
+}
+
+/** Interrupts issued and not over yet, per character (in memory; a restart registers the queued ones again, partial). */
+const ints = new Map<string, Map<string, { cls: string; what: string; at: number; removed?: string }>>();
+const intOf = (name: string): Map<string, { cls: string; what: string; at: number; removed?: string }> =>
+  ints.get(name) ?? ints.set(name, new Map()).get(name)!;
+
+/** An offering interrupt's end: the day's categories completed, and every other with the item's own reason. */
+function offeringOutcome(name: string): { done: string[]; open: Record<string, string> } {
+  const st = offerings.value[name];
+  const sk = offeringSkips.get(name);
+  const skips = sk && (!st || sk.day === st.date) ? sk.why : {};
+  const done = st?.completed_categories ?? [];
+  const open: Record<string, string> = {};
+  for (const c of st ? ["combat", ...st.skills] : Object.keys(skips)) {
+    if (done.includes(c)) continue;
+    open[c] = skips[c] ?? (st?.selected_offerings.some((s) => s.category === c) ? "accepted, not completed" : "not accepted");
+  }
+  return { done, open };
+}
+
+/** Every interrupt of this character whose items are all gone: its `int-end` with its own meter. */
+function intsOver(name: string): void {
+  const mine = ints.get(name);
+  if (!mine?.size) return;
+  const items = queues.value[name]?.items ?? [];
+  for (const [bucket, o] of mine) {
+    if (items.some((it) => it.id.startsWith(`${bucket}:`))) continue;
+    mine.delete(bucket);
+    journal("int-end", {
+      who: name, cls: o.cls, what: o.what, how: o.removed ? "removed" : "done", why: o.removed, s: Math.round((Date.now() - o.at) / 1000),
+      partial: reattached.delete(bucket) || undefined, off: o.cls === "offering" ? offeringOutcome(name) : undefined, m: meterCut(name, bucket),
+    });
+  }
+}
+
+// ── the status and the day's snapshot (settled points 5, 6) ─────────────────
+
+let snapDay = "";
+/** The status: the run, the account's points, the bank, per character its level, place, step, queue head; the blocks,
+ *  the live events, the last pause or server record. Rewritten whole every minute and at every step and end. */
+function statusNow(): void {
+  if (!IS_SERVER) return;
+  const now = Date.now(), st = planner.value, d = bankDetails.value, info = runInfo();
+  const done = achievements.value?.filter(isDone);
+  const codes = new Set(bankItems.value.map((b) => b.code)).size;
+  writeStatus({
+    t: iso(now), run: RUN, commit: info.commit, branch: info.branch, dev: info.dev, up: info.up,
+    points: done ? done.reduce((s, a) => s + a.points, 0) : null,
+    bank: { codes, slots: d?.slots, free: d ? d.slots - codes : undefined, gold: d?.gold, next: d?.next_expansion_cost },
+    chars: Object.fromEntries(characterList().map((ch) => {
+      const q = queues.value[ch.name], head = q?.items[0], r = st.current[ch.name];
+      return [ch.name, {
+        owned: isOwned(ch.name), lv: ch.level,
+        skills: Object.fromEntries(["mining", "woodcutting", "fishing", "weaponcrafting", "gearcrafting", "jewelrycrafting", "cooking", "alchemy"].map((s) => [s, (ch as unknown as Record<string, number>)[`${s}_level`]])),
+        at: [ch.x, ch.y, (ch as { layer?: string }).layer ?? "overworld"], hp: [ch.hp, ch.max_hp],
+        step: r && !r.over ? { key: r.step.key, as: r.step.as, why: r.step.why, since: iso(r.startedAt), units: r.units, of: r.step.units, h: Math.round(r.step.hours * 1000) / 1000, ran: Math.round(r.run) } : null,
+        head: head ? `[${head.id}] ${queueItemText(head)}` : null, note: q?.note ?? null, running: !!q?.running, error: head?.error ?? null,
+      }];
+    })),
+    blocked: Object.entries(st.blocked).filter(([, b]) => b.until > now).map(([k, b]) => ({ k, until: iso(b.until), why: b.why })),
+    events: liveEvents().map((e) => ({ code: e.code, at: [e.map.x, e.map.y, e.map.layer], until: e.expiration })),
+    last: lastRecords(),
+  });
+}
+
+/** The World as decide() reads it, and the planner's own state — the start of any later replay. Never the token. */
+const snapshotOf = (now: number): Record<string, unknown> => {
+  const st = planner.value;
+  return { t: iso(now), run: RUN, commit: runInfo().commit, world: worldOf(now), bankDetails: bankDetails.value, offerings: offerings.value, planner: { current: st.current, costs: st.costs, blocked: st.blocked, strikes: st.strikes, config: st.config, offered: st.offered } };
+};
+/** The day's snapshot once a day: at the first minute after 00:00 UTC, and at boot when the day has none (after the
+ *  first achievements read: the World is not whole without them). */
+function snapshotDue(): void {
+  const day = new Date().toISOString().slice(0, 10);
+  if (snapDay === day || !achievements.value) return;
+  snapDay = day;
+  writeWorld(day, () => snapshotOf(Date.now()));
+}
+function minute(): void {
+  if (!owned().length) return;
+  statusNow();
+  snapshotDue();
 }
 
 /** The step's counter (the stall check) and its units done, from the queue and the character. */
@@ -254,9 +370,11 @@ function addSample(name: string, key: string, value: number, units: number, esti
   put({ costs });
   const c = costs[key];
   plog(name, `sample ${key} ${Math.round(value * toSec)} s (n=${c.n}, estimate ${Math.round(estimate * toSec)} s)`);
+  journal("sample", { who: name, key, s: Math.round(value * toSec), units, n: c.n, mean: Math.round(c.sec * toSec), est: Math.round(estimate * toSec) });
   if (c.sec > 2 * estimate && !slow.has(key)) {
     slow.add(key);
     devlog(`plan: slower than expected — ${key} ${Math.round(c.sec * toSec)} s against ${Math.round(estimate * toSec)} s`);
+    journal("slow", { key, mean: Math.round(c.sec * toSec), est: Math.round(estimate * toSec) });
   }
 }
 
@@ -289,9 +407,11 @@ function blockStep(name: string, s: Step, why: string): void {
     const lanes = gateLanes(s);
     for (const o of owned()) blocked[`${s.target}@${o}`] = { until, why: `${why} (three times running)`, levels: Object.fromEntries(lanes.map((l) => [l, levelOf(characters.value[o]!, l)])) };
     plog(name, `blocked ${s.target} for everyone until ${new Date(until).toISOString().slice(0, 16)}Z or a level-up of ${lanes.join(", ") || "—"} — ${why} (three times running)`);
+    journal("block", { who: name, target: s.target, key: s.key, all: true, until: iso(until), lanes, why, strikes: n });
   } else {
     blocked[`${s.target}@${name}`] = { until: now + BLOCK_MS, why };
     plog(name, `blocked ${s.target} 6 h — ${why}`);
+    journal("block", { who: name, target: s.target, key: s.key, until: iso(now + BLOCK_MS), why, strikes: n });
   }
   put({ blocked, strikes: { ...planner.value.strikes, [s.target]: n >= 3 ? 0 : n } });
 }
@@ -312,8 +432,11 @@ async function next(name: string, block?: string): Promise<void> {
       for (const it of stepItems(name, r.step.key)) dropItem(name, it.id);
       setRunning(name, { ...r, over: true });
       // task 015, settled point 1: a step that ended because the bank had no slot is not blocked for it
-      if (!block && r.units === 0 && (noSlotAt.get(name) ?? 0) >= r.startedAt) plog(name, `${r.step.key} ended with no unit — the bank had no slot; not blocked`);
-      else if (!block && r.units === 0) block = `ended empty${skipReason(name, r.startedAt)}`;
+      const noSlot = !block && r.units === 0 && (noSlotAt.get(name) ?? 0) >= r.startedAt;
+      if (noSlot) plog(name, `${r.step.key} ended with no unit — the bank had no slot; not blocked`);
+      const empty = !block && !noSlot && r.units === 0;
+      if (empty) block = `ended empty${skipReason(name, r.startedAt)}`;
+      endRecord(name, r, noSlot ? "noslot" : empty ? "empty" : block ? "blocked" : "done", block);
       if (block) blockStep(name, r.step, block);
       else {
         stepSample(name, r);
@@ -349,12 +472,15 @@ if (IS_SERVER) effect(() => {
 function tick(): void {
   const now = Date.now();
   for (const name of owned()) {
+    intsOver(name);
     if (busy.has(name)) continue;
     const q = queues.value[name];
     const head = q?.items[0];
     if (q && !q.running && head?.error && head.id.startsWith("pl:int:")) {
       // An interrupt that pauses is removed, not the step under it (settled point 7).
       plog(name, `interrupt removed — ${queueItemText(head)}: ${head.error}`);
+      const o = ints.get(name)?.get(bucketOf(head.id));
+      if (o) o.removed = `${queueItemText(head)}: ${head.error}`;
       dropItem(name, head.id);
       if (head.id.startsWith("pl:int:offering:")) offeringLater(name, now);
       runQueue(name);
@@ -402,6 +528,7 @@ function heartbeat(): void {
     const q = queues.value[name];
     if (busy.has(name) || !q?.items.length || q.running || q.items[0].error) continue;
     plog(name, "queue found stopped — started"); // a defect when it shows in real play
+    journal("stopped", { who: name, head: `[${q.items[0].id}] ${queueItemText(q.items[0])}` });
     runQueue(name);
   }
   if (Date.now() - lastRead >= READ_EVERY) void readAchievements();
@@ -415,20 +542,26 @@ function heartbeat(): void {
 const noSlotAt = new Map<string, number>(); // the last time the bank had no slot for a code this character carried
 const said = new Map<string, number>(); // a bank line's key → when it was written (each at most once in its period)
 const fmtG = (n: number): string => Math.round(n).toLocaleString("en-US");
-/** One `plan: bank` line, at most once per `every` ms for the same `key`; the activity log too when `activityToo`. */
-function bankLine(key: string, every: number, text: string, activityToo = false): void {
+/** One `plan: bank` line, at most once per `every` ms for the same `key`; the activity log too when `activityToo`. Task 016:
+ *  its `bank` record, with the numbers apart. */
+function bankLine(key: string, every: number, text: string, rec: Record<string, unknown>, activityToo = false): void {
   const now = Date.now();
   if (now - (said.get(key) ?? -Infinity) < every) return;
   said.set(key, now);
   devlog(`plan: bank — ${text}`);
+  journal("bank", rec);
   if (activityToo) pushLog({ ts: now, character: "bank", action: "bank", text, kind: "info" });
 }
+/** The bank's numbers every `bank` record carries. */
+const bankNums = (world: World): Record<string, unknown> => ({ used: usedSlots(world), slots: world.bankSlots, free: freeSlots(world), next: world.nextExpansion, gold: world.bankGold });
 
 /** Settled point 1: the executor met a bank with no slot for these codes (any character); the planner answers at once. */
 setNoSlotHook((name, codes) => {
   noSlotAt.set(name, Date.now());
   const d = bankDetails.value;
-  bankLine(`refused:${name}:${[...codes].sort().join(",")}`, 3_600_000, `${name} could not bank ${codes.map((c) => itemName(c)).join(", ")}: no slot (${new Set(bankItems.value.map((b) => b.code)).size} codes of ${d?.slots ?? "?"} slots) — kept in the bag`);
+  const used = new Set(bankItems.value.map((b) => b.code)).size;
+  bankLine(`refused:${name}:${[...codes].sort().join(",")}`, 3_600_000, `${name} could not bank ${codes.map((c) => itemName(c)).join(", ")}: no slot (${used} codes of ${d?.slots ?? "?"} slots) — kept in the bag`,
+    { what: "refused", who: name, codes, used, slots: d?.slots });
   if (active) queueMicrotask(bankCheck);
 });
 
@@ -448,29 +581,37 @@ function bankCheck(): void {
     bankBooted = true;
     const out = free < TIDY_BELOW ? tidyVerdicts(world).filter((v) => v.outdated) : [];
     devlog(`plan: bank — ${usedSlots(world)} of ${slots} slots used (${free} free), the next expansion ${fmtG(world.nextExpansion ?? 0)} gold, bank gold ${fmtG(world.bankGold)}; tidy below ${TIDY_BELOW} free, buy below ${EXPAND_BELOW} (cap ${fmtG(world.config.expansionCap)})${free < TIDY_BELOW ? `; outdated: ${out.length ? out.map((v) => `${itemName(v.code)} ×${v.bank}`).join(", ") : "none"}` : ""}`);
+    journal("bank", { what: "boot", ...bankNums(world), cap: world.config.expansionCap, outdated: free < TIDY_BELOW ? Object.fromEntries(out.map((v) => [v.code, v.bank])) : undefined });
   }
   if (free >= EXPAND_BELOW) return;
   if (names.some((n) => queues.value[n]?.items.some((it) => it.kind === "expand"))) return;
-  if (tidyVerdicts(world).some((v) => v.outdated)) return; // the tidy steps first (no expansion while something can be tidied)
+  // the tidy steps first: no expansion while somebody has one (task 016, settled point 12: what tidyStep asks, for the
+  // characters that are on — the verdicts without a name could hold a code nobody's tidy step takes, and buy nothing ever)
+  if (tidyLeft(world)) return;
   const e = expansionOk(world);
   if (e.ok) {
     const who = [...names].sort((a, b) => bankSec(placeOf(characters.value[a]!)) - bankSec(placeOf(characters.value[b]!)) || (a < b ? -1 : 1))[0];
     devlog(`plan: bank — ${free} of ${slots} slots free and nothing left to tidy: ${who} buys an expansion for ${fmtG(e.price)} gold (bank gold ${fmtG(world.bankGold)})`);
+    journal("bank", { what: "buy", who, price: e.price, ...bankNums(world) });
     interrupt(who, "bank", [{ kind: "expand", price: e.price }], `expand${bankDetails.value.expansions}`);
     return;
   }
   const day = new Date().toISOString().slice(0, 10);
-  bankLine(`no-buy:${day}`, 24 * 3_600_000, `${free} of ${slots} slots free and nothing left to tidy; the next expansion costs ${fmtG(e.price)} gold: not bought (${e.why})`, true);
+  bankLine(`no-buy:${day}`, 24 * 3_600_000, `${free} of ${slots} slots free and nothing left to tidy; the next expansion costs ${fmtG(e.price)} gold: not bought (${e.why})`,
+    { what: "no-buy", price: e.price, why: e.why, ...bankNums(world) }, true);
   if (free <= 0) {
     const bags = names.flatMap((n) => noSlotFor((characters.value[n]?.inventory ?? []).filter((s) => s.code && s.quantity > 0).map((s) => s.code)).map((c) => `${n}: ${itemName(c)}`));
-    bankLine("stuck", 3_600_000, `no slot free, nothing to tidy, no expansion (${e.why}): a step that would bring a code the bank does not hold waits; nobody is paused${bags.length ? `; kept in bags: ${bags.join(", ")}` : ""}`);
+    bankLine("stuck", 3_600_000, `no slot free, nothing to tidy, no expansion (${e.why}): a step that would bring a code the bank does not hold waits; nobody is paused${bags.length ? `; kept in bags: ${bags.join(", ")}` : ""}`,
+      { what: "stuck", why: e.why, bags, ...bankNums(world) });
   }
 }
 
+let minuteTimer: ReturnType<typeof setInterval> | undefined;
 function activate(): void {
   if (active) return;
   active = true;
   setTimeout(heartbeat, TICK_MS);
+  minuteTimer ??= setInterval(minute, 60_000); // task 016: the status every minute, the day's snapshot (it does nothing with nobody on)
 }
 
 /** One achievements read (at most six an hour unless forced). A completion since the read before → one pending
@@ -492,6 +633,8 @@ async function readAchievements(force = false): Promise<boolean> {
   const done = before ? after.filter((a) => isDone(a) && before.some((b) => b.code === a.code && !isDone(b))) : [];
   if (done.length) {
     devlog(`plan: completed ${done.map((a) => `${a.code} (+${a.points})`).join(", ")}`);
+    const total = after.filter(isDone).reduce((s, a) => s + a.points, 0);
+    for (const a of done) journal("ach", { code: a.code, pts: a.points, total, at: a.completed_at ?? undefined });
     await reads.loadPendingRewards();
     claimRewards();
   }
@@ -530,6 +673,8 @@ export function interrupt(name: string, cls: InterruptClass, items: QueueItemInp
   const out = items.map((it, i) => ({ ...it, id: `${prefix}${i}` }) as QueueItem);
   batch(() => out.forEach((it, i) => insertItem(name, it, at + i)));
   plog(name, `interrupt ${cls} — ${out.map(queueItemText).join(", ")}`);
+  intOf(name).set(prefix.slice(0, -1), { cls, what, at: Date.now() });
+  journal("int", { who: name, cls, what, items: out.map(queueItemText) });
   if (!queues.value[name]?.running) runQueue(name);
   return true;
 }
@@ -592,12 +737,17 @@ function optOut(name: string): void {
 /** Switched on: every queued item that is not the planner's goes (one dev-log line each), 🔁 off, the queue
  *  stopped until the first step starts it, the character on the hive's opt-out list. The in-flight action is not
  *  waited for: its result is id-guarded (runLoop ignores a finished step whose item is gone). */
-function takeOver(name: string): void {
+function takeOver(name: string): string[] {
   const q = queues.value[name];
   if (q?.running) haltQueue(name);
-  for (const it of q?.items ?? []) if (!it.id.startsWith("pl:int:")) plog(name, `took over — dropped [${it.id}] ${queueItemText(it)}`);
+  const dropped: string[] = [];
+  for (const it of q?.items ?? []) if (!it.id.startsWith("pl:int:")) {
+    plog(name, `took over — dropped [${it.id}] ${queueItemText(it)}`);
+    dropped.push(`[${it.id}] ${queueItemText(it)}`);
+  }
   resetQueue(name, (it) => it.id.startsWith("pl:int:"));
   optOut(name);
+  return dropped;
 }
 
 /** Switched off: the planner's items go, the queue stays empty and stopped, the opt-out goes if the planner put it there. */
@@ -605,6 +755,9 @@ function handBack(name: string): void {
   if (queues.value[name]?.running) haltQueue(name);
   resetQueue(name, (it) => !it.id.startsWith("pl:"));
   const st = planner.value;
+  const r = st.current[name];
+  if (r && !r.over) endRecord(name, r, "dropped", "handed back");
+  ints.delete(name);
   put({ current: { ...st.current, [name]: undefined }, optedOut: st.optedOut.filter((n) => n !== name) });
   if (st.optedOut.includes(name)) setHiveManual(name, false);
   lastSeen.delete(name);
@@ -614,7 +767,7 @@ function handBack(name: string): void {
 
 function switchOn(name: string): void {
   activate();
-  takeOver(name);
+  journal("config", { who: name, on: true, dropped: takeOver(name) });
   catchUpOfferings();
   busy.add(name);
   void (async () => {
@@ -634,11 +787,15 @@ export function setPlannerConfig(patch: Partial<PlannerConfig>): void {
   const st = planner.value;
   const was = configOf(st.config).on;
   put({ config: { ...st.config, ...patch, ...(patch.on ? { on: { ...st.config.on, ...patch.on } } : {}) } });
+  journal("config", { patch });
   const on = configOf(planner.value.config).on;
   for (const name of Object.keys(characters.value)) {
     if (!!on[name] === !!was[name]) continue;
     if (on[name]) switchOn(name);
-    else handBack(name);
+    else {
+      handBack(name);
+      journal("config", { who: name, on: false });
+    }
   }
 }
 
@@ -654,6 +811,7 @@ async function bootRead(first: boolean): Promise<void> {
   if (ok) ready = true;
   else if (!ready) setTimeout(() => void bootRead(false), 60_000);
   if (ready) bankCheck(); // task 015: the bank's line at boot, and its answer
+  if (ok) minute(); // task 016: the status, and the day's snapshot if the day has none
   scheduleTick();
 }
 
@@ -665,22 +823,43 @@ async function bootRead(first: boolean): Promise<void> {
 export function resumePlanner(r: Reads): void {
   reads = r;
   const names = owned();
-  if (!names.length) return;
-  activate();
+  const info = runInfo();
+  // task 016: the boot record, then what ended at this boot (its own records come after it)
+  const chars: Record<string, Record<string, unknown>> = {};
+  const after: (() => void)[] = [];
+  if (names.length) activate();
   for (const name of names) {
     const q = queues.value[name];
     const r = planner.value.current[name];
-    if (q?.items.some((it) => !it.id.startsWith("pl:"))) takeOver(name);
+    const c: Record<string, unknown> = (chars[name] = {});
+    if (q?.items.some((it) => !it.id.startsWith("pl:"))) c.took = takeOver(name);
     else optOut(name);
+    // the interrupts still queued go on: their int-end is partial (what ran before the restart was not metered here)
+    for (const it of queues.value[name]?.items ?? []) {
+      const m = /^pl:int:([a-z]+):(.+):\d+$/.exec(it.id), bucket = bucketOf(it.id);
+      if (m && !intOf(name).has(bucket)) {
+        intOf(name).set(bucket, { cls: m[1], what: m[2], at: Date.now() });
+        reattached.add(bucket);
+        ((c.ints ??= []) as string[]).push(bucket);
+      }
+    }
     if (r && !r.over && stepItems(name, r.step.key).length) {
       plog(name, `re-attached ${r.step.key}`);
+      c.step = r.step.key;
+      reattached.add(`pl:${r.step.key}`);
       if (!queues.value[name]?.running) runQueue(name);
       continue;
     }
     for (const it of queues.value[name]?.items ?? []) if (isStepId(it.id)) dropItem(name, it.id); // a step nobody knows
-    if (r && !r.over) setRunning(name, { ...r, over: true }); // it ended while the service was down: no sample
+    if (r && !r.over) {
+      setRunning(name, { ...r, over: true }); // it ended while the service was down: no sample
+      after.push(() => endRecord(name, r, c.took ? "dropped" : "gone", c.took ? "taken over at boot" : "its items were gone at boot"));
+    }
     if (queues.value[name]?.items.length && !queues.value[name].running) runQueue(name); // interrupts run meanwhile
   }
+  journal("boot", { dev: info.dev, commit: info.commit, branch: info.branch, chars });
+  for (const f of after) f();
+  if (!names.length) return;
   catchUpOfferings();
   setTimeout(() => {
     ready = true;

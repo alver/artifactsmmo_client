@@ -7,14 +7,22 @@ import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { applyActionResult } from "../state/apply";
 import { characters, pushLog } from "../state/store";
 import { gateAt } from "../state/access";
+import { meterEcho, meterStart } from "../lib/journal";
 import type { ActionResult } from "../types/api";
 import type { ItemStack } from "../types/catalog";
 
 async function act(name: string, action: string, body?: unknown): Promise<ActionResult> {
   if (!IS_SERVER) return rpc("act", [name, action, body]); // the echo lands in server state, then streams back
+  const key = meterStart(name); // task 016: the meter's slice of this action (lib/journal.ts)
+  const prev = characters.value[name];
   try {
     const data = await api<ActionResult>(`/my/${name}/action/${action}`, { method: "POST", body });
     applyActionResult(name, action, data);
+    try {
+      meterEcho(name, key, action, body, prev, data);
+    } catch {
+      /* the meter never breaks an action */
+    }
     return data;
   } catch (e) {
     pushLog({ ts: Date.now(), character: name, action, text: (e as Error).message, kind: "bad" });

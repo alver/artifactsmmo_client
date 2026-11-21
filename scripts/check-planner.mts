@@ -27,7 +27,7 @@ import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, KILL_LOG_013, 
 import { actionSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec } from "../src/plan/planner/cost";
 import { bundleOf, bundleScore } from "../src/plan/planner/bundle";
 import { chainSec, consFree, consParents, consumableNeeds, fightTake, poolFood, poolFoods, reservable } from "../src/plan/planner/consumables";
-import { EXPAND_BELOW, TIDY_BELOW, backText, bankStuck, expansionOk, freeSlots, isGear, newCodes, tidyStep, tidyVerdicts, usedSlots } from "../src/plan/planner/bank";
+import { EXPAND_BELOW, TIDY_BELOW, backText, bankStuck, expansionOk, freeSlots, isGear, newCodes, tidyLeft, tidyStep, tidyVerdicts, usedSlots } from "../src/plan/planner/bank";
 import { SELL_FLOORS, merchantOrder } from "../src/plan/events";
 import { calendar, contentOf, eventDemand, eventMembers, eventOf, eventPlans, gapSec, possibleMembers, spawnOf, usableSec } from "../src/plan/planner/events";
 import type { Played } from "../src/plan/planner/forward";
@@ -1414,6 +1414,51 @@ const BANK_NOW = bankWorld();
 
 
 
+// ── 5g. task 016: the day's snapshot, whole runs, "something is left to tidy" ─────────────────────────────────────
+{
+  // settled point 6: a World built from a day's snapshot alone (scripts/fixtures/world-2026-11-20.json, in the format the
+  // service writes: src/state/planner.ts snapshotOf) gives every character a decision
+  const SNAP = JSON.parse(await readFile("scripts/fixtures/world-2026-11-20.json", "utf8")) as { t: string; world: World; planner: { config: Partial<PlannerConfig> } };
+  const ws = SNAP.world;
+  const ds = ws.characters.map((c) => { try { return decide(c.name, ws); } catch (e) { return (e as Error).message; } });
+  console.log(`\n## Task 016: the day's snapshot (${SNAP.t}: ${ws.characters.length} characters, ${ws.bank.length} bank codes of ${ws.bankSlots} slots, ${ws.achievements.length} achievements)`);
+  cases.push(["task 016, settled point 6: a World built from a day's snapshot alone gives every character a decision", ds.every((s, i) => typeof s === "object" && s.character === ws.characters[i].name)]);
+  for (const s of ds) console.log(`  ${typeof s === "object" ? `${s.character}: ${s.key} (${s.as}) — ${s.why.slice(0, 140)}` : `no decision: ${s}`}`);
+
+  // settled point 10: a craft step is planned in whole runs — 121 minor health potions (two a run) take 61 runs: 122 nettle
+  console.log(`\n## Task 016: a craft step in whole runs (settled point 10)`);
+  const brew = made("made_up_brew", 5, "crafting", "minor_health_potion", 121);
+  const who = { Third: { level: 22, alchemy_level: 25, fishing_level: 10 } };
+  const wb = consWorld({ nettle_leaf: 300, algae: 200 }, [brew], ["Third"], who);
+  const sb = rank("Third", wb).objectives.find((c) => c.target.key === "ach:made_up_brew:0")?.step;
+  cases.push(["task 016, settled point 10: 121 of a two-a-run recipe withdraw 122 nettle and 61 algae (61 runs), not 121", sb?.units === 121 && sb.withdraw?.nettle_leaf === 122 && sb.withdraw?.algae === 61]);
+  console.log(`  the bank holds the ingredients: ${sb ? `${sb.key} ${sb.units} units, withdraw ${JSON.stringify(sb.withdraw)} — ${sb.why}` : "no candidate"}`);
+  const wf = consWorld({ algae: 200 }, [brew], ["Third"], who);
+  const sf = rank("Third", wf).objectives.find((c) => c.target.key === "ach:made_up_brew:0")?.step;
+  const nettle = sf?.sources?.find((s) => s.code === "nettle_leaf");
+  cases.push(["…with no nettle in the bank the step gathers the nettle of whole runs", !!sf && !!nettle && nettle.times === 2 * Math.ceil(sf.units / 2)]);
+  console.log(`  no nettle in the bank: ${sf ? `${sf.units} units, sources ${JSON.stringify(sf.sources)}, withdraw ${JSON.stringify(sf.withdraw)}` : "no candidate"}`);
+
+  // settled point 12: bankCheck's "something is left to tidy" is what tidyStep asks — whether some character that is on
+  // has a tidy step — not tidyVerdicts without a name. On the bank of 11-20 the two agree; they part where a tidy step
+  // cannot take a code the nameless verdict calls outdated: here another character's running step reserves one copy of
+  // each outdated code (stock.ts available), so no tidy step takes it whole, and the old test would buy nothing ever.
+  console.log(`\n## Task 016: "something is left to tidy" (settled point 12)`);
+  const out0 = tidyVerdicts(BANK_NOW).filter((v) => v.outdated);
+  const mine = BANK_NOW.characters.map((c) => [c.name, tidyStep(BANK_NOW, c.name)] as const);
+  console.log(`  the bank of ${BX.at}: ${out0.length} codes outdated without a name; tidy steps: ${mine.map(([n, s]) => `${n} ${s ? Object.keys((s.work as { codes: Record<string, number> }).codes).join("+") : "—"}`).join(", ")}`);
+  const byName = new Map(BANK_NOW.characters.map((c) => [c.name, new Set(tidyVerdicts(BANK_NOW, c.name).filter((v) => v.outdated).map((v) => v.code))]));
+  const differ = out0.filter((v) => [...byName.values()].some((s) => !s.has(v.code))).map((v) => `${v.code} (not for ${[...byName].filter(([, s]) => !s.has(v.code)).map(([n]) => n).join(", ")})`);
+  const extra = [...new Set([...byName.values()].flatMap((s) => [...s]))].filter((c) => !out0.some((v) => v.code === c));
+  console.log(`  the verdicts by name against the nameless: ${differ.length ? `outdated without a name, kept by a name: ${differ.join("; ")}` : "every outdated code is outdated for every name"}; ${extra.length ? `outdated only by a name: ${extra.join(", ")}` : "none outdated only by a name"}`);
+  cases.push(["task 016, settled point 12: on the bank of 11-20 a tidy step exists (tidyLeft) while codes are outdated", tidyLeft(BANK_NOW) === out0.length > 0]);
+  const res = Object.fromEntries(out0.map((v) => [v.code, 1]));
+  const held: World = { ...BANK_NOW, current: { ...BANK_NOW.current, Fifth: { key: "made_up@Fifth#1", target: "made_up", character: "Fifth", as: "objective", work: { kind: "task" }, units: 1, hours: 1, score: 0, why: "", withdraw: res } } };
+  const stillOld = tidyVerdicts(held).some((v) => v.outdated), anyStep = held.characters.some((c) => !!tidyStep(held, c.name));
+  cases.push(["…a copy of each reserved by another step: outdated without a name, no tidy step — tidyLeft says nothing is left (the expansion may go)", stillOld && !anyStep && !tidyLeft(held)]);
+  console.log(`  one copy of each outdated code reserved by Fifth's running step: outdated without a name ${stillOld}, a tidy step for anyone ${anyStep}, tidyLeft ${tidyLeft(held)} (before: "${stillOld ? "something is left to tidy" : "nothing"}", no expansion)`);
+}
+
 // ── 9. task 014, section 2: what consumables cost, and which lever moves the wall ────────────────────────────────
 const POTIONS14 = [...catalog().items.values()].filter((it) => it.type === "utility" && it.craft).map((it) => it.code);
 const FOODS14 = [...catalog().items.values()].filter((it) => it.type === "consumable" && it.subtype === "food" && it.craft).filter((it) => !itemUsesOf(it.code)).map((it) => it.code);
@@ -1588,8 +1633,9 @@ if (VERBOSE) {
     console.log(`\n## What the events cost (task 013): row A against row E (no events)`);
     for (const d of ["7", "14", "30", "60"]) console.log(`  day ${pad(d, 3)} A ${pad(a[d], 4)} E ${pad(e[d], 4)} ${a[d] < e[d] ? "← A below E" : ""}`);
     console.log(`  deadline A ${results[0]} E ${results[4]}`);
-    // task 015: the sell floors are no planning floor any more (settled point 6) — with them, row C ends at 77 as before
-    cases.push(["task 015: row C (consumables 0, report 013's model) ends at 78 (77 with the old sell floors)", results[2] === 78]);
+    // task 015: the sell floors are no planning floor any more (settled point 6) — with them, row C ends at 77 as before.
+    // Task 016, settled point 10: a craft step planned in whole runs (decide.ts planMake) moved it from 78 to 73.
+    cases.push(["task 015/016: row C (consumables 0, report 013's model) ends at 73 (78 before whole runs, 77 with the old sell floors)", results[2] === 73]);
   }
   // task 014, section 5: what the round paid — row A (consumables by need) against row C (report 013's model)
   const c14 = rowDays[2];

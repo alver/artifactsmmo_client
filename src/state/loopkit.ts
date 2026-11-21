@@ -8,13 +8,15 @@
 
 import * as actions from "../api/actions";
 import { catalog } from "../catalog";
-import { ApiError } from "../api/client";
+import { ApiError, api, getAllPages } from "../api/client";
 import { bankDetails, bankItems, characters } from "./store";
 import { liveEvents } from "./events";
 import { cooldownRemaining } from "../lib/util";
+import { devlog } from "../lib/devlog";
+import { journal } from "../lib/journal";
 import { FREE, route, travelSec } from "../plan/route";
 import type { Place } from "../plan/route";
-import type { Character } from "../types/api";
+import type { BankDetails, BankItem, Character } from "../types/api";
 import type { GameMap } from "../types/catalog";
 
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -176,10 +178,34 @@ export async function deposit(name: string, items: { code: string; quantity: num
       for (const i of go) if (!held.has(i.code)) left.add(i.code);
       go = go.filter((i) => held.has(i.code));
       if (go.length) await step(name, () => actions.depositItems(name, go));
+      await readBankAfter462(); // task 016, settled point 11: the correction above is the answer of the moment
     }
   }
   reportNoSlot(name, [...left]);
   return [...left];
+}
+
+const BANK_READ_MS = 10 * 60_000;
+let bankReadAt = -Infinity;
+/**
+ * Task 016, settled point 11: after a 462 the bank is read, not guessed — one read of its details and its items, at most
+ * one in ten minutes (the account's reads are the scarce budget), so the slots and the codes are the game's again. A
+ * read that fails leaves the local correction; nothing waits for it but this deposit.
+ */
+async function readBankAfter462(): Promise<void> {
+  const now = Date.now();
+  if (now - bankReadAt < BANK_READ_MS) return;
+  bankReadAt = now;
+  try {
+    const [d, items] = await Promise.all([api<BankDetails>("/my/bank"), getAllPages<BankItem>("/my/bank/items")]);
+    bankDetails.value = d;
+    bankItems.value = items;
+    const codes = new Set(items.map((b) => b.code)).size;
+    devlog(`bank read after a 462: ${codes} codes of ${d.slots} slots (${d.slots - codes} free)`);
+    journal("bank", { what: "read", used: codes, slots: d.slots, free: d.slots - codes, next: d.next_expansion_cost, gold: d.gold });
+  } catch (e) {
+    devlog(`bank read after a 462 failed: ${(e as Error).message} — the local count stands`);
+  }
 }
 
 /**

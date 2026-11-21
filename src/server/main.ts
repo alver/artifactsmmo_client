@@ -10,12 +10,13 @@
 // unchanged. Binds 127.0.0.1 only — whoever reaches /rpc plays the account.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { effect } from "@preact/signals";
 import { expose, handlerFor } from "../lib/remote";
 import { devlog, setDevlogSink } from "../lib/devlog";
+import { fileSinks, journal, setRunInfo } from "../lib/journal";
 import { setDataReader } from "../catalog/load";
 import { hasToken, setToken } from "../api/client";
 import { SYNCED } from "../state/synced";
@@ -35,10 +36,42 @@ process.on("uncaughtException", (e) => report("uncaught exception", e));
 function report(what: string, e: unknown): void {
   console.error(`[server] ${what}:`, e);
   devlog(`server ${what}: ${(e as Error)?.stack ?? e}`);
+  journal("server", { what, err: String((e as Error)?.stack ?? e).split("\n").slice(0, 4).join(" | ") });
 }
 
-mkdirSync(path.join(ROOT, "logs"), { recursive: true });
-setDevlogSink((lines) => appendFileSync(path.join(ROOT, "logs/dev.log"), lines));
+// Task 016: the raw log into logs/raw/<day>/<HH>.log, the journal, the status and the day's World under logs/
+// (lib/journal.ts fileSinks decides which file; a failed write is dropped there). logs/dev.log gets no more lines.
+// A service on another port (a smoke test with throwaway storage) writes under logs/port-<N>/: never the real status.
+const LOGS = PORT === 5173 ? path.join(ROOT, "logs") : path.join(ROOT, "logs", `port-${PORT}`);
+const dirs = new Set<string>();
+const dirOf = (p: string): void => {
+  const d = path.dirname(p);
+  if (!dirs.has(d)) mkdirSync(d, { recursive: true });
+  dirs.add(d);
+};
+setDevlogSink(fileSinks({
+  append: (p, s) => (dirOf(p), appendFileSync(p, s)),
+  replace: (p, s) => (dirOf(p), writeFileSync(`${p}.tmp`, s), renameSync(`${p}.tmp`, p)),
+  exists: (p) => existsSync(p),
+}, LOGS));
+
+/** The commit the checkout stood on at boot, read from .git (no child process): HEAD, its ref or packed-refs. */
+function commitOf(): { commit?: string; branch?: string } {
+  try {
+    const head = readFileSync(path.join(ROOT, ".git/HEAD"), "utf8").trim();
+    if (!head.startsWith("ref: ")) return { commit: head };
+    const ref = head.slice(5), branch = ref.replace(/^refs\/heads\//, "");
+    try {
+      return { commit: readFileSync(path.join(ROOT, ".git", ref), "utf8").trim(), branch };
+    } catch {
+      const line = readFileSync(path.join(ROOT, ".git/packed-refs"), "utf8").split("\n").find((l) => l.endsWith(` ${ref}`));
+      return { commit: line?.split(" ")[0], branch };
+    }
+  } catch {
+    return {};
+  }
+}
+setRunInfo({ dev: DEV, ...commitOf() });
 setDataReader(async (name) => JSON.parse(await readFile(path.join(ROOT, "public/data", `${name}.json`), "utf8")));
 try {
   process.loadEnvFile(path.join(ROOT, ".env"));

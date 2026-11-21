@@ -66,17 +66,21 @@ function planMake(w: Work & { kind: "craft" | "buy" }, inputs: Input[], ch: Char
   const spot = w.kind === "craft" ? recipe && nearestSpot(here, "workshop", recipe.skill, world) : nearestSpot(here, "npc", w.npc, world);
   if (!spot) return undefined;
   const own = w.kind === "craft" ? CRAFT_SEC / Math.max(1, recipe!.quantity) : 5;
+  // task 016, settled point 10: a craft is made in whole runs — n of a recipe that makes q a run takes ceil(n ÷ q) runs'
+  // ingredients (121 minor health potions, two a run: 61 runs, 122 nettle, not 121)
+  const q = w.kind === "craft" ? Math.max(1, recipe!.quantity) : 1;
+  const need = (per: number, n: number): number => Math.ceil(n / q - 1e-9) * q * per;
   const ins = inputs.map((i) => {
     const can = field && i.source.kind !== "craft" && i.gates.every((g) => met(g, ch, world));
     const per = perOf(i.source);
     return { i, avail: available(i.code, world, ch.name), field: can, per, margin: per > 1 ? 1.5 : 1, act: can ? actionSec(i.source, ch, world) : Infinity };
   });
   let max = Math.floor(Math.min(left, CHUNK_SEC / own));
-  for (const x of ins) if (!x.field) max = Math.min(max, Math.floor(x.avail / x.i.per + 1e-9));
+  for (const x of ins) if (!x.field) max = Math.min(max, Math.floor(x.avail / (x.i.per * q) + 1e-9) * q);
   if (max < 1) return undefined;
   // shortcut: a drop or a rare gather is sourced at 1.5 × its expected actions, so a step rarely comes up short
   // task 014, settled point 9: what lies in a bag is not gathered a second time (the step's reset banks it first)
-  const times = (x: (typeof ins)[number], n: number): number => Math.ceil(Math.max(0, n * x.i.per - x.avail - (world.bags?.[x.i.code] ?? 0)) * x.per * x.margin - 1e-9);
+  const times = (x: (typeof ins)[number], n: number): number => Math.ceil(Math.max(0, need(x.i.per, n) - x.avail - (world.bags?.[x.i.code] ?? 0)) * x.per * x.margin - 1e-9);
   const fixed = stepSec(spot.place, here); // task 012: the reset, the walks and the deposit, once a step
   const sec = (n: number): number => ins.reduce((s, x) => s + (times(x, n) ? times(x, n) * x.act : 0), 0) + n * own + fixed;
   if (!(sec(1) <= 2 * CHUNK_SEC)) return undefined; // one unit longer than two chunks: supply targets carry it
@@ -87,7 +91,7 @@ function planMake(w: Work & { kind: "craft" | "buy" }, inputs: Input[], ch: Char
   return {
     work: w, units: lo, hours: sec(lo) / 3600, place: spot.place,
     sources: sources.length ? sources.map((x) => ({ code: x.i.code, work: x.i.source, times: times(x, lo) })) : undefined,
-    withdraw: Object.fromEntries(ins.filter((x) => x.avail > 0).map((x) => [x.i.code, Math.min(x.avail, Math.ceil(lo * x.i.per - 1e-9))])),
+    withdraw: Object.fromEntries(ins.filter((x) => x.avail > 0).map((x) => [x.i.code, Math.min(x.avail, Math.ceil(need(x.i.per, lo) - 1e-9))])),
   };
 }
 

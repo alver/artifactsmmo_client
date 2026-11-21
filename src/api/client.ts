@@ -11,11 +11,12 @@ import type { Paginated } from "../types/api";
 
 export const API_BASE = "https://api.artifactsmmo.com";
 
-/** Compact request-body rendering for the dev log (never the token). */
+/** Compact request-body rendering for the dev log (never the token). Task 016, settled point 9: cut at 600 characters
+ *  (160 hid a reset's last codes, usually the potions). */
 const short = (v: unknown): string => {
   if (v === undefined) return "";
   const s = JSON.stringify(v);
-  return " " + (s.length > 160 ? s.slice(0, 157) + "…" : s);
+  return " " + (s.length > 600 ? s.slice(0, 597) + "…" : s);
 };
 const TOKEN_KEY = "ammo:v1:token";
 

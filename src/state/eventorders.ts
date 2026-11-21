@@ -14,6 +14,7 @@
 import { effect, signal } from "@preact/signals";
 import { IS_SERVER } from "../lib/remote";
 import { devlog } from "../lib/devlog";
+import { journal } from "../lib/journal";
 import { achievements, bankDetails, bankItems, characters, isOwned, pushLog } from "./store";
 import { insertItem, queues } from "./queue";
 import { interrupt, planner, worldOf } from "./planner";
@@ -106,8 +107,9 @@ function backTo(name: string): QueueItemInput | undefined {
   return first?.kind === "gear" && first.reset ? { kind: "gear", job: first.job, reset: true } : undefined;
 }
 
-/** Task 013: the owned characters' event work — every live monster or resource spawn, at every poll. */
-function ownedEvents(live: ActiveEvent[], plans: Record<string, string>): void {
+/** Task 013: the owned characters' event work — every live monster or resource spawn, at every poll. Task 016: each
+ *  spawn's plan (its line and members) into `seen`, for the journal's `event` record. */
+function ownedEvents(live: ActiveEvent[], plans: Record<string, string>, seen: Map<string, Record<string, unknown>>): void {
   const names = Object.keys(characters.value).filter(isOwned);
   const field = live.filter(isField);
   if (!names.length || !field.length || !achievements.value) return; // the demand waits for the first achievements read
@@ -126,9 +128,13 @@ function ownedEvents(live: ActiveEvent[], plans: Record<string, string>): void {
     }
     if (!(p.key in plans)) devlog(`plan: ${p.line}`);
     else if (joined.length) devlog(`plan: event ${p.code} — joins: ${joined.join(", ")}`);
+    seen.set(p.key, { line: p.line, members: p.members.map((m) => ({ who: m.name, why: m.why, take: m.take })), joined: joined.length ? joined : undefined });
     plans[p.key] = p.members.length ? `${p.members.map((m) => m.name).join(", ")}: ${p.content.type === "monster" ? "fight" : "gather"} until the event ends` : `nothing to do — ${p.line.slice(p.line.indexOf(" — ") + 3)}`;
   }
 }
+
+/** A verdict with its members' names sorted ("Ann, Cat, Ben: fight …" → "Ann, Ben, Cat: fight …"). */
+const members = (v: string): string => v.replace(/^([A-Za-z0-9_]+(?:, [A-Za-z0-9_]+)*):/, (_, n: string) => `${n.split(", ").sort().join(", ")}:`);
 
 /** Dispatch orders for every live event spawn not handled yet. Idempotent. */
 export function reactToEvents(): void {
@@ -152,7 +158,15 @@ export function reactToEvents(): void {
     candidates = candidates.filter((ch) => ch.name !== o.character);
     pushLog({ ts: Date.now(), character: o.character, action: "event", text: `${e.name}: ${o.text} — then back to the queue`, kind: "info" });
   }
-  ownedEvents(live, plans);
+  const seen = new Map<string, Record<string, unknown>>();
+  ownedEvents(live, plans, seen);
+  // task 016: one `event` record a spawn, one more each time its verdict changes (the same members in another order is none)
+  const same = (a: string, b: string | undefined): boolean => !!b && members(a) === members(b);
+  for (const e of live) {
+    const k = eventKey(e);
+    if (plans[k] === undefined || same(plans[k], eventPlans.value[k])) continue;
+    journal("event", { key: k, code: e.code, at: [e.map.x, e.map.y, e.map.layer], until: e.expiration, verdict: plans[k], ...seen.get(k) });
+  }
   if (JSON.stringify(plans) !== JSON.stringify(eventPlans.value)) eventPlans.value = plans;
 }
 

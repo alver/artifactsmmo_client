@@ -30,6 +30,7 @@ import { killSeconds } from "../plan/bis";
 import { titleCase } from "../lib/util";
 import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendingRewards, pushLog, skillKey, skillPins } from "./store";
 import { devlog } from "../lib/devlog";
+import { journal } from "../lib/journal";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
 import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
 import { categoryLevel, loadOfferings, offeringSlots, todayOfferings } from "./offerings";
@@ -189,6 +190,10 @@ export function resetQueue(name: string, keep: (it: QueueItem) => boolean): void
 
 const log = (name: string, text: string, kind: "ok" | "bad" | "info" = "info"): void =>
   pushLog({ ts: Date.now(), character: name, action: "queue", text, kind });
+
+/** Task 016: per character, the offering categories its `offering` item skipped today and why (the item keeps only the
+ *  category) — the planner's `int-end` of an offering interrupt says it. */
+export const offeringSkips = new Map<string, { day: string; why: Record<string, string> }>();
 
 /**
  * Complete an item WITHOUT acting because its map target doesn't exist right
@@ -577,6 +582,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         patchItem(name, it.id, { got: [...new Set([...(it.got ?? []), ...row.items.map((x) => x.code), ...(row.gold ? ["gold"] : [])])] });
         const what = row.items.map((x) => `${x.quantity}× ${x.code}${itemOf(x.code)?.subtype === "bag" ? ` (${(itemOf(x.code)?.effects ?? []).map((e) => `${e.code} ${e.value} each`).join(", ")})` : ""}`);
         devlog(`claim ${name}: ${row.description} — ${[...what, ...(row.gold ? [`${row.gold} gold`] : [])].join(", ") || "nothing"}`);
+        journal("ach", { claim: row.description, who: name, items: Object.fromEntries(row.items.map((x) => [x.code, x.quantity])), gold: row.gold || undefined });
         log(name, `claimed ${row.description}`, "ok");
         return false;
       }
@@ -618,6 +624,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       const after = bankDetails.value;
       const text = `bought a bank expansion for ${paid.toLocaleString("en-US")} gold: slots ${d?.slots ?? "?"} → ${after?.slots ?? "?"}, the next costs ${after?.next_expansion_cost?.toLocaleString("en-US") ?? "?"}`;
       devlog(`plan: bank — ${name} ${text}`);
+      journal("bank", { what: "bought", who: name, price: paid, slots: [d?.slots, after?.slots], next: after?.next_expansion_cost, gold: after?.gold });
       log(name, text, "ok");
       return false;
     }
@@ -1483,6 +1490,8 @@ async function runOffering(name: string, ch: Character, it: OfferingItem, ctx: S
   const skipCategory = (category: string, why: string): false => {
     patchItem(name, it.id, { day: st.date, skip: [...(skip ?? []), category] });
     log(name, `skipped today's ${category} offering — ${why}`, "bad");
+    const was = offeringSkips.get(name); // task 016: the offering interrupt's end says why
+    offeringSkips.set(name, { day: st.date, why: { ...(was?.day === st.date ? was.why : {}), [category]: why } });
     return false;
   };
 
@@ -1646,6 +1655,7 @@ async function runLoop(name: string): Promise<void> {
         patchItem(name, item.id, { error: msg });
         setQueue(name, { running: false, note: undefined });
         log(name, `queue paused — ${queueItemText(item)}: ${msg}`, "bad");
+        journal("pause", { who: name, id: item.id, item: queueItemText(item), err: msg, code: e instanceof ApiError ? e.code : undefined });
         return;
       }
     }

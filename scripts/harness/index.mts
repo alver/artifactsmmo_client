@@ -26,6 +26,7 @@ import { setToken } from "../../src/api/client";
 import { loadCatalog } from "../../src/catalog";
 import { setDataReader } from "../../src/catalog/load";
 import { setDevlogSink } from "../../src/lib/devlog";
+import { fileSinks } from "../../src/lib/journal";
 import { queueItemText, withId } from "../../src/plan/queue";
 import { setPlannerConfig } from "../../src/state/planner";
 import { addItem, insertItem, queues, setRepeat, startQueue } from "../../src/state/queue";
@@ -62,12 +63,35 @@ const VERBOSE = !!process.env.AMMO_CHECK_VERBOSE;
 const RESTART = process.env.AMMO_CHECK_RESTART;
 const devlines: string[] = [];
 let queueWrites = 0;
+/** Task 016: the service's files under logs/ (lib/journal.ts fileSinks), in memory — a path → its text; how many times a
+ *  file was written whole, and every whole write that was not JSON. Nothing reaches the disk. */
+const files = new Map<string, string>();
+const replaced = new Map<string, number>();
+const broken: string[] = [];
+const rawSink = fileSinks({
+  append: (p, s) => void files.set(p, (files.get(p) ?? "") + s),
+  replace: (p, s) => {
+    try {
+      JSON.parse(s);
+    } catch {
+      broken.push(p);
+    }
+    files.set(p, s);
+    replaced.set(p, (replaced.get(p) ?? 0) + 1);
+  },
+  exists: (p) => files.has(p),
+}, "logs");
+/** The journal's records so far (this process's), every day's file in order; one kind or every kind. */
+export type Rec = { t: string; run: string; k: string } & Record<string, any>;
+const records = (kind?: string): Rec[] =>
+  [...files].filter(([p]) => p.startsWith("logs/journal/")).sort(([a], [b]) => (a < b ? -1 : 1))
+    .flatMap(([, s]) => s.trimEnd().split("\n").filter(Boolean).map((l) => JSON.parse(l) as Rec)).filter((r) => !kind || r.k === kind);
 
 const stamp = (ms: number): string => new Date(ms).toISOString().slice(11, 21);
 const showCall = (c: Call): string =>
   `  ${stamp(c.t)}  ${c.who.padEnd(6)} ${c.action}${c.body === undefined ? "" : " " + JSON.stringify(c.body)} -> ${c.code === 200 ? (c.note ?? "ok") : c.code}`;
 
-function report(lastCalls: number, lastLog: number): void {
+function report(lastCalls: number, lastLog: number, lastRecs = lastLog): void {
   const calls = world.trace.slice(-lastCalls);
   console.log(`Trace (${calls.length} of ${world.trace.length} actions, virtual time since the start):`);
   for (const c of calls) console.log(showCall(c));
@@ -79,6 +103,9 @@ function report(lastCalls: number, lastLog: number): void {
   }
   console.log(`Dev log (last ${Math.min(lastLog, devlines.length)} of ${devlines.length} lines, in memory only):`);
   for (const l of devlines.slice(-lastLog)) console.log(`  ${l}`);
+  const j = records();
+  console.log(`Journal (last ${Math.min(lastRecs, j.length)} of ${j.length} records, in memory only):`);
+  for (const r of j.slice(-lastRecs)) console.log(`  ${JSON.stringify(r)}`);
 }
 
 /** A broken harness or an unanswerable call: print what we have and stop at once. */
@@ -147,6 +174,11 @@ function handle(limits: { actions: number; minutes: number }, carried: unknown) 
     carried,
     /** The dev log so far (this process's boot only). */
     devlog: (): string[] => devlines,
+    /** Task 016: the journal's records so far (this process's), of one kind or all. */
+    journal: records,
+    /** Task 016: the files the service would have written under logs/ (path → text), how often each was written whole,
+     *  and the whole writes that were not JSON. */
+    files: (): { files: Map<string, string>; replaced: Map<string, number>; broken: string[] } => ({ files, replaced, broken }),
     /**
      * Stop this engine where it stands — as a killed service would, mid-action, nothing unwound — and boot a
      * second one in a new process on the same storage, the fake's world and the clock. The scenario's body runs
@@ -241,7 +273,10 @@ export const eventLines = (t: Scenario): string[] => t.devlog().flatMap((l) => (
 export async function scenario(def: ScenarioDef, body: (t: Scenario) => Promise<void> | void): Promise<never> {
   world.onFatal = die;
   (globalThis as { fetch: unknown }).fetch = fakeFetch;
-  setDevlogSink((lines) => void devlines.push(...lines.trimEnd().split("\n"))); // memory, never logs/dev.log
+  setDevlogSink((lines) => {
+    devlines.push(...lines.trimEnd().split("\n")); // memory, never logs/
+    rawSink(lines); // task 016: the hourly files, in memory too
+  });
   // The catalog, by a path relative to this file. A missing file is an error, never the live API
   // (catalog/load.ts would fall back to it); only the optional atlas may be absent.
   setDataReader(async (name) => {
@@ -286,7 +321,7 @@ export async function scenario(def: ScenarioDef, body: (t: Scenario) => Promise<
 
   const actions = `${world.trace.length} actions, ${Math.round((Date.now() - T0) / 60_000)} virtual min`;
   // The verdict is the LAST line: the runner shows it next to the name.
-  if (VERBOSE) report(Infinity, 60);
+  if (VERBOSE) report(Infinity, 60, Infinity);
   else if (failed && !def.known) report(40, 30);
   if (failed && def.known) {
     console.log(`known defect reproduced (${def.known}) — ${failed} [${actions}]`);
