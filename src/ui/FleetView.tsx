@@ -1,17 +1,16 @@
 // The Fleet tab — the home screen of a check-in app: what needs you, then one
-// row per character (status, what it's doing, what's next, main skills, bag,
-// task, location), then every skill level across the fleet.
+// row per character (status, what it's doing, what's next, bag, task,
+// location), then every skill level across the fleet.
 //
-// Built only from signals already in state (characters, queues, pins, pending
-// rewards, events) — zero API calls. The hive and gear coverage live here as
+// Built only from signals already in state (characters, queues, pending
+// rewards, events) — zero API calls. Offerings and the group fight live here as
 // collapsible sections. Per the cooldown-clock rule, the only 4 Hz
 // readers here are the tiny <CooldownRing> / <EventTimer> leaves.
 
-import { PIN_SKILLS, characterList, focusTile, gearCoverageOpen, go, groupFightOpen, hiveOpen, offeringsOpen, openCharacter, pendingRewards, skillKey, skillPins, togglePin } from "../state/store";
+import { PIN_SKILLS, characterList, focusTile, go, groupFightOpen, offeringsOpen, openCharacter, pendingRewards, skillKey } from "../state/store";
 import type { Signal } from "@preact/signals";
 import type { ComponentChildren } from "preact";
-import { saveState } from "../state/persist";
-import { queuePinTraining, queues, startQueue } from "../state/queue";
+import { queues } from "../state/queue";
 import type { QueueState } from "../state/queue";
 import { queueItemText } from "../plan/queue";
 import { eventKey, liveEvents, liveTileAt } from "../state/events";
@@ -23,8 +22,6 @@ import type { Col } from "./DataTable";
 import { itemProgress } from "./QueuePanel";
 import { contentLabel, whereLabel } from "./CharacterPanel";
 import { EventTimer, eventLabel } from "./EventsPanel";
-import { HiveSection, HiveStrip } from "./HivePanel";
-import { GearCoverageSection } from "./GearCoveragePanel";
 import { OfferingsSection } from "./OfferingsPanel";
 import { GroupFightSection } from "./GroupFight";
 import type { Character } from "../types/api";
@@ -40,37 +37,9 @@ function statusOf(q: QueueState | undefined): Status {
 }
 const STATUS_RANK: Record<Status, number> = { Paused: 0, Idle: 1, Stopped: 2, Working: 3 };
 
-function NeedsYou({ chars }: { chars: Character[] }) {
-  const qs = queues.value;
+function NeedsYou() {
   const rows: { key: string; kind: string; cls: string; title: string; detail: string; actions: { label: string; run: () => void }[] }[] = [];
 
-  for (const c of chars) {
-    const q = qs[c.name];
-    const st = statusOf(q);
-    const open = { label: "Open", run: () => openCharacter(c.name) };
-    if (st === "Paused") {
-      rows.push({
-        key: `p:${c.name}`, kind: "Paused", cls: "bad",
-        title: `${c.name} — ${queueItemText(q!.items[0])}`, detail: q!.items[0].error ?? "",
-        actions: [{ label: "Retry", run: () => startQueue(c.name) }, open],
-      });
-    } else if (st === "Stopped") {
-      rows.push({
-        key: `s:${c.name}`, kind: "Stopped", cls: "warn",
-        title: `${c.name} is stopped`, detail: `${q!.items.length} item${q!.items.length === 1 ? "" : "s"} queued, not running`,
-        actions: [{ label: "▶ Run", run: () => startQueue(c.name) }, open],
-      });
-    } else if (st === "Idle") {
-      const pins = skillPins.value[c.name] ?? [];
-      rows.push({
-        key: `i:${c.name}`, kind: "Idle", cls: "warn",
-        title: `${c.name} has nothing queued`, detail: pins.length ? "Train pins queues a repeating loop over its pinned skills" : "Pin main skills or add queue items",
-        actions: pins.length
-          ? [{ label: "📌 Train pins", run: () => { queuePinTraining(c.name); startQueue(c.name); } }, open]
-          : [open],
-      });
-    }
-  }
   const rewards = pendingRewards.value.length;
   if (rewards > 0) {
     rows.push({
@@ -189,32 +158,10 @@ function fleetCols(): Col<Character>[] {
                 <span class="muted">{i + 2}.</span> {queueItemText(it)}
               </div>
             ))}
-            {(more > 0 || q?.repeat) && (
-              <div class="muted">
-                {more > 0 ? `+${more} more` : ""}
-                {more > 0 && q?.repeat ? " · " : ""}
-                {q?.repeat ? "🔁 repeat" : ""}
-              </div>
-            )}
+            {more > 0 && <div class="muted">{`+${more} more`}</div>}
           </div>
         );
       },
-    },
-    {
-      label: "Main skills", width: "170px",
-      cell: (c) => (
-        <div class="fleet-pins">
-          {(skillPins.value[c.name] ?? []).map((k, i) => (
-            <div key={k} class="fleet-pin">
-              <span class="pin-n">{i + 1}</span>
-              <span>
-                {PIN_SKILLS.find(([key]) => key === k)?.[1] ?? k} <b>{stat(c, skillKey(k, "level"))}</b>
-              </span>
-              <Bar pct={pct(stat(c, skillKey(k, "xp")), stat(c, skillKey(k, "max_xp")))} />
-            </div>
-          ))}
-        </div>
-      ),
     },
     {
       label: "Bag", width: "100px",
@@ -267,7 +214,7 @@ function fleetCols(): Col<Character>[] {
 const bagUsed = (c: Character): number => (c.inventory ?? []).reduce((s, it) => s + (it.code ? it.quantity : 0), 0);
 const bagPct = (c: Character): number => pct(bagUsed(c), c.inventory_max_items);
 
-/** Every skill level across the fleet; pinned main skills outlined. Click a cell to pin/unpin it. */
+/** Every skill level across the fleet. */
 function SkillGrid({ chars }: { chars: Character[] }) {
   return (
     <div class="dt-scroll">
@@ -278,36 +225,22 @@ function SkillGrid({ chars }: { chars: Character[] }) {
             {label.replace("crafting", "")}
           </span>
         ))}
-        {chars.map((c) => {
-          const pins = skillPins.value[c.name] ?? [];
-          return [
-            <span key={`${c.name}:n`} class="skill-char">{c.name}</span>,
-            ...PIN_SKILLS.map(([k, label]) => {
-              const i = pins.indexOf(k);
-              return (
-                <button
-                  key={`${c.name}:${k}`}
-                  class={"skill-cell" + (i >= 0 ? " pinned" : "")}
-                  title={i >= 0 ? `${c.name}: main skill ${i + 1} — click to unpin` : `Pin ${label} as a main skill of ${c.name}`}
-                  onClick={() => { togglePin(c.name, k); saveState(); }}
-                >
-                  <b>
-                    {stat(c, skillKey(k, "level"))}
-                    {i >= 0 && <sup>{i + 1}</sup>}
-                  </b>
-                  <Bar pct={pct(stat(c, skillKey(k, "xp")), stat(c, skillKey(k, "max_xp")))} />
-                </button>
-              );
-            }),
-          ];
-        })}
+        {chars.map((c) => [
+          <span key={`${c.name}:n`} class="skill-char">{c.name}</span>,
+          ...PIN_SKILLS.map(([k]) => (
+            <span key={`${c.name}:${k}`} class="skill-cell">
+              <b>{stat(c, skillKey(k, "level"))}</b>
+              <Bar pct={pct(stat(c, skillKey(k, "xp")), stat(c, skillKey(k, "max_xp")))} />
+            </span>
+          )),
+        ])}
       </div>
     </div>
   );
 }
 
-/** A Fleet section that mounts its body only while expanded (the hive and coverage bodies aren't free). */
-export function Fold({ open, title, children }: { open: Signal<boolean>; title: string; children: ComponentChildren }) {
+/** A Fleet section that mounts its body only while expanded (a body isn't free). */
+function Fold({ open, title, children }: { open: Signal<boolean>; title: string; children: ComponentChildren }) {
   return (
     <section class="ws-card">
       <button class="fold-toggle" aria-expanded={open.value} onClick={() => (open.value = !open.value)}>
@@ -322,8 +255,7 @@ export function FleetView() {
   const chars = characterList();
   return (
     <div class="page">
-      <HiveStrip />
-      <NeedsYou chars={chars} />
+      <NeedsYou />
       <section class="ws-card">
         <h3>Characters</h3>
         <DataTable rows={chars} cols={fleetCols()} rowKey={(c) => c.name} />
@@ -337,12 +269,6 @@ export function FleetView() {
       </Fold>
       <Fold open={groupFightOpen} title="⚔ Group fight (bosses)">
         <GroupFightSection />
-      </Fold>
-      <Fold open={hiveOpen} title="🐝 Hive">
-        <HiveSection />
-      </Fold>
-      <Fold open={gearCoverageOpen} title="🛡 Gear coverage">
-        <GearCoverageSection />
       </Fold>
     </div>
   );

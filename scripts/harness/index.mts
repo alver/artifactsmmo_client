@@ -29,7 +29,7 @@ import { setDevlogSink } from "../../src/lib/devlog";
 import { fileSinks } from "../../src/lib/journal";
 import { queueItemText, withId } from "../../src/plan/queue";
 import { setPlannerConfig } from "../../src/state/planner";
-import { addItem, insertItem, queues, setRepeat, startQueue } from "../../src/state/queue";
+import { addItem, insertItem, queues, startQueue } from "../../src/state/queue";
 import { bankDetails, bankItems, characters, lastError } from "../../src/state/store";
 import { boot } from "../../src/state/sync";
 import type { PlannerConfig } from "../../src/plan/planner/types";
@@ -195,9 +195,8 @@ function handle(limits: { actions: number; minutes: number }, carried: unknown) 
       process.exit(code);
     },
     /** Append items to a character's queue and start it. */
-    queue(name: string, items: QueueItemInput[], opts: { repeat?: boolean } = {}): void {
+    queue(name: string, items: QueueItemInput[]): void {
       for (const it of items) addItem(name, withId(it));
-      if (opts.repeat) setRepeat(name, true);
       startQueue(name);
     },
     /** Put an item at `index` of a queue, even ahead of the running head — what the automatic writers do (insertItem). */

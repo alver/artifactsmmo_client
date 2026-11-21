@@ -1,14 +1,9 @@
 // The catalog tabs as tables: Bank, Items (recipes + NPC trades + stock), Monsters. Pure views over
-// the static catalog + bank/characters/events signals — no API calls. Acting
-// on a row means appending a queue item to a character (the queue is the only
-// executor); tile-bound one-off actions (withdraw, buy, craft by hand) stay in
-// the Map tab's building drawer.
+// the static catalog + bank/characters/events signals — no API calls. Tile-bound one-off actions
+// (withdraw, buy, craft by hand) stay in the Map tab's building drawer.
 
 import { useMemo, useState } from "preact/hooks";
-import { bankDetails, bankItems, characterList, characters, focusTile, go, skillPins } from "../state/store";
-import { addItem } from "../state/queue";
-import { withId } from "../plan/queue";
-import type { QueueItemInput } from "../plan/queue";
+import { bankDetails, bankItems, characterList, characters, focusTile, go } from "../state/store";
 import { npcForSell } from "../plan/acquire";
 import { ownedQtyOf } from "../plan/jobgear";
 import { bestInSlot } from "../plan/bis";
@@ -118,34 +113,6 @@ function ItemCell({ code, sub }: { code: string; sub?: string }) {
   );
 }
 
-/** Inline "append to a character's queue" form, used as a table row's detail line. */
-function QueueTo({ who, make, qty0, qtyLabel, onDone }: { who: Character[]; make: (qty: number) => QueueItemInput; qty0: number; qtyLabel: string; onDone: () => void }) {
-  const [name, setName] = useState(who[0]?.name ?? "");
-  const [qty, setQty] = useState(qty0);
-  if (!who.length) return <span class="muted">Nobody can do this yet.</span>;
-  return (
-    <div class="q-add-form">
-      <select class="cp-refine-select" value={name} onChange={(e) => setName((e.target as HTMLSelectElement).value)}>
-        {who.map((c) => (
-          <option key={c.name} value={c.name}>
-            {c.name}
-          </option>
-        ))}
-      </select>
-      <label class="q-field">
-        {qtyLabel}
-        <input class="cat-num" type="number" min={0} value={qty} onInput={(e) => setQty(parseInt((e.target as HTMLInputElement).value, 10) || 0)} />
-      </label>
-      <button class="cat-btn buy" onClick={() => { addItem(name, withId(make(qty))); onDone(); }}>
-        Add to {name}'s queue
-      </button>
-      <button class="cat-btn" onClick={onDone}>
-        Cancel
-      </button>
-    </div>
-  );
-}
-
 // ── Bank: a compact grid — one tile per stack, grouped by item type ──────────
 
 type Stack = { code: string; quantity: number };
@@ -242,12 +209,12 @@ export function BankTab() {
 
 // ── Items: the whole catalog — recipes, NPC trades and bank stock in one table ──
 
-/** Characters who can craft it now, pinned specialists first, then by skill level. */
+/** Characters who can craft it now, by skill level. */
 function craftersFor(it: Item, chars: Character[]): Character[] {
   const skill = it.craft!.skill;
   return chars
     .filter((c) => level(c, skill) >= it.craft!.level)
-    .sort((a, b) => Number((skillPins.value[b.name] ?? []).includes(skill)) - Number((skillPins.value[a.name] ?? []).includes(skill)) || level(b, skill) - level(a, skill));
+    .sort((a, b) => level(b, skill) - level(a, skill));
 }
 
 interface Trade {
@@ -316,7 +283,6 @@ export function ItemsTab() {
   const [skill, setSkill] = useState("");
   const [canOnly, setCanOnly] = useState(false);
   const [nowOnly, setNowOnly] = useState(false);
-  const [open, setOpen] = useState<string | null>(null);
 
   const canMake = (i: Item) => (i.craft ? Math.min(...i.craft.items.map((g) => Math.floor((bank.get(g.code) ?? 0) / g.quantity))) : 0);
   const all = allItems();
@@ -375,10 +341,7 @@ export function ItemsTab() {
       cell: (i) => {
         if (!i.craft) return "";
         const best = craftersFor(i, chars)[0];
-        if (best) {
-          const pinned = (skillPins.value[best.name] ?? []).includes(i.craft.skill);
-          return <span class="small">{best.name} · {level(best, i.craft.skill)}{pinned ? " 📌" : ""}</span>;
-        }
+        if (best) return <span class="small">{best.name} · {level(best, i.craft.skill)}</span>;
         const top = [...chars].sort((a, b) => level(b, i.craft!.skill) - level(a, i.craft!.skill))[0];
         return <span class="small bad-text">nobody yet{top ? ` · best ${top.name} ${level(top, i.craft.skill)}` : ""}</span>;
       },
@@ -404,17 +367,6 @@ export function ItemsTab() {
           <span class="muted">—</span>
         );
       },
-    },
-    {
-      label: "", width: "78px", align: "right",
-      cell: (i) =>
-        i.craft ? (
-          <button class="cat-btn" onClick={() => setOpen(open === i.code ? null : i.code)}>
-            Craft…
-          </button>
-        ) : (
-          ""
-        ),
     },
   ];
 
@@ -467,20 +419,9 @@ export function ItemsTab() {
               </label>
             </>
           }
-          detail={(i) =>
-            open === i.code && i.craft ? (
-              <QueueTo
-                who={craftersFor(i, chars)}
-                qtyLabel="crafts (0 = until the bank runs out)"
-                qty0={Math.max(1, canMake(i))}
-                make={(quantity) => ({ kind: "craft", code: i.code, quantity, done: 0, skill: i.craft!.skill })}
-                onDone={() => setOpen(null)}
-              />
-            ) : null
-          }
           empty="No item matches."
         />
-        <div class="muted small dt-foot">Buy / sell / craft by hand at the building on the Map tab; “Craft…” queues it for a character.</div>
+        <div class="muted small dt-foot">Buy / sell / craft by hand at the building on the Map tab.</div>
       </section>
     </div>
   );
@@ -498,7 +439,6 @@ function Verdict({ f }: { f?: FightForecast }) {
 export function MonstersTab() {
   const chars = characterList();
   const charMap = characters.value;
-  const [open, setOpen] = useState<string | null>(null);
   // monster code → character → forecast with the best set the bank could dress them in
   const [bankSets, setBankSets] = useState<Record<string, Record<string, FightForecast>>>({});
   const [busy, setBusy] = useState<string | null>(null);
@@ -586,9 +526,6 @@ export function MonstersTab() {
           <button class="cat-btn" disabled={busy != null || !!bankSets[m.code]} title="Forecast every character in the best set the bank could dress them in (a few BIS searches)" onClick={() => solveBank(m)}>
             {busy === m.code ? "…" : "🏦 Best"}
           </button>
-          <button class="cat-btn" onClick={() => setOpen(open === m.code ? null : m.code)}>
-            Fight…
-          </button>
         </div>
       ),
     },
@@ -607,17 +544,6 @@ export function MonstersTab() {
           rowKey={(m) => m.code}
           search={(m) => `${m.name} ${m.drops.map((d) => itemName(d.code)).join(" ")}`}
           initialSort={{ col: 0, dir: 1 }}
-          detail={(m) =>
-            open === m.code ? (
-              <QueueTo
-                who={[...chars].sort((a, b) => (current.get(m.code)?.[b.name]?.margin ?? 0) - (current.get(m.code)?.[a.name]?.margin ?? 0))}
-                qtyLabel="fights (0 = forever)"
-                qty0={10}
-                make={(times) => ({ kind: "fight", monster: m.code, times, done: 0, gear: true })}
-                onDone={() => setOpen(null)}
-              />
-            ) : null
-          }
           empty="No monster matches."
         />
       </section>

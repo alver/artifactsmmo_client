@@ -1,5 +1,4 @@
-import { MAX_PINS, PIN_SKILLS, characterList, characters, focusCharacter, selectedCharacter, skillKey, skillPins, togglePin } from "../state/store";
-import { saveState } from "../state/persist";
+import { PIN_SKILLS, characterList, characters, focusCharacter, selectedCharacter, skillKey } from "../state/store";
 import { item, monster, npc, resource } from "../catalog";
 import { liveTileAt } from "../state/events";
 import { asset, assetFallback, pct, slotLabel, titleCase } from "../lib/util";
@@ -19,35 +18,21 @@ import type { GameMap } from "../types/catalog";
 
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
 
-/**
- * The Skills table. Pin a row as one of the character's main skills
- * (📌1/📌2 — up to MAX_PINS, one more replaces the oldest; click again to
- * unpin). Pins persist across reloads and feed the queue's "📌 Train pins"
- * loop and the hive's crafter routing.
- */
-function SkillsSection({ ch, stat }: { ch: Character; stat: Record<string, number> }) {
-  const pins = skillPins.value[ch.name] ?? [];
+/** The Skills table: level and XP of every skill. */
+function SkillsSection({ stat }: { stat: Record<string, number> }) {
   return (
     <div class="cp-skills">
       {PIN_SKILLS.map(([key, label]) => {
-        const idx = pins.indexOf(key);
         const xp = stat[skillKey(key, "xp")] ?? 0;
         const max = stat[skillKey(key, "max_xp")] ?? 0;
         return (
-          <div key={key} class={"cp-skill" + (idx >= 0 ? " cp-skill-focus" : "")}>
+          <div key={key} class="cp-skill">
             <span class="cp-skill-name">{label}</span>
             <b class="cp-skill-lv">{stat[skillKey(key, "level")]}</b>
             <Bar pct={pct(xp, max)} />
             <span class="cp-skill-xp">
               {xp}/{max}
             </span>
-            <button
-              class={"cat-btn" + (idx >= 0 ? " buy" : "")}
-              title={idx >= 0 ? "Unpin" : `Pin as a main skill (up to ${MAX_PINS}; one more replaces the oldest)`}
-              onClick={() => { togglePin(ch.name, key); saveState(); }}
-            >
-              {idx >= 0 ? `📌${idx + 1}` : "Pin"}
-            </button>
           </div>
         );
       })}
@@ -147,7 +132,7 @@ export function CharacterPanel() {
           </section>
           <section class="ws-card">
             <h3>Skills</h3>
-            <SkillsSection ch={ch} stat={stat} />
+            <SkillsSection stat={stat} />
           </section>
           <section class="ws-card">
             <h3>

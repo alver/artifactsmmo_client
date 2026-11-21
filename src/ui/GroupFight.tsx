@@ -7,8 +7,7 @@
 
 import { useState } from "preact/hooks";
 import { characterList, characters, onCooldown } from "../state/store";
-import { addItem, queues, startQueue } from "../state/queue";
-import { withId } from "../plan/queue";
+import { queuePrepare, queues } from "../state/queue";
 import { availableMonsters } from "../state/events";
 import { nearest } from "../state/loopkit";
 import * as actions from "../api/actions";
@@ -44,10 +43,8 @@ export function GroupFightSection() {
     run(async () => {
       for (const c of sel) {
         if (preparing(c)) continue;
-        const head = headOf(c);
-        // A stopped/paused prepare at the head is just restarted, never duplicated.
-        if (!(head?.kind === "prepare" && head.monster === code)) await addItem(c.name, withId({ kind: "prepare", monster: code }), 0);
-        await startQueue(c.name);
+        // A stopped/paused prepare at the head is just restarted, never duplicated (queue.ts queuePrepare).
+        await queuePrepare(c.name, code);
       }
     });
 

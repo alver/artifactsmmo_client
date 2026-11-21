@@ -20,15 +20,12 @@ import {
   offerings,
   pendingRewards,
   selectedCharacter,
-  skillPins,
   syncedAt,
   syncing,
 } from "./store";
 import { queues } from "./queue";
-import { hive } from "./hive";
 import { planner } from "./planner";
 import { eventPlans } from "./eventorders";
-import { roadmapAnalysis } from "./roadmap";
 import { simDeviations } from "../sim/validate";
 import { loadCatalog } from "../catalog";
 import { rpc } from "../lib/remote";
@@ -44,18 +41,15 @@ export const SYNCED: Record<string, Signal<unknown>> = {
   syncedAt,
   syncing,
   lastError,
-  skillPins,
   achievements,
   achievementsLoading,
   achievementsError,
   offerings,
   pendingRewards,
   queues,
-  hive,
   planner,
   eventPlans,
   simDeviations,
-  roadmapAnalysis,
 } as Record<string, Signal<unknown>>;
 
 const MIGRATED = "ammo:v1:migrated";

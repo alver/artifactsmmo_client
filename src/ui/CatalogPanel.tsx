@@ -1,13 +1,10 @@
 import { useEffect, useState } from "preact/hooks";
-import { achievements, achievementsLoading, bankDetails, bankItems, characters, moveMode, panelTarget, selectedCharacter, tilePick } from "../state/store";
+import { achievements, achievementsLoading, bankDetails, bankItems, characters, moveMode, panelTarget, selectedCharacter } from "../state/store";
 import { itemHover } from "./ItemPopup";
 import type { PanelTarget } from "../state/store";
 import { catalog, item, itemName, npc, tileAt } from "../catalog";
 import { tileGate } from "../state/access";
-import { npcForSell } from "../plan/acquire";
-import { withId } from "../plan/queue";
 import { bankQty, nearestBank, placeOf, step, walkTo } from "../state/loopkit";
-import { addItem, startQueue } from "../state/queue";
 import { asset, assetFallback, pct, titleCase } from "../lib/util";
 import { loadAchievements, reconcile } from "../state/sync";
 import * as actions from "../api/actions";
@@ -74,7 +71,7 @@ function CatalogBody({ target }: { target: PanelTarget }) {
   // Escape closes the drawer — unless an armed map mode wants the key first.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !moveMode.peek() && !tilePick.peek()) panelTarget.value = null;
+      if (e.key === "Escape" && !moveMode.peek()) panelTarget.value = null;
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -258,7 +255,6 @@ function BankList({ actor, ctl }: { actor?: Character; ctl: ActionRunner }) {
 
 function BankRow({ code, qty, actor, ctl }: { code: string; qty: number; actor?: Character; ctl: ActionRunner }) {
   const [n, setN] = useState(1);
-  const buyer = npcForSell(code); // which merchant buys this (bank-cleanup selling)
   return (
     <div class="bank-row" title={itemName(code)}>
       <img class="info-hover" src={asset("items", code)} alt="" onError={assetFallback("items", code)} {...itemHover(code)} />
@@ -275,19 +271,6 @@ function BankRow({ code, qty, actor, ctl }: { code: string; qty: number; actor?:
           >
             Withdraw
           </button>
-          {buyer && (
-            <button
-              class="cat-btn sell"
-              disabled={n < 1 || n > qty}
-              title={`Queue ${actor.name}: withdraw ${n} and sell at ${npc(buyer.code)?.name ?? titleCase(buyer.code)} for ${buyer.price}g each (${(buyer.price * n).toLocaleString()}g)`}
-              onClick={() => {
-                addItem(actor.name, withId({ kind: "sell", code, quantity: n, done: 0, npc: buyer.code }));
-                startQueue(actor.name);
-              }}
-            >
-              Sell · {buyer.price}g
-            </button>
-          )}
         </>
       )}
     </div>

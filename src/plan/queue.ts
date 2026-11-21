@@ -1,7 +1,9 @@
-// The queue item vocabulary — the user-editable "planned list of actions" a
-// character works through one item at a time (src/state/queue.ts runs it).
-// These simple items are the ONLY execution vocabulary; any future planner
-// compiles down to them instead of running its own machinery.
+// The queue item vocabulary — the list of actions a character works through one
+// item at a time (src/state/queue.ts runs it). These simple items are the ONLY
+// execution vocabulary: the planner (src/plan/planner/compile.ts, state/planner.ts)
+// compiles down to them instead of running its own machinery. Task 018: the kinds
+// no writer writes any more (move, rest, accept-task, work-task, deliver, turn-in)
+// are gone.
 //
 // Pure module: item types and the row text/icon helpers the UI renders with.
 // No signals, no API.
@@ -13,8 +15,6 @@ import type { GearSlot } from "../types/api";
 
 // An x, y saved without `layer` is on the overworld (queues saved before layers were stored).
 export type QueueItem = { id: string; error?: string } & (
-  | { kind: "move"; x: number; y: number; layer?: string }
-  | { kind: "rest" }
   // times 0 = infinite (fight until stopped / paused). `gear` ⇒ re-derive the
   // best bank set vs the monster each round and swap when it improves.
   // `food` defaults ON (false disables): eat between fights and self-provision
@@ -30,9 +30,9 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; layer?: string; gear?: boolean; take?: Record<string, number> }
   // quantity 0 = infinite: withdraw a bagful of materials from the bank, craft,
   // deposit, repeat — completes when the bank can no longer feed the recipe.
-  // `wait` (hive pipelining): when bag + bank can't feed one run, hold and look
-  // again instead of pausing — producers are still depositing; the hive drops
-  // the item once nobody is left to feed it.
+  // `wait` (the hive's pipelining; the hive was deleted in task 018 and nothing
+  // writes it now): when bag + bank can't feed one run, hold and look again
+  // instead of pausing — producers are still depositing.
   | { kind: "craft"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number; layer?: string; wait?: boolean }
   | { kind: "withdraw"; code: string; quantity: number; x?: number; y?: number; layer?: string }
   | { kind: "deposit-all" }
@@ -46,15 +46,13 @@ export type QueueItem = { id: string; error?: string } & (
   // Recycle at the workshop that crafts the item (returns a share of the
   // materials); like sell, pulls bank stock when the hand is empty.
   | { kind: "recycle"; code: string; quantity: number; done: number; skill?: string; x?: number; y?: number; layer?: string }
-  // Level a skill. Gathering skills work the best node for the current level
-  // (re-picked per tick; `resource` pins one); workshop skills loop source
-  // materials → craft a batch → recycle → repeat on the best in-window recipe
-  // the character can feed alone. toLevel 0 = forever; `levels` = +N from the
-  // level the item STARTED at (`from`, recorded on first run — a 🔁 rotation
-  // wipes it so every lap gains the next level). `gear` ⇒ keep the bank
-  // gathering set on while gathering. `for` = HELP that character train the
-  // skill instead: keep the bank stocked with its current recipe's materials
-  // (level target measured on the crafter).
+  // Level a workshop skill: loop source materials → craft a batch → recycle →
+  // repeat on the best in-window recipe the character can feed. toLevel 0 =
+  // forever; `levels` = +N from the level the item STARTED at (`from`, recorded
+  // on first run). `gear` ⇒ keep the bank set on while sourcing. Task 018: the
+  // planner writes only this form (a crafting level); a combat or gathering
+  // skill and `for` (a helper) had their writers and handlers deleted — the
+  // fields stay for the branches that still read them (`resource`, x, y, `for`).
   | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; layer?: string; gear?: boolean; for?: string }
   // Swap to the best job gear from the bank (see plan/jobgear.ts): `desired` =
   // slot map frozen at compile; `job` = live spec recomputed from the bank at
@@ -62,25 +60,13 @@ export type QueueItem = { id: string; error?: string } & (
   // (inventory + gold), strip every slot incl. utilities, then wear the job
   // set from the bank. Completes when the worn gear matches desired ∩ available.
   | { kind: "gear"; desired?: Partial<Record<GearSlot, string>>; job?: GearJob; keep?: string[]; reset?: boolean; wear?: Record<string, string> }
-  // Accept a new task from the given Tasks Master. Skip-if-satisfied: already
-  // carrying ANY task (either type) counts as done.
-  | { kind: "accept-task"; master: "monsters" | "items" }
-  // Work the CURRENT task in the field, whatever it turns out to be (the item
-  // is only known once accept-task runs). Monsters task ⇒ fight the task
-  // monster; items task ⇒ acquire ch.task where it lives (gather it, or gather
-  // the recipe's materials and craft it) and hand bagfuls straight to the items
-  // master — stock NEVER moves through the bank. `gear` ⇒ full bank reset into
-  // the phase's job set when the task starts (`geared` remembers which task so
-  // a reload doesn't repeat it), then per-round self-heal swaps.
-  | { kind: "work-task"; gear?: boolean; geared?: string }
-  // taskTrade the current ch.task (code read live), inventory + bank stock in
-  // bag-sized pieces. `partial` ⇒ complete when the stock runs out (production
-  // items follow); without it, running out with the task unfinished is an error.
-  | { kind: "deliver"; keep?: string[]; partial?: boolean }
-  | { kind: "turn-in" }
-  // Complete tasks in a loop: accept at the given master → work the task in
-  // the field (work-task rules) → turn it in → repeat. times 0 = forever;
-  // `done` counts turn-ins. `gear`/`geared` exactly as in work-task.
+  // Complete tasks in a loop: accept at the given master → work the CURRENT task
+  // in the field (monsters task ⇒ fight the task monster; items task ⇒ acquire
+  // ch.task where it lives and hand bagfuls straight to the items master — stock
+  // NEVER moves through the bank) → turn it in → repeat. times 0 = forever;
+  // `done` counts turn-ins. `gear` ⇒ full bank reset into the phase's job set
+  // when a task starts (`geared` remembers which task so a reload doesn't repeat
+  // it), then per-round self-heal swaps.
   | { kind: "task-loop"; master: "monsters" | "items"; times: number; done: number; gear?: boolean; geared?: string }
   // Today's seasonal offerings at the Seasonal Altar: accept each category's
   // offering for the character's level bracket first (its favor boosts the
@@ -90,8 +76,8 @@ export type QueueItem = { id: string; error?: string } & (
   | { kind: "offering"; day?: string; skip?: string[] }
   // Boss prep for a manual group fight: one bank reset into the best set vs the
   // monster (`geared` remembers it; utility potions included, brewed when the
-  // bank has none), walk to it, rest to full — then the queue STOPS (never
-  // re-appended by 🔁) so the character waits on the tile for the group fight.
+  // bank has none), walk to it, rest to full — then the queue STOPS so the
+  // character waits on the tile for the group fight.
   | { kind: "prepare"; monster: string; geared?: boolean }
   // Claim every pending reward (achievement payouts) at the bank, then deposit what was claimed (`got`: the
   // codes, "gold" for pocket gold). The planner's `claim` interrupt; done when no row and nothing claimed is left.
@@ -105,8 +91,8 @@ export type QueueItem = { id: string; error?: string } & (
 export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
-  "move", "rest", "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "recycle", "train", "gear", "accept-task", "work-task", "deliver", "turn-in", "task-loop", "offering",
+  "fight", "gather", "craft", "withdraw", "deposit-all",
+  "buy", "sell", "recycle", "train", "gear", "task-loop", "offering",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -119,8 +105,6 @@ export const withId = (it: QueueItemInput): QueueItem => ({ ...it, id: newId() }
 
 export function queueItemText(it: QueueItem): string {
   switch (it.kind) {
-    case "move": return `Move to (${it.x}, ${it.y})`;
-    case "rest": return "Rest to full HP";
     case "fight": return `Fight ${it.times > 0 ? `${it.times}× ` : "(∞) "}${monsterOf(it.monster)?.name ?? titleCase(it.monster)}`;
     case "gather": return `Gather ${it.times > 0 ? `${it.times}× ` : "(∞) "}${itemName(it.code)}`;
     case "craft": return `Craft ${it.quantity > 0 ? `${it.quantity}× ` : "(∞) "}${itemName(it.code)}${it.wait ? " (as materials arrive)" : ""}`;
@@ -142,10 +126,6 @@ export function queueItemText(it: QueueItem): string {
         : "equip job gear";
       return it.reset ? `Bank reset + ${what}` : what.charAt(0).toUpperCase() + what.slice(1);
     }
-    case "accept-task": return `Get a task (${it.master})`;
-    case "work-task": return "Work the task (acquire & deliver)";
-    case "deliver": return it.partial ? "Deliver task items from stock" : "Deliver task items";
-    case "turn-in": return "Turn in the task";
     case "task-loop": return `Complete ${it.times > 0 ? `${it.times}× ` : "(∞) "}tasks (${it.master})`;
     case "offering": return "Today's seasonal offerings";
     case "prepare": return `Prepare to fight ${monsterOf(it.monster)?.name ?? titleCase(it.monster)} (gear, potions, walk, rest — then stop)`;
@@ -155,8 +135,8 @@ export function queueItemText(it: QueueItem): string {
 }
 
 export const queueItemIcon: Record<QueueItemKind, string> = {
-  "move": "🚶", "rest": "💤", "fight": "⚔", "gather": "⛏", "craft": "⚙",
+  "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
-  "train": "🎓", "gear": "🧰", "accept-task": "📜", "work-task": "⚒", "deliver": "🤝", "turn-in": "✅",
+  "train": "🎓", "gear": "🧰",
   "task-loop": "🔁", "offering": "🛐", "prepare": "🛡", "claim": "🎁", "expand": "🏦",
 };

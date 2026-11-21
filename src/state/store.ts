@@ -3,13 +3,12 @@
 // "renderCard()" calls (the maintainability pain of the old client).
 
 import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
-import { IS_SERVER, expose, rpc } from "../lib/remote";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, CharacterOfferings, PendingItem } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
 import { devlog } from "../lib/devlog";
 
-/** The workshop skills a character can specialize in (the 📌 pin vocabulary). */
+/** The workshop skills the `train` item levels. */
 export const CRAFT_TRAIN_SKILLS: [string, string][] = [
   ["weaponcrafting", "Weaponcrafting"],
   ["gearcrafting", "Gearcrafting"],
@@ -54,8 +53,8 @@ export const lastError = signal<string | null>(null);
 /** Name of the currently selected character (highlights its card + map marker). */
 export const selectedCharacter = signal<string | null>(null);
 
-/** Every skill a character can pin as a main skill (📌): combat trains by
- *  fighting, the workshop skills by crafting, the rest by gathering. */
+/** Every skill of a character, in the order the skills card and the Fleet grid list them (the name is the pins',
+ *  deleted in task 018). */
 export const PIN_SKILLS: [string, string][] = [
   ["combat", "Combat"],
   ...CRAFT_TRAIN_SKILLS,
@@ -64,35 +63,8 @@ export const PIN_SKILLS: [string, string][] = [
   ["fishing", "Fishing"],
   ["alchemy", "Alchemy"],
 ];
-export const MAX_PINS = 2;
-/** Character field holding a pin skill's level / xp / max_xp (combat's live on the character itself). */
+/** Character field holding a skill's level / xp / max_xp (combat's live on the character itself). */
 export const skillKey = (skill: string, what: "level" | "xp" | "max_xp"): string => (skill === "combat" ? what : `${skill}_${what}`);
-/**
- * Per-character main-skill pins (character name → ordered skill keys, at most
- * MAX_PINS; pinning one more replaces the oldest). Persisted via persist.ts;
- * the UI toggles them by clicking a skill row. The first pinned WORKSHOP skill
- * is the character's crafting specialization (hive crafter routing).
- */
-export const skillPins = signal<Record<string, string[]>>({});
-export function togglePin(name: string, skill: string): void {
-  if (!IS_SERVER) return rpc("togglePin", [name, skill]);
-  const cur = { ...skillPins.value };
-  const list = cur[name] ?? [];
-  const next = list.includes(skill) ? list.filter((s) => s !== skill) : [...list, skill].slice(-MAX_PINS);
-  if (next.length) cur[name] = next;
-  else delete cur[name];
-  skillPins.value = cur;
-}
-/** Character name → pinned crafting specialization (first workshop pin), for the hive. */
-export function craftPins(): Record<string, string> {
-  const keys = CRAFT_TRAIN_SKILLS.map(([k]) => k);
-  const out: Record<string, string> = {};
-  for (const [name, list] of Object.entries(skillPins.value)) {
-    const pin = list.find((k) => keys.includes(k));
-    if (pin) out[name] = pin;
-  }
-  return out;
-}
 /**
  * A bump-on-click focus request the map listens to. The `seq` lets repeated
  * clicks on the same already-selected card re-center the map.
@@ -178,33 +150,6 @@ effect(() => {
 });
 
 /**
- * Armed "pick a tile" mode for FORMS (e.g. the queue's Move item): the next
- * map-tile click hands its coordinates to the armed callback instead of doing
- * anything. Unlike moveMode this never issues an action. The callback lives in
- * a module variable (signals only carry JSON-ish UI state); the signal drives
- * the map hint/cursor. Auto-disarms when the selection moves elsewhere.
- */
-export const tilePick = signal<{ name: string; label: string } | null>(null);
-let _tilePickFn: ((x: number, y: number) => void) | null = null;
-export function armTilePick(name: string, label: string, fn: (x: number, y: number) => void): void {
-  _tilePickFn = fn;
-  tilePick.value = { name, label };
-}
-export function disarmTilePick(): void {
-  _tilePickFn = null;
-  if (tilePick.value) tilePick.value = null;
-}
-/** MapView calls this on a tile click while armed. Disarms after delivering. */
-export function deliverTilePick(x: number, y: number): void {
-  const fn = _tilePickFn;
-  disarmTilePick();
-  fn?.(x, y);
-}
-effect(() => {
-  if (tilePick.value && tilePick.value.name !== selectedCharacter.value) disarmTilePick();
-});
-
-/**
  * Achievements tab state. Fetched on demand — when the tab is first shown and on
  * its ↻ (a read, so never polled) — and deliberately NOT persisted.
  * `achievements === null` means "not loaded yet".
@@ -214,18 +159,11 @@ export const achievementsLoading = signal(false);
 export const achievementsError = signal<string | null>(null);
 
 /**
- * Who the planner owns (config `on`, merged over its defaults). state/planner.ts keeps it; queue.ts, hive.ts and
+ * Who the planner owns (config `on`, merged over its defaults). state/planner.ts keeps it; queue.ts and
  * eventorders.ts read it here, because planner.ts imports them (no import cycle).
  */
 export const plannerOn = signal<Record<string, boolean>>({});
 export const isOwned = (name: string): boolean => !!plannerOn.value[name];
-
-/** Whether the Fleet tab's Hive section (account-goal coordinator) is expanded. */
-export const hiveOpen = signal(false);
-
-/** Whether the Fleet tab's 🛡 gear-coverage section is expanded. Derives everything
- *  from live signals — nothing to fetch, nothing persisted. */
-export const gearCoverageOpen = signal(false);
 
 /**
  * Today's seasonal offerings per character (GET /my/{name}/offerings). Read
@@ -321,5 +259,3 @@ export function setCharacter(ch: Character): void {
 export function characterList(): Character[] {
   return Object.values(characters.value);
 }
-
-expose({ togglePin });

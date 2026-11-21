@@ -3,7 +3,7 @@
 import { readFile } from "node:fs/promises";
 import { setDataReader } from "../src/catalog/load";
 import { loadCatalog } from "../src/catalog";
-import { fieldOrder, merchantOrder } from "../src/plan/events";
+import { merchantOrder } from "../src/plan/events";
 import { eventPlans, reactToEvents } from "../src/state/eventorders";
 import { queues } from "../src/state/queue";
 import { activeEvents, bankDetails, bankItems, characters } from "../src/state/store";
@@ -34,25 +34,20 @@ want("poor", merchantOrder("nomadic_merchant", bank, 30_000, fleet)?.text, "sell
 const mapped = fleet.map((c) => ({ ...c, artifact2_slot: "lost_world_map" }) as Character);
 want("no backpacks", merchantOrder("nomadic_merchant", bank, 200_000, mapped)?.text, "sell 3 Golden Egg");
 
-// Resource event: only a character with the skill for the node goes.
+// Runtime, task 018, settled point 2: a character the planner does not own gets no order — no trip ahead of any
+// running queue's head, no plan for the spawn (it is retried at every poll while nobody owned is free).
 const ev = (code: string, type: string, content: string, x = 3): ActiveEvent =>
   ({ name: code, code, map: { x, y: 2, layer: "overworld", interactions: { content: { type, code: content } } }, duration: 90, expiration: new Date(Date.now() + 3_600_000).toISOString(), created_at: "2026-11-17T10:00:00Z" }) as unknown as ActiveEvent;
-want("magic tree, nobody", fieldOrder(ev("magic_apparition", "resource", "magic_tree"), bank, fleet)?.character, undefined);
-want("magic tree, D", fieldOrder(ev("magic_apparition", "resource", "magic_tree"), bank, [...fleet.slice(0, 3), mk("D", 9, { woodcutting_level: 36 })])?.character, "D");
-
-// Runtime: the nearest running queue gets the trip ahead of its head, once.
 characters.value = Object.fromEntries(fleet.map((c) => [c.name, c]));
 bankItems.value = bank;
 bankDetails.value = { gold: 107_469 } as BankDetails;
 queues.value = Object.fromEntries(fleet.map((c) => [c.name, { running: c.name !== "B", items: [{ id: `h${c.name}`, kind: "gather", code: "ash_wood", resource: "ash_tree", times: 0, done: 0 }] }])) as unknown as typeof queues.value;
 eventPlans.value = {}; // a reused --localstorage-file may hold the last run's plans
-activeEvents.value = [ev("nomadic_merchant", "npc", "nomadic_merchant", 4)]; // B (x 3) is closest but stopped → A (x 0) or C (x 6): C is 2 away
+activeEvents.value = [ev("nomadic_merchant", "npc", "nomadic_merchant", 4)];
 reactToEvents();
-reactToEvents(); // a second poll must not dispatch again
-const c = queues.value.C.items.map((it) => it.kind + (it.id.startsWith("ev:") ? "*" : ""));
-want("dispatch to C", c.join(","), "sell*,buy*,gather");
-want("plan text", eventPlans.value[Object.keys(eventPlans.value)[0]], "C: sell 3 Golden Egg · buy 5 Lost World Map");
-want("B untouched", String(queues.value.B.items.length), "1");
+reactToEvents();
+want("no trip", fleet.map((c) => queues.value[c.name].items.map((it) => it.kind).join(",")).join(" "), "gather gather gather gather gather");
+want("no plan", JSON.stringify(eventPlans.value), "{}");
 
 for (const f of fails) console.log(`MISMATCH ${f}`);
 console.log(fails.length ? "FAILED" : "OK");

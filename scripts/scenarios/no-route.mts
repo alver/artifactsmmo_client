@@ -4,7 +4,8 @@
 // held as an outage every 60 s, forever). Now: no route, the item is skipped
 // with a text that says so, no move toward the lich is ever sent, and the next
 // item runs. The same for a place pinned on an item (x, y, layer): moveTo's
-// NoRouteError skips the item.
+// NoRouteError skips the item (task 018: a gather pinned there; the `move` item
+// is gone).
 import { scenario } from "../harness/index.mts";
 import { log } from "../../src/state/store";
 
@@ -15,7 +16,7 @@ await scenario(
   async (t) => {
     t.queue("Liz", [
       { kind: "fight", monster: "lich", times: 1, done: 0, food: false },
-      { kind: "move", x: 9, y: 8, layer: "underground" },
+      { kind: "gather", code: "copper_ore", resource: "copper_rocks", times: 1, done: 0, x: 9, y: 8, layer: "underground" },
       { kind: "gather", code: "copper_ore", resource: "copper_rocks", times: 1, done: 0 },
     ]);
     await t.run();
@@ -25,6 +26,6 @@ await scenario(
     const skipped = log.value.filter((e) => e.text.startsWith("skipped:")).map((e) => e.text).reverse();
     t.eq(skipped.length, 2, "two items skipped");
     t.ok(/^skipped: Fight 1× Lich — no lich reachable — only on another layer/.test(skipped[0]), `the fight's skip says why: ${skipped[0]}`);
-    t.ok(/^skipped: Move to \(9, 8\) — \(9, 8\) underground is not reachable from \(4, 1\) overworld/.test(skipped[1]), `the move's skip says why: ${skipped[1]}`);
+    t.ok(/^skipped: Gather 1× Copper Ore — \(9, 8\) underground is not reachable from \(4, 1\) overworld/.test(skipped[1]), `the pinned gather's skip says why: ${skipped[1]}`);
   },
 );

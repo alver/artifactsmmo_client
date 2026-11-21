@@ -1,7 +1,7 @@
 import { useEffect, useState } from "preact/hooks";
 import { achievements, achievementsError, achievementsLoading } from "../state/store";
 import { loadAchievements } from "../state/sync";
-import { locate, objectiveText, ratioOf } from "../plan/hive/objectives";
+import { locate, objectiveText, ratioOf } from "../plan/objectives";
 import { itemName } from "../catalog";
 import { pct } from "../lib/util";
 import { itemHover } from "./ItemPopup";

@@ -1,7 +1,7 @@
 // The planner's runtime (task 008; docs/design/planner.md B.2, C, F.5, I.2). For every character that is on
 // (config `on`, DEFAULTS + Alex's patch): decide(name, world) → itemsOf → the queue, watch the queue, decide again
 // when the step ends, pauses, stalls or ends empty. It is the only automatic writer of an owned queue; anything
-// that goes ahead of a step goes through interrupt(). Server-only like the hive: its own key ammo:v1:planner,
+// that goes ahead of a step goes through interrupt(). Server-only like the queue: its own key ammo:v1:planner,
 // hydrated before its persisting effect; resumePlanner() from boot()/login() after resumeQueue(). With nobody on
 // it does nothing: no read, no timer, no write, no log line.
 //
@@ -19,7 +19,6 @@ import { RUN, devlog } from "../lib/devlog";
 import { journal, lastRecords, meterCut, runInfo, setMeterKey, writeStatus, writeWorld } from "../lib/journal";
 import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn, pushLog } from "./store";
 import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue, setOwnedOfferings } from "./queue";
-import { hive, setHiveManual } from "./hive";
 import { liveEvents } from "./events";
 import { invCount } from "./exec";
 import { noSlotFor, setNoSlotHook } from "./loopkit";
@@ -707,18 +706,18 @@ export function interrupt(name: string, cls: InterruptClass, items: QueueItemInp
 
 // ── offerings (task 010, section 4) ──────────────────────────────────────────
 // The planner owns the trigger for its characters, per character and offerings day (the date of the most recent 00:05
-// UTC): the daily trigger (queue.ts scheduleOfferings), the boot, a switch-on and the five-minute tick all go through
-// catchUpOfferings, so a service down at 00:05, a stopped queue or a character switched on at noon loses nothing. An
-// item with nothing left to do ends at once (runOffering). A removed offering interrupt comes back an hour later, at
-// most three times a day.
+// UTC): the boot, a switch-on and the five-minute tick all go through catchUpOfferings (task 018: the old daily
+// trigger, queue.ts scheduleOfferings, is gone), so a service down at 00:05, a stopped queue or a character switched
+// on at noon loses nothing. An item with nothing left to do ends at once (runOffering). A removed offering interrupt
+// comes back an hour later, at most three times a day.
 
 const AGAIN_MS = 3_600_000;
 const AGAIN_MAX = 3;
 const offerDay = (now: number): string => new Date(now - 5 * 60_000).toISOString().slice(0, 10);
 const putOffered = (name: string, o: { day: string; n: number; again?: number }): void => put({ offered: { ...planner.value.offered, [name]: o } });
 
-/** One offering interrupt for this character and today's offerings day, recorded: the daily trigger, the catch-up and
- *  the panel's buttons (queue.ts queueOfferings). False when one is already queued or the character is not owned. */
+/** One offering interrupt for this character and today's offerings day, recorded: the catch-up and the panel's
+ *  buttons (queue.ts queueOfferings). False when one is already queued or the character is not owned. */
 export function offeringsDue(name: string): boolean {
   if (!IS_SERVER || !isOwned(name) || !characters.value[name]) return false;
   const day = offerDay(Date.now());
@@ -754,15 +753,9 @@ function offeringLater(name: string, now: number): void {
 
 // ── taking a character over, handing it back ─────────────────────────────────
 
-function optOut(name: string): void {
-  if (hive.value.manual.includes(name)) return;
-  setHiveManual(name, true); // a running hive assignment is abandoned by its own rule
-  put({ optedOut: [...planner.value.optedOut, name] });
-}
-
-/** Switched on: every queued item that is not the planner's goes (one dev-log line each), 🔁 off, the queue
- *  stopped until the first step starts it, the character on the hive's opt-out list. The in-flight action is not
- *  waited for: its result is id-guarded (runLoop ignores a finished step whose item is gone). */
+/** Switched on: every queued item that is not the planner's goes (one dev-log line each), the queue stopped until
+ *  the first step starts it. The in-flight action is not waited for: its result is id-guarded (runLoop ignores a
+ *  finished step whose item is gone). */
 function takeOver(name: string): string[] {
   const q = queues.value[name];
   if (q?.running) haltQueue(name);
@@ -772,11 +765,10 @@ function takeOver(name: string): string[] {
     dropped.push(`[${it.id}] ${queueItemText(it)}`);
   }
   resetQueue(name, (it) => it.id.startsWith("pl:int:"));
-  optOut(name);
   return dropped;
 }
 
-/** Switched off: the planner's items go, the queue stays empty and stopped, the opt-out goes if the planner put it there. */
+/** Switched off: the planner's items go, the queue stays empty and stopped. */
 function handBack(name: string): void {
   if (queues.value[name]?.running) haltQueue(name);
   resetQueue(name, (it) => !it.id.startsWith("pl:"));
@@ -784,8 +776,7 @@ function handBack(name: string): void {
   const r = st.current[name];
   if (r && !r.over) endRecord(name, r, "dropped", "handed back");
   ints.delete(name);
-  put({ current: { ...st.current, [name]: undefined }, optedOut: st.optedOut.filter((n) => n !== name) });
-  if (st.optedOut.includes(name)) setHiveManual(name, false);
+  put({ current: { ...st.current, [name]: undefined } });
   lastSeen.delete(name);
   starts.delete(name);
   plog(name, "handed back — the queue is empty and stopped; blocks and costs are kept");
@@ -842,7 +833,7 @@ async function bootRead(first: boolean): Promise<void> {
 }
 
 /**
- * Called from boot()/login() after resumeQueue(), before resumeHive(). Per owned character: anything queued that
+ * Called from boot()/login() after resumeQueue(). Per owned character: anything queued that
  * is not the planner's → taken over; the step's items still queued → re-attached (nothing written, the queue
  * started if it stands); otherwise the next decision follows the first achievements read.
  */
@@ -859,7 +850,6 @@ export function resumePlanner(r: Reads): void {
     const r = planner.value.current[name];
     const c: Record<string, unknown> = (chars[name] = {});
     if (q?.items.some((it) => !it.id.startsWith("pl:"))) c.took = takeOver(name);
-    else optOut(name);
     // the interrupts still queued go on: their int-end is partial (what ran before the restart was not metered here)
     for (const it of queues.value[name]?.items ?? []) {
       const m = /^pl:int:([a-z]+):(.+):\d+$/.exec(it.id), bucket = bucketOf(it.id);

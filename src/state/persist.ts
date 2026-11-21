@@ -5,8 +5,7 @@
 // Static catalogs are NOT persisted here — they ship as files under public/data/
 // and are loaded into memory each boot.
 
-import { account, activeEvents, bankDetails, bankItems, characters, log, offerings, pendingRewards, seedLogId, skillPins, syncedAt } from "./store";
-import { IS_SERVER, expose, rpc } from "../lib/remote";
+import { account, activeEvents, bankDetails, bankItems, characters, log, offerings, pendingRewards, seedLogId, syncedAt } from "./store";
 import type { CachedOfferings, LogEntry } from "./store";
 import type { Account, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 
@@ -21,8 +20,6 @@ interface PersistShape {
   account: Account | null;
   log: LogEntry[];
   syncedAt: number | null;
-  craftPins?: Record<string, string>; // legacy single craft pin — read once to migrate
-  pins?: Record<string, string[]>; // additive — main-skill pins (📌1/📌2)
   events?: ActiveEvent[]; // additive — active map events (expired ones dropped at load)
   pending?: PendingItem[]; // additive — unclaimed rewards (🎁 badge)
   offerings?: Record<string, CachedOfferings>; // additive — today's seasonal offerings (past days dropped at load)
@@ -44,8 +41,6 @@ export function loadPersisted(): void {
       seedLogId(s.log.reduce((m, e) => Math.max(m, e.id || 0), 0));
     }
     if (s.syncedAt) syncedAt.value = s.syncedAt;
-    if (s.pins) skillPins.value = s.pins;
-    else if (s.craftPins) skillPins.value = Object.fromEntries(Object.entries(s.craftPins).map(([n, k]) => [n, [k]]));
     if (s.events) activeEvents.value = s.events.filter((e) => Date.parse(e.expiration) > Date.now());
     if (s.pending) pendingRewards.value = s.pending;
     if (s.offerings) offerings.value = Object.fromEntries(Object.entries(s.offerings).filter(([, o]) => Date.parse(o.expires_at) > Date.now()));
@@ -56,9 +51,9 @@ export function loadPersisted(): void {
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
-/** Debounced save; many rapid mutations collapse into one write. */
+/** Debounced save; many rapid mutations collapse into one write. Task 018: the tab's only callers (the pin clicks)
+ *  are gone, so it is no longer exposed. */
 export function saveState(): void {
-  if (!IS_SERVER) return rpc("saveState", []);
   if (saveTimer) return;
   saveTimer = setTimeout(() => {
     saveTimer = null;
@@ -70,7 +65,6 @@ export function saveState(): void {
       account: account.value,
       log: log.value,
       syncedAt: syncedAt.value,
-      pins: skillPins.value,
       events: activeEvents.value,
       pending: pendingRewards.value,
       offerings: offerings.value,
@@ -82,5 +76,3 @@ export function saveState(): void {
     }
   }, 300);
 }
-
-expose({ saveState });

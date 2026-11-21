@@ -1,5 +1,5 @@
 // The local game service: ONE Node process runs the whole engine — queue
-// runners, the hive, every API call — and serves the browser UI, which is only
+// runners, the planner, every API call — and serves the browser UI, which is only
 // a view: state streams to it over SSE (/events, state/synced.ts) and its edits
 // and actions come back as POST /rpc (lib/remote.ts). Closing or crashing the
 // tab no longer touches the runners.

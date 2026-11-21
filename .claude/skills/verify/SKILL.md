@@ -33,10 +33,11 @@ this recipe drives the REAL service against the REAL game API.
 - Tabs are hash routes — switch with `location.hash = "#/items"` (no reload,
   no extra reads): fleet · char · bank · items · monsters · achievements · map · sim.
 - Drive the engine without the UI: `curl -X POST -H 'Content-Type: application/json'
-  -d '{"fn":"addItem","args":["Third",{…item with id…}]}' http://localhost:5199/rpc`
-  — any exposed function (grep `expose(`) by name. Seed queues this way on a
-  test service (keep `running:false` unless you mean to run them).
-- `confirm()` dialogs (queue clear-all): `page.on("dialog", d => d.accept())`.
+  -d '{"fn":"setPlannerConfig","args":[{"on":{"Third":true}}]}' http://localhost:5199/rpc`
+  — any exposed function (grep `expose(`) by name. Since task 018 nothing the tab
+  can call writes a queue: a queue is the planner's (switch a character on) or the
+  Group fight's `queuePrepare`.
+- `confirm()` dialogs (the 🧭 planner switch): `page.on("dialog", d => d.accept())`.
 
 ## Zero-call mode: the mock-API preload
 
@@ -48,15 +49,14 @@ boots with ZERO game calls — ideal for UI checks. Capture a snapshot with
 `curl -s -N --max-time 3 http://127.0.0.1:5173/events` (first `data:` line),
 then:
 `PORT=5199 MOCK_SNAPSHOT=<snap.json> node --import file:///<abs>/mock-api.mjs --import tsx --experimental-webstorage --localstorage-file=<scratch>/test.db --disable-warning=ExperimentalWarning src/server/main.ts`.
-Pins aren't in the snapshot's characters — seed them with `togglePin` rpcs. A
-started queue pauses on its first action ("mock API: actions refused").
+A started queue pauses on its first action ("mock API: actions refused").
 
 ## Observe through the service's state stream (authoritative, no DOM scraping)
 
 - `curl -s -N --max-time 2 http://localhost:5199/events` — the first `data:`
   line is a JSON snapshot of every SYNCED signal: `queues[name]` (items,
   running, live `note`, per-item `done`/`error`), `characters[name]`, `log`
-  (activity entries, newest first), `hive`, `skillPins`, `bankItems`, …;
+  (activity entries, newest first), `planner`, `bankItems`, …;
   later lines carry only the signals that changed.
 - Post-mortem: the raw log, `logs/raw/<YYYY-MM-DD>/<HH>.log` by each line's UTC
   hour (every API call, note change, rpc failure; a per-process tag per service
@@ -70,22 +70,19 @@ started queue pauses on its first action ("mock API: actions refused").
 - Fleet table: `.fleet-name` links (click = select + open Character tab); Character
   tab header `.char-name`, switcher `.char-switch button`. Tables: `.dt-row`, sortable
   headers `.dt-sort`.
-- Planner: selects are `.cp-refine-select` (find the right one by which option
-  values it contains, then set value + dispatch `change`); buttons
-  `button.btn-refine` by text ("📋 Plan", "▶ Run").
-- Queue: rows `.q-row .q-text`, head controls `.q-head .btn-stop` /
-  `.cat-btn` ("＋ Add") / `.cat-btn.sell` (clear-all ✕); add form `.q-add-form`.
-- Skills: `.cp-skill` rows, each with a Pin/📌N `button`; pinned rows `.cp-skill-focus`.
+- Selects are `.cp-refine-select` (find the right one by which option values it
+  contains, then set value + dispatch `change`).
+- Queue (read-only since task 018): rows `.q-row .q-text`; the 🧭 planner switch is
+  the `.q-head .cat-btn`.
+- Skills: `.cp-skill` rows.
 
 ## Flows worth driving
 
-- Beat-monster vs `chicken` (cheap, safe): expect queue
-  `[gear(reset), fight times:0]`, log sequence deposit → deposit gold →
-  unequip → stow → (withdraw/equip if needed) → fights "fighting N" (no
-  `/total`). After reset: gold 0, utility slots "", inventory 0.
-- Restart mid-anything (kill the service; the supervisor restarts it): queues must resume (running persisted).
-- Naked-guard: hand-add gear+reset vs a top-level monster → queue pauses with
-  "no winnable gear set…" and gear stays worn.
+- Switch one character on (🧭, or the `setPlannerConfig` rpc): expect its queue
+  to get the first step's items (`pl:<key>:<i>`: a gear reset, then the field item
+  or the craft) and the Character tab's planner line to show the step's why.
+- Restart mid-anything (kill the service; the supervisor restarts it): queues must resume (running persisted)
+  and the step re-attach (`plan <name>: re-attached …` in the raw log).
 
 ## Gotchas
 
@@ -96,14 +93,3 @@ started queue pauses on its first action ("mock API: actions refused").
   re-gears it; fights really run. Use a level-1 monster and tell the user what
   moved. Read budget ~300/hr — each boot costs 3 reads; don't loop reloads.
 - One boot-time 404 console error (missing asset) is pre-existing noise.
-
-BROWSER-ERA scripts (pre-2026-11-05 — they seed/read the tab's localStorage,
-which no longer holds engine state; port them to /events + /rpc before reuse):
-`drive.mjs` next to this file. Run it from a scratch dir that has puppeteer-core installed:
-`$env:AMMO_TOKEN = (token from .env); node <path>\drive.mjs` — it needs the
-dev server up and writes screenshots + drive-summary.json beside itself.
-
-A read-only planning probe (2026-11-04): `hive-probe.mjs` next to this file —
-same boot, then in-page `import("/src/plan/hive/index.ts")` to dump
-proposals, compiled waves and synthetic craft orders against live state.
-No queue writes; ~4 reads per run. Output: `hive-probe-out.json` beside it.

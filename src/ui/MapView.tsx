@@ -2,7 +2,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { effect } from "@preact/signals";
 import { catalog } from "../catalog";
-import { activeEvents, characters, deliverTilePick, disarmTilePick, focusRequest, mapHover, moveMode, panelTarget, selectedCharacter, tileFocus, tilePick } from "../state/store";
+import { activeEvents, characters, focusRequest, mapHover, moveMode, panelTarget, selectedCharacter, tileFocus } from "../state/store";
 import * as actions from "../api/actions";
 import type { GameMap } from "../types/catalog";
 import type { Character } from "../types/api";
@@ -347,11 +347,6 @@ export function MapView() {
     const handleTileClick = (sx: number, sy: number) => {
       const hx = Math.floor((cam.x + sx) / tile);
       const hy = Math.floor((cam.y + sy) / tile);
-      // Armed form tile-pick: hand the coordinates to the armed callback (no action).
-      if (tilePick.value) {
-        deliverTilePick(hx, hy);
-        return;
-      }
       // Armed click-to-move: send the character here and disarm; ignore tile content.
       const mover = moveMode.value;
       if (mover) {
@@ -433,7 +428,6 @@ export function MapView() {
     const onResize = () => schedule();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape" && moveMode.value) moveMode.value = null;
-      if (e.key === "Escape" && tilePick.value) disarmTilePick();
     };
 
     cv.style.cursor = "grab";
@@ -468,7 +462,7 @@ export function MapView() {
 
   return (
     <div class="map-wrap">
-      <canvas ref={canvasRef} class={"map-canvas" + (moveMode.value || tilePick.value ? " moving" : "")} />
+      <canvas ref={canvasRef} class={"map-canvas" + (moveMode.value ? " moving" : "")} />
       <MapInspector />
       <div class="layer-switch">
         {LAYERS.map((l) => (
@@ -477,12 +471,10 @@ export function MapView() {
           </button>
         ))}
       </div>
-      <div class={"map-hint" + (moveMode.value || tilePick.value ? " armed" : "")}>
-        {tilePick.value
-          ? `Click a tile — ${tilePick.value.label} · Esc to cancel`
-          : moveMode.value
-            ? `Click a tile to move ${moveMode.value} · Esc to cancel`
-            : "drag to pan · scroll to zoom · click a building to interact"}
+      <div class={"map-hint" + (moveMode.value ? " armed" : "")}>
+        {moveMode.value
+          ? `Click a tile to move ${moveMode.value} · Esc to cancel`
+          : "drag to pan · scroll to zoom · click a building to interact"}
       </div>
     </div>
   );

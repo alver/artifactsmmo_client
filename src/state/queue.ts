@@ -1,18 +1,19 @@
-// The plan queue: a per-character, user-editable list of actions (move / rest /
-// fight ×N / gather ×N / craft ×N / withdraw / …) executed one item after
-// another, top to bottom. Fight and gather items with times 0 run FOREVER —
-// this is how "beat a monster" grinds until stopped.
+// The plan queue: a per-character list of actions (fight ×N / gather ×N /
+// craft ×N / withdraw / …) executed one item after another, top to bottom.
+// Task 018: its writers are the planner (state/planner.ts: a step appended to an
+// empty queue, and interrupt()) and the Group fight fold's `prepare`
+// (queuePrepare); the tab edits nothing.
 //
 // PRESENCE in the signal does NOT mean running — the queue is a persistent
-// document the user edits; a `running` flag inside the entry marks execution.
+// document; a `running` flag inside the entry marks execution.
 // Every item's completion condition is checked BEFORE
 // acting, so items are skip-if-satisfied and a reload resumes mid-item (fight
 // 7/20 stays 7/20 — progress lives on the item and every increment goes
 // through the signal).
 //
 // Failure semantics: the queue PAUSES — the failed item stays at the head with
-// an error note and `running` drops to false; the user edits/removes it and
-// presses ▶ again.
+// an error note and `running` drops to false (the planner removes a paused
+// interrupt and blocks a paused step).
 //
 // Same no-poll contract as every runner: paced purely by action-echo cooldowns.
 
@@ -24,11 +25,9 @@ import { catalog, item as itemOf, itemName, monster as monsterOf, resource as re
 import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, ownedFightForecast, stripAllMap } from "../plan/jobgear";
 import { QUEUE_KINDS, queueItemText, withId } from "../plan/queue";
-import { trainingResourceFor } from "../plan/hive/skills";
-import { CRAFT_SEC, FIGHT_SEC, autoRecyclable, craftXp, fightXp, gatherSec, recycleReturn } from "../plan/xp";
-import { killSeconds } from "../plan/bis";
+import { CRAFT_SEC, FIGHT_SEC, autoRecyclable, craftXp, gatherSec, recycleReturn } from "../plan/xp";
 import { titleCase } from "../lib/util";
-import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendingRewards, pushLog, skillKey, skillPins } from "./store";
+import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendingRewards, pushLog, skillKey } from "./store";
 import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
@@ -47,17 +46,24 @@ export interface QueueState {
   items: QueueItem[];
   running: boolean;
   note?: string; // live status of the head item while running
-  repeat?: boolean; // 🔁 a finished item goes to the back (progress wiped) instead of away
 }
 
 const STORE_KEY = "ammo:v1:queue";
+// Task 018, settled point 9: what only the deleted writers wrote — these kinds, a `train` of combat or a gathering skill
+// or with `for`, the 🔁 flag — is dropped at load; sync.ts boot() writes one raw line for each (the log has no sink yet).
+const GONE_KINDS = ["move", "rest", "accept-task", "work-task", "deliver", "turn-in"];
+const goneTrain = (it: QueueItem): boolean => it.kind === "train" && (!!it.for || !CRAFT_TRAIN_SKILLS.some(([k]) => k === it.skill));
+export const droppedAtLoad: string[] = [];
 function loadStored(): Record<string, QueueState> {
   try {
     const raw = (JSON.parse(localStorage.getItem(STORE_KEY) || "{}") as Record<string, QueueState>) || {};
     const out: Record<string, QueueState> = {};
     for (const [name, q] of Object.entries(raw)) {
       if (!q || !Array.isArray(q.items)) continue; // unknown shape — drop, never crash resume
-      out[name] = { ...q, items: q.items.filter((it) => it && QUEUE_KINDS.includes(it.kind)), running: !!q.running };
+      const { repeat, ...rest } = q as QueueState & { repeat?: boolean };
+      if (repeat) droppedAtLoad.push(`${name}'s queue: the 🔁 repeat flag`);
+      for (const it of q.items) if (it && (GONE_KINDS.includes(it.kind) || goneTrain(it))) droppedAtLoad.push(`${name}'s queue: [${it.id}] ${it.kind}${it.kind === "train" ? ` ${it.skill}${it.for ? ` for ${it.for}` : ""}` : ""}`);
+      out[name] = { ...rest, items: q.items.filter((it) => it && QUEUE_KINDS.includes(it.kind) && !goneTrain(it)), running: !!q.running };
     }
     return out;
   } catch {
@@ -96,30 +102,23 @@ function setQueue(name: string, patch: Partial<QueueState>): void {
   queues.value = { ...queues.value, [name]: { ...cur, ...patch } };
 }
 
-/** The runner's own item patch — no head lock (the runner must update progress).
- *  Exported for the hive, which carves its OWN running items when it
- *  rebalances a wave (a shrunken `times` completes at the next step). */
-export function patchItem(name: string, id: string, patch: Partial<QueueItem>): void {
+/** The runner's own item patch — no head lock (the runner must update progress). */
+function patchItem(name: string, id: string, patch: Partial<QueueItem>): void {
   const cur = queues.value[name];
   if (!cur) return;
   setQueue(name, { items: cur.items.map((it) => (it.id === id ? ({ ...it, ...patch } as QueueItem) : it)) });
 }
 
-// ── User editing ops (all refuse to touch the currently-executing head) ─────
-
-const headLocked = (q: QueueState | undefined, id: string): boolean => !!q?.running && q.items[0]?.id === id;
-
-/** The tab's ops refuse a character the planner owns; the planner writes through insertItem, dropItem,
- *  runQueue, haltQueue and resetQueue, which are not exposed. */
+/** The ops below refuse a character the planner owns; the planner writes through insertItem, dropItem,
+ *  runQueue, haltQueue and resetQueue. Task 018: none of them is exposed to the tab but queuePrepare. */
 function refused(name: string): boolean {
   if (!isOwned(name)) return false;
   pushLog({ ts: Date.now(), character: name, action: "queue", text: "the planner owns this queue — not changed", kind: "bad" });
   return true;
 }
 
-/** Append (or insert at `index`) an item; creates the character's queue lazily. */
+/** Append (or insert at `index`) an item; creates the character's queue lazily. The harness's and queuePrepare's. */
 export function addItem(name: string, item: QueueItem, index?: number): void {
-  if (!IS_SERVER) return rpc("addItem", [name, item, index]);
   if (refused(name)) return;
   const cur = queues.value[name] ?? { items: [], running: false };
   const items = [...cur.items];
@@ -128,62 +127,24 @@ export function addItem(name: string, item: QueueItem, index?: number): void {
   queues.value = { ...queues.value, [name]: { ...cur, items } };
 }
 
-export function removeItem(name: string, id: string): void {
-  if (!IS_SERVER) return rpc("removeItem", [name, id]);
-  if (refused(name)) return;
-  const cur = queues.value[name];
-  if (!cur || headLocked(cur, id)) return;
-  setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
-}
-
-/** Hive-only: drop one of ITS items even while it is the running head — the
+/** The planner's: drop one of ITS items even while it is the running head — the
  *  loop re-reads the head every step, and a finished step's slice is id-guarded. */
 export function dropItem(name: string, id: string): void {
   const cur = queues.value[name];
   if (cur) setQueue(name, { items: cur.items.filter((it) => it.id !== id) });
 }
 
-/** The automatic writers' insert, even AHEAD of the running head (a starved `wait` craft takes on a slice of
- *  work; an event trip; the planner's steps and interrupts) — same safety as dropItem. Creates the queue lazily. */
+/** The planner's insert, even AHEAD of the running head (its steps and interrupts; the harness's hand-written
+ *  queues) — same safety as dropItem. Creates the queue lazily. */
 export function insertItem(name: string, item: QueueItem, index: number): void {
   const cur = queues.value[name] ?? { items: [], running: false };
   queues.value = { ...queues.value, [name]: { ...cur, items: [...cur.items.slice(0, index), item, ...cur.items.slice(index)] } };
 }
 
-/** User edit — clears the item's error (an edited item gets a fresh chance). */
-export function updateItem(name: string, id: string, patch: Partial<QueueItem>): void {
-  if (!IS_SERVER) return rpc("updateItem", [name, id, patch]);
-  if (refused(name)) return;
-  if (headLocked(queues.value[name], id)) return;
-  patchItem(name, id, { ...patch, error: undefined });
-}
-
-export function moveItem(name: string, id: string, dir: -1 | 1): void {
-  if (!IS_SERVER) return rpc("moveItem", [name, id, dir]);
-  if (refused(name)) return;
-  const cur = queues.value[name];
-  if (!cur || headLocked(cur, id)) return;
-  const i = cur.items.findIndex((it) => it.id === id);
-  const j = i + dir;
-  const floor = cur.running ? 1 : 0; // nothing may move above the executing head
-  if (i < floor || j < floor || j >= cur.items.length) return;
-  const items = [...cur.items];
-  [items[i], items[j]] = [items[j], items[i]];
-  setQueue(name, { items });
-}
-
-export function clearQueue(name: string): void {
-  if (!IS_SERVER) return rpc("clearQueue", [name]);
-  if (refused(name)) return;
-  const cur = queues.value[name];
-  if (!cur || cur.running) return;
-  setQueue(name, { items: [], note: undefined });
-}
-
-/** The planner's take-over and hand-back (state/planner.ts): keep only the items `keep` accepts, 🔁 off. Not exposed. */
+/** The planner's take-over and hand-back (state/planner.ts): keep only the items `keep` accepts. Not exposed. */
 export function resetQueue(name: string, keep: (it: QueueItem) => boolean): void {
   const cur = queues.value[name];
-  if (cur) setQueue(name, { items: cur.items.filter(keep), repeat: undefined, note: undefined });
+  if (cur) setQueue(name, { items: cur.items.filter(keep), note: undefined });
 }
 
 // ── The runner ───────────────────────────────────────────────────────────────
@@ -255,10 +216,10 @@ function plannedSet(name: string, ch: Character, it: QueueItem & { wear?: Record
 
 function keepOf(it: QueueItem, ch: Character): string[] | undefined {
   const base =
-    it.kind === "fight" || it.kind === "deliver" || it.kind === "gear" ? it.keep
+    it.kind === "fight" || it.kind === "gear" ? it.keep
     // The task deliverable and its recipe materials are working stock — neither
     // an overflow bank-off nor the job-start gear reset may stash them.
-    : it.kind === "work-task" || it.kind === "task-loop" ? (ch.task ? [ch.task, ...(itemOf(ch.task)?.craft?.items.map((g) => g.code) ?? [])] : undefined)
+    : it.kind === "task-loop" ? (ch.task ? [ch.task, ...(itemOf(ch.task)?.craft?.items.map((g) => g.code) ?? [])] : undefined)
     // A withdrawal/sale/recycle protects its own item — otherwise an overflow
     // bank-off would deposit exactly what was just withdrawn and the item would
     // spin forever.
@@ -275,7 +236,7 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
   const withToll = (k: string[] | undefined): string[] | undefined => (toll.length ? [...(k ?? []), ...toll] : k);
   // Carried between-fight food is working stock too — a loot bank-off or the
   // job-start gear reset must not stash the fighter's rations.
-  if (it.kind === "fight" || it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight") || (it.kind === "train" && it.skill === "combat")) {
+  if (it.kind === "fight" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight") || (it.kind === "train" && it.skill === "combat")) {
     const food = foodInHand(ch)?.code;
     if (food) return withToll([...(base ?? []), food]);
   }
@@ -286,14 +247,14 @@ function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
   // Persisted queues from before food became a boolean may carry an old
   // FoodSpec object here — any non-false value means "keep fed".
   // task 014: an owned step's fight item (`take`) eats what its reset took and never provisions more
-  const fed = it.kind === "fight" ? !it.take && it.food !== false : it.kind === "work-task" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "train" && it.skill === "combat") ? true : undefined;
+  const fed = it.kind === "fight" ? !it.take && it.food !== false : it.kind === "task-loop" || it.kind === "offering" || (it.kind === "train" && it.skill === "combat") ? true : undefined;
   return {
     keep: keepOf(it, ch),
     gold: (it.kind === "fight" || it.kind === "gather") ? it.take?.gold : undefined, // task 017: the fares stay in the pocket
     food: fed,
     fightsLeft:
       it.kind === "fight" ? (it.times > 0 ? Math.max(1, it.times - it.done) : 50)
-      : it.kind === "work-task" || it.kind === "task-loop" ? Math.max(1, ch.task_total - ch.task_progress)
+      : it.kind === "task-loop" ? Math.max(1, ch.task_total - ch.task_progress)
       : it.kind === "offering" ? 20 // a handful of drops — sizes one food restock
       : it.kind === "train" && it.skill === "combat" ? 50
       : undefined,
@@ -310,19 +271,6 @@ function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
 async function runItem(name: string, ch: Character, it: QueueItem): Promise<boolean> {
   const ctx = ctxOf(name, ch, it);
   switch (it.kind) {
-    case "move": {
-      const to = pinnedAt(it)!;
-      if (isAt(ch, to)) return true;
-      ctx.note(`→ (${it.x}, ${it.y})${to.layer === "overworld" ? "" : ` ${to.layer}`}`);
-      await moveTo(name, to);
-      return false;
-    }
-    case "rest": {
-      if (ch.hp >= ch.max_hp) return true;
-      ctx.note("resting");
-      await step(name, () => actions.rest(name));
-      return false;
-    }
     case "withdraw": {
       const missing = it.quantity - invQty(ch, it.code);
       if (missing <= 0) return true;
@@ -452,9 +400,9 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
             .filter((g) => Math.floor((invQty(ch, g.code) + bankQty(g.code)) / g.quantity) <= 0)
             .map((g) => `${itemName(g.code)} (need ${g.quantity})`);
           if (it.wait) {
-            // Pipelined hive craft: the producers are still filling the bank —
-            // hold and look again (the hive drops the item once nobody is left
-            // to feed it). ⏹ stays responsive through the 1 s slices.
+            // Pipelined craft (the deleted hive's `wait`): the producers are still
+            // filling the bank — hold and look again. A stop stays responsive
+            // through the 1 s slices.
             ctx.note(`waiting for ${short.join(", ")}`);
             for (let i = 0; i < 15 && !stopFlags.has(name); i++) await sleep(1000);
             return false;
@@ -494,17 +442,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (it.levels && it.from == null) { patchItem(name, it.id, { from: lv }); return false; }
       const target = it.levels ? (it.from ?? lv) + it.levels : it.toLevel;
       if (target > 0 && lv >= target) return true;
-      if (it.for) return runTrainAssist(name, ch, it, who, ctx);
-      if (it.skill === "combat") return runTrainCombat(name, ch, it, ctx);
-      if (isCraftSkill(it.skill)) return runTrainCraft(name, ch, it, ctx);
-      // The highest node that still gives XP AND that this character reaches now (event nodes while they are up).
-      const node = it.resource ?? trainingResourceFor(it.skill, lv, (code) => !!nearest("resource", code, ch))?.code;
-      if (!node) return skipItem(name, it, `no ${titleCase(it.skill)} node this character can reach gives XP at Lv ${lv}`);
-      const tile = pinnedAt(it) ?? nearest("resource", node, ch);
-      if (!tile) return skipItem(name, it, missingText("resource", node, ch));
-      if (await gatherGear(name, ch, it, it.skill, ctx)) return false;
-      await runStep(name, ch, { kind: "train", skill: it.skill, toLevel: target, resource: node, level: 0, at: tile }, ctx);
-      return false;
+      return runTrainCraft(name, ch, it, ctx);
     }
     case "fight": {
       if (it.times > 0 && it.done >= it.times) return true; // times 0 = forever
@@ -671,8 +609,6 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       log(name, text, "ok");
       return false;
     }
-    case "work-task":
-      return runWorkTask(name, ch, it, ctx);
     case "offering":
       return runOffering(name, ch, it, ctx);
     case "task-loop": {
@@ -701,56 +637,6 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         return false;
       }
       return runWorkTask(name, ch, it, ctx);
-    }
-    case "accept-task": {
-      if (ch.task) return true; // already carrying a task (either type)
-      const at = await goToMaster(name, ch, it.master, ctx.note);
-      if (at === "missing") return skipItem(name, it, `no ${it.master} tasks master on the map`);
-      if (at === "there") {
-        ctx.note("accepting a task");
-        await step(name, () => actions.taskNew(name));
-      }
-      return false; // the echo sets ch.task → the next tick completes the item
-    }
-    case "deliver": {
-      const remaining = Math.max(0, ch.task_total - ch.task_progress);
-      if (ch.task_type !== "items" || remaining <= 0) return true;
-      const held = invQty(ch, ch.task);
-      if (held > 0) {
-        const at = await goToMaster(name, ch, "items", ctx.note);
-        if (at === "missing") return skipItem(name, it, "no items tasks master on the map");
-        if (at === "there") {
-          ctx.note(`deliver ${itemName(ch.task)}`);
-          await step(name, () => actions.taskTrade(name, ch.task, Math.min(held, remaining)));
-        }
-        return false;
-      }
-      // Nothing in hand — pull banked stock one bag-sized piece at a time (each
-      // piece is traded before the next withdrawal, so the bag is the pace).
-      const banked = bankQty(ch.task);
-      if (banked > 0) {
-        if (freeSpace(ch) === 0) { await bankOff(name, it.keep, ctx.note); return false; } // bag full of other stuff
-        const bank = nearestBank(ch);
-        if (!bank) return skipItem(name, it, "no bank on the map");
-        const s: AcquisitionStep = { kind: "withdraw", code: ch.task, quantity: Math.min(banked, remaining, freeSpace(ch)), at: bank };
-        await runStep(name, ch, s, ctx);
-        return false;
-      }
-      if (it.partial) return true; // stock exhausted — the production items that follow cover the rest
-      throw new Error(`nothing left to deliver — produce more ${itemName(ch.task)} first`);
-    }
-    case "turn-in": {
-      if (!ch.task) return true;
-      const remaining = Math.max(0, ch.task_total - ch.task_progress);
-      if (remaining > 0) throw new Error(`task not complete — ${ch.task_progress}/${ch.task_total}`);
-      const at = await goToMaster(name, ch, ch.task_type === "items" ? "items" : "monsters", ctx.note);
-      if (at === "missing") return skipItem(name, it, "no tasks master on the map");
-      if (at === "there") {
-        ctx.note("turning in the task");
-        await step(name, () => actions.taskComplete(name));
-        log(name, "task turned in — rewards collected", "ok");
-      }
-      return false;
     }
   }
 }
@@ -823,45 +709,6 @@ function forecastVs(ch: Character, monster: string): FightForecast | undefined {
 }
 const canBeat = (ch: Character, monster: string): boolean => !!forecastVs(ch, monster)?.win;
 
-/**
- * The monster to level combat on right now: best XP per second (fight cooldown
- * + rest to full) among monsters on the map that give XP and that the bank's
- * best set beats. Memoized per bank reference + level like the forecasts.
- * shortcut: candidates stop at level + 10 (a BIS solve each), raise if a
- * character ever beats something further up.
- */
-const monsterMemo = new Map<string, { bank: BankItem[]; level: number; pick?: Monster }>();
-function trainingMonsterFor(ch: Character): Monster | undefined {
-  const m = monsterMemo.get(ch.name);
-  if (m && m.bank === bankItems.value && m.level === ch.level) return m.pick;
-  let best: { mon: Monster; rate: number } | undefined;
-  for (const mon of catalog().monsters.values()) {
-    const xp = fightXp(mon.level, mon.hp, mon.type, ch.level);
-    if (xp <= 0 || mon.level > ch.level + 10 || !nearest("monster", mon.code, ch)) continue;
-    const f = forecastVs(ch, mon.code);
-    if (!f?.win) continue;
-    const rate = xp / killSeconds(f);
-    if (!best || rate > best.rate) best = { mon, rate };
-  }
-  monsterMemo.set(ch.name, { bank: bankItems.value, level: ch.level, pick: best?.mon });
-  return best?.mon;
-}
-
-/** Combat training: fight the best-XP-per-second monster, re-picked as the level and bank change. */
-async function runTrainCombat(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, ctx: StepCtx): Promise<boolean> {
-  const mon = trainingMonsterFor(ch);
-  if (!mon) return skipItem(name, it, "no monster worth XP that the bank's gear can beat");
-  const tile = nearest("monster", mon.code, ch);
-  if (!tile) { monsterMemo.delete(ch.name); return false; } // its event ended (or out of reach from here) — re-pick next tick
-  if (await fightGear(name, ch, it, mon.code, ctx)) return false;
-  ctx.note(`training combat vs ${mon.name}`);
-  const out = await fightRound(name, ch, mon, tile, S(name), ctx);
-  if (out === "no-win") throw new Error(`not a safe win vs ${mon.name}`);
-  if (out === "gave-up") throw new Error("lost 2 fights in a row");
-  if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
-  return false;
-}
-
 /** Actions (gathers or fights) per unit dropped: "1 in N" rate ÷ mean quantity. */
 const dropRate = (src: { drops: DropRate[] }, code: string): number => {
   const d = src.drops.find((d) => d.code === code)!;
@@ -906,17 +753,6 @@ function stockOf(code: string, team: Character[]): number {
   return held(code) + raw;
 }
 
-/** Whether producing `code` in the field earns `ch` XP in one of its pinned skills.
- *  shortcut: gathering XP assumed gone 10+ levels above the node, as crafting's is. */
-function levelsPin(ch: Character, code: string): boolean {
-  const pins = skillPins.value[ch.name] ?? [];
-  const src = fieldSource(ch, code);
-  if (src?.how === "gather") return pins.includes(src.res.skill) && skillLevel(ch, src.res.skill) - src.res.level < 10;
-  if (src?.how === "craft") return pins.includes(src.recipe.skill) && skillLevel(ch, src.recipe.skill) - src.recipe.level < 10;
-  if (src?.how === "fight") return pins.includes("combat") && fightXp(src.mon.level, src.mon.hp, src.mon.type, ch.level) > 0;
-  return false;
-}
-
 /**
  * The recipe to train a workshop skill on right now: the best XP per
  * fleet-second (plan/xp.ts — tier base by ITEM level, √ingredients, zero once
@@ -928,7 +764,7 @@ function levelsPin(ch: Character, code: string): boolean {
  * Re-picked every tick, so stock running out simply moves the loop on to the
  * next recipe.
  */
-export function trainRecipe(ch: Character, skill: string, by: Character[] = [ch]): { code: string; recipe: CraftRecipe; xp: number } | undefined { // exported for the verify probe
+function trainRecipe(ch: Character, skill: string, by: Character[] = [ch]): { code: string; recipe: CraftRecipe; xp: number } | undefined {
   const lv = skillLevel(ch, skill);
   let best: { code: string; recipe: CraftRecipe; xp: number; rate: number; n: number } | undefined;
   for (const it of catalog().items.values()) {
@@ -1064,56 +900,6 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
   }
   const short = own ?? shorts[0];
   return sourceOne(name, ch, it, short.code, short.quantity * runs - invQty(ch, short.code), ctx, true);
-}
-
-/**
- * What helper `ch` produces next for `crafter`'s recipe: whatever is already in
- * its bag (a half-staged smelt or hunt finishes), else the least-covered
- * ingredient it can make — counting bank + banked raw + every team bag, plus a
- * full trip for each OTHER helper already working on it (four helpers used to
- * pick the same one). Near-ties go to one that levels a pinned skill.
- * Exported for scripts/check-assist.mts.
- */
-export function assistPick(ch: Character, crafter: Character, skill: string, recipe: CraftRecipe): { code: string; load: number } | undefined {
-  const by = [crafter, ...helpersOf(crafter.name, skill)];
-  const team = by.some((m) => m.name === ch.name) ? by : [...by, ch];
-  const runs = batchRuns(crafter, recipe, by);
-  const holds = (m: Character, code: string): boolean => {
-    const src = fieldSource(m, code);
-    return invQty(m, code) > 0 || (src?.how === "craft" && src.recipe.items.some((s) => invQty(m, s.code) > 0));
-  };
-  const rows = recipe.items
-    .map((g) => {
-      // One trip's load: a bagful of raw materials smelted (10 bars), never more
-      // than a batch (14 slimeballs) — a delivery costs ~35 s, an idle crafter hours.
-      const src = fieldSource(ch, g.code);
-      const raw = src?.how === "craft" ? src.recipe.items.reduce((t, s) => t + s.quantity, 0) / Math.max(1, src.recipe.quantity) : 1;
-      return { code: g.code, need: g.quantity * runs * 2, load: Math.max(1, Math.min(g.quantity * runs, Math.floor(ch.inventory_max_items / raw))) };
-    })
-    .filter((g) => unitSec([ch], g.code) < Infinity);
-  const mine = rows.find((g) => holds(ch, g.code));
-  if (mine || !rows.length) return mine;
-  const others = by.filter((m) => m.name !== ch.name && m.name !== crafter.name);
-  const ranked = rows
-    .map((g) => ({ g, cover: (stockOf(g.code, team) + others.filter((m) => holds(m, g.code)).length * g.load) / g.need }))
-    .sort((a, b) => a.cover - b.cover);
-  const near = ranked.filter((r) => r.cover <= ranked[0].cover + 0.1);
-  return (near.find((r) => levelsPin(ch, r.g.code)) ?? ranked[0]).g;
-}
-
-/**
- * One tick of helping `crafter` train: keep the bank a couple of batches ahead
- * on its current recipe's materials — produce a load of the ingredient
- * assistPick names, deliver it, repeat. Never withdraws the ingredient itself
- * (bank stock is the goal), only banked raw to refine.
- */
-async function runTrainAssist(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, crafter: Character, ctx: StepCtx): Promise<boolean> {
-  const pick = trainPick(crafter, it.skill);
-  if (!pick) throw new Error(`no ${titleCase(it.skill)} recipe ${crafter.name} can be fed at Lv ${skillLevel(crafter, it.skill)}`);
-  const g = assistPick(ch, crafter, it.skill, pick.recipe);
-  if (!g) throw new Error(`nothing in ${itemName(pick.code)} this character can produce`);
-  if (invQty(ch, g.code) >= g.load) { ctx.note(`help ${crafter.name}: deliver ${itemName(g.code)}`); await bankOff(name, ctx.keep, ctx.note); return false; }
-  return sourceOne(name, ch, it, g.code, g.load - invQty(ch, g.code), ctx, true, false);
 }
 
 /** Get `need` more of `code` into the bag, one action: withdraw bank stock
@@ -1511,7 +1297,7 @@ export function offeringPick(ch: Character, st: CharacterOfferings, category: st
  * One action of the offering item. Order: read today's state (once a day) →
  * at the altar, complete what the bag covers, accept every open category →
  * get the first owed requirement → back to the altar. Dead ends skip the
- * category for the day instead of pausing, so a daily 🔁 item never wedges.
+ * category for the day instead of pausing.
  */
 async function runOffering(name: string, ch: Character, it: OfferingItem, ctx: StepCtx): Promise<boolean> {
   const { st, skip, work } = offeringWork(ch, it);
@@ -1538,16 +1324,7 @@ async function runOffering(name: string, ch: Character, it: OfferingItem, ctx: S
     return false;
   };
 
-  if (!work.length) {
-    // Done for today. Alone on a 🔁 queue, hold for the next rotation instead of spinning the loop.
-    const q = queues.value[name];
-    if (q?.repeat && q.items.length === 1) {
-      ctx.note(`today's offerings done — next rotation at ${new Date(st.expires_at).toLocaleTimeString()}`);
-      for (let i = 0; i < 60 && !stopFlags.has(name); i++) await sleep(1000);
-      return false;
-    }
-    return true;
-  }
+  if (!work.length) return true; // done for today
 
   const ready = work.find((s) => s.status === "accepted" && invQty(ch, s.requirement!.code) >= s.requirement!.quantity);
   const next = ready ?? work.find((s) => s.status === "open");
@@ -1640,13 +1417,9 @@ async function runLoop(name: string): Promise<void> {
         const cur = queues.value[name];
         if (cur?.items[0]?.id === item.id) {
           const rest = cur.items.slice(1);
-          // 🔁 wipes progress; done/from/geared/bought don't exist on every kind, hence the double cast.
-          const again = { ...item, done: 0, from: undefined, geared: undefined, bought: undefined, error: undefined } as unknown as QueueItem;
           // A finished `prepare` stops the queue: the character holds on the boss tile for the group fight.
           const ready = item.kind === "prepare";
-          // An event trip (ev:* ids, state/eventorders.ts) is one-off — 🔁 never brings it back.
-          const recycle = cur.repeat && !ready && !item.id.startsWith("ev:");
-          setQueue(name, { items: recycle ? [...rest, again] : rest, note: undefined, ...(ready ? { running: false } : {}) });
+          setQueue(name, { items: rest, note: undefined, ...(ready ? { running: false } : {}) });
           if (ready) log(name, `ready to fight ${monsterOf(item.monster)?.name ?? item.monster} — queue stopped`, "ok");
         }
         S(name).losses = 0;
@@ -1711,57 +1484,20 @@ async function runLoop(name: string): Promise<void> {
   }
 }
 
-/** 🔁: a finished item goes to the back of the queue (progress wiped) instead of away. */
-export function setRepeat(name: string, on: boolean): void {
-  if (!IS_SERVER) return rpc("setRepeat", [name, on]);
-  if (refused(name)) return;
-  if (!queues.value[name]) queues.value = { ...queues.value, [name]: { items: [], running: false } };
-  setQueue(name, { repeat: on || undefined });
-}
-
-/**
- * The "main task" of a character: a repeating loop that levels the pinned
- * skills (📌) in turn — per pin, a bank reset into the job set then +1 level,
- * with 🔁 on so the rotation never ends. Appends behind whatever is queued.
- */
-export function queuePinTraining(name: string): void {
-  if (!IS_SERVER) return rpc("queuePinTraining", [name]);
-  if (refused(name)) return;
-  const ch = characters.value[name];
-  for (const skill of skillPins.value[name] ?? []) {
-    // Combat resets into the set vs today's pick; the train item re-swaps if the pick moves.
-    const mon = skill === "combat" && ch ? trainingMonsterFor(ch)?.code : undefined;
-    const job: GearJob = skill === "combat" ? (mon ? { kind: "fight", monster: mon } : { kind: "none" }) : isCraftSkill(skill) ? { kind: "craft", skill } : { kind: "gather", skill };
-    addItem(name, withId({ kind: "gear", job, reset: true }));
-    addItem(name, withId({ kind: "train", skill, toLevel: 0, levels: 1, gear: true }));
-  }
-  setRepeat(name, true);
-}
-
-/** Every OTHER character helps `crafter` train its workshop `skill` forever,
- *  starting now: a "help" train item at the FRONT of each queue (stop → insert
- *  → start, so a running loop switches heads after its in-flight action; the
- *  old items wait behind the infinite helper until the user removes it). */
-export function queueAssist(crafter: string, skill: string): void {
-  if (!IS_SERVER) return rpc("queueAssist", [crafter, skill]);
-  if (refused(crafter)) return;
-  // Helpers end where the crafter's own train item ends (a "to Lv N" target), else never.
-  const own = queues.value[crafter]?.items.find((i) => i.kind === "train" && i.skill === skill && !i.for);
-  // A "+N levels" item that hasn't started yet has no `from`: count from the crafter's level now, not 0.
-  const lv = characters.value[crafter] ? skillLevel(characters.value[crafter], skill) : 0;
-  const toLevel = own?.kind === "train" ? (own.levels ? (own.from ?? lv) + own.levels : own.toLevel) : 0;
-  for (const name of Object.keys(characters.value)) {
-    if (name === crafter || isOwned(name)) continue; // a character the planner owns is nobody's helper
-    stopQueue(name);
-    addItem(name, withId({ kind: "train", skill, toLevel, gear: true, for: crafter }), 0);
-    startQueue(name);
-  }
-}
-
-/** Start executing the queue from its head. */
+/** Start executing the queue from its head (the harness's). */
 export function startQueue(name: string): void {
-  if (!IS_SERVER) return rpc("startQueue", [name]);
   if (!refused(name)) runQueue(name);
+}
+
+/** The Group fight fold's 🛡 Prepare (ui/GroupFight.tsx), one character: a `prepare` item at the front of its queue —
+ *  a stopped or paused prepare for the same monster at the head is just restarted, never duplicated — and the queue
+ *  started. Refuses a character the planner owns. */
+export function queuePrepare(name: string, monster: string): void {
+  if (!IS_SERVER) return rpc("queuePrepare", [name, monster]);
+  if (refused(name)) return;
+  const head = queues.value[name]?.items[0];
+  if (!(head?.kind === "prepare" && head.monster === monster)) addItem(name, withId({ kind: "prepare", monster }), 0);
+  runQueue(name);
 }
 
 /** startQueue without the owned-queue guard: the planner's own start (state/planner.ts). Not exposed. */
@@ -1791,16 +1527,10 @@ export function runQueue(name: string): void {
 }
 
 /**
- * Stop the queue. `running: false` is set (and persisted) IMMEDIATELY so a
- * reload can never resurrect a stopped queue; the live loop still finishes its
- * in-flight action, then exits via the flag (liveLoops covers the drain gap).
+ * Stop the queue: the planner's take-over and hand-back. Not exposed. `running: false` is set (and persisted)
+ * IMMEDIATELY so a reload can never resurrect a stopped queue; the live loop still finishes its in-flight action,
+ * then exits via the flag (liveLoops covers the drain gap).
  */
-export function stopQueue(name: string): void {
-  if (!IS_SERVER) return rpc("stopQueue", [name]);
-  if (!refused(name)) haltQueue(name);
-}
-
-/** stopQueue without the owned-queue guard: the planner's take-over and hand-back. Not exposed. */
 export function haltQueue(name: string): void {
   if (!queues.value[name]?.running) return;
   stopFlags.add(name);
@@ -1814,7 +1544,6 @@ export function haltQueue(name: string): void {
  * ITEMS are always kept (the queue is a document, not just a job).
  */
 export function resumeQueue(): void {
-  scheduleOfferings();
   for (const [name, q] of Object.entries(queues.value)) {
     if (!q.running || liveLoops.has(name)) continue;
     if (characters.value[name]) {
@@ -1827,44 +1556,17 @@ export function resumeQueue(): void {
   }
 }
 
-// Daily offerings: at 00:05 UTC (just after the midnight-UTC rotation — expires_at) every running
-// queue does today's seasonal offerings first, then its old head resumes. A boot
-// after 00:05 catches up once (the marker persists the last 00:05 handled).
-// A character the planner owns gets the planner's `offering` interrupt instead (set by state/planner.ts, which
-// queue.ts must not import); since task 010 the planner keeps its own day per character and catches up by itself
-// (boot, switch-on, its five-minute tick), so this marker only decides the call at 00:05 and at boot.
-const OFFERINGS_DAILY_KEY = "ammo:v1:offeringsDaily";
-let offeringsTimer: ReturnType<typeof setTimeout> | undefined;
+// Offerings: a character the planner owns gets the planner's `offering` interrupt (set by state/planner.ts, which
+// queue.ts must not import); the planner keeps its own day per character and catches up by itself (boot, switch-on,
+// its five-minute tick). Task 018: the old daily trigger (00:05 UTC, every running queue) is gone.
 let ownedOfferings: ((name: string) => void) | undefined;
 export const setOwnedOfferings = (fn: (name: string) => void): void => void (ownedOfferings = fn);
-function scheduleOfferings(): void {
-  clearTimeout(offeringsTimer);
-  const now = Date.now();
-  const d = new Date(now);
-  const today = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 5);
-  const last = today <= now ? today : today - 86_400_000; // the most recent 00:05 UTC
-  if (localStorage.getItem(OFFERINGS_DAILY_KEY) !== String(last)) {
-    localStorage.setItem(OFFERINGS_DAILY_KEY, String(last));
-    for (const name of Object.keys(characters.value)) if (isOwned(name)) ownedOfferings?.(name);
-    for (const [name, q] of Object.entries(queues.value)) {
-      if (isOwned(name) || !q.running || q.items[0]?.kind === "offering") continue;
-      queueOfferings(name);
-      log(name, "daily seasonal offerings — then back to the queue", "info");
-    }
-  }
-  offeringsTimer = setTimeout(scheduleOfferings, last + 86_400_000 - now);
-}
 
-/** Today's offerings AHEAD of the head, even a running ∞ one (the loop re-reads it every step); a 🔁-recycled copy further back goes.
- *  A character the planner owns gets the planner's offering interrupt instead (task 010: the panel's buttons). */
+/** The panel's buttons (task 010): a character the planner owns gets the planner's offering interrupt. Task 018: a
+ *  character whose planner is off gets nothing. */
 export function queueOfferings(name: string): void {
   if (!IS_SERVER) return rpc("queueOfferings", [name]);
   if (isOwned(name)) return void ownedOfferings?.(name);
-  if (refused(name)) return;
-  const q = queues.value[name];
-  if (!q) return addItem(name, withId({ kind: "offering" }));
-  if (q.items[0]?.kind === "offering") return;
-  setQueue(name, { items: [withId({ kind: "offering" }), ...q.items.filter((it) => it.kind !== "offering")] });
 }
 
 // Dev-only: this module owns long-lived async runners. A hot swap would
@@ -1873,4 +1575,4 @@ export function queueOfferings(name: string): void {
 // button can no longer reach. Force a full page reload instead.
 if (import.meta.hot) import.meta.hot.accept(() => location.reload());
 
-expose({ addItem, removeItem, updateItem, moveItem, clearQueue, setRepeat, queuePinTraining, queueAssist, queueOfferings, startQueue, stopQueue });
+expose({ queueOfferings, queuePrepare });

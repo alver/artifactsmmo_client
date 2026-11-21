@@ -1,28 +1,28 @@
-// Event standing orders, runtime half: each live event spawn not handled yet
-// gets its orders (plan/events.ts) AHEAD of one running queue's head — the way
-// the daily offerings trigger does — and the spawn is remembered (persisted),
-// so polls and restarts never repeat it. An event that ends mid-trip skips the
-// rest (missing map target, `partial` sells) and the old head resumes; ev:*
-// items are never recycled by 🔁. Server-only, like every runner.
+// Event standing orders, runtime half: each live merchant spawn not handled yet
+// gets its order (plan/events.ts merchantOrder) as the planner's `merchant`
+// interrupt on the nearest free owned character, and the spawn is remembered
+// (persisted), so polls and restarts never repeat it. An event that ends
+// mid-trip skips the rest (missing map target, `partial` sells) and the step
+// underneath resumes. Server-only, like every runner.
 //
 // Task 013: a monster or resource spawn and the characters the planner owns — the core decides the members
 // (src/plan/planner/events.ts eventPlans: the demand, who goes, why not) at every poll while the spawn is up, and each
 // member gets an `event` interrupt with the trip (tripOf); interrupt() is idempotent per character and spawn, so a
 // spawn seen again adds only a character that became capable or free since. One `plan: event …` line per spawn, one
-// more when a member joins later. Merchants, and characters the planner does not own, keep the orders below.
+// more when a member joins later. Task 018: a character the planner does not own gets no order of any kind.
 
 import { effect, signal } from "@preact/signals";
 import { IS_SERVER } from "../lib/remote";
 import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { achievements, bankDetails, bankItems, characters, isOwned, pushLog } from "./store";
-import { insertItem, queues } from "./queue";
+import { queues } from "./queue";
 import { interrupt, planner, worldOf } from "./planner";
 import { eventKey, liveEvents } from "./events";
-import { fieldOrder, merchantOrder, type EventOrder } from "../plan/events";
+import { merchantOrder, type EventOrder } from "../plan/events";
 import { itemsOf } from "../plan/planner/compile";
 import { eventDemandOpen, eventPlans as planEvents, tripOf } from "../plan/planner/events";
-import type { QueueItem, QueueItemInput } from "../plan/queue";
+import type { QueueItemInput } from "../plan/queue";
 import type { ActiveEvent, Character } from "../types/api";
 
 const KEY = "ammo:v1:eventOrders";
@@ -44,39 +44,29 @@ if (IS_SERVER) effect(() => {
   }
 });
 
-/** Characters free for a trip: running queue, not holding for a boss, not already on a trip. A character the
- *  planner owns: running queue, its head not an interrupt of the class event or higher. */
+/** Characters free for a trip: owned, running queue, its head not an interrupt of the class event or higher.
+ *  Task 018: a character the planner does not own is never free (it gets no order). */
 function free(): Character[] {
   return Object.values(characters.value).filter((c) => {
     const q = queues.value[c.name];
     const head = q?.items[0];
-    if (isOwned(c.name)) return !!q?.running && !/^pl:int:(group|event):/.test(head?.id ?? "");
-    return !!q?.running && head?.kind !== "prepare" && !head?.id.startsWith("ev:");
+    return isOwned(c.name) && !!q?.running && !/^pl:int:(group|event):/.test(head?.id ?? "");
   });
 }
 
-/** After 22:00 UTC an owned character whose offerings of the day are still open is not free for an event (design C.3). */
-const offeringFirst = (c: Character): boolean =>
-  isOwned(c.name) && new Date().getUTCHours() >= 22 && !!queues.value[c.name]?.items.some((it) => it.id.startsWith("pl:int:offering:"));
-
 const isField = (e: ActiveEvent): boolean => ["monster", "resource"].includes(e.map.interactions?.content?.type ?? "");
 
-/** The order for one event: an EventOrder, "none" (nothing worth doing — done
+/** The order for one merchant event: an EventOrder, "none" (nothing worth doing — done
  *  with it), or undefined (worth doing but nobody is free — retry next poll).
- *  Task 013: a monster or resource spawn goes to the characters the planner does not own only. */
+ *  A monster or resource spawn is the core's (ownedEvents): "none" here. */
 function orderFor(e: ActiveEvent, all: Character[]): EventOrder | "none" | undefined {
-  const candidates = e.map.interactions?.content?.type === "npc" ? all : all.filter((c) => !offeringFirst(c) && !isOwned(c.name));
   const c = e.map.interactions?.content;
   if (c?.type === "npc") {
     const o = merchantOrder(c.code, bankItems.value, bankDetails.value?.gold ?? 0, Object.values(characters.value));
     if (!o) return "none";
     const dist = (ch: Character): number => Math.abs(ch.x - e.map.x) + Math.abs(ch.y - e.map.y);
-    const near = [...candidates].sort((a, b) => dist(a) - dist(b))[0];
+    const near = [...all].sort((a, b) => dist(a) - dist(b))[0];
     return near ? { ...o, character: near.name } : undefined;
-  }
-  if (c?.type === "monster" || c?.type === "resource") {
-    if (!candidates.length) return undefined;
-    return fieldOrder(e, bankItems.value, candidates) ?? "none";
   }
   return "none";
 }
@@ -152,8 +142,7 @@ export function reactToEvents(): void {
       if (!isField(e) || !Object.keys(characters.value).some(isOwned)) plans[k] = "nothing to do";
       continue;
     }
-    if (isOwned(o.character)) interrupt(o.character, "merchant", o.items, k); // a field order never goes to an owned character
-    else o.items.forEach((it, i) => insertItem(o.character, { ...it, id: `ev:${k}:${i}` } as QueueItem, i));
+    interrupt(o.character, "merchant", o.items, k);
     plans[k] = `${o.character}: ${o.text}`;
     candidates = candidates.filter((ch) => ch.name !== o.character);
     pushLog({ ts: Date.now(), character: o.character, action: "event", text: `${e.name}: ${o.text} — then back to the queue`, kind: "info" });

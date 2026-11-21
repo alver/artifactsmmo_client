@@ -1,4 +1,4 @@
-import { authed, catalogReady, lastError, moveMode, pendingRewards, route, syncedAt, syncing, tilePick, disarmTilePick } from "./state/store";
+import { authed, catalogReady, lastError, moveMode, pendingRewards, route, syncedAt, syncing } from "./state/store";
 import { logout, reconcile } from "./state/sync";
 import { clockTime } from "./lib/util";
 import { liveEvents } from "./state/events";
@@ -12,14 +12,12 @@ import { SimPlayground } from "./ui/SimPlayground";
 import { ActivityPanel } from "./ui/ActivityLog";
 import { EventsPanel } from "./ui/EventsPanel";
 import { FleetView } from "./ui/FleetView";
-import { RoadmapTab } from "./ui/RoadmapTab";
 import { BankTab, ItemsTab, MonstersTab } from "./ui/TableTabs";
 import type { JSX } from "preact";
 
 /** Top-bar tabs: hash route → label + page. Unknown routes fall back to Fleet. */
 const TABS: [string, string, () => JSX.Element | null][] = [
   ["fleet", "Fleet", FleetView],
-  ["roadmap", "Roadmap", RoadmapTab],
   ["char", "Character", CharacterPanel],
   ["bank", "Bank", BankTab],
   ["items", "Items", ItemsTab],
@@ -45,14 +43,12 @@ function MapTab() {
 }
 
 /**
- * "Pick on map" (queue forms) and Walk arm a map click; off the Map tab that
- * click happens in this pop-up map, so the form that asked keeps its state.
+ * Walk arms a map click; off the Map tab that click happens in this pop-up map.
  */
 function MapPickOverlay() {
-  if (route.value === "map" || (!tilePick.value && !moveMode.value)) return null;
+  if (route.value === "map" || !moveMode.value) return null;
   const cancel = () => {
     moveMode.value = null;
-    disarmTilePick();
   };
   return (
     <div class="ach-backdrop map-pick" onClick={cancel}>

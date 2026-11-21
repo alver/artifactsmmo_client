@@ -1,10 +1,10 @@
-// Achievement-objective helpers — pure catalog scans, shared by the
-// AchievementsPanel (display) and the hive's achievement goal compiler.
-// Lifted out of ui/AchievementsPanel.tsx unchanged.
+// Achievement-objective helpers — pure catalog scans for the AchievementsPanel
+// (display). Lifted out of ui/AchievementsPanel.tsx unchanged; moved here from
+// plan/hive/ unchanged when the hive was deleted (task 018).
 
-import { catalog, itemName, monster } from "../../catalog";
-import { titleCase } from "../../lib/util";
-import type { AccountAchievement, AchievementObjectiveProgress } from "../../types/api";
+import { catalog, itemName, monster } from "../catalog";
+import { titleCase } from "../lib/util";
+import type { AccountAchievement, AchievementObjectiveProgress } from "../types/api";
 
 /** Human-readable "how to advance this" for one objective. */
 export function objectiveText(o: AchievementObjectiveProgress): string {

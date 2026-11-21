@@ -26,9 +26,9 @@ import {
   syncing,
 } from "./store";
 import { loadPersisted, saveState } from "./persist";
-import { resumeHive } from "./hive";
-import { resumeQueue } from "./queue";
+import { droppedAtLoad, resumeQueue } from "./queue";
 import { resumePlanner } from "./planner";
+import { devlog } from "../lib/devlog";
 import { eventKey } from "./events";
 import { eventPollMs, reactToEvents } from "./eventorders";
 import { startMarket } from "./market";
@@ -36,7 +36,34 @@ import { api, getAllPages, hasToken, setToken } from "../api/client";
 import { loadCatalog } from "../catalog";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, PendingItem } from "../types/api";
 
+/**
+ * Task 018, settled point 9: what only the deleted features stored goes at boot, one raw line each — never a pause,
+ * never a throw: the hive's key, the old daily offerings trigger's marker, the pins in the state, and what the queue's
+ * restore dropped (queue.ts droppedAtLoad: the kinds and shapes nobody writes any more, the 🔁 flag).
+ */
+function dropOld(): void {
+  const line = (what: string): void => devlog(`boot: dropped ${what} — nothing writes or reads it since task 018`);
+  try {
+    for (const k of ["ammo:v1:hive", "ammo:v1:offeringsDaily"]) {
+      if (localStorage.getItem(k) === null) continue;
+      localStorage.removeItem(k);
+      line(k);
+    }
+    const s = JSON.parse(localStorage.getItem("ammo:v1:state") || "{}") as Record<string, unknown>;
+    const old = ["pins", "craftPins"].filter((f) => f in s);
+    for (const f of old) {
+      delete s[f];
+      line(`ammo:v1:state's ${f}`);
+    }
+    if (old.length) localStorage.setItem("ammo:v1:state", JSON.stringify(s));
+  } catch {
+    /* storage trouble — the next save writes the state without the pins anyway */
+  }
+  for (const what of droppedAtLoad.splice(0)) line(what);
+}
+
 export async function boot(): Promise<void> {
+  dropOld();
   loadPersisted(); // instant paint from last session
   // Select a character right away so the workspace paints before the sync lands.
   if (!selectedCharacter.value) selectedCharacter.value = Object.keys(characters.value)[0] ?? null;
@@ -47,7 +74,6 @@ export async function boot(): Promise<void> {
     await reconcile(); // one authoritative sync before runners act on character state
     resumeQueue(); // re-launch queues saved from a previous session
     resumePlanner({ loadAchievements, loadPendingRewards }); // the planner's characters: re-attach, take over, or decide after its first read
-    resumeHive(); // re-attach the hive AFTER the queues are back (it observes them)
     watchEvents(); // events already up get their orders; then poll for new ones
     startMarket(); // task 017: the second standing poll, the Grand Exchange's orders into logs/market/ (market.ts)
   }
@@ -183,7 +209,6 @@ export async function login(): Promise<void> {
     await reconcile();
     resumeQueue();
     resumePlanner({ loadAchievements, loadPendingRewards });
-    resumeHive();
     watchEvents();
     startMarket();
   }
