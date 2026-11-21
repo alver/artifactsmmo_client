@@ -55,10 +55,14 @@ export function journal(k: string, fields: Rec): void {
   }
 }
 
+const statusFields: Rec = {};
+/** Task 019: a field another module keeps in the status (the outlook's, src/state/outlook.ts), written with the next one. */
+export const statusField = (k: string, v: unknown): void => void (statusFields[k] = v);
+
 /** The status file, rewritten whole. */
 export function writeStatus(status: Rec): void {
   try {
-    sinks.status?.(JSON.stringify(status, null, 1));
+    sinks.status?.(JSON.stringify({ ...status, ...statusFields }, null, 1));
   } catch {
     /* as above */
   }

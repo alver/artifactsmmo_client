@@ -128,8 +128,8 @@ export const routeHash = signal(typeof location !== "undefined" ? location.hash 
 if (typeof window !== "undefined") {
   window.addEventListener("hashchange", () => (routeHash.value = location.hash));
 }
-/** The active top-bar tab: the hash's first segment ("#/sim?…" → "sim"), Fleet by default. */
-export const route = computed(() => routeHash.value.replace(/^#\/?/, "").split(/[/?]/)[0] || "fleet");
+/** The active top-bar tab: the hash's first segment ("#/sim?…" → "sim"), the Roadmap by default (task 019). */
+export const route = computed(() => routeHash.value.replace(/^#\/?/, "").split(/[/?]/)[0] || "roadmap");
 export function go(tab: string): void {
   location.hash = `#/${tab}`;
 }

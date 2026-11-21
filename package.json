@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A local ArtifactsMMO client: a Node service runs the game (queues, hive, every API call) and serves the browser UI as a view. Sync once, track state from action responses, no polling.",
+  "description": "A local ArtifactsMMO client: a Node service runs the game (queues, the planner, every API call) and serves the browser UI as a view. Sync once, track state from action responses, no polling.",
   "scripts": {
     "dev": "node scripts/serve.mjs --watch",
     "start": "vite build && node scripts/serve.mjs",
@@ -12,6 +12,7 @@
     "check": "node --import tsx scripts/check.mts",
     "journal": "node --import tsx scripts/journal.mts",
     "market": "node --import tsx scripts/market.mts",
+    "outlook": "node --import tsx scripts/outlook.mts",
     "assets": "bash scripts/download-assets.sh",
     "atlas": "node --import tsx --experimental-webstorage --localstorage-file=.ammo/atlas.db --disable-warning=ExperimentalWarning scripts/atlas.mts"
   },

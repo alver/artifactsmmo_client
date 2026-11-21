@@ -28,10 +28,15 @@ this recipe drives the REAL service against the REAL game API.
 
 ## The handle
 
-- Boot is done when `.fleet-name` appears (Fleet tab) — the tab waits for the
-  service's first snapshot + the catalog before rendering anything.
+- Boot is done when `.fleet-name` appears (the Roadmap's Now card, the home since
+  task 019, and the Fleet tab) — the tab waits for the service's first snapshot +
+  the catalog before rendering anything.
 - Tabs are hash routes — switch with `location.hash = "#/items"` (no reload,
-  no extra reads): fleet · char · bank · items · monsters · achievements · map · sim.
+  no extra reads): roadmap · fleet · char · bank · items · monsters · achievements · map · sim.
+- The outlook (task 019): two minutes after its first achievements read, with a
+  character owned, a smoke-test service starts the outlook's child process too
+  (`src/server/outlook-run.ts`, a few minutes of one core below normal priority);
+  watch it in `/events` → `outlook` (`state`, `day`, `road`) or `refreshOutlook` by rpc.
 - Drive the engine without the UI: `curl -X POST -H 'Content-Type: application/json'
   -d '{"fn":"setPlannerConfig","args":[{"on":{"Third":true}}]}' http://localhost:5199/rpc`
   — any exposed function (grep `expose(`) by name. Since task 018 nothing the tab

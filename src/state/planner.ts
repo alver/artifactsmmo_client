@@ -38,11 +38,13 @@ import type { Lane, PlannerConfig, PlannerState, Running, Step, World } from "..
 // ── state ────────────────────────────────────────────────────────────────────
 
 const KEY = "ammo:v1:planner";
-const EMPTY: PlannerState = { current: {}, costs: {}, blocked: {}, strikes: {}, config: {}, optedOut: [], achievementsAt: 0 };
+const EMPTY: PlannerState = { current: {}, costs: {}, blocked: {}, strikes: {}, config: {}, achievementsAt: 0 };
 
 function load(): PlannerState {
   try {
-    return { ...EMPTY, ...(JSON.parse(localStorage.getItem(KEY) || "{}") as Partial<PlannerState>) };
+    // task 019: the hive's opt-out list (`optedOut`, read by nobody since 018) is dropped at load, without a line
+    const { optedOut: _, ...st } = JSON.parse(localStorage.getItem(KEY) || "{}") as Partial<PlannerState> & { optedOut?: unknown };
+    return { ...EMPTY, ...st };
   } catch {
     return EMPTY;
   }
@@ -666,6 +668,16 @@ async function readAchievements(force = false): Promise<boolean> {
   return true;
 }
 
+let forcedAt = -Infinity;
+/** Task 019: the Roadmap's ↻ of the achievements — one forced read, at most once a minute; a completion is claimed as
+ *  after any read. */
+export async function refreshAchievements(): Promise<void> {
+  if (!IS_SERVER) return rpc("refreshAchievements", []);
+  if (Date.now() - forcedAt < 60_000) return;
+  forcedAt = Date.now();
+  await readAchievements(true);
+}
+
 /** A pending reward → one `claim` interrupt, on the owned character with the emptiest bag; one at a time. */
 function claimRewards(): void {
   if (!pendingRewards.value.length) return;
@@ -887,4 +899,4 @@ export function resumePlanner(r: Reads): void {
 // A hot swap would double-register the module-level effects — reload instead (same as queue.ts).
 if (import.meta.hot) import.meta.hot.accept(() => location.reload());
 
-expose({ setPlannerConfig });
+expose({ setPlannerConfig, refreshAchievements });

@@ -2368,3 +2368,67 @@ body,
   gap: 6px;
   margin: 6px 0;
 }
+
+/* ── Roadmap tab (ui/RoadmapTab.tsx, task 019) ─────────────── */
+.season-line {
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+.season-bar {
+  position: relative;
+  display: flex;
+  height: 12px;
+  align-items: center;
+  margin-bottom: 4px;
+}
+.season-tick {
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 12px;
+  margin-left: -1px;
+  background: var(--muted);
+}
+.season-tick.got {
+  background: var(--gold);
+}
+.season-facts,
+.road-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 18px;
+  margin-top: 8px;
+}
+.road-head {
+  margin: 0 0 8px;
+}
+.road-tier {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.open-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.open-groups > .ws-card {
+  background: var(--panel-2);
+}
+.prio-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+}
+.knob-weight {
+  font-size: 12px;
+  padding: 2px 4px;
+}

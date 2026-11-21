@@ -12,11 +12,13 @@ import { SimPlayground } from "./ui/SimPlayground";
 import { ActivityPanel } from "./ui/ActivityLog";
 import { EventsPanel } from "./ui/EventsPanel";
 import { FleetView } from "./ui/FleetView";
+import { RoadmapTab } from "./ui/RoadmapTab";
 import { BankTab, ItemsTab, MonstersTab } from "./ui/TableTabs";
 import type { JSX } from "preact";
 
-/** Top-bar tabs: hash route → label + page. Unknown routes fall back to Fleet. */
+/** Top-bar tabs: hash route → label + page. An empty or unknown route opens the Roadmap (task 019). */
 const TABS: [string, string, () => JSX.Element | null][] = [
+  ["roadmap", "Roadmap", RoadmapTab],
   ["fleet", "Fleet", FleetView],
   ["char", "Character", CharacterPanel],
   ["bank", "Bank", BankTab],

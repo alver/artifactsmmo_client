@@ -5,7 +5,8 @@
 // printed from the raw log: the restarts; per character the steps in order; every block, flap, no step, defect, stopped
 // queue, pause and removed interrupt; the interrupts; lost fights by step; the samples against their estimates; where the
 // time goes per character (the meter's groups); what each kill step planned to drink and eat against what it did; the
-// events and the spawn ratio; the levels; the achievements; the bank's lines; (task 017) what was spent. Writes nothing.
+// events and the spawn ratio; the levels; the achievements; the bank's lines; (task 017) what was spent; (task 019) the
+// outlook's runs. Writes nothing.
 
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
@@ -176,6 +177,12 @@ if (spends.length) {
   const sum = new Map<string, number>();
   for (const r of spends) sum.set(`${r.what} ${r.code}`, (sum.get(`${r.what} ${r.code}`) ?? 0) + (r.q ?? 0));
   console.log(`In all: ${[...sum].map(([k, q]) => `${k} ${q}`).join(", ")}\n`);
+}
+// ── task 019: the outlook's runs ────────────────────────────────────────────
+if (of("outlook").length) {
+  console.log("## Outlook");
+  table(["time", "from the World of", "expected", "seconds", "the next three completions"], of("outlook").map((r) => [hm(r.t), r.from ? hm(r.from) : "", r.failed ? `failed: ${r.failed}` : `${r.expected} (now ${r.points})${r.until ? ` by ${r.until.slice(0, 10)}` : ""}`, r.sec ?? "",
+    (r.next ?? []).slice(0, 3).map((c: { code: string; at: string }) => `${c.code} ${c.at.slice(5, 10)}`).join(", ")]));
 }
 if (of("config").length) {
   console.log("## Config");

@@ -221,14 +221,17 @@ export interface Forward { world: World; played: Played[]; completed: { code: st
  * Steps still running at `until` are not counted. `onEnd` sees the world just after a step was applied — and after each
  * event step (task 013: the events the character attended while its step ran, by expectation — events.ts sharesOf; the
  * step takes that much longer, events.ts stretch, and the event's work is applied after it like a kill or gather step's).
+ * Task 019, settled point 2: `seed` — per character a step in flight, what is left of it (road.ts leftOf): it does not
+ * decide at its clock, its step ends first, its hours after the clock, and is applied like any other.
  */
-export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void): Forward {
+export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void, seed?: Record<string, Step>): Forward {
   const names = world.characters.map((c) => c.name);
   let w: World = { ...world, clock: { ...world.clock }, favors: undefined }; // the forward model ignores favors
   const free: Record<string, number> = Object.fromEntries(names.map((n) => [n, w.clock![n] ?? w.now]));
   const pending: Record<string, Step | undefined> = {};
   const attends: Record<string, { hours: number; events: Attended[] } | undefined> = {};
   const last: Record<string, Step | undefined> = { ...world.current };
+  for (const [n, s] of Object.entries(seed ?? {})) if (n in free) { w.clock![n] = free[n]; pending[n] = last[n] = s; free[n] = finish(free[n], s.hours, w).end; }
   const played: Played[] = [];
   const completed: Forward["completed"] = [];
   for (;;) {

@@ -25,6 +25,7 @@ import {
 } from "./store";
 import { queues } from "./queue";
 import { planner } from "./planner";
+import { outlook } from "./outlook";
 import { eventPlans } from "./eventorders";
 import { simDeviations } from "../sim/validate";
 import { loadCatalog } from "../catalog";
@@ -48,6 +49,7 @@ export const SYNCED: Record<string, Signal<unknown>> = {
   pendingRewards,
   queues,
   planner,
+  outlook,
   eventPlans,
   simDeviations,
 } as Record<string, Signal<unknown>>;

@@ -10,8 +10,10 @@
 // unchanged. Binds 127.0.0.1 only — whoever reaches /rpc plays the account.
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { spawn } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
+import { constants, setPriority } from "node:os";
 import path from "node:path";
 import { effect } from "@preact/signals";
 import { expose, handlerFor } from "../lib/remote";
@@ -22,6 +24,7 @@ import { hasToken, setToken } from "../api/client";
 import { SYNCED } from "../state/synced";
 import { boot } from "../state/sync";
 import { queues } from "../state/queue";
+import { setOutlookRunner } from "../state/outlook";
 
 const PORT = Number(process.env.PORT) || 5173;
 const DEV = process.argv.includes("--dev");
@@ -79,6 +82,36 @@ try {
   /* no .env — the UI's token gate sets one */
 }
 if (!hasToken() && process.env.TOKEN) setToken(process.env.TOKEN);
+
+// Task 019: the outlook's child (src/server/outlook-run.ts) — no storage flags, below normal priority, killed with us.
+// state/outlook.ts decides when; a child that cannot start, dies or hangs is its `failed`, never this process's trouble.
+setOutlookRunner((input, onLine, onExit) => {
+  const child = spawn(process.execPath, ["--import", "tsx", "--disable-warning=ExperimentalWarning", "src/server/outlook-run.ts"], { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  try {
+    setPriority(child.pid!, constants.priority.PRIORITY_BELOW_NORMAL);
+  } catch {
+    /* not started, or not allowed: it runs at normal priority */
+  }
+  const kill = (): void => void child.kill();
+  process.once("exit", kill);
+  let out = "", err = "", gone = false;
+  child.stdout.setEncoding("utf8").on("data", (d: string) => {
+    out += d;
+    for (let i; (i = out.indexOf("\n")) >= 0; out = out.slice(i + 1)) onLine(out.slice(0, i));
+  });
+  child.stderr.setEncoding("utf8").on("data", (d: string) => void (err = (err + d).slice(-2000)));
+  const exit = (code: number | null, why?: string): void => {
+    if (gone) return;
+    gone = true;
+    process.off("exit", kill);
+    onExit(code, why ?? err.trim().split("\n").pop());
+  };
+  child.on("error", (e) => exit(null, e.message));
+  child.on("close", (code, sig) => exit(code, sig ? `killed (${sig})` : undefined));
+  child.stdin.on("error", () => {}); // it died before it read everything: its exit says so
+  child.stdin.end(input);
+  return { kill };
+});
 
 // ── one-time import of the browser-only era's state (state/synced.ts) ───────
 

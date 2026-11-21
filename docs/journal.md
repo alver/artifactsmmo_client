@@ -179,6 +179,19 @@ Keys: `who`, `skill` (`combat` for the character level), `lv` (the new level).
 {"t":"2026-01-15T12:00:58.350Z","run":"f0eu","k":"spend","who":"Cat","what":"coins","code":"tasks_coin","q":8,"for":"pl:mat:jasper_crystal@Cat#1","item":"jasper_crystal"}
 ```
 
+### `outlook`: a run of the outlook ended (task 019; `src/state/outlook.ts`)
+The service's child process played the World forward (`src/plan/planner/road.ts`); one record a run that ended (the examples are the harness's fake runner, `scripts/scenarios/outlook-service.mts`), none for a
+run killed because a newer one started (a config change, ↻).
+- `from`: the World's time it was played from;
+- a whole road: `until` (played to: the service's horizon, 21 days — `HORIZON_DAYS` in `src/state/outlook.ts`), `sec` (the child's seconds), `points` (the account's
+  then), `expected` (at `until`, by the model), `next` (the next ten completions: `code`, `at`);
+- a failed run: `failed`, the reason (the child exited early, printed a line that is not the road's, could not start, or
+  was killed after 30 minutes). A raw line `outlook: failed — <reason>` goes with it.
+```json
+{"t":"2026-01-15T12:07:00.000Z","run":"7wu9","k":"outlook","from":"2026-01-15T12:02:00.000Z","until":"2026-02-05T12:02:00.000Z","sec":300,"points":0,"expected":5,"next":[{"code":"chicken_hunt","at":"2026-01-15T14:02:00.000Z"}]}
+{"t":"2026-01-15T12:15:12.000Z","run":"7wu9","k":"outlook","from":"2026-01-15T12:14:12.000Z","failed":"the child exited with 1 before the road was whole: made up: it died"}
+```
+
 ### `pause` and `server`: errors
 - `pause`: a queue paused on an error (`queue.ts runLoop`). Keys: `who`, `id`, `item`, `err`, `code` (the API's, when it was one).
 - `server`: an unhandled rejection or exception (`src/server/main.ts report`). Keys: `what`, `err` (the stack's first lines).
@@ -246,7 +259,9 @@ Written by `planner.ts statusNow`:
   - `head`: the queue's head; `note`; `running`; `error`;
 - `blocked`: `[{k, until, why}]`;
 - `events`: the live events, `[{code, at, until}]`;
-- `last`: the last `pause` and `server` record of this run.
+- `last`: the last `pause` and `server` record of this run;
+- `outlook` (task 019): `at` (the World's time of the last whole road), `expected`, `sec`, `state` (`idle`, `running`,
+  `failed`).
 
 It is about 1 kB a character: 5–6 kB for the fleet.
 
@@ -281,6 +296,7 @@ tables:
 - the events and the spawn ratio, beside `SPAWN_LOG`;
 - levels, achievements, the bank;
 - what was spent (task 017: the `spend` records, and their sums);
+- the outlook's runs (task 019: when, from which World, expected, seconds, the next three completions);
 - the config, server errors.
 
 Try it on the fixture: `npm run journal -- --file scripts/fixtures/journal-2026-01-15.jsonl --from 2026-01-15T00:00Z`.

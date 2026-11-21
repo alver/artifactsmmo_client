@@ -153,10 +153,8 @@ export interface PlannerState {  // the synced, persisted signal of task 008 —
   blocked: World["blocked"];
   strikes: Record<string, number>; // consecutive blocks of a target, any character; reset by a step of it that did units
   config: Partial<PlannerConfig>;  // Alex's patch over DEFAULTS (a later change of the defaults reaches a running installation)
-  optedOut: string[];           // characters the planner put on the hive's opt-out list
   achievementsAt: number;       // the last successful achievements read
   /** Task 010: per owned character, the offerings day (the date of the most recent 00:05 UTC) whose offering interrupt
    *  was issued; `n` re-issues that day after a removed one (at most 3), the next one due at `again` (ms). */
   offered?: Record<string, { day: string; n: number; again?: number }>;
-  outlook?: { at: number; next: Step[]; blocked: { target: string; why: string }[]; expected: number };
 }

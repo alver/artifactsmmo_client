@@ -95,27 +95,29 @@ function NeedsYou() {
 
 const STATUS_CLS: Record<Status, string> = { Working: "ok", Paused: "bad", Stopped: "warn", Idle: "warn" };
 
+/** A character as the Characters table shows it (task 019: the Roadmap's Now card too). */
+export function FleetWho({ c }: { c: Character }) {
+  return (
+    <div class="fleet-who">
+      <CooldownRing ch={c}>
+        <img class="fleet-avatar" src={asset("characters", c.skin || "men1")} alt="" onError={assetFallback("characters", c.skin || "men1")} />
+      </CooldownRing>
+      <div>
+        <a class="fleet-name" href="#/char" onClick={(e) => { e.preventDefault(); openCharacter(c.name); }}>
+          {c.name}
+        </a>
+        <div class="muted small">
+          Lv {c.level} · HP {c.hp}/{c.max_hp}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function fleetCols(): Col<Character>[] {
   const qs = queues.value;
   return [
-    {
-      label: "Character", width: "170px", sort: (c) => c.name,
-      cell: (c) => (
-        <div class="fleet-who">
-          <CooldownRing ch={c}>
-            <img class="fleet-avatar" src={asset("characters", c.skin || "men1")} alt="" onError={assetFallback("characters", c.skin || "men1")} />
-          </CooldownRing>
-          <div>
-            <a class="fleet-name" href="#/char" onClick={(e) => { e.preventDefault(); openCharacter(c.name); }}>
-              {c.name}
-            </a>
-            <div class="muted small">
-              Lv {c.level} · HP {c.hp}/{c.max_hp}
-            </div>
-          </div>
-        </div>
-      ),
-    },
+    { label: "Character", width: "170px", sort: (c) => c.name, cell: (c) => <FleetWho c={c} /> },
     {
       label: "Status", width: "96px", sort: (c) => STATUS_RANK[statusOf(qs[c.name])],
       cell: (c) => {
@@ -240,7 +242,7 @@ function SkillGrid({ chars }: { chars: Character[] }) {
 }
 
 /** A Fleet section that mounts its body only while expanded (a body isn't free). */
-function Fold({ open, title, children }: { open: Signal<boolean>; title: string; children: ComponentChildren }) {
+export function Fold({ open, title, children }: { open: Signal<boolean>; title: string; children: ComponentChildren }) {
   return (
     <section class="ws-card">
       <button class="fold-toggle" aria-expanded={open.value} onClick={() => (open.value = !open.value)}>
