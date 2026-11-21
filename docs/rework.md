@@ -3,7 +3,11 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-21 (night), after Alex restarted the service on report 018's code (run `k66s`,
+Last updated: 2026-11-21 (late night), after Alex restarted the service on report 019's code (run `dxgi`,
+20:59:29 UTC, commit `b808b47`) and task 020 was written (decision 51). Before that, the same hour: report
+019 was accepted (decision 50) and Alex was told to
+restart the service; `logs/status.json` at 20:50 UTC still carried run `k66s`, commit `e68045a` (018's code).
+Before that, at night: Alex restarted the service on report 018's code (run `k66s`,
 18:47:56 UTC, commit `e68045a`) and task 019 was written (decision 49). Before that, in the late evening:
 report 018 was accepted (decision 48) and Alex was told to
 restart the service; `logs/status.json` at 18:37 UTC still carried run `qf93`, commit `b322195` (017's code).
@@ -1293,6 +1297,105 @@ accepted, Alex restarted the service (run `[yewz]`,
       part of it; every command run is listed, git's too; `npm run check -- planner` only if the core changed.
     - **The order after 019**: the Lab (decision 36) → group boss fights. The service's own checkout when it
       fits; the market analysis after a few days of `logs/market/`.
+50. **Report 019 accepted (2026-11-21, late night).** Checked in the chat: the commits in `.git/logs/HEAD`
+    (`ce2c123`, amended to `ca189c8` Rework notes, 18:56 UTC; `b808b47` 019: roadmap home, 20:29 UTC), `HEAD`
+    on `rework`, `refs/remotes/origin/rework` at `b808b47`, `main` still at `edaaf23`; read in full:
+    `src/plan/planner/road.ts`, `src/server/outlook-run.ts`, `src/state/outlook.ts`, the runner in
+    `src/server/main.ts`, `src/ui/RoadmapTab.tsx`, `scripts/serve.mjs`. They are as the report says. Not
+    checked there: the seed line of `forward.ts`, the three new checks, the gate's runs, the typecheck, the
+    build, the outlook runs (Claude Code ran them). **Engine change: Alex was told to restart the service on
+    2026-11-21 (late night)** and to reload the page after it; `logs/status.json` at 20:50 UTC still carried
+    run `k66s`, commit `e68045a` (all five running: First, Fourth and Fifth on the mining road to 35 for
+    diamond_in_the_sky, Second on hardwood planks for cabinet_maker, Third crafting 736 minor health potions
+    for the_reaper; 29 points; bank 93 of 110, gold 240,836; nothing blocked). The next look confirms the
+    restart from `logs/status.json` (its new `outlook` field), the day's journal (an `outlook` record about
+    five minutes after the boot) and Alex's eyes on the page (the report's acceptance step 7).
+    - **The gate**: 85 checks, 85 ok (82 plus `check-road`, `check-outlook-child`, `outlook-service`); the
+      replay to the digit — 693,681 invariant checks, 88 / 121 / 108 / 62 / 86 — so `forward()`'s seed is
+      harmless when it is not given; nothing under `src/sim/`, `src/api/`, `src/catalog/` changed.
+    - **A whole run from the live World does not fit the service**: 36–38 minutes to the deadline (9,126
+      steps) and 2.2 GB at its peak; 21 days take 148 s and 483 MB. So the service's child plays 21 days
+      (`HORIZON_DAYS`, `src/state/outlook.ts`), the Season card says "the road is played 21 days only: nothing
+      is said about the deadline", and `npm run outlook` keeps the deadline (`--days 21` for the quick look).
+      The time per simulated day grows through the run: about 7 s a day in the first three weeks, 30–40 s
+      after that; the memory grows with it. For scale: a replay row took 216–225 s at report 009, and
+      `check-planner`'s five rows take 2,070 s now (about 7 minutes a row, from the 11-18 snapshot).
+    - **The first outlook** (the World of 11:43 UTC on 11-21, to the deadline): 28 points then, **98 at the
+      deadline by the model**, bronze (105) 7 short; 59 by 12-12. Two runs in fresh processes give the same
+      road line for line. It is the same order of number as the replay's row A (88 from the 11-18 snapshot;
+      decision 46's noise applies). Open at the deadline, 112 points: another layer 50, an event 11, use 10,
+      a group 9, filler not reached 9, a raid 8, gear 7, unhandled 4 (ultimate_rune), a level 2, does not
+      fit 2. Two plateaus without a completion: 01-14 to 01-25 and 01-28 to 02-08.
+    - **The first line held against play**: Intermediate Lumberjack was expected on 11-21 at 0.4 d (about
+      21:20 UTC) and was completed at 20:27:33 UTC (29 points). Next by the road: Expert Miner 11-22 (1.3 d),
+      Intermediate Alchemist 11-23 (1.9 d), Worker 11-23 (2.4 d). The level roads matched to a few minutes;
+      the forecast does not see an objective's short tails (1–10 kills) nor the gear and supply steps taken
+      around them.
+    - **What the runtime's World is not** (the report's finding): it carries `bankSlots` and `bags`, which
+      the forward model does not play — played as it is, a tidy step repeats forever. `road()` drops the
+      slots and banks the bags' stock. So the outlook never shows a tidy step or an expansion; a character
+      that is off is still played (all five are on).
+    - **018 in play so far** (18:47–20:52 UTC, the report's section and the chat's read of the journal's
+      tail): only gathers and two crafts; no pause, block, flap, defect or server error; the market file has
+      a line about every ten minutes. Still unread: the offering interrupts after 00:05 UTC on 11-22 (the
+      report was written before then) and what 017's step 8 waits for (nothing spent, no kill step yet;
+      Third's potions for the vampire fights of the_reaper are being made).
+    - **Seen in the chat's read** (none of it holds the restart back): `waitingOf` files the_reaper under
+      "gear (no safe win within ten levels)" while the fleet brews for it (its gear test is the gear alone;
+      the Roadmap shows it "in work", so only the group's name is off); the journal's sample
+      `craft:hardwood_plank` reads 72 s against an estimate of 309 (mean 38, n 4) — what that estimate
+      counts is read with the next journal look; Closing The Gate is on the road for 01-28 while today's
+      event verdict says "∞ spawns needed" — today's fighters against the levelled ones of the model, not a
+      contradiction, but the first thing to hold against play when a fighter passes the event monsters.
+    - **The order changes: the run's speed goes before the Lab.** A Lab whose run takes 36 minutes is not
+      something to play with, and the page cannot say what Alex wants to know most (the points at the
+      deadline). So: **020 the run's speed and its noise** (where the seconds and the memory go, why a run
+      from the live World is five times a replay row, an exact cache or a measured band for decision 46's
+      noise; if a whole run then fits a few minutes, `HORIZON_DAYS` goes to 0 and the Season card shows the
+      deadline; riding along: `waitingOf`'s group for a target that waits for consumables) → **021 the Lab**
+      (decision 36, thin first version) → group boss fights. The service's own checkout when it fits; the
+      market analysis after a few days of `logs/market/` (the poll runs since 17:01 UTC on 11-21). Alex was
+      told.
+51. **Task 020, settled in the chat** (2026-11-21, late night; in the task file as "What is settled"). The
+    restart is confirmed: `logs/status.json` and the journal's `boot` at 20:59:30 UTC, run `dxgi`, commit
+    `b808b47`, branch `rework`; all five steps re-attached (`lvl:mining:35` for First, Fourth and Fifth,
+    `ach:cabinet_maker:0` for Second, `mat:minor_health_potion` for Third); bank 92 of 110, gold 241,836; 29
+    points. **The first live outlook**: started 21:01:30 UTC (two minutes after the boot's read), ended
+    21:04:31, 180.9 s beside the service (148 s alone), 21 days, 59 expected on 12-12; next by it: Expert
+    Miner 11-22 15:54 UTC, Worker 11-23 12:36, Intermediate Alchemist 11-23 13:03, Arachnophobia Conquered
+    11-25, The New Bandit 11-26, Intermediate Fisherman 11-26, The Reaper 11-26 20:54, Expert Lumberjack and
+    Cabinet Maker 11-27, Expert Alchemist 12-01. The steps went on through the run. Not seen in the chat: the
+    page (Alex's eyes).
+    - **Exact comes before fast.** While a solve's answer depends on what was solved before it (`reach.ts`
+      `lookup`: a pool served from a superset pool's result, 014's potion rules), a change that only saves
+      time can still move a replay number, and "the line to the digit" proves nothing. So 020: measure →
+      make the run exact → fix the new reference numbers → make it fast against them, every later change
+      keeping every line equal.
+    - **What exact means**, and the gate proves it from now on: caches off gives the same lines as caches
+      on; two runs in one process give the same lines; the replay's rows give the same points in any order.
+      The direction: key a solve on what the solver reads and serve only an equal key.
+    - **The replay's line changes once**, by design: the new line and the new road from the 11-21 snapshot
+      are reported beside the old ones, with where each first parts. The new line is the gate's after that.
+    - **The targets**: a whole season from the live World in under five minutes on one core, under 1 GB. At
+      most ten minutes and 1 GB → `HORIZON_DAYS` 0, the Season card shows the deadline; otherwise 21 days
+      stay.
+    - **If exact costs more than today's 36 minutes a season** even after the speed work: the reuse rules
+      stay, the speed changes that keep 019's lines stay, and the band is measured instead (said first in
+      the Summary).
+    - **Read in the chat** (the task file's list, to be checked there): every memo keyed on the World object
+      lives for one decision of a forward run; `advance()` makes a new achievements array at every step's
+      end, so `targetsOf` is rebuilt at every decision; the solve tables hold up to 16 results a key and
+      20,000 keys, each result with its pool and a whole recommendation.
+    - **Riding along**: a character that is off is not played; `waitingOf`'s group for a fight won with
+      planned consumables (the_reaper); `outlook()` of `forward.ts` goes if unused.
+    - **Read-only in 020** (its section 5): every `outlook` record and the road against the `ach` records;
+      the offering interrupts after 00:05 UTC on 11-22; 017's step 8 leftovers (the Spent table, slivers, a
+      fight step's `wear`); the `craft:hardwood_plank` sample (72 s against an estimate of 309); the bank's
+      gold 240,836 → 241,836 between 20:50 and 20:59 UTC with no `spend` record; the market file's gaps.
+    - **Allowed for speed only, with identical results**: `src/plan/bis.ts`, `src/plan/jobgear.ts`,
+      `src/sim/combat.ts`, `src/sim/stats.ts`. No rule, price, cap or deciding constant moves.
+    - **The order after 020**: 021 the Lab (decision 36) → group boss fights. The service's own checkout
+      when it fits; the market analysis after a few days of `logs/market/`.
 
 ## Tasks
 | # | What | State |
@@ -1315,12 +1418,29 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 016 | The journal (decisions 37, 43): a journal of decisions and step results, the raw log in hourly files, a status file, a daily snapshot of the World, a reader; riding along (decision 42): `planMake` in whole runs, one read of the bank after a 462, `bankCheck` and `tidyStep` on the same verdicts | done, `c8cbd78` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 44). **Engine change: Alex restarted the service on 2026-11-21 at 11:43:34 UTC** (run `[0gpn]`); all five steps re-attached. |
 | 017 | Keys, tolls and what is spent (decision 45): the nine conditional transitions for the core, the forward model and the runner; a gold budget for fares with a price in the score; tasks coins on an objective's own material; a `spend` record; a standing read of the Grand Exchange into `logs/market/`; riding along (decisions 44, 45): `tidyLeft` with a tidy step in flight, a try around the status, a `pl:` fight step wears its `wear`, an event trip takes what it planned, no kill step for a sliver | done, `b322195` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 46). **Engine change: Alex restarted the service on 2026-11-21 at 17:01:00 UTC** (run `qf93`); all five steps re-attached. |
 | 018 | The clean-up (decisions 15, 47): the planner is the only writer; the hive, the pins and training loops, the helpers, 🔁, the queue editor, the old Roadmap, the gear coverage view, the standing orders of a character that is off, the item kinds nobody writes, their checks and their stored state are deleted; nothing in the planner's path changes and nothing new is drawn | done, `e68045a` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 48). **Engine change: Alex restarted the service on 2026-11-21 at 18:47:56 UTC** (run `k66s`); all five steps re-attached. |
-| 019 | The Roadmap as home and the outlook (decision 49): a child process plays the live World to the deadline; the Roadmap tab first (Season, Now, The road, Open achievements, Blocked, Priorities); the knobs first, exclude, weight; `npm run outlook`; a journal record a run | written 2026-11-21, `tasks/019-roadmap-home.md`; not run yet. **Engine change: restart after it is accepted.** |
-| 020… | The Lab (decision 36; with it the replay's noise) → group boss fights (with it decision 48's parked cuts). When it fits: the service's own checkout (decision 47); the market analysis | |
+| 019 | The Roadmap as home and the outlook (decision 49): a child process plays the live World to the deadline; the Roadmap tab first (Season, Now, The road, Open achievements, Blocked, Priorities); the knobs first, exclude, weight; `npm run outlook`; a journal record a run | done, `b808b47` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 50). **Engine change: Alex restarted the service on 2026-11-21 at 20:59:29 UTC** (run `dxgi`); all five steps re-attached; the first outlook ended at 21:04:31 UTC (180.9 s, 59 on 12-12). The service's child plays 21 days, not the season (a whole run takes 36–38 minutes). |
+| 020 | The forward run, exact first, then fast (decisions 50, 51): where a run's seconds and memory go; a solve keyed on what it reads; the new reference line; speed against it; `HORIZON_DAYS` 0 if a season fits ten minutes and 1 GB; riding along: an off character is not played, `waitingOf`'s group for planned consumables | written 2026-11-21, `tasks/020-run-speed.md`; not run yet. **Engine change: restart after it is accepted.** |
+| 021… | The Lab (decision 36) → group boss fights (with it decision 48's parked cuts). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
-- **How long does a forward run take, and what does the first outlook say?** Nobody has timed one row since
-  009 (216–225 s); 019, section 5, measures it from the day's snapshot and prints the first road.
+- **Does 019 hold in play?** Half answered (decision 51): the restart, the status's `outlook` field and the
+  first `outlook` record (21:04:31 UTC on 11-21, 180.9 s) are there and the steps went on through the run.
+  Still open: a record every three hours, a run after a knob change, and Alex's eyes on the page (the layout,
+  the folds, the texts on live data). Read by 020, section 5. The question was: after the restart (report
+  019, acceptance step 7): the page opens on the
+  Roadmap; `logs/status.json` carries an `outlook` field and the journal an `outlook` record about five
+  minutes after the boot (two minutes' wait, 2½ of play), then one every three hours; the steps go on
+  through a run (no `pause`, no gap in the action lines); ⭐ on an open achievement starts a new run 30 s
+  later. And Alex's eyes: the layout, the folds, the texts on live data.
+- **Why is a run from the live World so slow and so fat?** 36–38 minutes and 2.2 GB to the deadline, about
+  7 s a simulated day at first and 30–40 s after day 21 (decision 50). Task 020.
+- **Does the outlook's road hold?** Each `outlook` record carries the next ten completions with dates; the
+  journal's `ach` records say when they came. First line: Intermediate Lumberjack, expected about 21:20
+  UTC on 11-21, done 20:27. Held against play at every later look.
+- Answered by 019 (decision 50): a whole run takes 36–38 minutes; the first outlook says 98 at the deadline.
+  The question was: **How long does a forward run take, and what does the first outlook say?** Nobody has
+  timed one row since 009 (216–225 s); 019, section 5, measures it from the day's snapshot and prints the
+  first road.
 - **Does 018 hold in play?** The boot is confirmed (decision 49: run `k66s`, the three `boot: dropped` lines,
   five steps re-attached, no pause). Still to read, by 019, section 6: the offering interrupts of the next
   00:05 UTC (within five minutes of it), and the page (Alex's eyes). The question was: after the restart
