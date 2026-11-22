@@ -3,7 +3,10 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-22 (morning), after Alex restarted the service on report 020's code (run `4zfd`,
+Last updated: 2026-11-22 (evening), after report 021 was accepted (decision 54), Alex restarted the service on
+its code (run `0e2f`, 17:49:00 UTC, commit `2db1053`), **the approach was put on the table** (Alex: there must be
+a way to silver; level first?) and task 022, the strategy experiment, was written (decision 55). Before that, in
+the morning: Alex restarted the service on report 020's code (run `4zfd`,
 08:39:04 UTC, commit `0bd4b6a`) and task 021 was written (decision 53). Before that, the same hour: report
 020 was accepted (decision 52) and Alex was told to restart
 the service; `logs/status.json` at 08:31 UTC still carried run `dxgi`, commit `b808b47` (019's code). Before
@@ -126,6 +129,23 @@ accepted, Alex restarted the service (run `[yewz]`,
   behind a layer are open in every row**: they wait for keys and tolls, and combat 40 now comes with 57 days
   left. **87 leans on event fights** (decision 40): A is 19 above "no events", and a trip carries one stack of
   a potion while the model credits the member's whole hour.
+- **What task 021 found (2026-11-22).** The fight solve was wrong in 76 of 2,320 cap pairs and 7 tiers and is
+  repaired (a fixpoint, nested in its caps, at the tier of the best set known; `check-solve`); **the wall at combat
+  23–26 was not the solver**: the forward model strands characters behind a paid transition (four on Sandwhisper
+  Isle, 260 gold over the floor against a 1,000-gold fare back). The road from the 11-21 file: 78 → **82**; from the
+  11-22 file **98**, the fleet fighting to the end; the service's own run of 12:46 UTC expected 103. The replay:
+  88 / 121 / 108 / 86 / 81 (A / B / C / E / G). A season from a live World takes an hour: the service's child plays
+  21 days again.
+- **Alex, 2026-11-22: the approach itself is on the table.** He believes there must be a way to **silver (158)**
+  and asks whether to level the heroes first and take the achievements faster afterwards, or whether another way
+  exists (his question of 2026-11-18, decision 11, again — this time with an exact model to answer it). What the
+  chat read from the journal (decision 55): in 30 hours of play the fleet fought 1.6% of its time, gathered 85%,
+  spent a quarter of it on potion ingredients, gained three combat levels and one point; an hour of fighting costs
+  about seventeen of making. And from the code: rule 3 sees the nearest gate only, gear by need charges a crafter's
+  whole road to one fighter, `fit` is yes or no. **By today's rule silver is out whatever is repaired** (about
+  100, the fighters at 44–46 only at the deadline, 64 points behind combat 46–50). Task 022 plays the alternatives.
+  The working target stays the most points by the season's end; which policy gets them is Alex's to choose on
+  022's numbers.
 - **One planner decides what the fleet does next and moves on by itself** — "the roadmap". Alex at most adjusts
   priorities, and doubts there is much to adjust.
 - **No manual queues in the UI.** Alex hardly used them; if something has to be done by hand, the planner is wrong
@@ -1540,6 +1560,92 @@ accepted, Alex restarted the service (run `[yewz]`,
     - **The order after 021**: 022 the Lab (decision 36) → group boss fights. The service's own checkout
       when it fits; the market analysis after a few days of `logs/market/`.
 
+54. **Report 021 accepted (2026-11-22, evening).** Checked in the chat: the commits in `.git/logs/HEAD`
+    (`4d68298` Rework notes, 08:49 UTC; `2db1053` 021: fight solve, 14:39 UTC), `HEAD` on `rework`,
+    `refs/remotes/origin/rework` at `2db1053`; in `src/plan/bis.ts` the ladder, `MAX_PASSES` 50, `STARTS` 3,
+    `FIGHTS_CAP` 500,000 and the `worn` option; `HORIZON_DAYS` 21 in `src/state/outlook.ts`; the two `KILL_LOG`
+    cases of `scripts/check-planner.mts` printed, not pinned. Not checked there: the gate's runs, the timings, the
+    build (Claude Code ran them). The report was first looked for at 14:12 UTC and was not there yet (the second
+    planner check ended at 14:17, the commit came at 14:39). **Engine change: Alex was told to restart and did, at
+    17:49:00 UTC** (run `0e2f`, commit `2db1053`; the journal's `boot`: five steps re-attached; the first
+    `outlook` record 318.1 s, `until` 12-13, 55 expected by then; expert_miner at 18:46:53 UTC against the
+    outlook's 18:51:40; 30 points).
+    - **Both faults, and neither walled the fleet.** A search fault in 76 of 2,320 cap pairs (one a tier; against
+      the best set known 7 tiers and a third of the scores), a price fault in 22 (the solver rests, the planner's
+      price eats; 38 after the repair, left alone). The climbs part in the lost tier on sets that survive the same
+      number of turns; the wider climb ends in another local optimum, not in a timeout — the chat's reading held in
+      its first half only.
+    - **The search now**: passes until one changes nothing, the weapon free at the end, the narrower caps' answer
+      as one start (nested by construction), three seeded random starts; how lost sets rank did not change (the
+      monster's HP left was tried and was worse). **The three guarantees are in the gate** (`check-solve`, 15 s):
+      1,740 answers fixpoints, no cap pair below, the 45-fight sample 135 of 135 at the best known tier (the old
+      search: 128). A solve costs about 1.6 times the old one.
+    - **The wall at combat 23–26 was a place**: the forward model leaves a tolled step's character at its work
+      tile and pays the round trip at the end (`forward.ts:194`, `:143`); with 260 gold over the floor and a
+      1,000-gold fare back four characters stood on Sandwhisper Isle from 12-24 with no route to a bank or a
+      monster. Not repaired (outside what 021 might change); 022 repairs it in scratch, 023 in the tree.
+    - **The numbers moved once more.** The replay: `OK (694523 invariant checks, 96 made-up cases; deadline points
+      88 / 121 / 108 / 86 / 81)`. The road from the 11-21 file 78 → 82 (the fallback from 12-26, nothing left
+      fits); from the 11-22 file 98, 36 completions, the fleet fighting to the end (3,588 s, 561,788 solves); the
+      service's run of 12:46 UTC expected 103.
+    - **The planner's solves no longer read what is worn** (−72% of the 21-day run; 0 equal swaps in 7,390
+      steps); a table of fights across solves in numbers; a 1 GB heap for the outlook child. The season from the
+      11-21 file: 411.9 s and 477 MB. **`HORIZON_DAYS` is 21 again**: a live World whose fleet fights on is not
+      played to the deadline in the child's thirty minutes. Outlooks of the day: 08:41 and 09:16 UTC killed
+      (020's code cannot play the live World in thirty minutes either), 12:46 ended in 1,795.2 s on 021's tree
+      beside the planner check, 16:16 killed (the old service still asked for the deadline).
+    - **Two pins became prints**: `KILL_LOG_013` and `KILL_LOG` were asserted equal to medians the solver's sets
+      moved (0.92 and 1.17). The constants were not 021's to change; they are an open question now.
+    - **Not the solver, the runner and the plan** (the report's sections 5 and 6; all 023's): a train loop's drop
+      hunt adopts `jobGear`'s brew set and never brews (Third and the ogre: 05:08 and 15:30 UTC, blocked six
+      hours each time); an event member's set is solved on a pool with its bag's potions and its `take` withdraws
+      the bank's only (Third 06:04; Second 13:15 UTC: "≈37 kills", two minor and 83 small potions taken, the first
+      fight lost, the trip over); `eventMembers` booked one Tromatising Mask twice; the offerings stopped on
+      drained stacks the memoised set does not see (6 of 15; a rat hide cost 18 wins at the day's drops, 6.5
+      potions a win). The atlas is the old solver's (`npm run atlas` was out of scope).
+55. **The approach reconsidered; task 022, settled in the chat** (2026-11-22, evening; in the task file as "What
+    is settled"). Alex asked whether the whole approach should change: there must be a way to silver; level the
+    heroes first and take the achievements faster afterwards? Other variants? The logs are richer now.
+    - **Read in the chat from the journal** (11-21 11:43 to 11-22 17:25 UTC, 149.5 character-hours): `level` 76.5 h
+      (67.5 h of it `lvl:mining:35`), `supply` 36.9 h (35.2 h for Minor and Small Health Potion), `objective`
+      26.2 h, offerings 6.0 h, events 3.8 h; by the meter gather 85%, fight 1.6%; three combat levels in the fleet,
+      one point. 24 kill steps: a vampire kill drinks 6–8 minor potions; planned and measured seconds agree on
+      steps of ten kills and are twice the plan on steps of one or two.
+    - **Read in the chat from the code** (`2db1053`): rule 3's bundle is the nearest gate of a lane
+      (`bundle.ts:128-129`); `fit` is yes or no (`decide.ts:245`); gear by need (a) is per fighter on ten levels,
+      and a crafter's level road is charged in full to that one need (`gear.ts:127-133`, `:201-205`); a crafting
+      level is a candidate only through such a need. So the rule buys cheap points now and under-invests in
+      what every later hour would use; with 81 of the open points behind combat 41+ (decision 11) **silver is
+      out by today's rule whatever is repaired**.
+    - **Told to Alex**: his idea is right in substance — the investment is gear and combat together, not levels
+      alone; other ways: buying consumables for gold (row B is the bound, +33), three fighters and two workers,
+      the points the code cannot take yet (`use` 10, group bosses 9, gems for spawns). No promise of silver:
+      without the raids about 183 points exist, so 158 is nearly everything else and asks combat 45+ around the
+      turn of the year.
+    - **Alex's answers**: public reads of the leaderboard are allowed for 022; 022 is the experiment, the
+      executor's repairs move to 023.
+    - **022 changes nothing in the engine**: policies live in scratch trees as config keys that are off by
+      default, their patches and runs are kept under `docs/strategy/022/` for 023 to lift. The fixed World is
+      `logs/world/2026-11-22.json`; the harness is proven on report 021's road (98, 36 completions, 9,014 steps);
+      the stranding is repaired in scratch first (`P0s`), every policy carries it.
+    - **The policies**: the spine (`S30`, `S35`, `S40`: what serves a character's combat road is first tier below
+      N), the crafters first (`C30`, `C35`), both (`CS`, the leader's pattern), the rule sees every gate (`D1`), a
+      crafter's road is the fleet's (`D2`), three fighters (`F3`), consumables free (`B`, the bound of buying), and
+      one of Claude Code's own if the leaders show a way the chat did not see. A calendar is never sold for a
+      level (the apparitions' gates keep their place). Two stages, every policy in both: 42 days, then the
+      deadline. Alex, 2026-11-22: the machine is strong, many runs side by side are fine — the task runs as many
+      as there are physical cores less four, under 40 GB together, and the service must not notice.
+    - **Read-only beside it**: the leaders (pace over four days against `docs/design/snapshot/`, the order of
+      their completions, levels against points, what they wear, how many fight; at most 120 public requests, no
+      token); this fleet's hours and every kill step planned against played, with what the executor's faults
+      cost a day; what a combat level costs under today's pool and with the crafters at 30 / 35 / 40, and the
+      points behind each combat level; the season's consumables in gold.
+    - **How far a number is believed** is part of the answer: the points split by what play has shown
+      (gathering and crafting; kills fought in play; kills never fought; events; tolls).
+    - **The order after 022**: 023 the chosen policy with the executor's repairs and the stranding; then the
+      offerings round, the Lab (decision 36), group boss fights. The service's own checkout when it fits; the
+      market analysis with 022's section 5.
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -1563,11 +1669,31 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 018 | The clean-up (decisions 15, 47): the planner is the only writer; the hive, the pins and training loops, the helpers, 🔁, the queue editor, the old Roadmap, the gear coverage view, the standing orders of a character that is off, the item kinds nobody writes, their checks and their stored state are deleted; nothing in the planner's path changes and nothing new is drawn | done, `e68045a` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 48). **Engine change: Alex restarted the service on 2026-11-21 at 18:47:56 UTC** (run `k66s`); all five steps re-attached. |
 | 019 | The Roadmap as home and the outlook (decision 49): a child process plays the live World to the deadline; the Roadmap tab first (Season, Now, The road, Open achievements, Blocked, Priorities); the knobs first, exclude, weight; `npm run outlook`; a journal record a run | done, `b808b47` on `rework`, pushed to `origin/rework`. Accepted 2026-11-21 (decision 50). **Engine change: Alex restarted the service on 2026-11-21 at 20:59:29 UTC** (run `dxgi`); all five steps re-attached; the first outlook ended at 21:04:31 UTC (180.9 s, 59 on 12-12). The service's child plays 21 days, not the season (a whole run takes 36–38 minutes). |
 | 020 | The forward run, exact first, then fast (decisions 50, 51): where a run's seconds and memory go; a solve keyed on what it reads; the new reference line; speed against it; `HORIZON_DAYS` 0 if a season fits ten minutes and 1 GB; riding along: an off character is not played, `waitingOf`'s group for planned consumables | done, `0bd4b6a` on `rework`, pushed to `origin/rework`. Accepted 2026-11-22 (decision 52). **Engine change: Alex restarted the service on 2026-11-22 at 08:39:04 UTC** (run `4zfd`); all five steps re-attached. The run is exact; the season plays in 420 s and 683 MB alone; the road from the 11-21 World expects 78 at the deadline (was 98). |
-| 021 | The fight solve, right first, then fast again (decisions 52, 53): where the wider search loses; a search that is a fixpoint, nested in its caps and at the tier of the best set known; the wall at combat 23–26 and the road again; the planner's solves without the worn set; speed against the new reference and the horizon by 020's rule; riding along: a `spend` record for gold; read-only: 020 in play, Third's pauses, the offerings of 11-22 | written 2026-11-22, `tasks/021-fight-solve.md`; not run yet. **Engine change: restart after it is accepted.** |
-| 022… | The Lab (decision 36) → group boss fights (with it decision 48's parked cuts). When it fits: the service's own checkout (decision 47); the market analysis | |
+| 021 | The fight solve, right first, then fast again (decisions 52, 53): where the wider search loses; a search that is a fixpoint, nested in its caps and at the tier of the best set known; the wall at combat 23–26 and the road again; the planner's solves without the worn set; speed against the new reference and the horizon by 020's rule; riding along: a `spend` record for gold; read-only: 020 in play, Third's pauses, the offerings of 11-22 | done, `2db1053` on `rework`, pushed to `origin/rework`. Accepted 2026-11-22 (decision 54). **Engine change: Alex restarted the service on 2026-11-22 at 17:49:00 UTC** (run `0e2f`); all five steps re-attached; the first outlook 318.1 s for 21 days. The solve is right (three guarantees in the gate); the wall was the forward model's stranding, not the solver; 82 from the 11-21 World, 98 from 11-22's; `HORIZON_DAYS` 21 again. |
+| 022 | The strategy experiment (decision 55), nothing in the engine changes: what the leaders did (public reads, allowed by Alex); where this fleet's hours go and what play says about the model; what a combat level costs and what gear buys; the policies — the spine to 30 / 35 / 40, the crafters first, both, a rule that sees every gate, a crafter's road paid once, three fighters, consumables free — played by the forward model from `logs/world/2026-11-22.json` to the deadline; what the best leaves open; the recommendation | written 2026-11-22, `tasks/022-strategy.md`; not run yet. **No engine change, no restart.** |
+| 023… | The chosen policy built, with the executor's repairs of report 021 (a train loop's drop hunt that never brews, an event member's `take` without its set's potion, a drained stack that does not re-solve, one mask booked twice) and the forward model's stranding; the atlas regenerated. Then: the offerings round (the cheapest completable bracket, one hunter for the fleet), the Lab (decision 36), group boss fights (with decision 48's parked cuts). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
-- **Does 020 hold in play?** Half answered (decision 53): the restart is confirmed (run `4zfd`, 08:39:04 UTC
+- **What should the fleet play for first?** Decision 55. Task 022 answers with the policies' roads; Alex chooses.
+- **Is silver (158) in reach at all?** Not by today's rule (about 100). 022: the leaders' pace over four days, the
+  points behind each combat level, the best policy's road and how far it is believed.
+- **Would gold buy the season's potions?** A third of the season is making them (row B 121 against row A 88);
+  the bank holds 169,966 gold. 022, section 5, prices the bill; buying is Alex's decision.
+- **Does 021 hold in play?** The restart is confirmed (decision 54). Still to read, by 022's Summary and the next
+  look: the outlook every three hours (about five minutes, `until` 21 days on), the Season card's "21 days only"
+  (Alex's eyes), a `pl:` fight step's `wear` from the repaired solver, a `spend` record for a gold purchase.
+- **What do `KILL_LOG` and `KILL_LOG_013` have to be now?** Their pins are prints since 021 (medians 1.17 and 0.92
+  on the repaired solver's sets, the constants 1 and 0.88, eight and 23 samples of 11-19). To be measured on the
+  journal's kill steps (022, section 2) and set with 023.
+- Answered by 021 (decision 54): a greedy climb from empty slots is not monotone in its candidates — the climbs
+  part in the lost tier on sets that survive equally long; repaired by passes to a fixpoint, the weapon free at
+  the end, the narrower caps' answer as a start, three seeded starts. The 20 points were not the solver's: the
+  forward model's stranding. The planner and the executor's gate did not disagree on a safe win either: Third's
+  two pauses were potions the plan counted and the runner did not carry (decision 54). The offerings ended at 6
+  of 15 on drained potion stacks. The questions were the three that follow the next entry, as they were asked.
+- **Does 020 hold in play?** Answered by 021 (decision 54): the two whole-season outlooks of 020's code were
+  killed at thirty minutes — the live World is not played to the deadline in that time. The question was, half
+  answered (decision 53): the restart is confirmed (run `4zfd`, 08:39:04 UTC
   on 11-22, `0bd4b6a`, five steps re-attached) and the first outlook to the deadline started at about 08:41.
   Still open, read by 021, section 5: that run's record and seconds, and Alex's eyes on the Season card. The
   question was: after the restart (report 020, acceptance step 7): the journal's `boot` carries
