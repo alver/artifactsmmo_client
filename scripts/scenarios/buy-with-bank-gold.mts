@@ -16,5 +16,7 @@ await scenario(
     t.eq(t.calls("npc/buy").map((c) => c.body), [{ code: "healing_rune", quantity: 1 }], "npc/buy calls");
     t.eq(t.inv("Dan", "healing_rune") + t.bank("healing_rune"), 1, "the rune is in the bag or the bank");
     t.eq(t.world.gold + t.world.chars.get("Dan")!.gold, 15_000, "gold left, bank + pocket");
+    // task 021: a purchase paid in gold is a spend record, as one paid in tasks coins
+    t.eq(t.journal("spend").map((r) => [r.who, r.what, r.code, r.q, r.item]), [["Dan", "gold", "gold", 10_000, "healing_rune"]], "the purchase is a spend record");
   },
 );

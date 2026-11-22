@@ -170,14 +170,16 @@ Keys: `who`, `skill` (`combat` for the character level), `lv` (the new level).
 
 ### `spend`: a unit spent (task 017; `src/lib/journal.ts spent`, from the action's echo)
 - `who`;
-- `what`, one of `fare` (a transition's gold), `key` (the item a transition consumed), `coins` (a purchase paid in tasks coins), `expansion` (a bank expansion's gold);
-- `code` (`gold`, the key's code, `tasks_coin`) and `q` (the quantity);
+- `what`, one of `fare` (a transition's gold), `key` (the item a transition consumed), `coins` (a purchase paid in tasks coins), `gold` (task 021: a purchase paid in gold — the merchant interrupt's Lost World Maps, a shop's buy), `expansion` (a bank expansion's gold);
+- `code` (`gold`, the key's code, `tasks_coin`) and `q` (the quantity: the purchase's total price);
 - `for`: the bucket the action belonged to — the step's `pl:<key>` or the interrupt's `pl:int:<cls>:<what>`;
-- `via`: a transition's tile (`<layer>:<x>,<y>`); `item`: what the coins bought.
+- `via`: a transition's tile (`<layer>:<x>,<y>`); `item`: what the coins or the gold bought.
 ```json
 {"t":"2026-01-15T12:01:28.300Z","run":"6aux","k":"spend","who":"Wil","what":"fare","code":"gold","q":1000,"for":"pl:src:palm_wood@Wil#1","via":"overworld:2,16"}
 {"t":"2026-01-15T12:00:58.350Z","run":"f0eu","k":"spend","who":"Cat","what":"coins","code":"tasks_coin","q":8,"for":"pl:mat:jasper_crystal@Cat#1","item":"jasper_crystal"}
+{"t":"2026-01-15T12:00:08.200Z","run":"jur5","k":"spend","who":"Dan","what":"gold","code":"gold","q":75000,"item":"lost_world_map"}
 ```
+`npm run journal`'s `## Spent` table lists every `spend` record and sums them by `what` and `code`, so the merchant's gold shows there beside the fares and the coins.
 
 ### `outlook`: a run of the outlook ended (task 019; `src/state/outlook.ts`)
 The service's child process played the World forward (`src/plan/planner/road.ts`); one record a run that ended (the examples are the harness's fake runner, `scripts/scenarios/outlook-service.mts`), none for a

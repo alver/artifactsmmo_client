@@ -2,8 +2,18 @@
 //
 // Given a character and a target monster, search the gear the character owns or
 // can craft for the set that beats the monster with the most margin. The search
-// is bounded (pruned pools + weapon-outer greedy with light re-passes), so it
-// runs in a few thousand simulate() calls — sub-second, synchronous.
+// is bounded (pruned pools + weapon-outer climbs), so it runs in a few thousand
+// simulate() calls — sub-second, synchronous.
+//
+// Task 021, what the answer guarantees (scripts/check-solve.mts proves all three):
+//   - a fixpoint: no change of one slot (the weapon too) or of one group (the ring
+//     pair, the artifacts, the utility pair) among the candidates improves it — a
+//     climb runs passes until one changes nothing, the last one with the weapon free;
+//   - nested: on the caps' ladder (3/3 ⊂ 6/6 ⊂ 12/10) a search starts from the
+//     answer of the step below on its own candidates (the narrower candidates are
+//     the wider ones' top by the same heuristic order), and a climb never ends
+//     below its start — so a wider search never answers below a narrower one;
+//   - the tier (safe, win, lost) of the best set known on the check's sample.
 //
 // Objective (lexicographic, encoded as one scalar):
 //   1. feasible: EV win AND not a 100-turn timeout            (else the -1e12 tier)
@@ -71,6 +81,10 @@ export interface BisOptions {
   potionPrice?: (code: string) => number;
   perSlotCap?: number; // default 12
   weaponCap?: number; // default 10
+  /** Task 021: false — the set worn is not read (no `keep` tiebreak, the worn weapon no extra option): the planner's
+   *  solves (reach.ts), so one pool gives one answer whatever is worn. Default true: the executor keeps what it wears
+   *  rather than swap it for an equal piece at the bank. */
+  worn?: boolean;
 }
 
 /** Task 014: a food a fighter eats between fights — its code and the HP one unit heals. */
@@ -90,16 +104,17 @@ export function healSeconds(lost: number, maxHp: number, price: (code: string) =
 /** Wall-clock per kill: the fight's cooldown, the healing back from the HP missing at its end (rest: 1 s per 1% of max
  *  HP, task 012; task 014: eating when `food` is given), and each potion it drinks (FightForecast.used) at `price` —
  *  default what making another takes in the field (xp.ts potionSec); the stock counted where the caller says so. */
-export function killSeconds(f: FightForecast, price: (code: string) => number = potionSec, food?: Food): number {
+export function killSeconds(f: Pick<FightForecast, "turns" | "maxHp" | "hpRemaining" | "used">, price: (code: string) => number = potionSec, food?: Food): number {
   let s = fightSec(f.turns) + healSeconds(f.maxHp - f.hpRemaining, f.maxHp, price, food);
   for (const code in f.used) if (f.used[code] > 0) s += f.used[code] * price(code);
   return s;
 }
 
-const SINGLE_SLOTS: GearSlot[] = ["shield", "helmet", "body_armor", "leg_armor", "boots", "amulet", "rune", "bag"];
-const RING_SLOTS: GearSlot[] = ["ring1", "ring2"];
-const ARTIFACT_SLOTS: GearSlot[] = ["artifact1", "artifact2", "artifact3"];
-const UTILITY_SLOTS: GearSlot[] = ["utility1", "utility2"];
+// task 021: exported for scripts/check-solve.mts, which judges a fixpoint on the same moves
+export const SINGLE_SLOTS: GearSlot[] = ["shield", "helmet", "body_armor", "leg_armor", "boots", "amulet", "rune", "bag"];
+export const RING_SLOTS: GearSlot[] = ["ring1", "ring2"];
+export const ARTIFACT_SLOTS: GearSlot[] = ["artifact1", "artifact2", "artifact3"];
+export const UTILITY_SLOTS: GearSlot[] = ["utility1", "utility2"];
 
 const skillLevel = (ch: Character, skill: string): number =>
   (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
@@ -153,7 +168,12 @@ function heuristic(it: Item, m: { res_fire: number; res_earth: number; res_water
 const heuristics = new WeakMap<Monster, Map<string, number>>();
 /** Build per-slot candidate pools from owned + craftable items, equip-filtered. Task 020: exported — the planner's solve
  *  cache keys a solve on them (src/plan/planner/reach.ts solveKey) and hands them back to bestInSlot. */
-export function bisPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlot, string[]> {
+export function bisPools(ch: Character, m: Monster, opts: BisOptions, uncapped?: Record<GearSlot, string[]>): Record<GearSlot, string[]> {
+  return capPools(uncapped ?? ownedPools(ch, opts), m, new Set(opts.extraCandidates ?? []), opts.perSlotCap ?? 12, opts.weaponCap ?? 10);
+}
+/** Task 021: the candidates per slot before the caps — what the character may equip of the owned, the craftable (or every
+ *  item) and the extras; no monster in it, so reach.ts keeps it per pool and character for every monster it asks. */
+export function ownedPools(ch: Character, opts: BisOptions): Record<GearSlot, string[]> {
   const pools: Record<string, string[]> = {};
   for (const s of GEAR_SLOTS) pools[s] = [];
   const seen: Record<string, Set<string>> = {};
@@ -199,12 +219,13 @@ export function bisPools(ch: Character, m: Monster, opts: BisOptions): Record<Ge
   }
 
   for (const code of opts.extraCandidates ?? []) consider(code);
+  return pools as Record<GearSlot, string[]>;
+}
 
-  // Cap pools so the combinatorial multi-slot search stays cheap. Forced extras
-  // survive the cut (the heuristic scores e.g. potions near zero).
-  const pinned = new Set(opts.extraCandidates ?? []);
-  const perSlotCap = opts.perSlotCap ?? 12;
-  const weaponCap = opts.weaponCap ?? 10;
+/** Cap pools so the combinatorial multi-slot search stays cheap: the pinned extras (they survive the cut — the heuristic
+ *  scores e.g. potions near zero), then the best by `heuristic` against the monster. Task 021: also how a search derives
+ *  the candidates of the ladder's step below from its own (the top of the same order). */
+function capPools(pools: Record<GearSlot, string[]>, m: Monster, pinned: Set<string>, perSlotCap: number, weaponCap: number): Record<GearSlot, string[]> {
   // task 020: an item's heuristic against this monster, once (a sort asked it at every comparison)
   let hm = heuristics.get(m);
   if (!hm) heuristics.set(m, (hm = new Map()));
@@ -227,11 +248,14 @@ export function bisPools(ch: Character, m: Monster, opts: BisOptions): Record<Ge
   // recommendation flips as a swap moves items around and the differ livelocks
   // chasing it. Sorted pools make bestInSlot a pure function of the owned
   // MULTISET — which a swap ceremony never changes.
-  for (const s of GEAR_SLOTS) pools[s] = rank(pools[s], s === "weapon" ? weaponCap : perSlotCap).sort();
-  return pools as Record<GearSlot, string[]>;
+  const out = {} as Record<GearSlot, string[]>;
+  for (const s of GEAR_SLOTS) out[s] = [...rank(pools[s], s === "weapon" ? weaponCap : perSlotCap)].sort();
+  return out;
 }
 
-interface Eval { score: number; f: ReturnType<typeof simulate>; worst: ReturnType<typeof simulate>; safe: boolean }
+/** What a set's score reads of its expected fight (task 021: kept across solves in numbers, makeEvaluator). */
+type Fight = Pick<FightForecast, "win" | "timedOut" | "turns" | "hpRemaining" | "maxHp" | "used">;
+interface Eval { score: number; f: Fight; safe: boolean }
 
 /** Task 020: a small number per item code, in the order codes are met (a set's key is a character a slot). */
 const codeIds = new Map<string, number>();
@@ -254,20 +278,68 @@ function setKey(slots: Record<GearSlot, string>): string {
   return String.fromCharCode(...ids);
 }
 
-function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>, worn: Partial<Record<GearSlot, string>>, price: (code: string) => number = potionSec) {
+/**
+ * Task 021 (speed): a set's two fights against a monster (the expected one, the pessimistic one) are a function of the base
+ * stats, the set and the monster — they read neither the price nor what is worn — so they are kept across solves, as
+ * numbers: per monster and base stats a map from the set's key to a row of FIGHT_ROW values in a Float64Array (win, timed
+ * out, safe, turns, HP left, max HP, the units the utility1 and utility2 potions drank, −1: not in `used`), a table's array
+ * starting at 32 rows and doubling (the forward model makes thousands of tables, most of them small: at 1,024 rows to start
+ * the season peaked at 2 GB). A row with its key, its map entry and the array's slack weighs about 100 bytes (500,000 rows in
+ * 6,000 tables: 45 MB, measured); at FIGHTS_CAP rows in all every table is dropped at once (one clear, no stream of
+ * evictions for the collector).
+ */
+const FIGHTS_CAP = 500_000;
+const FIGHT_ROW = 8;
+interface FightTable { idx: Map<string, number>; rows: Float64Array; n: number }
+const fightTables = new Map<string, FightTable>();
+let fightRows = 0, fightGen = 0;
+const NO_POTION: Record<string, number> = Object.freeze({}) as Record<string, number>;
+const U1 = GEAR_SLOTS.indexOf("utility1"), U2 = GEAR_SLOTS.indexOf("utility2");
+function fightTable(k: string): FightTable {
+  let t = fightTables.get(k);
+  if (!t) fightTables.set(k, (t = { idx: new Map(), rows: new Float64Array(32 * FIGHT_ROW), n: 0 }));
+  return t;
+}
+
+export function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>, worn: Partial<Record<GearSlot, string>>, price: (code: string) => number = potionSec) {
   const memo = new Map<string, Eval>(); // task 020: a set (slot by slot) scores the same every time a solve asks again
   const wornIds = GEAR_SLOTS.map((s) => (worn[s] ? idOf(worn[s]!) : 0));
+  const tk = `${monster.code}|${Object.values(base).join(",")}`;
+  let table = fightTable(tk), gen = fightGen;
   return (slots: Record<GearSlot, string>): Eval => {
     const key = setKey(slots);
     let e = memo.get(key);
     if (!e) memo.set(key, (e = score(slots, key)));
     return e;
   };
-  function score(slots: Record<GearSlot, string>, key: string): Eval {
+  /** The set's expected fight and whether the pessimistic one wins too: from the table, else simulated and kept. */
+  function fights(slots: Record<GearSlot, string>, key: string): { f: Fight; safe: boolean } {
+    if (gen !== fightGen) { table = fightTable(tk); gen = fightGen; }
+    const i = table.idx.get(key);
+    const r = table.rows;
+    if (i !== undefined) {
+      const o = i * FIGHT_ROW, u1 = r[o + 6], u2 = r[o + 7];
+      let used = NO_POTION;
+      if (u1 >= 0 || u2 >= 0) { used = {}; if (u1 >= 0) used[slots.utility1] = u1; if (u2 >= 0) used[slots.utility2] = u2; }
+      return { f: { win: r[o] === 1, timedOut: r[o + 1] === 1, turns: r[o + 3], hpRemaining: r[o + 4], maxHp: r[o + 5], used }, safe: r[o + 2] === 1 };
+    }
     const codes: string[] = [];
     for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
     const fighter = applyGear(base, codes);
     const f = simulate(fighter, monster);
+    const safe = f.win && !f.timedOut && simulate(fighter, monster, { pessimistic: true }).win;
+    if (fightRows >= FIGHTS_CAP) { fightTables.clear(); fightRows = 0; fightGen++; table = fightTable(tk); gen = fightGen; }
+    if ((table.n + 1) * FIGHT_ROW > table.rows.length) { const g = new Float64Array(table.rows.length * 2); g.set(table.rows); table.rows = g; }
+    const o = table.n * FIGHT_ROW, w = table.rows, c1 = slots[GEAR_SLOTS[U1]], c2 = slots[GEAR_SLOTS[U2]];
+    w[o] = f.win ? 1 : 0; w[o + 1] = f.timedOut ? 1 : 0; w[o + 2] = safe ? 1 : 0; w[o + 3] = f.turns; w[o + 4] = f.hpRemaining; w[o + 5] = f.maxHp;
+    w[o + 6] = c1 && f.used[c1] !== undefined ? f.used[c1] : -1;
+    w[o + 7] = c2 && f.used[c2] !== undefined ? f.used[c2] : -1;
+    table.idx.set(key, table.n++);
+    fightRows++;
+    return { f, safe };
+  }
+  function score(slots: Record<GearSlot, string>, key: string): Eval {
+    const { f, safe } = fights(slots, key);
     // Combat-equal sets are broken deterministically, in order: prefer the
     // HIGHER-TIER items (Σ item level — "best in class": an iron ring whose
     // +2% dmg rounds away vs this monster still beats the worn copper one),
@@ -296,11 +368,9 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
       // Can't win with this set. Still rank it — survive the longest — on a
       // tier every winning set beats, so the solver can recommend the best
       // AVAILABLE set even when nothing owned can beat the monster.
-      return { score: -1e12 + f.turns * 1000 + f.hpRemaining + tiebreak, f, worst: f, safe: false };
+      return { score: -1e12 + f.turns * 1000 + f.hpRemaining + tiebreak, f, safe: false };
     }
-    const worst = simulate(fighter, monster, { pessimistic: true });
-    const safe = worst.win;
-    return { score: (safe ? 1e9 : 0) - killSeconds(f, price) * 1000 + tiebreak, f, worst, safe };
+    return { score: (safe ? 1e9 : 0) - killSeconds(f, price) * 1000 + tiebreak, f, safe };
   }
 }
 
@@ -310,70 +380,111 @@ function emptySlots(): Record<GearSlot, string> {
   return s;
 }
 
+/** Task 021: the caps' ladder — the planner's 3 and 3 (planRec, potionRec) and 6 and 6 (fightRec), the executor's 12 and
+ *  10. A search starts from the answer of the step below its caps (the largest one under both). */
+const LADDER: [number, number][] = [[3, 3], [6, 6], [12, 10]];
+/** A climb's passes: each pass that does not end it raises the score, so it ends; the bound only guards. */
+const MAX_PASSES = 50;
+/** Task 021: seeded starts beside the weapons' — a climb from empty slots and one weapon follows the lost tier, which ranks
+ *  by turns survived (offence counts there only once a set wins), into a set that survives longest and is one piece short
+ *  of a win from two changes (report 021: Second and Fourth against the vampire on 11-20). The same candidates give the
+ *  same starts, so the answer stays a function of what the solve key holds. */
+const STARTS = 3;
+
 export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions = {}, given?: Record<GearSlot, string[]>): GearRecommendation[] {
   const m = monsterOf(monsterCode);
   if (!m) return [];
-  const base = baseStats(ch);
   const pools = given ?? bisPools(ch, m, opts); // `given`: bisPools of the same arguments
   const worn: Partial<Record<GearSlot, string>> = {};
-  for (const s of GEAR_SLOTS) worn[s] = slotCode(ch, s);
+  if (opts.worn !== false) for (const s of GEAR_SLOTS) worn[s] = slotCode(ch, s);
+  const base = baseStats(ch);
   const evaluate = makeEvaluator(base, m, worn, opts.potionPrice);
   // How many copies of a code the group search may place: owned counts when
   // known, else "as many as the group has slots" (craftable candidates).
   const countOf = (code: string): number => opts.ownedQty?.get(code) ?? 3;
+  const pinned = new Set(opts.extraCandidates ?? []);
+  const score = (s: Record<GearSlot, string>): number => evaluate(s).score;
 
-  // Weapon fixes which element you scale — the one coupling that matters — so we
-  // try each candidate weapon (plus the current one and unarmed) as an outer loop.
-  const weaponOpts = new Set<string>(["", ...pools.weapon]);
-  const curWeapon = slotCode(ch, "weapon");
-  if (curWeapon) weaponOpts.add(curWeapon);
-
-  const results: GearRecommendation[] = [];
-
-  for (const w of weaponOpts) {
-    const slots = emptySlots();
-    slots.weapon = w;
-
-    for (let pass = 0; pass < 3; pass++) {
-      // Independent single slots.
-      for (const s of SINGLE_SLOTS) {
-        let best = slots[s];
-        let bestScore = evaluate(slots).score;
-        for (const opt of ["", ...pools[s]]) {
-          if (opt === slots[s]) continue;
-          slots[s] = opt;
-          const sc = evaluate(slots).score;
-          if (sc > bestScore) { bestScore = sc; best = opt; }
-        }
-        slots[s] = best;
-      }
-      // Ring pair / artifact triple / utility pair (identical items across the
-      // like slots, so one pool each). Rings may repeat a code (two copper
-      // rings) up to the owned count; artifacts must stay distinct.
-      chooseGroup(slots, RING_SLOTS, pools.ring1, evaluate, countOf);
-      chooseGroup(slots, ARTIFACT_SLOTS, pools.artifact1, evaluate);
-      if (!opts.noUtilities) chooseGroup(slots, UTILITY_SLOTS, pools.utility1, evaluate);
+  /** Passes of one slot at a time (the weapon too when `weapons` is given), then the ring pair, the artifacts and the
+   *  utility pair each chosen exhaustively among their pool, until a pass changes nothing (a fixpoint of those moves). */
+  const climb = (slots: Record<GearSlot, string>, p: Record<GearSlot, string[]>, weapons?: string[]): void => {
+    const singles = SINGLE_SLOTS.map((s) => ["", ...p[s]]);
+    for (let pass = 0; pass < MAX_PASSES; pass++) {
+      const before = score(slots);
+      if (weapons) pick(slots, "weapon", weapons, score);
+      for (let i = 0; i < SINGLE_SLOTS.length; i++) pick(slots, SINGLE_SLOTS[i], singles[i], score);
+      // Rings may repeat a code (two copper rings) up to the owned count; artifacts must stay distinct.
+      chooseGroup(slots, RING_SLOTS, p.ring1, evaluate, countOf);
+      chooseGroup(slots, ARTIFACT_SLOTS, p.artifact1, evaluate);
+      if (!opts.noUtilities) chooseGroup(slots, UTILITY_SLOTS, p.utility1, evaluate);
+      if (score(slots) === before) return;
     }
+  };
+  /** The answer on candidates `p` (caps s and w) first, then the ends it was chosen from. Weapon fixes which element you
+   *  scale — the one coupling that matters — so each candidate weapon (plus unarmed and the worn one) is climbed from
+   *  empty slots with the weapon fixed; the best of those ends and of the step below's answer is climbed again with the
+   *  weapon free. */
+  const search = (p: Record<GearSlot, string[]>, s: number, w: number): Record<GearSlot, string>[] => {
+    const ends: Record<GearSlot, string>[] = [];
+    const lower = LADDER.filter(([a, b]) => a <= s && b <= w && (a < s || b < w)).pop();
+    if (lower) ends.push(search(capPools(p, m, pinned, lower[0], lower[1]), lower[0], lower[1])[0]);
+    const weapons = [...new Set(["", ...p.weapon, ...(worn.weapon ? [worn.weapon] : [])])];
+    for (const wp of weapons) {
+      const slots = emptySlots();
+      slots.weapon = wp;
+      climb(slots, p);
+      ends.push(slots);
+    }
+    let seed = 1;
+    const any = <T,>(o: T[]): T => o[((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296) * o.length | 0];
+    const groups: [GearSlot[], string[][]][] = [[RING_SLOTS, groupCombos(p.ring1, 2, countOf)], [ARTIFACT_SLOTS, groupCombos(p.artifact1, 3)], [UTILITY_SLOTS, opts.noUtilities ? [[]] : groupCombos(p.utility1, 2)]];
+    for (let k = 0; k < STARTS; k++) {
+      const slots = emptySlots();
+      slots.weapon = any(weapons);
+      for (const g of SINGLE_SLOTS) slots[g] = any(["", ...p[g]]);
+      for (const [g, combos] of groups) { const c = any(combos); for (let i = 0; i < g.length; i++) slots[g[i]] = c[i] ?? ""; }
+      climb(slots, p, weapons);
+      ends.push(slots);
+    }
+    let best = ends[0];
+    for (const e of ends) if (score(e) > score(best)) best = e; // the first wins a tie
+    const answer = { ...best };
+    climb(answer, p, weapons);
+    return [answer, ...ends];
+  };
 
+  // The answer, then the best other ends (runner-ups), each set once.
+  const [answer, ...ends] = search(pools, opts.perSlotCap ?? 12, opts.weaponCap ?? 10);
+  const uniq: GearRecommendation[] = [];
+  const seen = new Set<string>();
+  for (const slots of [answer, ...ends.sort((a, b) => score(b) - score(a))]) {
     const e = evaluate(slots);
     if (e.score === -Infinity) continue;
     const codes: string[] = [];
     for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
-    results.push({ slots: { ...slots }, codes, forecast: e.f, worst: e.worst, safe: e.safe, score: e.score });
-  }
-
-  // Dedupe identical sets, best first, return the top few (BIS + runner-ups).
-  results.sort((a, b) => b.score - a.score);
-  const uniq: GearRecommendation[] = [];
-  const seen = new Set<string>();
-  for (const r of results) {
-    const key = r.codes.slice().sort().join("|");
+    const key = codes.slice().sort().join("|");
     if (seen.has(key)) continue;
     seen.add(key);
-    uniq.push(r);
+    // the forecasts whole (the table keeps only what a score reads)
+    const fighter = applyGear(base, codes);
+    const forecast = simulate(fighter, m);
+    uniq.push({ slots: { ...slots }, codes, forecast, worst: forecast.win && !forecast.timedOut ? simulate(fighter, m, { pessimistic: true }) : forecast, safe: e.safe, score: e.score });
     if (uniq.length >= 3) break;
   }
   return uniq;
+}
+
+/** One slot to its best option while the others stand (the first wins a tie: the current one, then the list's order). */
+function pick(slots: Record<GearSlot, string>, s: GearSlot, options: string[], score: (s: Record<GearSlot, string>) => number): void {
+  let best = slots[s];
+  let bestScore = score(slots);
+  for (const opt of options) {
+    if (opt === slots[s]) continue;
+    slots[s] = opt;
+    const sc = score(slots);
+    if (sc > bestScore) { bestScore = sc; best = opt; }
+  }
+  slots[s] = best;
 }
 
 /**
@@ -393,10 +504,19 @@ function chooseGroup(
   countOf?: (code: string) => number,
 ): void {
   const n = group.length;
-  const cap = pool.slice(0, 12);
   let best = group.map((g) => slots[g]);
   let bestScore = evaluate(slots).score;
+  for (const combo of groupCombos(pool, n, countOf)) {
+    for (let i = 0; i < n; i++) slots[group[i]] = combo[i] ?? "";
+    const sc = evaluate(slots).score;
+    if (sc > bestScore) { bestScore = sc; best = group.map((g) => slots[g]); }
+  }
+  for (let i = 0; i < n; i++) slots[group[i]] = best[i];
+}
 
+/** A group's fillings: the multisets of size 0..n of the capped pool, each once (a code repeats up to `countOf`). */
+export function groupCombos(pool: string[], n: number, countOf?: (code: string) => number): string[][] {
+  const cap = pool.slice(0, 12);
   const combos: string[][] = [];
   const gen = (start: number, chosen: string[]) => {
     combos.push(chosen.slice()); // record multisets of every size 0..n exactly once
@@ -411,11 +531,5 @@ function chooseGroup(
     }
   };
   gen(0, []);
-
-  for (const combo of combos) {
-    for (let i = 0; i < n; i++) slots[group[i]] = combo[i] ?? "";
-    const sc = evaluate(slots).score;
-    if (sc > bestScore) { bestScore = sc; best = group.map((g) => slots[g]); }
-  }
-  for (let i = 0; i < n; i++) slots[group[i]] = best[i];
+  return combos;
 }

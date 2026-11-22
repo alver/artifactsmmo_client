@@ -9,7 +9,7 @@ import { catalog, item, monster as monsterOf } from "../../catalog";
 import { baseStats } from "../../sim/stats";
 import { FREE, route, travelSec } from "../route";
 import type { May } from "../route";
-import { bestInSlot, bisPools, canEquip, killSeconds } from "../bis";
+import { bestInSlot, bisPools, canEquip, killSeconds, ownedPools } from "../bis";
 import type { BisOptions, Food } from "../bis";
 import type { FightForecast } from "../../sim/combat";
 import { killLog } from "./config";
@@ -316,27 +316,45 @@ const SEARCHED: GearSlot[] = ["weapon", "shield", "helmet", "body_armor", "leg_a
 /**
  * Task 020, settled point 3: everything bestInSlot reads once its candidates per slot after the caps are known (bis.ts
  * bisPools: the pool, the extras, the caps, the heuristic against the monster): the monster, the base stats, those
- * candidates, the worn code of a slot the search can keep (its tiebreak; the worn weapon is always a weapon option),
- * the copies of each ring candidate (the pair takes two at most), and with the utility slots searched the price of each
- * potion candidate (killSeconds). Two asks with an equal key get the same set from bestInSlot.
+ * candidates, the worn code of a slot the search can keep (its tiebreak; the worn weapon is always a weapon option) —
+ * task 021: none for the planner's solves, which do not read what is worn (`worn: false`) —, the copies of each ring
+ * candidate (the pair takes two at most), with the utility slots searched the price of each potion candidate
+ * (killSeconds), and (task 021) the extras: the ladder's narrower candidates (bis.ts capPools) keep them past the caps.
+ * Two asks with an equal key get the same set from bestInSlot.
  */
 function solveKey(ch: Character, monster: string, pools: Record<GearSlot, string[]>, opts: BisOptions): string {
   const util = !opts.noUtilities;
   const price = opts.potionPrice ?? potionSec;
-  const worn = GEAR_SLOTS.map((g) => { const c = slotCode(ch, g); return c && (g === "weapon" || ((util || !g.startsWith("utility")) && pools[g].includes(c))) ? c : ""; }).join(",");
+  const worn = opts.worn === false ? "-" : GEAR_SLOTS.map((g) => { const c = slotCode(ch, g); return c && (g === "weapon" || ((util || !g.startsWith("utility")) && pools[g].includes(c))) ? c : ""; }).join(",");
   const cands = SEARCHED.map((g) => (util || g !== "utility1" ? pools[g].join(",") : "-")).join("/");
   const rings = pools.ring1.map((c) => Math.min(2, opts.ownedQty?.get(c) ?? 3)).join(",");
   const prices = util ? pools.utility1.map((c) => price(c)).join(",") : "-";
-  return `${monster}|${statsOf(ch)}|${worn}|${cands}|${rings}|${prices}`;
+  const pins = [...(opts.extraCandidates ?? [])].sort().join(",");
+  return `${monster}|${statsOf(ch)}|${worn}|${cands}|${rings}|${prices}|${pins}`;
 }
 const solveMemo = new Map<string, GearRecommendation | null>();
 /** Counts for the measuring (task 020): asks, asks served within their World, keys looked up, keys served, solves. */
 export const solveCounts = { asks: 0, askHits: 0, keys: 0, keyHits: 0, solves: 0 };
 /** bestInSlot's best set, from the table only for an equal key (solveKey). */
+const uncappedMemo = new WeakMap<Map<string, number>, WeakMap<Character, Map<string, Record<GearSlot, string[]>>>>();
+/** Task 021 (speed): bis.ts ownedPools of an ask — the three solve calls own exactly their pool's codes — once per pool,
+ *  character object and extras, not once a monster. */
+function uncappedOf(ch: Character, opts: BisOptions): Record<GearSlot, string[]> | undefined {
+  const q = opts.ownedQty;
+  if (!caching || !q) return undefined;
+  let byCh = uncappedMemo.get(q);
+  if (!byCh) uncappedMemo.set(q, (byCh = new WeakMap()));
+  let m = byCh.get(ch);
+  if (!m) byCh.set(ch, (m = new Map()));
+  const k = (opts.extraCandidates ?? []).join(",");
+  let u = m.get(k);
+  if (!u) m.set(k, (u = ownedPools(ch, opts)));
+  return u;
+}
 function solve(ch: Character, monster: string, opts: BisOptions): GearRecommendation | undefined {
   const m = monsterOf(monster);
   if (!m) return undefined;
-  const pools = bisPools(ch, m, opts);
+  const pools = bisPools(ch, m, opts, uncappedOf(ch, opts));
   if (!caching) return solveCounts.solves++, bestInSlot(ch, monster, opts, pools)[0];
   const k = solveKey(ch, monster, pools, opts);
   let r = solveMemo.get(k);
@@ -425,10 +443,13 @@ const freeExtra = (ch: Character, world: World, extra: string[]): string[] =>
  * search the dearest part of a decision.
  */
 export function fightRec(ch: Character, world: World, monster: string): GearRecommendation | undefined {
-  return asked(world, ch, `fight|${monster}`, () => {
-    const qty = poolOf(ch, world).qty;
-    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: freeExtra(ch, world, []), perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world, ch.name).price });
-  });
+  return asked(world, ch, `fight|${monster}`, () => solve(ch, monster, fightOptions(ch, world)));
+}
+/** fightRec's options (task 021: scripts/check-solve.mts solves with them at the three caps). Task 021, settled point 5:
+ *  the planner's solves do not read what is worn (bis.ts `worn`), so a solve serves every worn set. */
+export function fightOptions(ch: Character, world: World): BisOptions {
+  const qty = poolOf(ch, world).qty;
+  return { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: freeExtra(ch, world, []), perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world, ch.name).price, worn: false };
 }
 /** Task 012: the wisdom of the set a fight is planned with (xp.ts fightXp's last argument): the solved set's pieces,
  *  plus a pinned artifact the character wears that the set left out (the executor never takes one off). */
@@ -443,7 +464,9 @@ export const wins = (r: GearRecommendation | undefined, world: World): boolean =
   !!r && (world.config.risk === "win" ? r.forecast.win && !r.forecast.timedOut : r.safe);
 /** Whether the character may fight the monster now: the full solve (`fightRec`), asked only when the planning-grade
  *  solve (its utility potions included) wins in expectation.
- *  shortcut: a set the capped search finds losing is taken not to win with the wider one; upgrade if that ever flips */
+ *  shortcut: a set the capped search finds losing is taken not to win with the wider one; upgrade if that ever flips —
+ *  task 021 counted it: of 1,160 fights (the Worlds of 11-20, 11-21, 11-22 and the wall World of report 021, every character
+ *  at its own level × every monster) none the 3/3 solve loses in expectation and the 6/6 one wins safely */
 export const safeWin = (ch: Character, world: World, monster: string): boolean => !!planRec(ch, world, monster)?.forecast.win && wins(fightRec(ch, world, monster), world);
 
 /**
@@ -462,7 +485,7 @@ export function planRec(ch: Character, world: World, monster: string, extra: str
     const bare = !!(world.config.consumables ?? 1) && ch.level !== world.characters.find((c) => c.name === ch.name)?.level;
     const w = bare ? openOf(world) : world;
     const qty = bare ? bareOf(poolOf(ch, w).qty) : poolOf(ch, w).qty;
-    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: bare ? extra : freeExtra(ch, world, extra), perSlotCap: 3, weaponCap: 3, potionPrice: potionPrice(world, ch.name).price, noUtilities: bare });
+    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: bare ? extra : freeExtra(ch, world, extra), perSlotCap: 3, weaponCap: 3, potionPrice: potionPrice(world, ch.name).price, noUtilities: bare, worn: false });
   });
 }
 const openMemo = new WeakMap<World, World>();
@@ -496,7 +519,7 @@ export function openOf(world: World): World {
 export function potionRec(ch: Character, world: World, monster: string, potions: string[], price: (code: string) => number, fleet = false): GearRecommendation | undefined {
   return asked(world, ch, `potions|${monster}|${potions.join(",")}|${fleet ? "fleet" : ""}`, () => {
     const qty = bareOf(poolOf(ch, fleet ? openOf(world) : world).qty);
-    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: potions, perSlotCap: 3, weaponCap: 3, potionPrice: price });
+    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: potions, perSlotCap: 3, weaponCap: 3, potionPrice: price, worn: false });
   });
 }
 

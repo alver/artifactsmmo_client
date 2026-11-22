@@ -55,8 +55,10 @@ const ASK_MS = 60_000;
 const KILL_MS = 30 * 60_000;
 /** Settled point 8: the service's horizon in days (0 = to the deadline). Task 020, settled point 6: a whole run from the
  *  World of 2026-11-21 takes 420 s and 683 MB at its peak alone (report 020; it took 36 minutes and 2.1 GB, report 019, when
- *  this was 21), so the service plays to the deadline and the Season card shows what is expected there. */
-export const HORIZON_DAYS = 0;
+ *  this was 21), so the service plays to the deadline and the Season card shows what is expected there. Task 021: back to
+ *  21 — with a fleet that fights on, the live World of 2026-11-22 is not played to the deadline within KILL_MS (3,588 s
+ *  alone; 21 days in about 7 minutes), though the World of 11-21 still is (412 s, 477 MB): report 021. */
+export const HORIZON_DAYS = 21;
 
 function load(): OutlookState {
   try {

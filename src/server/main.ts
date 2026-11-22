@@ -86,7 +86,7 @@ if (!hasToken() && process.env.TOKEN) setToken(process.env.TOKEN);
 // Task 019: the outlook's child (src/server/outlook-run.ts) — no storage flags, below normal priority, killed with us.
 // state/outlook.ts decides when; a child that cannot start, dies or hangs is its `failed`, never this process's trouble.
 setOutlookRunner((input, onLine, onExit) => {
-  const child = spawn(process.execPath, ["--import", "tsx", "--disable-warning=ExperimentalWarning", "src/server/outlook-run.ts"], { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+  const child = spawn(process.execPath, ["--max-old-space-size=1024", "--import", "tsx", "--disable-warning=ExperimentalWarning", "src/server/outlook-run.ts"], { cwd: ROOT, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
   try {
     setPriority(child.pid!, constants.priority.PRIORITY_BELOW_NORMAL);
   } catch {

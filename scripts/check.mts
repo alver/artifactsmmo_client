@@ -18,8 +18,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // (report 014's six rows side by side took 1,716 s of 1,800; rows D and F now run only with AMMO_PLANNER_ROWS=all). Task 020:
 // about 1.3 × the planner check on its final tree, alone (4,873 s: the exact solve cache solves more in the rows than the old
 // one served, report 020); and 15 minutes for the planner's first week in the plain run (it passed 5 with four checks side by
-// side: the exact cache solves most in a World's first days).
-const TIMEOUT_MS = process.argv[2] ? 6_300_000 : 300_000;
+// side: the exact cache solves most in a World's first days). Task 021: about 1.3 × the planner check on its final tree (3,413 s).
+const TIMEOUT_MS = process.argv[2] ? 4_500_000 : 300_000;
 const timeoutOf = (name: string): number => (process.argv[2] || name !== "check-planner" ? TIMEOUT_MS : 900_000);
 const PARALLEL = 4;
 

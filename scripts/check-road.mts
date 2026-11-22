@@ -54,12 +54,12 @@ const end = NOW + left.hours * H;
 
 // Task 020, settled point 9: a speed guard — the first road of this process, six hours of the made-up world from its step in
 // flight, cold (a memo that stopped working shows here first), against report 020's final tree with a wide margin (npm run
-// check runs four checks side by side)
-const SIX_HOURS_SEC = 16;
+// check runs four checks side by side). Task 021: 14.9 s on its final tree alone (report 020: 15.9 s)
+const SIX_HOURS_SEC = 15;
 const t6 = performance.now();
 road(world, running, NOW + 6 * H, () => {});
 const six = (performance.now() - t6) / 1000;
-check(`six hours of the made-up world, cold, take at most three times report 020's ${SIX_HOURS_SEC} s`, six <= 3 * SIX_HOURS_SEC, `${six.toFixed(1)} s`);
+check(`six hours of the made-up world, cold, take at most three times report 021's ${SIX_HOURS_SEC} s`, six <= 3 * SIX_HOURS_SEC, `${six.toFixed(1)} s`);
 
 const a: RoadLine[] = [];
 road(world, running, until, (l) => a.push(l));

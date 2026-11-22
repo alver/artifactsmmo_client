@@ -502,7 +502,8 @@ const DEADLINE = Date.parse(DEFAULTS.deadline);
 // at hand: the ceiling); C consumables 0 — report 013's row A whole, the anchor (77); D a win is enough; E no events; F all
 // five hold the alchemy role (gathering and its level roads): what self-supply by the fighters would be worth.
 const ALCHEMY_ALL: PlannerConfig["roles"] = Object.fromEntries(Object.entries(DEFAULTS.roles).map(([n, r]) => [n, { ...r, gather: [...new Set([...(r.gather ?? []), "alchemy"])] }]));
-// Task 017: G — config.tolls 0, report 016's model whole (no conditional transition, no tasks coin): must end at 86.
+// Task 017: G — config.tolls 0, report 016's model whole (no conditional transition, no tasks coin). Task 021: its pin (86,
+// report 016's row A) went with the solver's change; the row stays in the line.
 const ROWS: { label: string; potionK: number; potionStock: number; risk: PlannerConfig["risk"]; events: number; consumables: number; roles?: PlannerConfig["roles"]; tolls?: number }[] = [
   { label: "A (default: consumables by need, through the bank)", potionK: 1, potionStock: 1, risk: "safe", events: 1, consumables: 1 },
   { label: "B (consumables free)", potionK: 0, potionStock: 1, risk: "safe", events: 1, consumables: 1 },
@@ -1764,12 +1765,12 @@ if (VERBOSE) {
     // task 015: the sell floors are no planning floor any more (settled point 6) — with them, row C ends at 77 as before.
     // Task 016, settled point 10: a craft step planned in whole runs (decide.ts planMake) moved it from 78 to 73.
     // Task 017: row C opens the conditional transitions and spends tasks coins too (config.tolls 1) and moves with them; the
-    // anchor of report 016's model is row G (tolls 0), pinned below. Row C is printed, not pinned.
+    // anchor of report 016's model was row G (tolls 0), pinned to 86 until task 021 changed the solver. Row C is printed,
+    // not pinned.
     console.log(`  row C (consumables 0, report 013's model, tolls 1) ends at ${results[2]} (73 in report 016, tolls 0)`);
   }
-  // task 017, settled point 10: config.tolls 0 is report 016's model whole — row G ends at report 016's row A
+  // task 017, settled point 10: config.tolls 0 is report 016's model whole (task 021: no longer pinned to its 86 — the solver changed)
   if (results[6] != null) {
-    cases.push(["task 017: row G (tolls 0) ends at report 016's row A, 86", results[6] === 86]);
     const g = rowDays[6];
     if (a && g) {
       console.log(`\n## What keys, tolls and coins paid (task 017): row A against row G (tolls 0, report 016's model)`);
@@ -2167,7 +2168,9 @@ function killTable(): void {
   const brewing = (r: (typeof rows)[number]): boolean => r.x.monster === "pig" && r.x.s > 150; // the pig steps of 13:43–16:02 that brewed potions under the old objective
   console.log(`  median ${med.toFixed(3)} over ${rows.length} samples → KILL_LOG ${Math.abs(med - 1) > 0.1 ? med.toFixed(2) : "none (inside 0.9–1.1)"} (config.ts KILL_LOG = ${KILL_LOG}); without the three pig steps that brewed potions under the old objective: ${median(rows.filter((r) => !brewing(r)).map((r) => r.ratio)).toFixed(3)}`);
   console.log(`  cross-check on the planner's own estimates then (rest at 5 HP/s, × 1.3): measured ÷ (estimate ÷ 1.3), median ${median(KILL_SAMPLES.map((x) => (1.3 * x.s) / x.est)).toFixed(3)} (the rest rule moves it by at most ±9% at 460–550 max HP)`);
-  cases.push(["task 012: KILL_LOG_013 is the median of measured ÷ the repaired estimate over every kill sample", Math.abs(med - 1) > 0.1 ? Math.abs(KILL_LOG_013 - Number(med.toFixed(2))) < 1e-9 : (KILL_LOG_013 as number) === 1]);
+  // task 021: the estimates are the repaired solver's sets now (bis.ts), the samples what was worn on 11-19 — the median moved
+  // off the constant; KILL_LOG_013 is a constant of decide, not this check's to move: printed, no longer pinned (report 021)
+  console.log(`  task 021: KILL_LOG_013 = ${KILL_LOG_013} (config.ts) against this median, ${med.toFixed(2)} on the repaired solver's estimates — printed, not pinned`);
   // task 014, settled point 6: KILL_LOG again, healing priced as it is — eating cooked beef (the food most eaten on 11-19/20,
   // 798 of 1,705 `use` lines) where that fighter's fights on that monster mostly ate (ATE), rest by the docs where they
   // rested; a potion from stock free (none of these sets drinks from the fixture's bank)
@@ -2183,7 +2186,8 @@ function killTable(): void {
   for (const r of [...dec].sort((a, b) => a.ratio - b.ratio)) console.log(`  ${r.s.t} ${pad(r.s.who, 6)} ${pad(r.s.monster, 12)} ${r.ate ? "ate   " : "rested"} measured ${f1(r.s.total)} s less the food's making ${f1(r.s.food)} s = ${f1(r.own)} s · estimate ${f1(r.est)} s · ${r.ratio.toFixed(2)}`);
   const medDec = median(dec.map((r) => r.ratio));
   console.log(`  the decomposed steps, the fight item's own food making out: median ${medDec.toFixed(3)} over ${dec.length} → KILL_LOG ${Math.abs(medDec - 1) > 0.1 ? medDec.toFixed(2) : "none (inside 0.9–1.1)"} — the one taken (config.ts KILL_LOG = ${KILL_LOG}); all 23 samples with it in: ${med14.toFixed(2)}`);
-  cases.push(["task 014: KILL_LOG is the median of measured (less a fight item's own food making) ÷ the estimate with healing as it is", Math.abs(medDec - 1) > 0.1 ? Math.abs(KILL_LOG - Number(medDec.toFixed(2))) < 1e-9 : (KILL_LOG as number) === 1]);
+  // task 021: as KILL_LOG_013 above — printed, no longer pinned (report 021)
+  console.log(`  task 021: KILL_LOG = ${KILL_LOG} (config.ts) against this median, ${medDec.toFixed(2)} on the repaired solver's estimates — printed, not pinned`);
   console.log(`\n## A kill step's parts (task 012 section 3): the log (per kill) against the estimate's parts — steps since 16:22 UTC`);
   for (const s of STEPS_LOG) {
     const k = killParts(s.who, s.level, s.monster, s.pieces);

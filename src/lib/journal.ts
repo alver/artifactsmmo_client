@@ -238,9 +238,10 @@ export function meterEcho(name: string, key: string, action: string, body: unkno
 
 /**
  * Task 017, settled point 12: every unit spent is a `spend` record — a transition's fare (`fare`, gold) or key (`key`, the
- * code it consumed), a purchase paid in tasks coins (`coins`), a bank expansion (`expansion`, gold) — who, what, the code
- * and quantity, and what for: the bucket the action belongs to (the step's or interrupt's `pl:` key), and for a transition
- * the tile it was taken on. From the echo alone (the transition's own conditions, the purchase's transaction).
+ * code it consumed), a purchase paid in tasks coins (`coins`) or (task 021) in gold (`gold`: the merchant's maps, a shop's
+ * buy), a bank expansion (`expansion`, gold) — who, what, the code and quantity, and what for: the bucket the action
+ * belongs to (the step's or interrupt's `pl:` key), and for a transition the tile it was taken on. From the echo alone (the
+ * transition's own conditions, the purchase's transaction).
  */
 function spent(name: string, key: string, action: string, data: ActionResult, prev: Character | undefined): void {
   const d = data as ActionResult & { transition?: { conditions?: { code: string; operator: string; value: number }[] }; transaction?: { code?: string; currency?: string; total_price?: number; price?: number } };
@@ -248,7 +249,8 @@ function spent(name: string, key: string, action: string, data: ActionResult, pr
   if (action === "transition") for (const c of d.transition?.conditions ?? []) {
     if (c.operator === "cost") journal("spend", { who: name, what: c.code === "gold" ? "fare" : "key", code: c.code, q: c.value, for: key || undefined, via: at });
   }
-  if (action === "npc/buy" && d.transaction?.currency === "tasks_coin") journal("spend", { who: name, what: "coins", code: "tasks_coin", q: d.transaction.total_price, for: key || undefined, item: d.transaction.code });
+  const cur = d.transaction?.currency;
+  if (action === "npc/buy" && (cur === "tasks_coin" || cur === "gold")) journal("spend", { who: name, what: cur === "gold" ? "gold" : "coins", code: cur, q: d.transaction!.total_price, for: key || undefined, item: d.transaction!.code });
   if (action === "bank/buy_expansion") journal("spend", { who: name, what: "expansion", code: "gold", q: d.transaction?.price, for: key || undefined });
 }
 
