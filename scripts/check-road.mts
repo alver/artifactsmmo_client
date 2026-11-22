@@ -1,9 +1,9 @@
 // Task 019, settled point 11: the road (src/plan/planner/road.ts) on a made-up world — the fleet of docs/design/snapshot/
 // (2026-11-18) with the bank of scripts/fixtures/roadmap-fleet.json, all five on, at 17:00 UTC, played eight hours (a
 // midnight inside). `next` comes before the first `day`; a character with a step in flight starts its first new step at
-// that step's expected end, with what the step was to bring in the bank by then (point 2). "Two runs give the same lines"
-// is check-outlook-child's (the child against a run in its own process): two runs in ONE process differ — the second
-// starts with the first one's solve caches (reach.ts, the replay's known noise; report 019).
+// that step's expected end, with what the step was to bring in the bank by then (point 2). Task 020: two runs in ONE
+// process give the same lines (the second starts with the first one's solve caches, which serve only an equal key:
+// reach.ts); a character that is off is not played; the first road of the process, six hours cold, is the speed guard.
 import { readFile } from "node:fs/promises";
 import { setDataReader } from "../src/catalog/load";
 import { loadCatalog } from "../src/catalog";
@@ -52,6 +52,15 @@ const running: Record<string, Running> = { First: run(ore, 40) };
 const left = leftOf(running.First);
 const end = NOW + left.hours * H;
 
+// Task 020, settled point 9: a speed guard — the first road of this process, six hours of the made-up world from its step in
+// flight, cold (a memo that stopped working shows here first), against report 020's final tree with a wide margin (npm run
+// check runs four checks side by side)
+const SIX_HOURS_SEC = 16;
+const t6 = performance.now();
+road(world, running, NOW + 6 * H, () => {});
+const six = (performance.now() - t6) / 1000;
+check(`six hours of the made-up world, cold, take at most three times report 020's ${SIX_HOURS_SEC} s`, six <= 3 * SIX_HOURS_SEC, `${six.toFixed(1)} s`);
+
 const a: RoadLine[] = [];
 road(world, running, until, (l) => a.push(l));
 const kinds = a.map((l) => l.k);
@@ -64,6 +73,18 @@ check("…and the others decide at the World's time", chars.filter((c) => c.name
 check("…and its next steps follow one another", (next.next.First ?? []).every((s, i, all) => i === 0 || s.at > all[i - 1].at));
 const done = a[a.length - 1] as Extract<RoadLine, { k: "done" }>;
 check("done: the points at the start, at the end and by day", done.points <= done.expected && done.byDay.length === 1 && done.byDay[0].day === "2026-11-18" && done.steps > 0, JSON.stringify({ points: done.points, expected: done.expected, byDay: done.byDay, steps: done.steps }));
+
+// Task 020, settled point 3: a second run in this process, its caches warm, gives the same lines
+const b: RoadLine[] = [];
+road(world, running, until, (l) => b.push(l));
+const strip = (ls: RoadLine[]): string => JSON.stringify(ls.map((l) => (l.k === "done" ? { ...l, sec: 0 } : l)));
+check("two runs in one process give the same lines (the solve caches serve only an equal key)", strip(a) === strip(b), `${a.length} and ${b.length} lines; ${done.sec} s and ${(b[b.length - 1] as Extract<RoadLine, { k: "done" }>).sec} s`);
+
+// Task 020, settled point 8: a character that is off is not played — no decision, no step, its gear stays on it
+const off: World = { ...world, config: { ...world.config, on: { ...world.config.on, Second: false } } };
+const fo = forward(off, until);
+const second = (w: World) => w.characters.find((c) => c.name === "Second")!;
+check("a character that is off is not played: no step, its character as it was", fo.played.length > 0 && !fo.played.some((p) => p.step.character === "Second") && second(fo.world) === second(off), `${fo.played.length} steps of the four others`);
 
 // What the step was to bring is in the bank when First decides again (forward's seed, settled point 2).
 const ore0 = bank.find((x) => x.code === "copper_ore")?.quantity ?? 0;

@@ -21,7 +21,7 @@ import { CRAFT_SEC } from "../xp";
 import { CHUNK_SEC, CRAFT_LANES, GATHER_LANES, GEAR_CRAFT } from "./config";
 import { actionSec, hoursToLevel, killWalk, levelOf, makePlace, perOf, stepSec } from "./cost";
 import { isOn, met, outOfReach } from "./gates";
-import { fightSecOf, planRec, wins } from "./reach";
+import { cachesOn, fightSecOf, planRec, wins } from "./reach";
 import { crafterOf } from "./roles";
 import { available } from "./stock";
 import { materialCal } from "./events";
@@ -51,25 +51,29 @@ const mayHold = (lane: Lane, name: string, world: World): boolean =>
 /** Settled point 8: a craft at `level` of `lane` that nobody who is on and may craft it meets yet → the road for the
  *  one who gets there first (undefined: someone meets it). */
 const roadMemo = new Map<string, Omit<Gated, "code">>();
+const roadWorld = new WeakMap<World, Map<string, Omit<Gated, "code">>>();
 export function gateRoad(lane: Lane, level: number, world: World): Omit<Gated, "code"> | undefined {
   // whoever may craft it and meets the level, on or not, is no gate (a crafter not on is section 7's business); the road
   // is walked by the ones that are on
   if (world.characters.some((c) => mayHold(lane, c.name, world) && levelOf(c, lane) >= level)) return undefined;
   const may = world.characters.filter((c) => isOn(c.name, world) && mayHold(lane, c.name, world));
-  // shortcut: a road is taken to turn on the levels, the measured level hours and the layer they stand on only (cost.ts:
-  // the atlas's hours once a node or a recipe gives XP; what is reached freely is one connected set per layer), not on
-  // the pool — every decision is a new World, and walking five characters' roads per decision doubled the first week;
-  // upgrade if a road ever turns on gear or on where in a layer a character stands
-  const k = `${lane}|${level}|${may.map((c) => `${c.name}:${levelOf(c, lane)}:${(c as { layer?: string }).layer ?? ""}`).join(";")}|${Object.entries(world.costs).filter(([key, v]) => key.startsWith(`level:${lane}:`) && v.n >= 3).map(([key, v]) => `${key}=${v.sec}`).join(";")}`;
-  const hit = roadMemo.get(k);
+  // Task 020: a crafting lane's road is the atlas's hours × the config's (cost.ts levelHoursEstimate) — a function of the
+  // levels, the measured level hours and the two config numbers, kept for good; a gathering lane's turns on whether a
+  // node or a recipe gives XP at each level (where the character stands, the bank, the events), kept for its World only
+  // (it was kept for good on the levels and the layer: a road served from another World)
+  const k = `${lane}|${level}|${may.map((c) => `${c.name}:${levelOf(c, lane)}`).join(";")}|${Object.entries(world.costs).filter(([key, v]) => key.startsWith(`level:${lane}:`) && v.n >= 3).map(([key, v]) => `${key}=${v.sec}`).join(";")}|${world.config.craftK}|${world.config.craftAbove40}`;
+  const gather = GATHER_LANES.includes(lane);
+  let memo = gather ? roadWorld.get(world) : roadMemo;
+  if (!memo) roadWorld.set(world, (memo = new Map()));
+  const hit = cachesOn() || gather ? memo.get(k) : undefined;
   if (hit) return hit;
   let best: Omit<Gated, "code"> = { lane, level, hours: Infinity };
   for (const c of may) {
     const h = hoursToLevel(lane, levelOf(c, lane), level, world, c);
     if (h < best.hours) best = { lane, level, who: c.name, hours: h };
   }
-  if (roadMemo.size >= 5000) roadMemo.clear();
-  roadMemo.set(k, best);
+  if (!gather && roadMemo.size >= 5000) roadMemo.clear();
+  if (cachesOn() || gather) memo.set(k, best);
   return best;
 }
 

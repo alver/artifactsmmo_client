@@ -9,6 +9,7 @@
 import { itemsOf } from "./compile";
 import { perOf } from "./cost";
 import { bankPlus, forward, pointsOf, waitingOf } from "./forward";
+import { isOn } from "./gates";
 import { queueItemText } from "../queue";
 import type { Answer, Running, Step, World } from "./types";
 
@@ -51,6 +52,7 @@ export function road(live: World, running: Record<string, Running | undefined>, 
   // applies no recycle, so a tidy step would come back forever) — and no bags: it banks at a step's end.
   const world: World = { ...live, bank: bankPlus(live.bank, new Map(Object.entries(live.bags ?? {}))), bags: undefined, bankSlots: undefined, nextExpansion: undefined };
   const names = world.characters.map((c) => c.name);
+  const on = names.filter((name) => isOn(name, world)); // task 020: a character that is off is not played (forward), so it gets no next step
   emit({ k: "waiting", from: world.now, waiting: waitingOf(world) });
   const seed: Record<string, Step> = {};
   for (const [name, r] of Object.entries(running)) if (r && !r.over && names.includes(name)) seed[name] = leftOf(r);
@@ -76,10 +78,10 @@ export function road(live: World, running: Record<string, Running | undefined>, 
     const mine = next[step.character];
     if (sent || !mine || mine.length >= n) return;
     mine.push({ key: step.key, as: step.as, text: textOf(step, w), why: step.why, hours: step.hours, at: w.now });
-    if (names.every((name) => next[name].length >= n)) sendNext();
-  }, undefined, seed);
+    if (on.every((name) => next[name].length >= n)) sendNext();
+  }, undefined, seed, false);
   pts = pointsOf(r.world);
   pass(until, true);
   if (!sent) sendNext();
-  emit({ k: "done", from: world.now, until, points: pointsOf(world), expected: pts, completed: r.completed, byDay, sec: Math.round((performance.now() - t0) / 100) / 10, steps: r.played.length });
+  emit({ k: "done", from: world.now, until, points: pointsOf(world), expected: pts, completed: r.completed, byDay, sec: Math.round((performance.now() - t0) / 100) / 10, steps: r.steps });
 }

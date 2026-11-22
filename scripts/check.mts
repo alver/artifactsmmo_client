@@ -15,8 +15,12 @@ import { fileURLToPath } from "node:url";
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // real time, a backstop only — a livelock ends on a scenario's virtual limits. Task 009: the planner's first week takes
 // about two minutes, its replay rows (`npm run check -- planner`) several more. Task 015: 45 minutes for one named check
-// (report 014's six rows side by side took 1,716 s of 1,800; rows D and F now run only with AMMO_PLANNER_ROWS=all).
-const TIMEOUT_MS = process.argv[2] ? 2_700_000 : 300_000;
+// (report 014's six rows side by side took 1,716 s of 1,800; rows D and F now run only with AMMO_PLANNER_ROWS=all). Task 020:
+// about 1.3 × the planner check on its final tree, alone (4,873 s: the exact solve cache solves more in the rows than the old
+// one served, report 020); and 15 minutes for the planner's first week in the plain run (it passed 5 with four checks side by
+// side: the exact cache solves most in a World's first days).
+const TIMEOUT_MS = process.argv[2] ? 6_300_000 : 300_000;
+const timeoutOf = (name: string): number => (process.argv[2] || name !== "check-planner" ? TIMEOUT_MS : 900_000);
 const PARALLEL = 4;
 
 const list = (dir: string, re: RegExp): string[] => readdirSync(path.join(ROOT, dir)).filter((f) => re.test(f)).sort().map((f) => `${dir}/${f}`);
@@ -53,9 +57,9 @@ function run(file: string): Promise<Result> {
     child.stdout.on("data", (d) => (out += d));
     child.stderr.on("data", (d) => (out += d));
     const timer = setTimeout(() => {
-      out += `\nkilled: still running after ${TIMEOUT_MS / 1000} s of real time`;
+      out += `\nkilled: still running after ${timeoutOf(name) / 1000} s of real time`;
       child.kill();
-    }, TIMEOUT_MS);
+    }, timeoutOf(name));
     child.on("close", (code) => {
       clearTimeout(timer);
       resolve({ name, code, out: out.trimEnd(), sec: (performance.now() - t0) / 1000 });

@@ -54,7 +54,8 @@ await scenario(
     const readAt = planner.value.achievementsAt;
     const c0 = calls[0];
     t.ok(c0.at - readAt >= 120_000 && c0.at - readAt < 125_000, `the first run two minutes after the first read (${((c0.at - readAt) / 1000).toFixed(0)} s)`);
-    const until = Math.min(Date.parse(c0.input.world.config.deadline), c0.input.world.now + HORIZON_DAYS * 864e5);
+    // task 020: as the service computes it — 0 is the deadline
+    const until = HORIZON_DAYS ? Math.min(Date.parse(c0.input.world.config.deadline), c0.input.world.now + HORIZON_DAYS * 864e5) : Date.parse(c0.input.world.config.deadline);
     t.ok(c0.input.world.characters[0].name === "Pia" && c0.input.running.Pia?.step.key.startsWith("ach:chicken_hunt:0@Pia#") && c0.input.until === until,
       `its input: the World, the step in flight, the horizon (${c0.input.running.Pia?.step.key}, ${new Date(c0.input.until).toISOString()})`);
     await t.run({ until: () => outlook.value.state === "running" && !!outlook.value.waiting });

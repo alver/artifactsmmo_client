@@ -53,10 +53,10 @@ const EVERY_MS = 3 * 3_600_000;
 const CONFIG_MS = 30_000;
 const ASK_MS = 60_000;
 const KILL_MS = 30 * 60_000;
-/** Settled point 8: the service's horizon in days (0 = to the deadline). A whole run from the World of 2026-11-21 took more
- *  than 20 minutes on this machine (report 019), so the service plays 21 days and says nothing about the deadline;
- *  `npm run outlook` keeps the deadline. */
-export const HORIZON_DAYS = 21;
+/** Settled point 8: the service's horizon in days (0 = to the deadline). Task 020, settled point 6: a whole run from the
+ *  World of 2026-11-21 takes 420 s and 683 MB at its peak alone (report 020; it took 36 minutes and 2.1 GB, report 019, when
+ *  this was 21), so the service plays to the deadline and the Season card shows what is expected there. */
+export const HORIZON_DAYS = 0;
 
 function load(): OutlookState {
   try {

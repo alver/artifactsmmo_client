@@ -6,12 +6,11 @@
 // For 008: state/loopkit.ts `nearest()` answers the same question from signals.
 
 import { catalog, item, monster as monsterOf } from "../../catalog";
-import { applyGear, baseStats } from "../../sim/stats";
-import { simulate } from "../../sim/combat";
+import { baseStats } from "../../sim/stats";
 import { FREE, route, travelSec } from "../route";
 import type { May } from "../route";
-import { bestInSlot, canEquip, killSeconds } from "../bis";
-import type { Food } from "../bis";
+import { bestInSlot, bisPools, canEquip, killSeconds } from "../bis";
+import type { BisOptions, Food } from "../bis";
 import type { FightForecast } from "../../sim/combat";
 import { killLog } from "./config";
 import { potionPriceOf, potionSec, wisdomOf } from "../xp";
@@ -19,7 +18,7 @@ import { PINNED_ARTIFACTS, jobGear, ownedQtyOf } from "../jobgear";
 import { consPrice, potionCands } from "./consumables";
 import { available, poolBank } from "./stock";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../types/api";
-import type { BankItem, Character } from "../../types/api";
+import type { BankItem, Character, GearSlot } from "../../types/api";
 import type { GameMap, Transition } from "../../types/catalog";
 import type { GearRecommendation } from "../types";
 import type { Place, Toll, World } from "./types";
@@ -43,15 +42,22 @@ export function staticTiles(type: string, code: string): GameMap[] {
   return idx.get(`${type}:${code}`) ?? [];
 }
 
-/** Live event tiles carrying `type:code` at world.now. */
-export function eventTiles(type: string, code: string, world: World): { tile: GameMap; until: number; event: string }[] {
-  const out: { tile: GameMap; until: number; event: string }[] = [];
-  for (const e of world.events) {
-    const c = e.map.interactions?.content;
-    const until = Date.parse(e.expiration);
-    if (c?.type === type && c.code === code && until > world.now) out.push({ tile: e.map, until, event: e.code });
+type Live = { tile: GameMap; until: number; event: string };
+const liveMemo = new WeakMap<World, Map<string, Live[]>>();
+/** Live event tiles carrying `type:code` at world.now (task 020: indexed once per World). */
+export function eventTiles(type: string, code: string, world: World): Live[] {
+  let byContent = liveMemo.get(world);
+  if (!byContent) {
+    liveMemo.set(world, (byContent = new Map()));
+    for (const e of world.events) {
+      const c = e.map.interactions?.content;
+      const until = Date.parse(e.expiration);
+      if (!c || !(until > world.now)) continue;
+      const k = `${c.type}:${c.code}`;
+      byContent.set(k, [...(byContent.get(k) ?? []), { tile: e.map, until, event: e.code }]);
+    }
   }
-  return out;
+  return byContent.get(`${type}:${code}`) ?? [];
 }
 
 // ── task 017: the transitions a character's plan may open ────────────────────
@@ -121,10 +127,21 @@ export function travel(from: Place, to: Place, may: May = FREE): number | undefi
 
 /** Task 017: a spot behind conditional transitions carries the toll of its round trip (tollOf). */
 export interface Spot { place: Place; sec: number; until?: number; event?: string; toll?: Toll }
+const spotMemo = new Map<string, Spot | null>();
 /** The nearest tile carrying the content that `from` reaches: static, or a live event's — by a free route, or (task 017,
  *  `name` given) through the transitions that character's plan may open (mayOf), its toll on the spot. */
 export function nearestSpot(from: Place, type: string, code: string, world: World, name?: string): Spot | undefined {
   const may = mayOf(world, name);
+  // task 020: what it reads — the transitions open (may), where from, the content and its live event tiles — is its key
+  const live = eventTiles(type, code, world);
+  const k = `${mayKeys.get(may) ?? "?"}|${pkey(from)}|${type}:${code}|${live.map((e) => `${pkey({ x: e.tile.x, y: e.tile.y, layer: e.tile.layer })}<${e.until}:${e.event}`).join(";")}`;
+  const hit = caching ? spotMemo.get(k) : undefined;
+  if (hit !== undefined) return hit ?? undefined;
+  const r = spotOf(from, type, code, live, may);
+  if (caching) remember(spotMemo, k, r ?? null);
+  return r;
+}
+function spotOf(from: Place, type: string, code: string, live: Live[], may: May): Spot | undefined {
   let best: Spot | undefined;
   const consider = (t: GameMap, until?: number, event?: string): void => {
     if (t.access?.type === "blocked") return;
@@ -133,9 +150,9 @@ export function nearestSpot(from: Place, type: string, code: string, world: Worl
     if (sec != null && (!best || sec < best.sec)) best = { place, sec, until, event };
   };
   for (const t of staticTiles(type, code)) consider(t);
-  for (const e of eventTiles(type, code, world)) consider(e.tile, e.until, e.event);
+  for (const e of live) consider(e.tile, e.until, e.event);
   if (best && may !== FREE) {
-    const toll = tollOf(best.place, world, name!);
+    const toll = tollThrough(best.place, may);
     if (toll?.via.length) best = { ...best, toll };
   }
   return best;
@@ -164,20 +181,19 @@ function nearestBankOf(p: Place, may: May): { sec: number; place?: Place } {
 /** Seconds from a place to the nearest bank it reaches by a free route (or through `may`). */
 export const bankSec = (p: Place, may: May = FREE): number => nearestBankOf(p, may).sec;
 
-const tollMemo = new WeakMap<World, Map<string, Toll | null>>();
+const tollMemo = new Map<string, Toll | null>();
 /**
  * Task 017, settled points 2 and 3: the round trip a step behind conditional transitions makes — from the bank nearest the
  * place (its reset), to the place and back — through the transitions this character's plan may open: the fares of both
  * ways, the keys the transitions consume, the item a transition wants carried (kept), the whole trip's seconds, and the
  * transitions' tiles. `via` empty: no conditional transition on the way. Undefined: no round trip.
  */
-export function tollOf(place: Place, world: World, name: string): Toll | undefined {
-  let byKey = tollMemo.get(world);
-  if (!byKey) tollMemo.set(world, (byKey = new Map()));
-  const k = `${name}|${pkey(place)}`;
-  const hit = byKey.get(k);
+export const tollOf = (place: Place, world: World, name: string): Toll | undefined => tollThrough(place, mayOf(world, name));
+/** Task 020: the toll is a function of the transitions open and the place — kept across Worlds on those. */
+function tollThrough(place: Place, may: May): Toll | undefined {
+  const k = `${mayKeys.get(may) ?? "?"}|${pkey(place)}`;
+  const hit = caching ? tollMemo.get(k) : undefined;
   if (hit !== undefined) return hit ?? undefined;
-  const may = mayOf(world, name);
   const bank = nearestBankOf(place, may).place;
   const out = bank && route(place, bank, may), back = bank && route(bank, place, may);
   let toll: Toll | null = null;
@@ -193,7 +209,7 @@ export function tollOf(place: Place, world: World, name: string): Toll | undefin
       }
     }
   }
-  byKey.set(k, toll);
+  if (caching) remember(tollMemo, k, toll);
   return toll ?? undefined;
 }
 const GOLD_OPEN: May = (t) => FREE(t) || (t.conditions ?? []).every((c) => c.operator === "cost" && c.code === "gold");
@@ -224,12 +240,12 @@ export function withToll(withdraw: Record<string, number> | undefined, toll: Tol
 // ── memoised solver calls ────────────────────────────────────────────────────
 //
 // Task 009 section 6: a character plans its gear with its pool — the bank less what the others' current steps
-// reserved (stock.ts poolBank), plus what it holds. The solves are keyed on that pool's gear as a multiset, the
-// name, the level and the BASE max HP (gear stripped): a reset that only moves this character's own pieces between
-// it and the bank changes none of them, so the key holds still while gear changes hands. Every table is bounded:
-// at MEMO_CAP entries the oldest tenth (insertion order) is dropped.
+// reserved (stock.ts poolBank), plus what it holds. Task 020, settled point 3: a solve is exact — the table is keyed
+// on everything bestInSlot reads (solveKey) and serves only an equal key, so a run's road does not depend on what was
+// solved before it (scripts/check-road.mts: two runs in one process; check-planner: the caches off against on). Every
+// table is bounded: at MEMO_CAP entries the oldest tenth (insertion order) is dropped.
 
-export const MEMO_CAP = 20_000;
+export const MEMO_CAP = 100_000;
 function remember<V>(m: Map<string, V>, k: string, v: V): V {
   if (m.size >= MEMO_CAP) {
     let n = MEMO_CAP / 10;
@@ -238,6 +254,18 @@ function remember<V>(m: Map<string, V>, k: string, v: V): V {
   m.set(k, v);
   return v;
 }
+
+let caching = true;
+/** Task 020, settled point 3: the caches off — every solve fresh, and every memo that outlives a World (the gathering cut,
+ *  supply.ts gateRoad) bypassed: the checks' proof that a run is exact. On by default; a switch empties them. */
+export function setCaches(on: boolean): void {
+  caching = on;
+  solveMemo.clear();
+  cutMemo.clear();
+  spotMemo.clear();
+  tollMemo.clear();
+}
+export const cachesOn = (): boolean => caching;
 
 interface Pool { sig: string; qty: Map<string, number> }
 const poolMemo = new WeakMap<BankItem[], WeakMap<Character, Pool>>();
@@ -260,21 +288,7 @@ function poolOf(ch: Character, world: World): Pool {
   }
   return p;
 }
-export const poolSig = (ch: Character, world: World): string => poolOf(ch, world).sig;
 
-/**
- * The solve caches. Per (grade, name, level, base max HP, monster, extra pieces) a few results, each with the pool
- * it was solved on and the pieces its set wears. A result serves a pool that is a SUBSET of its own and still holds
- * every piece the set wears: the best set is still there and nothing new could beat it (a set that does not even
- * win in expectation stays a loss with fewer pieces). Most pool changes are a piece another character now wears,
- * which the set did not use — the solve holds. At most SOLVES_PER_KEY results a key (the oldest dropped), at most
- * MEMO_CAP keys a table.
- * shortcut: a smaller pool is taken never to find a better set; bestInSlot's capped search could, rarely
- */
-interface Solved { pool: Map<string, number>; used: Map<string, number>; rec: GearRecommendation | null }
-// task 014: 16 with consumables 1 — a pool's potions come and go with every step, so it cycles through more variants than
-// six (row A, days 20–24: 9,000 misses with all six taken)
-const SOLVES_PER_KEY = 6, SOLVES_PER_KEY_014 = 16;
 const bareMemo = new WeakMap<Map<string, number>, Map<string, number>>();
 /** A pool without its utility potions (planRec at a level above the character's own, task 014). */
 const bareOf = (q: Map<string, number>): Map<string, number> => {
@@ -282,86 +296,73 @@ const bareOf = (q: Map<string, number>): Map<string, number> => {
   if (!b) bareMemo.set(q, (b = new Map([...q].filter(([c]) => item(c)?.type !== "utility"))));
   return b;
 };
-function cached(memo: Map<string, Solved[]>, key: string, ch: Character, world: World, solve: () => GearRecommendation | undefined, extra: string[] = [], bare = false, monster?: string): GearRecommendation | undefined {
-  const pool = bare ? bareOf(poolOf(ch, world).qty) : poolOf(ch, world).qty;
-  // task 014 (consumables 1): the answer of a pool (one object per World and character) is the answer for good: entries
-  // other lookups insert later can serve it by the reuse rules below, and the same World must give the same step (the
-  // check's invariant 8); report 013's model (consumables 0) keeps its cache as it was
-  if (!(world.config.consumables ?? 1)) return lookup(memo, key, pool, ch, world, solve, extra, monster);
-  let answers = answerMemo.get(pool);
-  if (!answers) answerMemo.set(pool, (answers = new Map()));
-  const had = answers.get(key);
-  if (had !== undefined) return had ?? undefined;
-  const r = lookup(memo, key, pool, ch, world, solve, extra, monster);
-  answers.set(key, r ?? null);
-  return r;
+
+const statsMemo = new WeakMap<Character, string>();
+const wornMemo = new WeakMap<Character, string>();
+/** The base stats a solve starts from (sim/stats.ts baseStats) and the worn codes, per character object. */
+const statsOf = (ch: Character): string => {
+  let s = statsMemo.get(ch);
+  if (s == null) statsMemo.set(ch, (s = Object.values(baseStats(ch)).join(",")));
+  return s;
+};
+const wornOf = (ch: Character): string => {
+  let s = wornMemo.get(ch);
+  if (s == null) wornMemo.set(ch, (s = GEAR_SLOTS.map((g) => slotCode(ch, g)).join(",")));
+  return s;
+};
+
+/** The slots bestInSlot searches: the weapon, the single slots, one pool for each group of like slots (bis.ts). */
+const SEARCHED: GearSlot[] = ["weapon", "shield", "helmet", "body_armor", "leg_armor", "boots", "amulet", "rune", "bag", "ring1", "artifact1", "utility1"];
+/**
+ * Task 020, settled point 3: everything bestInSlot reads once its candidates per slot after the caps are known (bis.ts
+ * bisPools: the pool, the extras, the caps, the heuristic against the monster): the monster, the base stats, those
+ * candidates, the worn code of a slot the search can keep (its tiebreak; the worn weapon is always a weapon option),
+ * the copies of each ring candidate (the pair takes two at most), and with the utility slots searched the price of each
+ * potion candidate (killSeconds). Two asks with an equal key get the same set from bestInSlot.
+ */
+function solveKey(ch: Character, monster: string, pools: Record<GearSlot, string[]>, opts: BisOptions): string {
+  const util = !opts.noUtilities;
+  const price = opts.potionPrice ?? potionSec;
+  const worn = GEAR_SLOTS.map((g) => { const c = slotCode(ch, g); return c && (g === "weapon" || ((util || !g.startsWith("utility")) && pools[g].includes(c))) ? c : ""; }).join(",");
+  const cands = SEARCHED.map((g) => (util || g !== "utility1" ? pools[g].join(",") : "-")).join("/");
+  const rings = pools.ring1.map((c) => Math.min(2, opts.ownedQty?.get(c) ?? 3)).join(",");
+  const prices = util ? pools.utility1.map((c) => price(c)).join(",") : "-";
+  return `${monster}|${statsOf(ch)}|${worn}|${cands}|${rings}|${prices}`;
 }
-const answerMemo = new WeakMap<Map<string, number>, Map<string, GearRecommendation | null>>();
-function lookup(memo: Map<string, Solved[]>, key: string, pool: Map<string, number>, ch: Character, world: World, solve: () => GearRecommendation | undefined, extra: string[], monster?: string): GearRecommendation | undefined {
-  const list = memo.get(key);
-  const strict = (s: Solved): boolean => {
-    for (const [c, q] of pool) if ((s.pool.get(c) ?? 0) < q) return false;
-    // a forced extra candidate is there whatever the pool holds
-    if (s.rec?.forecast.win) for (const [c, n] of s.used) if ((pool.get(c) ?? 0) < n && !extra.includes(c)) return false;
-    return true;
-  };
-  for (const s of list ?? []) if (strict(s)) return s.rec ?? undefined;
-  // task 014 (consumables 1), only when no result serves the pool by the rule above — so a later lookup of the same pool
-  // finds the same answer: (1) a safe win solved without a potion the pool now holds serves it; (2) a safe win that lost
-  // only a potion the pool no longer holds is simulated again without it and served while it stays safe.
-  // shortcut: a potion could shave seconds off a safe win but never flip one, and another set could beat the one that lost
-  // its potion; the stock coming and going with every step re-solved every fight of every pool; upgrade if a speed-up
-  // potion is ever wanted where the set already wins safely, or a fight is planned in a worse set than a fresh solve gives
-  if (world.config.consumables ?? 1) for (const s of list ?? []) {
-    if (!s.rec?.safe) continue;
-    let ok = true;
-    for (const [c, q] of pool) if ((s.pool.get(c) ?? 0) < q && item(c)?.type !== "utility") { ok = false; break; }
-    const lost: string[] = [];
-    if (ok) for (const [c, n] of s.used) if ((pool.get(c) ?? 0) < n && !extra.includes(c)) { if (item(c)?.type === "utility") lost.push(c); else { ok = false; break; } }
-    if (!ok) continue;
-    if (!lost.length) return s.rec;
-    const r = monster ? without(ch, s.rec, lost, monster) : undefined;
-    if (r) return r;
-  }
-  const rec = solve() ?? null;
-  const used = new Map<string, number>();
-  for (const c of rec?.codes ?? []) used.set(c, (used.get(c) ?? 0) + 1);
-  const next = [{ pool, used, rec }, ...(list ?? [])].slice(0, (world.config.consumables ?? 1) ? SOLVES_PER_KEY_014 : SOLVES_PER_KEY);
-  if (list) memo.set(key, next);
-  else remember(memo, key, next);
-  return rec ?? undefined;
-}
-/** A solved set without some of its pieces (the potions a pool lost), simulated again: a safe win, else undefined. */
-function without(ch: Character, r: GearRecommendation, drop: string[], monster: string): GearRecommendation | undefined {
+const solveMemo = new Map<string, GearRecommendation | null>();
+/** Counts for the measuring (task 020): asks, asks served within their World, keys looked up, keys served, solves. */
+export const solveCounts = { asks: 0, askHits: 0, keys: 0, keyHits: 0, solves: 0 };
+/** bestInSlot's best set, from the table only for an equal key (solveKey). */
+function solve(ch: Character, monster: string, opts: BisOptions): GearRecommendation | undefined {
   const m = monsterOf(monster);
   if (!m) return undefined;
-  const slots = Object.fromEntries(Object.entries(r.slots).map(([g, c]) => [g, c && drop.includes(c) ? "" : c])) as GearRecommendation["slots"];
-  const codes = Object.values(slots).filter((c): c is string => !!c);
-  const fighter = applyGear(baseStats(ch), codes);
-  const f = simulate(fighter, m), worst = simulate(fighter, m, { pessimistic: true });
-  return f.win && !f.timedOut && worst.win ? { ...r, slots, codes, forecast: f, worst, safe: true } : undefined;
+  const pools = bisPools(ch, m, opts);
+  if (!caching) return solveCounts.solves++, bestInSlot(ch, monster, opts, pools)[0];
+  const k = solveKey(ch, monster, pools, opts);
+  let r = solveMemo.get(k);
+  solveCounts.keys++;
+  if (r === undefined) solveCounts.solves++, (r = remember(solveMemo, k, bestInSlot(ch, monster, opts, pools)[0] ?? null));
+  else solveCounts.keyHits++;
+  return r ?? undefined;
 }
-const solveCounts = (): { fights: number; plans: number } => {
-  let fights = 0, plans = 0;
-  for (const l of fightMemo.values()) fights += l.length;
-  for (const l of planMemo.values()) plans += l.length;
-  return { fights, plans };
-};
-const hpMemo = new WeakMap<Character, number>();
-/** Max HP with the worn gear's HP taken off: what changes with a level, not with a swap. */
-export function baseHp(ch: Character): number {
-  let h = hpMemo.get(ch);
-  if (h == null) {
-    h = ch.max_hp;
-    for (const g of GEAR_SLOTS) for (const e of item(slotCode(ch, g))?.effects ?? []) if (e.code === "hp") h -= e.value;
-    hpMemo.set(ch, h);
-  }
-  return h;
+const askMemo = new WeakMap<World, WeakMap<Character, Map<string, GearRecommendation | null>>>();
+/** One ask (the table, the monster, the extras) of one character object in one World: everything it solves with is the
+ *  World's and that object's, so its answer is kept per both — the thousands of asks of a decision solve once each. */
+function asked(world: World, ch: Character, ask: string, f: () => GearRecommendation | undefined): GearRecommendation | undefined {
+  if (!caching) return f();
+  let byCh = askMemo.get(world);
+  if (!byCh) askMemo.set(world, (byCh = new WeakMap()));
+  let m = byCh.get(ch);
+  if (!m) byCh.set(ch, (m = new Map()));
+  let r = m.get(ask);
+  solveCounts.asks++;
+  if (r === undefined) m.set(ask, (r = f() ?? null));
+  else solveCounts.askHits++;
+  return r ?? undefined;
 }
-
 const atMemo = new WeakMap<Character, Map<number, Character>>();
 /** The same character at another combat level: +5 max HP a level (the atlas's 115 + 5·L), gear the level allows.
- *  One object per (character, level), so the per-object memos (poolSig, baseHp) hold. */
+ *  One object per (character, level), so the per-object memos (the pool, the base stats, the asks) hold. */
 export function chAt(ch: Character, level: number): Character {
   if (level === ch.level) return ch;
   let m = atMemo.get(ch);
@@ -414,33 +415,20 @@ export const fightSecOf = (f: FightForecast, world: World, name: string): number
   const p = potionPrice(world, name);
   return killSeconds(f, p.price, p.food?.(f.maxHp - f.hpRemaining)) * killLog(world);
 };
-/** The part of a price a solve of this character's pool depends on: the covered ingredients of the potions the pool
- *  holds (bestInSlot sees owned potions only) — a stock crossing its line for a potion nobody holds changes no solve. */
-function solveKey(p: Price, ch: Character, world: World, extra: string[] = []): string {
-  const pool = poolOf(ch, world).qty;
-  // task 014: a held consumable costs nothing; an extra one (a need's solve) its bill, in steps of about a fifth.
-  // shortcut: the set is solved resting (the food is priced in killSeconds where a kill is priced, not in the solve):
-  // food in the key tripled the solves of the first week as stocks come and go; upgrade if a set ever turns on it
-  const ex = p.tag === "cons" ? extra.filter((c) => item(c)?.type === "utility").map((c) => `${c}=${Math.round(4 * Math.log2(1 + p.price(c)))}`).join(",") : "";
-  return `${p.tag}:${p.covered.filter((e) => pool.has(e.slice(0, e.indexOf(".")))).join(",")}:${ex}`;
-}
 /** Task 014: row B (consumables free) — every potion the character may drink is at hand, as an extra candidate. */
 const freeExtra = (ch: Character, world: World, extra: string[]): string[] =>
   (world.config.consumables ?? 1) && (world.config.potionK ?? 1) === 0 ? [...new Set([...extra, ...potionCands(ch)])] : extra;
 
-const fightMemo = new Map<string, Solved[]>();
 /**
  * The best set of the character's pool vs a monster — `ownedFightRec`'s solve over poolBank (utility potions in), with
  * caps of 6 a slot and 6 weapons instead of its 12 and 10: the brewed potions the bank collects made the potion pair
- * search the dearest part of a decision. Cached per the name, the level and the base max HP (see `cached`).
+ * search the dearest part of a decision.
  */
 export function fightRec(ch: Character, world: World, monster: string): GearRecommendation | undefined {
-  const p = potionPrice(world, ch.name);
-  const extra = freeExtra(ch, world, []);
-  return cached(fightMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${extra.join(",")}|${solveKey(p, ch, world)}`, ch, world, () => {
-    const qty = ownedQtyOf(ch, poolBank(world, ch.name));
-    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: extra, perSlotCap: 6, weaponCap: 6, potionPrice: p.price })[0];
-  }, extra, false, monster);
+  return asked(world, ch, `fight|${monster}`, () => {
+    const qty = poolOf(ch, world).qty;
+    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: freeExtra(ch, world, []), perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world, ch.name).price });
+  });
 }
 /** Task 012: the wisdom of the set a fight is planned with (xp.ts fightXp's last argument): the solved set's pieces,
  *  plus a pinned artifact the character wears that the set left out (the executor never takes one off). */
@@ -458,7 +446,6 @@ export const wins = (r: GearRecommendation | undefined, world: World): boolean =
  *  shortcut: a set the capped search finds losing is taken not to win with the wider one; upgrade if that ever flips */
 export const safeWin = (ch: Character, world: World, monster: string): boolean => !!planRec(ch, world, monster)?.forecast.win && wins(fightRec(ch, world, monster), world);
 
-const planMemo = new Map<string, Solved[]>();
 /**
  * The planning-grade solve (fleetBis's solve with smaller caps: 3 a slot, 3 weapons; utility potions of the pool in,
  * unlike fleetBis — brewed potions flip fights here) of the character's pool vs a monster, `extra` craftable pieces
@@ -467,19 +454,16 @@ const planMemo = new Map<string, Solved[]>();
  * made (section 4), and the first look at a monster before a full solve.
  */
 export function planRec(ch: Character, world: World, monster: string, extra: string[] = []): GearRecommendation | undefined {
-  const p = potionPrice(world, ch.name);
-  // task 014: a level above the character's own is solved without potions — the stock comes and goes with every fight step
-  // and supply step (shortcut: the road above is priced on the gear alone, to its wall at the pace before it, bundle.ts;
-  // the pool's potions changed every pool and tripled the solves; upgrade if a road above is ever wanted with them).
-  // Row B too (every potion free at the character's own level only: with every potion a candidate above it the row ran
-  // an hour)
-  const bare = !!(world.config.consumables ?? 1) && ch.level !== world.characters.find((c) => c.name === ch.name)?.level;
-  const ex = bare ? extra : freeExtra(ch, world, extra);
-  const w = bare ? openOf(world) : world;
-  return cached(planMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|${[...ex].sort().join(",")}|${solveKey(p, ch, w, ex)}${bare ? "|bare" : ""}`, ch, w, () => {
-    const qty = ownedQtyOf(ch, poolBank(w, ch.name));
-    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: ex, perSlotCap: 3, weaponCap: 3, potionPrice: p.price, noUtilities: bare })[0];
-  }, ex, bare, monster);
+  return asked(world, ch, `plan|${monster}|${[...extra].sort().join(",")}`, () => {
+    // task 014: a level above the character's own is solved without potions — the stock comes and goes with every fight
+    // step and supply step (shortcut: the road above is priced on the gear alone, to its wall at the pace before it,
+    // bundle.ts; upgrade if a road above is ever wanted with them). Row B too (every potion free at the character's own
+    // level only: with every potion a candidate above it the row ran an hour)
+    const bare = !!(world.config.consumables ?? 1) && ch.level !== world.characters.find((c) => c.name === ch.name)?.level;
+    const w = bare ? openOf(world) : world;
+    const qty = bare ? bareOf(poolOf(ch, w).qty) : poolOf(ch, w).qty;
+    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: bare ? extra : freeExtra(ch, world, extra), perSlotCap: 3, weaponCap: 3, potionPrice: potionPrice(world, ch.name).price, noUtilities: bare });
+  });
 }
 const openMemo = new WeakMap<World, World>();
 /** Task 014: the fleet's gear — the World with no step running and every worn set in the bank. What is an estimate is
@@ -506,16 +490,14 @@ export function openOf(world: World): World {
 }
 
 /** Task 014: the planning-grade set of the pool's gear (its potions left out; `fleet`: the fleet's gear, openOf) with
- *  `potions` as candidates at `price` — a need's "the set that wins with them made" (consumables.ts potionSet). Keyed on
- *  the candidates, not their prices: so the stock coming and going changes no key.
- *  shortcut: a set keeps the prices it was first solved with while the gear and the level hold (the chain's prices drift
- *  as the gatherers level: 1,700 new keys in four days); upgrade if a price ever moves the choice between two potions */
+ *  `potions` as candidates at `price` — a need's "the set that wins with them made" (consumables.ts potionSet). `price` is
+ *  a function of the World and the character's name (its one caller's: the chain's price on the empty bank), so the ask
+ *  names it by the table alone. */
 export function potionRec(ch: Character, world: World, monster: string, potions: string[], price: (code: string) => number, fleet = false): GearRecommendation | undefined {
-  const w = fleet ? openOf(world) : world;
-  return cached(planMemo, `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}|potions:${potions.join(",")}${fleet ? "|fleet" : ""}`, ch, w, () => {
-    const qty = new Map([...ownedQtyOf(ch, poolBank(w, ch.name))].filter(([c]) => item(c)?.type !== "utility"));
-    return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: potions, perSlotCap: 3, weaponCap: 3, potionPrice: price })[0];
-  }, potions, true, monster);
+  return asked(world, ch, `potions|${monster}|${potions.join(",")}|${fleet ? "fleet" : ""}`, () => {
+    const qty = bareOf(poolOf(ch, fleet ? openOf(world) : world).qty);
+    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: potions, perSlotCap: 3, weaponCap: 3, potionPrice: price });
+  });
 }
 
 /** Section 2: the first level, up to ten above, at which this character wins the monster safely with the pool it has
@@ -526,36 +508,32 @@ export function potionRec(ch: Character, world: World, monster: string, potions:
 export function winLevel(ch: Character, world: World, monster: string): number | undefined {
   return safeWin(ch, world, monster) ? ch.level : firstWin(ch, world, monster);
 }
-const winHint = new Map<string, number | null>();
-/** The first level above the character's own, up to ten above, at which the planning-grade solve wins: a bisection,
- *  started from the answer the last pool gave (two solves when it did not move). */
+/** The first level above the character's own, up to ten above, at which the planning-grade solve wins: a bisection.
+ *  Task 020: started from the top every time (it started from the answer the last pool gave, which made the answer
+ *  depend on what was asked before wherever the wins are not monotone). */
 export function firstWin(ch: Character, world: World, monster: string): number | undefined {
   const top = Math.min(50, ch.level + 10);
   if (top <= ch.level) return undefined;
   const at = (L: number): boolean => wins(planRec(chAt(ch, L), world, monster), world);
-  const k = `${ch.name}|${ch.level}|${baseHp(ch)}|${monster}`;
-  const h = winHint.get(k);
+  if (!at(top)) return undefined;
   let lo = ch.level + 1, hi = top;
-  if (h != null && h <= top) {
-    if (at(h)) { if (h === lo || !at(h - 1)) return h; hi = h - 1; }
-    else { if (!at(top)) return void remember(winHint, k, null); lo = h + 1; }
-  } else if (!at(top)) return void remember(winHint, k, null);
   while (lo < hi) { const mid = (lo + hi) >> 1; if (at(mid)) hi = mid; else lo = mid + 1; }
-  remember(winHint, k, lo);
   return lo;
 }
 
 const cutMemo = new Map<string, number>();
-/** The share of a gather's cooldown the best gathering set of the pool (tool + e.g. an altar doll) takes off. */
+/** The share of a gather's cooldown the best gathering set of the pool (tool + e.g. an altar doll) takes off. Task 020:
+ *  keyed on what jobgear.ts jobGear's gathering argmax reads — the pool (what may be worn, two rings), the worn codes
+ *  (its tiebreak) and the skill. */
 export function gatherCut(ch: Character, world: World, skill: string): number {
-  const lv = (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
-  const k = `${poolSig(ch, world)}|${ch.name}|${ch.level}|${skill}|${lv}`;
-  const c = cutMemo.get(k);
+  const k = `${poolOf(ch, world).sig}|${wornOf(ch)}|${skill}`;
+  const c = caching ? cutMemo.get(k) : undefined;
   if (c != null) return c;
   const set = jobGear(ch, poolBank(world, ch.name), { kind: "gather", skill }) ?? {};
   let cut = 0;
   for (const code of Object.values(set)) cut += toolCut(code, skill);
-  return remember(cutMemo, k, Math.min(0.9, Math.max(0, cut)));
+  cut = Math.min(0.9, Math.max(0, cut));
+  return caching ? remember(cutMemo, k, cut) : cut;
 }
 /** The cooldown share one item takes off a gather of `skill` (its negative `<skill>_gathering` effect). */
 export const toolCut = (code: string | undefined, skill: string): number => {
@@ -565,4 +543,4 @@ export const toolCut = (code: string | undefined, skill: string): number => {
 };
 
 /** Sizes of the memo tables (the check prints them). */
-export const memoSizes = (): { fights: number; plans: number; cuts: number; routes: number } => ({ ...solveCounts(), cuts: cutMemo.size, routes: routeMemo.size });
+export const memoSizes = (): { solves: number; cuts: number; routes: number } => ({ solves: solveMemo.size, cuts: cutMemo.size, routes: routeMemo.size });

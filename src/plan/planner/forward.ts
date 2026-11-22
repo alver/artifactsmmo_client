@@ -1,5 +1,5 @@
 // The same rule played forward (design B.4, task 007 section 9): advance() applies a finished step by the
-// estimates, forward() runs decide/advance until a time, outlook() is what the Roadmap will show. Pure.
+// estimates, forward() runs decide/advance until a time (road.ts gives it to the Roadmap). Pure.
 //
 // Task 009 section 8: gear is worn — when a step starts, its set (Step.wear) leaves the bank and what the character
 // wore before goes back (a step with no set — craft, train, task, buy — returns it all); what a step gathers, drops
@@ -22,8 +22,9 @@ import { GEAR_SLOTS, slotCode } from "../../types/api";
 import { fightXp } from "../xp";
 import { craftsPerLevel, hoursToLevel, levelOf, perOf } from "./cost";
 import { decide, met } from "./decide";
+import { isOn } from "./gates";
 import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
-import { consFree, consumed } from "./consumables";
+import { consFree, consumed, potionSet } from "./consumables";
 import { fareShort, fightRec, winLevel } from "./reach";
 import { available } from "./stock";
 import { billOf } from "./supply";
@@ -213,7 +214,7 @@ export function advance(world: World, step: Step): World {
 /** Task 013: an event the character attended while the step ran — its share of the time, the actions and hours it took. */
 export interface Attended { code: string; share: number; actions: number; hours: number; perKill?: Record<string, number> }
 export interface Played { at: number; step: Step; events?: Attended[] }
-export interface Forward { world: World; played: Played[]; completed: { code: string; points: number; at: number }[] }
+export interface Forward { world: World; played: Played[]; steps: number; completed: { code: string; points: number; at: number }[] }
 
 /**
  * decide → wear → advance until `until`: the character free first decides next (ties in account order), seeing the
@@ -223,9 +224,11 @@ export interface Forward { world: World; played: Played[]; completed: { code: st
  * step takes that much longer, events.ts stretch, and the event's work is applied after it like a kill or gather step's).
  * Task 019, settled point 2: `seed` — per character a step in flight, what is left of it (road.ts leftOf): it does not
  * decide at its clock, its step ends first, its hours after the clock, and is applied like any other.
+ * Task 020: a character that is off (config.on) is not played — no decision, no step, its gear stays on it; `keep` false
+ * keeps no played step (`played` empty, `steps` counts them: road.ts reads the count only).
  */
-export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void, seed?: Record<string, Step>): Forward {
-  const names = world.characters.map((c) => c.name);
+export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void, seed?: Record<string, Step>, keep = true): Forward {
+  const names = world.characters.map((c) => c.name).filter((n) => isOn(n, world));
   let w: World = { ...world, clock: { ...world.clock }, favors: undefined }; // the forward model ignores favors
   const free: Record<string, number> = Object.fromEntries(names.map((n) => [n, w.clock![n] ?? w.now]));
   const pending: Record<string, Step | undefined> = {};
@@ -233,8 +236,10 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
   const last: Record<string, Step | undefined> = { ...world.current };
   for (const [n, s] of Object.entries(seed ?? {})) if (n in free) { w.clock![n] = free[n]; pending[n] = last[n] = s; free[n] = finish(free[n], s.hours, w).end; }
   const played: Played[] = [];
+  let steps = 0;
   const completed: Forward["completed"] = [];
   for (;;) {
+    if (!names.length) break;
     let name = names[0];
     for (const n of names) if (free[n] < free[name]) name = n;
     const t = free[name];
@@ -261,12 +266,13 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
     onDecide?.(w, step);
     const st = stretch(step.hours, sharesOf(name, w));
     w = wear(w, step);
-    played.push(st.events.length ? { at: t, step, events: st.events } : { at: t, step });
+    steps++;
+    if (keep) played.push(st.events.length ? { at: t, step, events: st.events } : { at: t, step });
     last[name] = pending[name] = step;
     attends[name] = st.events.length ? st : undefined;
     free[name] = finish(t, st.hours, w).end;
   }
-  return { world: w, played, completed };
+  return { world: w, played, steps, completed };
 }
 
 /**
@@ -307,6 +313,8 @@ export function waitingOf(world: World): { achievement: string; points: number; 
     const combatGear = gs.some((g) =>
       (g.kind === "level" && g.lane === "combat" && g.level > top("combat") && !world.characters.some((c) => Number.isFinite(hoursToLevel("combat", c.level, g.level, world, c))))
       || (g.kind === "win" && !world.characters.some((c) => winLevel(c, world, g.monster) != null)));
+    // task 020: a win the planner's potions make (consumables.ts potionSet, at the chain's price) waits for their stock, not gear
+    const potions = combatGear && !!(world.config.consumables ?? 1) && gs.some((g) => g.kind === "win" && world.characters.some((c) => isOn(c.name, world) && !!potionSet(c, world, g.monster)));
     // task 017, settled points 4 and 11: a fare the gold budget cannot pay, coins the bank is short of
     const fare = has("layer") ? gs.map((g) => (g.kind === "layer" ? fareShort(world, g.type, g.code) : undefined)).find((s) => s != null && s > 0) : undefined;
     const coins = ts.flatMap((t) => (t.work.kind === "craft" || t.work.kind === "buy" ? billOf(world, "", (t.inputs ?? []).map((i): [string, number] => [i.code, i.per * t.left]), undefined, false).out : [])).find((o) => o.startsWith("tasks coins:"));
@@ -315,6 +323,7 @@ export function waitingOf(world: World): { achievement: string; points: number; 
       : has("layer") ? "another layer" : has("event") && evStuck(ts) ? "an event" : has("group") ? "a group"
       : coins ? coins
       : ts.some((t) => t.work.kind === "use") ? "use" : ts.every((t) => t.work.kind === "favor") ? "offerings"
+      : potions ? "potions (a safe win once they are made)"
       : combatGear ? "gear (no safe win within ten levels)"
       : noRoad ? "a level with no XP source on the way"
       : gs.some((g) => g.kind === "level" && g.level > top(g.lane)) || has("win") ? "a level"
@@ -322,24 +331,4 @@ export function waitingOf(world: World): { achievement: string; points: number; 
     out.push({ achievement: a.code, points: a.points, waits });
   }
   return out;
-}
-
-export interface Outlook { next: Record<string, Step[]>; expected: number; completed: Forward["completed"]; notes: string[] }
-
-/** The next `n` steps of each character and the points expected at config.deadline, from decide and advance run forward. */
-export function outlook(world: World, n: number): Outlook {
-  const r = forward(world, Date.parse(world.config.deadline));
-  const next: Record<string, Step[]> = {};
-  for (const p of r.played) if ((next[p.step.character] ??= []).length < n) next[p.step.character].push(p.step);
-  return {
-    next, expected: pointsOf(r.world), completed: r.completed,
-    notes: [
-      "offerings count their favors and their time, not their XP; an active favor's XP is not counted",
-      "events are attended by expectation: a member of an event with open demand gives it the share of its time a spawn takes (usable seconds ÷ the mean seconds between spawns), and the work is applied as a kill or gather step's",
-      world.config.consumables ?? 1
-        ? "potions and food are made by need through the bank (consumables.ts): a fight step takes what its stock covers, they leave the bank with it; one in stock costs nothing, any other its chain; healing is eating when a food is in the pool"
-        : "a potion a fight drinks is priced at what making another takes, an ingredient the bank covers for 100 runs free (xp.ts potionPriceOf); a kill step's potions leave the bank when it ends — the brewed potion first, then its ingredients",
-      "gear is made by need and worn; what a step gathers, drops and crafts is in the bank when it ends (expected quantities)",
-    ],
-  };
 }

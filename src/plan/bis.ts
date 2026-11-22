@@ -150,8 +150,10 @@ function heuristic(it: Item, m: { res_fire: number; res_earth: number; res_water
   return v;
 }
 
-/** Build per-slot candidate pools from owned + craftable items, equip-filtered. */
-function buildPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlot, string[]> {
+const heuristics = new WeakMap<Monster, Map<string, number>>();
+/** Build per-slot candidate pools from owned + craftable items, equip-filtered. Task 020: exported — the planner's solve
+ *  cache keys a solve on them (src/plan/planner/reach.ts solveKey) and hands them back to bestInSlot. */
+export function bisPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlot, string[]> {
   const pools: Record<string, string[]> = {};
   for (const s of GEAR_SLOTS) pools[s] = [];
   const seen: Record<string, Set<string>> = {};
@@ -203,12 +205,20 @@ function buildPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlo
   const pinned = new Set(opts.extraCandidates ?? []);
   const perSlotCap = opts.perSlotCap ?? 12;
   const weaponCap = opts.weaponCap ?? 10;
+  // task 020: an item's heuristic against this monster, once (a sort asked it at every comparison)
+  let hm = heuristics.get(m);
+  if (!hm) heuristics.set(m, (hm = new Map()));
+  const h = (code: string): number => {
+    let v = hm!.get(code);
+    if (v === undefined) hm!.set(code, (v = heuristic(item(code)!, m)));
+    return v;
+  };
   const rank = (codes: string[], cap: number) => {
     if (codes.length <= cap) return codes;
     const keep = codes.filter((c) => pinned.has(c));
     const rest = codes
       .filter((c) => !pinned.has(c))
-      .sort((a, b) => heuristic(item(b)!, m) - heuristic(item(a)!, m) || a.localeCompare(b))
+      .sort((a, b) => h(b) - h(a) || a.localeCompare(b))
       .slice(0, Math.max(0, cap - keep.length));
     return [...keep, ...rest];
   };
@@ -223,8 +233,37 @@ function buildPools(ch: Character, m: Monster, opts: BisOptions): Record<GearSlo
 
 interface Eval { score: number; f: ReturnType<typeof simulate>; worst: ReturnType<typeof simulate>; safe: boolean }
 
+/** Task 020: a small number per item code, in the order codes are met (a set's key is a character a slot). */
+const codeIds = new Map<string, number>();
+const levels: number[] = [0]; // an id's item level (the tiebreak's tier)
+const idOf = (code: string): number => {
+  let i = codeIds.get(code);
+  if (i === undefined) {
+    codeIds.set(code, (i = codeIds.size + 1));
+    levels[i] = item(code)?.level ?? 0;
+  }
+  return i;
+};
+const ids: number[] = new Array(GEAR_SLOTS.length).fill(0);
+/** A set slot by slot as a short string: one character a slot (0 = empty). */
+function setKey(slots: Record<GearSlot, string>): string {
+  for (let i = 0; i < GEAR_SLOTS.length; i++) {
+    const c = slots[GEAR_SLOTS[i]];
+    ids[i] = c ? idOf(c) : 0;
+  }
+  return String.fromCharCode(...ids);
+}
+
 function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>, worn: Partial<Record<GearSlot, string>>, price: (code: string) => number = potionSec) {
+  const memo = new Map<string, Eval>(); // task 020: a set (slot by slot) scores the same every time a solve asks again
+  const wornIds = GEAR_SLOTS.map((s) => (worn[s] ? idOf(worn[s]!) : 0));
   return (slots: Record<GearSlot, string>): Eval => {
+    const key = setKey(slots);
+    let e = memo.get(key);
+    if (!e) memo.set(key, (e = score(slots, key)));
+    return e;
+  };
+  function score(slots: Record<GearSlot, string>, key: string): Eval {
     const codes: string[] = [];
     for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
     const fighter = applyGear(base, codes);
@@ -244,11 +283,13 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
     let tier = 0;
     let filled = 0;
     let keep = 0;
-    for (const s of GEAR_SLOTS) {
-      if (!slots[s]) continue;
-      tier += item(slots[s])?.level ?? 0;
+    // task 020: read off the set's key (a slot's character is its code's id, 0 empty) — the same sums in the same order
+    for (let i = 0; i < GEAR_SLOTS.length; i++) {
+      const id = key.charCodeAt(i);
+      if (!id) continue;
+      tier += levels[id];
       filled++;
-      if (slots[s] === worn[s]) keep++;
+      if (id === wornIds[i]) keep++;
     }
     const tiebreak = tier * 5e-4 + filled * 1e-4 + keep * 1e-5;
     if (!f.win || f.timedOut) {
@@ -260,7 +301,7 @@ function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typ
     const worst = simulate(fighter, monster, { pessimistic: true });
     const safe = worst.win;
     return { score: (safe ? 1e9 : 0) - killSeconds(f, price) * 1000 + tiebreak, f, worst, safe };
-  };
+  }
 }
 
 function emptySlots(): Record<GearSlot, string> {
@@ -269,11 +310,11 @@ function emptySlots(): Record<GearSlot, string> {
   return s;
 }
 
-export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions = {}): GearRecommendation[] {
+export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions = {}, given?: Record<GearSlot, string[]>): GearRecommendation[] {
   const m = monsterOf(monsterCode);
   if (!m) return [];
   const base = baseStats(ch);
-  const pools = buildPools(ch, m, opts);
+  const pools = given ?? bisPools(ch, m, opts); // `given`: bisPools of the same arguments
   const worn: Partial<Record<GearSlot, string>> = {};
   for (const s of GEAR_SLOTS) worn[s] = slotCode(ch, s);
   const evaluate = makeEvaluator(base, m, worn, opts.potionPrice);

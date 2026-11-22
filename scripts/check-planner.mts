@@ -38,7 +38,9 @@ import type { Need } from "../src/plan/planner/gear";
 import { recordFight, simAccuracy, simDeviations } from "../src/sim/validate";
 import { isOn } from "../src/plan/planner/gates";
 import { pickMonster, pickNode, pickRecipe, pickSource } from "../src/plan/planner/pick";
-import { bankSec, chAt, fightRec, mayOf, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setWisdom, tollOf, travel, winLevel } from "../src/plan/planner/reach";
+import { bankSec, chAt, fightRec, mayOf, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setCaches, setWisdom, tollOf, travel, winLevel } from "../src/plan/planner/reach";
+import { road } from "../src/plan/planner/road";
+import type { RoadLine } from "../src/plan/planner/road";
 import { crafterOf, rolesFor } from "../src/plan/planner/roles";
 import { available, floor, poolBank } from "../src/plan/planner/stock";
 import { billOf, feedable, gateRoad, mayCraft, objectiveParents, recipeDemand, supplyNeeds, tradeOf } from "../src/plan/planner/supply";
@@ -512,9 +514,33 @@ const ROWS: { label: string; potionK: number; potionStock: number; risk: Planner
 ];
 let RECORD_LEVELS = false; // row A records each fighter's pick at combat 25, 28, 30 and 35 (ended → levelLine)
 // A child of the replay (section 6): one row, its section, its invariant counts on the last line.
+// Task 020, settled point 3: the caches off against on — the road of the day's snapshot of 11-20 (scripts/fixtures/
+// world-2026-11-20.json, all five on) played FRESH_H hours with every solve fresh (reach.ts setCaches), then with the caches
+// on: the same lines. A child beside the rows; FRESH_H is as far as the fresh run goes in about ten minutes (report 020).
+const FRESH_H = 6;
+if (process.env.AMMO_PLANNER_FRESH != null) {
+  const SNAP = JSON.parse(await readFile("scripts/fixtures/world-2026-11-20.json", "utf8")) as { world: World; planner?: { current?: Record<string, import("../src/plan/planner/types").Running> } };
+  const until = SNAP.world.now + FRESH_H * 3.6e6;
+  const play = (): { lines: string; steps: number; sec: number } => {
+    const out: RoadLine[] = [];
+    road(SNAP.world, SNAP.planner?.current ?? {}, until, (l) => out.push(l));
+    const done = out[out.length - 1] as Extract<RoadLine, { k: "done" }>;
+    return { lines: JSON.stringify(out.map((l) => (l.k === "done" ? { ...l, sec: 0 } : l))), steps: done.steps, sec: done.sec };
+  };
+  setCaches(false);
+  const fresh = play();
+  setCaches(true);
+  const cached = play();
+  console.log(`##FRESH ${JSON.stringify({ same: fresh.lines === cached.lines, hours: FRESH_H, steps: [fresh.steps, cached.steps], sec: [fresh.sec, cached.sec] })}`);
+  process.exit(0);
+}
+// Task 020: rows comma-separated (AMMO_PLANNER_ROW=6,4,2,1,0) are played in that order in this one process, each its ##ROW
+// line — the report's proof that a row's points do not depend on the rows played before it (the check plays one a child).
 if (process.env.AMMO_PLANNER_ROW != null) {
-  const { points, days } = replayRow(ROWS[Number(process.env.AMMO_PLANNER_ROW)]);
-  console.log(`##ROW ${JSON.stringify({ points, days, inv: [...inv] })}`);
+  for (const i of process.env.AMMO_PLANNER_ROW.split(",").map(Number)) {
+    const { points, days } = replayRow(ROWS[i]);
+    console.log(`##ROW ${JSON.stringify({ points, days, inv: [...inv] })}`);
+  }
   process.exit(0);
 }
 // Task 014: the rows start here, before sections 1–5 (they share nothing with them), so they have the 30 minutes of the
@@ -523,6 +549,14 @@ if (process.env.AMMO_PLANNER_ROW != null) {
 // AMMO_PLANNER_ROWS=all.
 // Task 017: G (tolls 0) by default too.
 const ROW_ON = process.env.AMMO_PLANNER_ROWS === "all" ? ROWS.map((_, i) => i) : [0, 1, 2, 4, 6];
+const freshRun: Promise<string> = !VERBOSE ? Promise.resolve("") : new Promise((resolve) => {
+  const args = process.execArgv.map((a) => (a.startsWith("--localstorage-file=") ? `${a}.fresh` : a));
+  const child = spawn(process.execPath, [...args, process.argv[1]], { env: { ...process.env, AMMO_PLANNER_FRESH: "1" }, stdio: ["ignore", "pipe", "pipe"] });
+  let out = "";
+  child.stdout.on("data", (d) => (out += d));
+  child.stderr.on("data", (d) => (out += d));
+  child.on("close", (code) => resolve(code === 0 ? out : `${out}\nthe fresh run: exit ${code}`));
+});
 const rows: Promise<[number, string][]> = !VERBOSE ? Promise.resolve([]) : Promise.all(ROW_ON.map((i) => new Promise<[number, string]>((resolve) => {
   // each row its own storage file beside this one's (the fight-record case above wrote to this one: SQLite locks it)
   const args = process.execArgv.map((a) => (a.startsWith("--localstorage-file=") ? `${a}.row${i}` : a));
@@ -1706,6 +1740,11 @@ function goldTable(w: World): void {
 const results: number[] = [];
 const rowDays: Record<string, number>[] = [];
 if (VERBOSE) {
+  // task 020, settled point 3: the caches off against on (the child above)
+  const fl = (await freshRun).split("\n").find((l) => l.startsWith("##FRESH "));
+  const fr = fl ? (JSON.parse(fl.slice(8)) as { same: boolean; hours: number; steps: number[]; sec: number[] }) : undefined;
+  console.log(`\n## Task 020: the caches off against on (the snapshot of 11-20, ${FRESH_H} hours): ${fr ? `${fr.same ? "the same lines" : "DIFFERENT lines"} — ${fr.steps[0]} steps fresh in ${fr.sec[0]} s, ${fr.steps[1]} cached in ${fr.sec[1]} s` : `no answer: ${(await freshRun).slice(-300)}`}`);
+  cases.push([`task 020: every solve fresh gives the road the caches give (${FRESH_H} hours of the snapshot of 11-20)`, !!fr?.same]);
   const outs = await rows;
   for (const [i, out] of outs) {
     const line = out.split("\n").find((l) => l.startsWith("##ROW "));
@@ -1797,7 +1836,7 @@ function replayRow(row: (typeof ROWS)[number]): { points: number; days: Record<n
     const sec = (performance.now() - t) / 1000;
     const pts = (d: number): number => pointsOf(base) + r.completed.filter((c) => c.at <= NOW + d * DAY).reduce((s, c) => s + c.points, 0);
     const m = memoSizes();
-    console.log(`\n## Replay ${row.label}: potionK ${row.potionK}, potionStock ${row.potionStock}, risk ${row.risk}, events ${row.events}, consumables ${row.consumables}, tolls ${row.tolls ?? 1} (${sec.toFixed(0)} s, ${r.played.length} decisions, ${m.fights} full and ${m.plans} planning-grade solves cached at the end)`);
+    console.log(`\n## Replay ${row.label}: potionK ${row.potionK}, potionStock ${row.potionStock}, risk ${row.risk}, events ${row.events}, consumables ${row.consumables}, tolls ${row.tolls ?? 1} (${sec.toFixed(0)} s, ${r.played.length} decisions, ${m.solves} solves cached at the end)`);
     console.log(`  points: day 7 ${pts(7)} · day 14 ${pts(14)} · day 30 ${pts(30)} · day 60 ${pts(60)} · deadline ${pointsOf(r.world)}`);
     console.log(`  completed: ${r.completed.map((c) => `${c.code} +${c.points} (${day(c.at)})`).join(", ")}`);
     const evH = r.played.reduce((s, p) => s + evHours(p), 0);

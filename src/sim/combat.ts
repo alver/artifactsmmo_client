@@ -62,12 +62,6 @@ export interface SimOptions {
   trace?: TurnEvent[];
 }
 
-function effMap(entries: { code: string; value: number }[]): Map<string, number> {
-  const m = new Map<string, number>();
-  for (const e of entries) m.set(e.code, (m.get(e.code) ?? 0) + e.value);
-  return m;
-}
-
 /** One side of the fight, fully resolved into per-turn numbers. */
 interface Combatant {
   hp: number;
@@ -146,23 +140,29 @@ function monsterHitElements(monster: Monster, res: Record<Element, number>): Rec
   return out;
 }
 
+/** Task 020: the boosts a fight starts with, summed in the effects' order (as a map of sums would): the dearest part of a
+ *  fight was building that map and the boosts' names for every one. */
+const BOOST_DMG: Record<string, Element | undefined> = Object.assign(Object.create(null), { boost_dmg_fire: "fire", boost_dmg_earth: "earth", boost_dmg_water: "water", boost_dmg_air: "air" });
+const BOOST_RES: Record<string, Element | undefined> = Object.assign(Object.create(null), { boost_res_fire: "fire", boost_res_earth: "earth", boost_res_water: "water", boost_res_air: "air" });
 /** The fight-start boosts / totals derived from a fighter's utility+rune effects. */
-function opening(player: Fighter): { pEff: Map<string, number>; boostDmg: Record<Element, number>; pMaxHp: number; pRes: Record<Element, number> } {
-  const pEff = effMap(player.effects);
+function opening(player: Fighter): { boostDmg: Record<Element, number>; pMaxHp: number; pRes: Record<Element, number> } {
   const boostDmg = { fire: 0, earth: 0, water: 0, air: 0 } as Record<Element, number>;
   const boostRes = { fire: 0, earth: 0, water: 0, air: 0 } as Record<Element, number>;
-  for (const el of ELEMENTS) {
-    boostDmg[el] = pEff.get(`boost_dmg_${el}`) ?? 0;
-    boostRes[el] = pEff.get(`boost_res_${el}`) ?? 0;
+  let boostHp = 0;
+  for (const e of player.effects) {
+    const d = BOOST_DMG[e.code], r = BOOST_RES[e.code];
+    if (d) boostDmg[d] += e.value;
+    else if (r) boostRes[r] += e.value;
+    else if (e.code === "boost_hp") boostHp += e.value;
   }
-  const pMaxHp = player.stats.hp + (pEff.get("boost_hp") ?? 0);
+  const pMaxHp = player.stats.hp + boostHp;
   const pRes: Record<Element, number> = {
     fire: player.stats.res_fire + boostRes.fire,
     earth: player.stats.res_earth + boostRes.earth,
     water: player.stats.res_water + boostRes.water,
     air: player.stats.res_air + boostRes.air,
   };
-  return { pEff, boostDmg, pMaxHp, pRes };
+  return { boostDmg, pMaxHp, pRes };
 }
 
 /** Exact NON-CRIT per-element damage both sides deal per attack, boosts included.

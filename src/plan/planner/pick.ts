@@ -70,6 +70,15 @@ export function pickNode(skill: string, level: number, ch: Character, world: Wor
   return best;
 }
 
+/** Task 020: whether pickNode finds a node — its filters without the pricing (cost.ts levelHoursEstimate asks only that). */
+export function hasNode(skill: string, level: number, ch: Character, world: World): boolean {
+  for (const r of catalog().resources.values()) {
+    if (r.skill !== skill || r.level > level || gatherXp(r.level, level) * favorXp(world, ch.name, "resource", r.code) <= 0) continue;
+    if (nearestSpot(placeOf(ch), "resource", r.code, world, ch.name)) return true;
+  }
+  return false;
+}
+
 export interface RecipePick { code: string; inputs: Input[]; xp: number; sec: number; xph: number }
 
 /**
@@ -78,7 +87,7 @@ export interface RecipePick { code: string; inputs: Input[]; xp: number; sec: nu
  * inside the step). Seconds per run: 5 s plus each input's field seconds, nothing for what the bank holds for
  * about a chunk of runs. For a lane whose nodes give no XP (alchemy 12–19).
  */
-export function pickRecipe(lane: Lane, ch: Character, world: World): RecipePick | undefined {
+export function pickRecipe(lane: Lane, ch: Character, world: World, first = false): RecipePick | undefined {
   const S = levelOf(ch, lane);
   let best: RecipePick | undefined;
   for (const it of catalog().items.values()) {
@@ -97,6 +106,7 @@ export function pickRecipe(lane: Lane, ch: Character, world: World): RecipePick 
     }
     const xph = (xp / sec) * 3600;
     if (xph > 0 && (!best || xph > best.xph || (xph === best.xph && it.code < best.code))) best = { code: it.code, inputs, xp, sec, xph };
+    if (first && best) return best; // task 020: `first` — whether there is one, the first that passes
   }
   return best;
 }

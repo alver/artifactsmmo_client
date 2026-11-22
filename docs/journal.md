@@ -183,7 +183,7 @@ Keys: `who`, `skill` (`combat` for the character level), `lv` (the new level).
 The service's child process played the World forward (`src/plan/planner/road.ts`); one record a run that ended (the examples are the harness's fake runner, `scripts/scenarios/outlook-service.mts`), none for a
 run killed because a newer one started (a config change, ↻).
 - `from`: the World's time it was played from;
-- a whole road: `until` (played to: the service's horizon, 21 days — `HORIZON_DAYS` in `src/state/outlook.ts`), `sec` (the child's seconds), `points` (the account's
+- a whole road: `until` (played to: the service's horizon — the deadline since task 020, 21 days before; `HORIZON_DAYS` in `src/state/outlook.ts`), `sec` (the child's seconds), `points` (the account's
   then), `expected` (at `until`, by the model), `next` (the next ten completions: `code`, `at`);
 - a failed run: `failed`, the reason (the child exited early, printed a line that is not the road's, could not start, or
   was killed after 30 minutes). A raw line `outlook: failed — <reason>` goes with it.

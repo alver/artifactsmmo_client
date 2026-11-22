@@ -10,7 +10,7 @@ import { CRAFT_SEC, autoRecyclable, fightXp, gatherSec } from "../xp";
 import { COINS_PER_TASK, GATHER_LANES, GATHER_LOG, GEAR_CRAFT, STEP_BANK_SEC, TASK_SEC, killLog } from "./config";
 import { craftXpOf } from "./xp";
 import { CITY, bankSec, chAt, fightRec, fightSecOf, firstWin, gatherCut, nearestSpot, openOf, placeOf, planRec, setWisdom } from "./reach";
-import { pickMonster, pickNode, pickRecipe } from "./pick";
+import { hasNode, pickMonster, pickRecipe } from "./pick";
 import { rolesFor } from "./roles";
 import { atlasKillSec, perUnit, sourceFor } from "./targets";
 import { available } from "./stock";
@@ -201,7 +201,7 @@ export function levelHoursEstimate(lane: Lane, L: number, world: World, ch: Char
   }
   if (GATHER_LANES.includes(lane)) {
     const at = { ...ch, [`${lane}_level`]: L } as Character;
-    if (!pickNode(lane, L, at, world) && !pickRecipe(lane, at, world)) return Infinity;
+    if (!hasNode(lane, L, at, world) && !pickRecipe(lane, at, world, true)) return Infinity;
   }
   return a.gatherTrain[lane]?.[L - 1]?.hours ?? a.craftTrain[lane]?.[L - 1]?.hours ?? Infinity;
 }
