@@ -1,0 +1,71 @@
+# 022 policy I: the scratch branch 'runes' against HEAD 2db1053 (src/ only); its runs set config {"home":1,"buy":{"algae":37000}} over the World's own.
+# The own policy I: 37,000 algae bought at the market at the start (forward.ts config.buy; its gold is counted after the run, not in the model).
+# Every key is off by default; with all keys off the tree plays P0's road (runs/B-off.jsonl). git apply skips these lines.
+
+diff --git a/src/plan/planner/forward.ts b/src/plan/planner/forward.ts
+index d531f08..50bc9f9 100644
+--- a/src/plan/planner/forward.ts
++++ b/src/plan/planner/forward.ts
+@@ -25,7 +25,7 @@ import { decide, met } from "./decide";
+ import { isOn } from "./gates";
+ import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
+ import { consFree, consumed, potionSet } from "./consumables";
+-import { fareShort, fightRec, winLevel } from "./reach";
++import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
+ import { available } from "./stock";
+ import { billOf } from "./supply";
+ import { isDone, targetsOf, unhandledOf } from "./targets";
+@@ -191,7 +191,9 @@ export function advance(world: World, step: Step): World {
+     ch[`${w.lane}_xp`] = 0;
+   }
+   ch.hp = ch.max_hp;
+-  if (step.place) Object.assign(ch, { x: step.place.x, y: step.place.y, layer: step.place.layer });
++  // task 022 (scratch, config.home): a tolled step's last item walks back to a bank on the home side, as in play
++  const at = step.place && world.config.home && step.toll?.via.length ? homeBankOf(step.place) ?? step.place : step.place;
++  if (at) Object.assign(ch, { x: at.x, y: at.y, layer: at.layer });
+ 
+   const characters = world.characters.map((c, i) => (i === idx ? (ch as Character) : c));
+   const top = Math.max(...characters.map((c) => c.level));
+@@ -230,6 +232,11 @@ export interface Forward { world: World; played: Played[]; steps: number; comple
+ export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void, seed?: Record<string, Step>, keep = true): Forward {
+   const names = world.characters.map((c) => c.name).filter((n) => isOn(n, world));
+   let w: World = { ...world, clock: { ...world.clock }, favors: undefined }; // the forward model ignores favors
++  // task 022 (scratch, config.runes R): the fleet buys R healing runes at the rune vendor (10,000 gold each) before it starts
++  if (world.config.runes) w = { ...w, bank: bankPlus(w.bank, new Map([["healing_rune", world.config.runes]])), bankGold: w.bankGold - 10_000 * world.config.runes };
++  // task 022 (scratch, config.buy, I): the potions' ingredients bought at the market — the stock is put in the bank at the start
++  // (its gold is counted afterwards from what the run consumed, at the market's prices; the model's gold is left alone)
++  if (world.config.buy) w = { ...w, bank: bankPlus(w.bank, new Map(Object.entries(world.config.buy))) };
+   const free: Record<string, number> = Object.fromEntries(names.map((n) => [n, w.clock![n] ?? w.now]));
+   const pending: Record<string, Step | undefined> = {};
+   const attends: Record<string, { hours: number; events: Attended[] } | undefined> = {};
+diff --git a/src/plan/planner/reach.ts b/src/plan/planner/reach.ts
+index 5263a25..ce327a2 100644
+--- a/src/plan/planner/reach.ts
++++ b/src/plan/planner/reach.ts
+@@ -178,6 +178,11 @@ function nearestBankOf(p: Place, may: May): { sec: number; place?: Place } {
+   }
+   return s;
+ }
++/** Task 022 (scratch, config.home): every transition open — the bank a tolled trip comes home to (the toll's round trip
++ *  starts and ends at the bank nearest its place, never the island's conditional bank). */
++const ALL_OPEN: May = () => true;
++mayKeys.set(ALL_OPEN, "all");
++export const homeBankOf = (p: Place): Place | undefined => nearestBankOf(p, ALL_OPEN).place;
+ /** Seconds from a place to the nearest bank it reaches by a free route (or through `may`). */
+ export const bankSec = (p: Place, may: May = FREE): number => nearestBankOf(p, may).sec;
+ 
+diff --git a/src/plan/planner/types.ts b/src/plan/planner/types.ts
+index fdda931..90819d6 100644
+--- a/src/plan/planner/types.ts
++++ b/src/plan/planner/types.ts
+@@ -100,6 +100,10 @@ export interface PlannerConfig {
+   tolls: number;                          // task 017: 1 = conditional transitions open, tasks coins spent; 0 = report 016's model whole (the replay's row only)
+   goldPerHour: number;                    // task 017: gold a character-hour is worth (design D.2): a fare's price in hours
+   sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
++  // task 022 (scratch): the strategy experiment's keys, every one off by default
++  home?: number;                          // 1 = a tolled step ends at a bank on the home side (the stranding repair, P0s)
++  buy?: Record<string, number>;           // code → units put in the bank at the start: ingredients bought at the market (I)
++  runes?: number;                         // R = the forward model starts with R healing runes bought (10,000 gold each; R, the own policy)
+ }
+ 
+ export type Costs = Record<string, { sec: number; n: number; at: number }>;

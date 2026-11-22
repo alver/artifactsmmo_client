@@ -1,0 +1,111 @@
+# 022 policy D1: the scratch branch 'd1' against HEAD 2db1053 (src/ only); its runs set config {"home":1,"gates":1} over the World's own.
+# Rule 3 sees every gate (bundle.ts bestGate).
+# Every key is off by default; with all keys off the tree plays P0's road (runs/B-off.jsonl). git apply skips these lines.
+
+diff --git a/src/plan/planner/bundle.ts b/src/plan/planner/bundle.ts
+index 23c780a..45b8ef1 100644
+--- a/src/plan/planner/bundle.ts
++++ b/src/plan/planner/bundle.ts
+@@ -124,7 +124,8 @@ export function bundleOf(lane: Lane, name: string, world: World): Bundle | undef
+     behind.push({ code, at: level, points: pts(code, c.byAch.get(code)![0].points), ev });
+   }
+   let out: Bundle | undefined;
+-  if (behind.length) {
++  if (behind.length && world.config.gates) out = bestGate(lane, name, world, c, L, behind);
++  else if (behind.length) {
+     const next = Math.min(...behind.map((b) => b.at));
+     const bundle = behind.filter((b) => b.at <= next);
+     // Section 2: a level with no XP source makes the gate ∞. Task 009's reading for a far gate (grand_master at 50):
+@@ -146,6 +147,38 @@ export function bundleOf(lane: Lane, name: string, world: World): Bundle | undef
+   return out;
+ }
+ 
++/** Task 022 (scratch, config.gates): rule 3 sees every gate of the lane — per gate g the bundle of the achievements behind the
++ *  gates up to g, scored as bundleScore does (Σ points that fit ÷ (hours to g + their hours)); the best g (by fit, then by
++ *  points per hour, then the nearest) is the bundle. The road is walked once to the farthest gate, at the pace of the last
++ *  level before a wall past it (as for the nearest gate); hoursToLevel and the combat road's pace (cost.ts roadRate) are
++ *  memoised per World, so the farther gates cost no solve that the nearest did not. */
++function bestGate(lane: Lane, name: string, world: World, c: Ctx, L: number, behind: { code: string; at: number; points: number; ev?: { h: number; cal: number; note?: Bundle["events"][number] } }[]): Bundle {
++  const calH = Math.max(0, (Date.parse(world.config.deadline) - world.now) / 3.6e6);
++  const gates = [...new Set(behind.map((b) => b.at))].sort((a, b) => a - b);
++  const top = gates[gates.length - 1];
++  const per: number[] = []; // hours of level l → l+1, from L; a wall stops the walk
++  let wall: number | undefined;
++  for (let l = L; l < top; l++) {
++    const h = hoursToLevel(lane, l, l + 1, world, c.ch);
++    if (!Number.isFinite(h)) { wall = l; break; }
++    per.push(h);
++  }
++  let best: { b: Bundle; fit: number; any: number } | undefined;
++  for (const g of gates) {
++    let hGate = 0;
++    for (let l = L; l < g && l - L < per.length; l++) hGate += per[l - L];
++    const w = wall != null && wall < g ? wall : undefined;
++    if (w === L) hGate = Infinity;
++    else if (w != null) hGate += (g - w) * per[per.length - 1];
++    const bundle = behind.filter((x) => x.at <= g);
++    const hs = bundle.map((x) => x.ev?.h ?? achHours(x.code, name, world));
++    const b: Bundle = { lane, next: g, behind: bundle.map(({ code, points }) => ({ code, points })), hGate, wall: w, hs, cal: bundle.map((x, i) => x.ev?.cal ?? hs[i]), events: bundle.flatMap((x) => (x.ev?.note ? [x.ev.note] : [])) };
++    const s = bundleScore(b, hGate, calH);
++    if (!best || s.fit > best.fit || (s.fit === best.fit && s.any > best.any)) best = { b, fit: s.fit, any: s.any };
++  }
++  return best!.b;
++}
++
+ /** Task 013, settled point 7: an event achievement in a bundle at `level` — its own hours are the event work's
+  *  character-hours plus its other objectives' (non-event targets), and it fits when its calendar does (several events:
+  *  the longest calendar, they run side by side). Its members are the characters at the gate at that level (events.ts
+diff --git a/src/plan/planner/forward.ts b/src/plan/planner/forward.ts
+index d531f08..dbfd2a1 100644
+--- a/src/plan/planner/forward.ts
++++ b/src/plan/planner/forward.ts
+@@ -25,7 +25,7 @@ import { decide, met } from "./decide";
+ import { isOn } from "./gates";
+ import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
+ import { consFree, consumed, potionSet } from "./consumables";
+-import { fareShort, fightRec, winLevel } from "./reach";
++import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
+ import { available } from "./stock";
+ import { billOf } from "./supply";
+ import { isDone, targetsOf, unhandledOf } from "./targets";
+@@ -191,7 +191,9 @@ export function advance(world: World, step: Step): World {
+     ch[`${w.lane}_xp`] = 0;
+   }
+   ch.hp = ch.max_hp;
+-  if (step.place) Object.assign(ch, { x: step.place.x, y: step.place.y, layer: step.place.layer });
++  // task 022 (scratch, config.home): a tolled step's last item walks back to a bank on the home side, as in play
++  const at = step.place && world.config.home && step.toll?.via.length ? homeBankOf(step.place) ?? step.place : step.place;
++  if (at) Object.assign(ch, { x: at.x, y: at.y, layer: at.layer });
+ 
+   const characters = world.characters.map((c, i) => (i === idx ? (ch as Character) : c));
+   const top = Math.max(...characters.map((c) => c.level));
+diff --git a/src/plan/planner/reach.ts b/src/plan/planner/reach.ts
+index 5263a25..ce327a2 100644
+--- a/src/plan/planner/reach.ts
++++ b/src/plan/planner/reach.ts
+@@ -178,6 +178,11 @@ function nearestBankOf(p: Place, may: May): { sec: number; place?: Place } {
+   }
+   return s;
+ }
++/** Task 022 (scratch, config.home): every transition open — the bank a tolled trip comes home to (the toll's round trip
++ *  starts and ends at the bank nearest its place, never the island's conditional bank). */
++const ALL_OPEN: May = () => true;
++mayKeys.set(ALL_OPEN, "all");
++export const homeBankOf = (p: Place): Place | undefined => nearestBankOf(p, ALL_OPEN).place;
+ /** Seconds from a place to the nearest bank it reaches by a free route (or through `may`). */
+ export const bankSec = (p: Place, may: May = FREE): number => nearestBankOf(p, may).sec;
+ 
+diff --git a/src/plan/planner/types.ts b/src/plan/planner/types.ts
+index fdda931..d473402 100644
+--- a/src/plan/planner/types.ts
++++ b/src/plan/planner/types.ts
+@@ -100,6 +100,9 @@ export interface PlannerConfig {
+   tolls: number;                          // task 017: 1 = conditional transitions open, tasks coins spent; 0 = report 016's model whole (the replay's row only)
+   goldPerHour: number;                    // task 017: gold a character-hour is worth (design D.2): a fare's price in hours
+   sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
++  // task 022 (scratch): the strategy experiment's keys, every one off by default
++  home?: number;                          // 1 = a tolled step ends at a bank on the home side (the stranding repair, P0s)
++  gates?: number;                         // 1 = rule 3 scores the best gate of the lane, not the nearest (bundle.ts bestGate, D1)
+ }
+ 
+ export type Costs = Record<string, { sec: number; n: number; at: number }>;

@@ -1,0 +1,234 @@
+# 022 policy D1D2: the scratch branch 'd2' against HEAD 2db1053 (src/ only); its runs set config {"home":1,"gates":1,"fleetGear":1} over the World's own.
+# D1 plus a crafter's road is the fleet's (gear.ts fleetRoad, fleetNeeds).
+# Every key is off by default; with all keys off the tree plays P0's road (runs/B-off.jsonl). git apply skips these lines.
+
+diff --git a/src/plan/planner/bundle.ts b/src/plan/planner/bundle.ts
+index 23c780a..45b8ef1 100644
+--- a/src/plan/planner/bundle.ts
++++ b/src/plan/planner/bundle.ts
+@@ -124,7 +124,8 @@ export function bundleOf(lane: Lane, name: string, world: World): Bundle | undef
+     behind.push({ code, at: level, points: pts(code, c.byAch.get(code)![0].points), ev });
+   }
+   let out: Bundle | undefined;
+-  if (behind.length) {
++  if (behind.length && world.config.gates) out = bestGate(lane, name, world, c, L, behind);
++  else if (behind.length) {
+     const next = Math.min(...behind.map((b) => b.at));
+     const bundle = behind.filter((b) => b.at <= next);
+     // Section 2: a level with no XP source makes the gate ∞. Task 009's reading for a far gate (grand_master at 50):
+@@ -146,6 +147,38 @@ export function bundleOf(lane: Lane, name: string, world: World): Bundle | undef
+   return out;
+ }
+ 
++/** Task 022 (scratch, config.gates): rule 3 sees every gate of the lane — per gate g the bundle of the achievements behind the
++ *  gates up to g, scored as bundleScore does (Σ points that fit ÷ (hours to g + their hours)); the best g (by fit, then by
++ *  points per hour, then the nearest) is the bundle. The road is walked once to the farthest gate, at the pace of the last
++ *  level before a wall past it (as for the nearest gate); hoursToLevel and the combat road's pace (cost.ts roadRate) are
++ *  memoised per World, so the farther gates cost no solve that the nearest did not. */
++function bestGate(lane: Lane, name: string, world: World, c: Ctx, L: number, behind: { code: string; at: number; points: number; ev?: { h: number; cal: number; note?: Bundle["events"][number] } }[]): Bundle {
++  const calH = Math.max(0, (Date.parse(world.config.deadline) - world.now) / 3.6e6);
++  const gates = [...new Set(behind.map((b) => b.at))].sort((a, b) => a - b);
++  const top = gates[gates.length - 1];
++  const per: number[] = []; // hours of level l → l+1, from L; a wall stops the walk
++  let wall: number | undefined;
++  for (let l = L; l < top; l++) {
++    const h = hoursToLevel(lane, l, l + 1, world, c.ch);
++    if (!Number.isFinite(h)) { wall = l; break; }
++    per.push(h);
++  }
++  let best: { b: Bundle; fit: number; any: number } | undefined;
++  for (const g of gates) {
++    let hGate = 0;
++    for (let l = L; l < g && l - L < per.length; l++) hGate += per[l - L];
++    const w = wall != null && wall < g ? wall : undefined;
++    if (w === L) hGate = Infinity;
++    else if (w != null) hGate += (g - w) * per[per.length - 1];
++    const bundle = behind.filter((x) => x.at <= g);
++    const hs = bundle.map((x) => x.ev?.h ?? achHours(x.code, name, world));
++    const b: Bundle = { lane, next: g, behind: bundle.map(({ code, points }) => ({ code, points })), hGate, wall: w, hs, cal: bundle.map((x, i) => x.ev?.cal ?? hs[i]), events: bundle.flatMap((x) => (x.ev?.note ? [x.ev.note] : [])) };
++    const s = bundleScore(b, hGate, calH);
++    if (!best || s.fit > best.fit || (s.fit === best.fit && s.any > best.any)) best = { b, fit: s.fit, any: s.any };
++  }
++  return best!.b;
++}
++
+ /** Task 013, settled point 7: an event achievement in a bundle at `level` — its own hours are the event work's
+  *  character-hours plus its other objectives' (non-event targets), and it fits when its calendar does (several events:
+  *  the longest calendar, they run side by side). Its members are the characters at the gate at that level (events.ts
+diff --git a/src/plan/planner/forward.ts b/src/plan/planner/forward.ts
+index d531f08..dbfd2a1 100644
+--- a/src/plan/planner/forward.ts
++++ b/src/plan/planner/forward.ts
+@@ -25,7 +25,7 @@ import { decide, met } from "./decide";
+ import { isOn } from "./gates";
+ import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
+ import { consFree, consumed, potionSet } from "./consumables";
+-import { fareShort, fightRec, winLevel } from "./reach";
++import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
+ import { available } from "./stock";
+ import { billOf } from "./supply";
+ import { isDone, targetsOf, unhandledOf } from "./targets";
+@@ -191,7 +191,9 @@ export function advance(world: World, step: Step): World {
+     ch[`${w.lane}_xp`] = 0;
+   }
+   ch.hp = ch.max_hp;
+-  if (step.place) Object.assign(ch, { x: step.place.x, y: step.place.y, layer: step.place.layer });
++  // task 022 (scratch, config.home): a tolled step's last item walks back to a bank on the home side, as in play
++  const at = step.place && world.config.home && step.toll?.via.length ? homeBankOf(step.place) ?? step.place : step.place;
++  if (at) Object.assign(ch, { x: at.x, y: at.y, layer: at.layer });
+ 
+   const characters = world.characters.map((c, i) => (i === idx ? (ch as Character) : c));
+   const top = Math.max(...characters.map((c) => c.level));
+diff --git a/src/plan/planner/gear.ts b/src/plan/planner/gear.ts
+index d63c35d..f82a2b2 100644
+--- a/src/plan/planner/gear.ts
++++ b/src/plan/planner/gear.ts
+@@ -185,6 +185,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
+   const rejected: Rejected[] = [];
+   const calH = calHOf(world);
+   const xpNeeded = atlas()?.xpNeeded ?? [];
++  const fleet = !!world.config.fleetGear, roads: Road[] = []; // task 022 (scratch, D2)
+   const gMins = new Map<string, number>(); // per character: no set of its candidates is cheaper to make
+   const gMin = (ch: Character, fight: string[]): number => {
+     let g = gMins.get(ch.name);
+@@ -201,7 +202,8 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
+     // (a) the road to the next combat gate, judged on its next ten levels at most (the levels section 2 solves; a far
+     // gate — grand_master at 50 — is reached a wall at a time); the score's hours run to the gate or the wall
+     const b = bundleOf("combat", ch.name, world);
+-    if (b && c.fight.length) {
++    if (b && c.fight.length && fleet) { const r = fleetRoad(ch, world, b, c.fight); if (r) roads.push(r); }
++    else if (b && c.fight.length) {
+       const end = Math.min(b.next, L + 10);
+       const own = (l: number): number => levelHoursEstimate("combat", l, world, ch);
+       let H0 = 0, rest = 0, pace = Infinity, unpaced = 0; // past the horizon: each level at the pace of the last one priced
+@@ -274,6 +276,8 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
+     }
+   }
+ 
++  if (fleet) needs.push(...fleetNeeds(roads, world, calH));
++
+   // (b) open kill and drop objectives: the fleet's work (settled point 4 of task 011)
+   const inFlight = (key: string): number => Object.entries(world.current).reduce((s, [n, x]) => s + (n !== name && x && x.target === key && x.as !== "level" && x.as !== "fallback" ? x.units : 0), 0);
+   for (const t of targetsOf(world)) {
+@@ -305,6 +309,90 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
+   return out;
+ }
+ 
++/** Task 022 (scratch, config.fleetGear, D2): (a) judged for the fleet. Per fighter, as (a) does: H0 on its next ten levels,
++ *  the pick and the flips, each solved with every candidate (the same solve as (a)'s first, so the same key); the monster
++ *  whose set costs least (its own G + H1). Then per group of fighters whose sets share a piece: one G for the union of their
++ *  pieces (each wearer's copies; a crafter's level road once — makeHours takes the highest level per crafter), and the need
++ *  holds when G + sum H1 <= NEED_RATIO x sum H0. Not holding: the dearest piece of the union goes and every member solves again
++ *  without it, at most DROPS times; the cheapest union that holds is kept (as fightNeed keeps the cheapest set). Each member
++ *  gets its own need, its pieces, the fleet's G, and a score with its share of G (G / the members). */
++interface Road { ch: Character; b: NonNullable<ReturnType<typeof bundleOf>>; L: number; end: number; H0: number; rest: number; unpaced: number; cands: string[]; monster: string; h1: (r: GearRecommendation) => number; pieces: Map<string, number>; H1: number }
++function fleetRoad(ch: Character, world: World, b: NonNullable<ReturnType<typeof bundleOf>>, cands: string[]): Road | undefined {
++  const L = ch.level, end = Math.min(b.next, L + 10);
++  const xpNeeded = atlas()?.xpNeeded ?? [];
++  const own = (l: number): number => levelHoursEstimate("combat", l, world, ch);
++  let H0 = 0, rest = 0, pace = Infinity, unpaced = 0;
++  for (let l = L; l < b.next; l++) {
++    const h = own(l);
++    if (Number.isFinite(h)) pace = h;
++    if (l < end) H0 += h;
++    else if (Number.isFinite(pace)) rest += Number.isFinite(h) ? h : pace;
++    else unpaced++;
++  }
++  const cur = pickMonster(ch, world, new Set());
++  const ok = (code: string): boolean => { const m = monsterOf(code); return !!m && m.type !== "boss" && m.type !== "raid_boss" && fightXp(m.level, m.hp, m.type, L) > 0 && !!nearestSpot(placeOf(ch), "monster", code, world); };
++  const flips = [...catalog().monsters.values()].filter((m) => m.level <= L + 2 && ok(m.code) && !safeWin(ch, world, m.code))
++    .sort((x, y) => fightXp(y.level, y.hp, y.type, L) - fightXp(x.level, x.hp, x.type, L) || (x.code < y.code ? -1 : 1)).slice(0, cur ? FLIPS : Infinity).map((m) => m.code);
++  let best: Road | undefined, bestCost = Infinity;
++  for (const m of [...new Set([cur?.monster ?? "", ...flips])].filter(Boolean)) {
++    const mon = monsterOf(m)!;
++    const h1 = (r: GearRecommendation): number => {
++      if (!wins(r, world)) return Infinity;
++      const sec = killSec(ch, world, m, r), wis = setWisdom(ch, r);
++      let h = 0;
++      for (let l = L; l < end; l++) { const xp = fightXp(mon.level, mon.hp, mon.type, l, wis); h += Math.min(own(l), xp > 0 ? (xpNeeded[l] ?? Infinity) / ((xp / sec) * 3600) : Infinity); }
++      return h;
++    };
++    const r = solve(ch, world, m, cands);
++    if (!r || !wins(r, world)) continue;
++    const pieces = newPieces(r, ch, world);
++    if (!pieces.size) continue;
++    const H1 = h1(r), cost = makeHours(pieces, ch, world).G + H1;
++    if (cost < bestCost) { bestCost = cost; best = { ch, b, L, end, H0, rest, unpaced, cands, monster: m, h1, pieces, H1 }; }
++  }
++  return best;
++}
++function fleetNeeds(roads: Road[], world: World, calH: number): Need[] {
++  const out: Need[] = [];
++  // groups: fighters whose sets share a piece (union-find on the piece codes)
++  const parent = roads.map((_, i) => i);
++  const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
++  for (let i = 0; i < roads.length; i++) for (let j = 0; j < i; j++) if ([...roads[i].pieces.keys()].some((c) => roads[j].pieces.has(c))) parent[find(i)] = find(j);
++  const groups = new Map<number, Road[]>();
++  roads.forEach((r, i) => groups.set(find(i), [...(groups.get(find(i)) ?? []), r]));
++  for (const members of groups.values()) {
++    let sets = members.map((r) => ({ r, pieces: r.pieces, H1: r.H1 }));
++    let kept: { sets: typeof sets; mk: ReturnType<typeof makeHours> } | undefined;
++    const dropped = new Set<string>();
++    for (let d = 0; d <= DROPS; d++) {
++      const wearing = sets.filter((s) => s.pieces.size);
++      if (!wearing.length) break;
++      const union = new Map<string, number>();
++      for (const s of wearing) for (const [c, n] of s.pieces) union.set(c, (union.get(c) ?? 0) + n);
++      const mk = makeHours(union, wearing[0].r.ch, world);
++      const H1 = wearing.reduce((t, s) => t + s.H1, 0), H0 = wearing.reduce((t, s) => t + s.r.H0, 0);
++      if (mk.G + H1 <= NEED_RATIO * H0) kept = { sets: wearing, mk };
++      else if (kept) break;
++      const dear = [...union.keys()].map((c) => ({ c, g: makeHours(new Map([[c, 1]]), wearing[0].r.ch, world).G })).sort((a, b) => b.g - a.g || (a.c < b.c ? -1 : 1))[0].c;
++      dropped.add(dear);
++      sets = sets.map((s) => {
++        if (!s.pieces.has(dear)) return s;
++        const r = solve(s.r.ch, world, s.r.monster, s.r.cands.filter((c) => !dropped.has(c)));
++        if (!r || !wins(r, world)) return { r: s.r, pieces: new Map<string, number>(), H1: s.r.H0 };
++        return { r: s.r, pieces: newPieces(r, s.r.ch, world), H1: s.r.h1(r) };
++      });
++    }
++    if (!kept) continue;
++    const n = kept.sets.length;
++    for (const s of kept.sets) {
++      const r = s.r, share = kept.mk.G / n;
++      const sc = bundleScore(r.b, share + s.H1 + r.rest + (r.unpaced * s.H1) / Math.max(1, r.end - r.L), calH);
++      out.push({ for: r.ch.name, work: `combat ${r.L} -> ${r.end}${r.end < r.b.next ? ` (of ${r.b.next})` : ""} (the fleet's: ${n} wearers)`, key: `lvl:combat:${r.b.next}`, monster: r.monster, pieces: s.pieces, H0: r.H0, H1: s.H1, G: kept.mk.G, parts: kept.mk.parts, points: sc.points, fit: sc.fit, any: sc.any, hours: sc.hours, offered: kept.mk.offered });
++    }
++  }
++  return out;
++}
++
+ /** A piece the offered needs ask for: the copies per fighter, whose work each copy is, the best-scoring need. */
+ export interface Piece { copies: Map<string, number>; works: Map<string, string>; best: Need }
+ /** The pieces of every offered need (rank()'s gear parents; task 013: also the event demand's, events.ts). */
+diff --git a/src/plan/planner/reach.ts b/src/plan/planner/reach.ts
+index 5263a25..ce327a2 100644
+--- a/src/plan/planner/reach.ts
++++ b/src/plan/planner/reach.ts
+@@ -178,6 +178,11 @@ function nearestBankOf(p: Place, may: May): { sec: number; place?: Place } {
+   }
+   return s;
+ }
++/** Task 022 (scratch, config.home): every transition open — the bank a tolled trip comes home to (the toll's round trip
++ *  starts and ends at the bank nearest its place, never the island's conditional bank). */
++const ALL_OPEN: May = () => true;
++mayKeys.set(ALL_OPEN, "all");
++export const homeBankOf = (p: Place): Place | undefined => nearestBankOf(p, ALL_OPEN).place;
+ /** Seconds from a place to the nearest bank it reaches by a free route (or through `may`). */
+ export const bankSec = (p: Place, may: May = FREE): number => nearestBankOf(p, may).sec;
+ 
+diff --git a/src/plan/planner/types.ts b/src/plan/planner/types.ts
+index fdda931..fd3527a 100644
+--- a/src/plan/planner/types.ts
++++ b/src/plan/planner/types.ts
+@@ -100,6 +100,10 @@ export interface PlannerConfig {
+   tolls: number;                          // task 017: 1 = conditional transitions open, tasks coins spent; 0 = report 016's model whole (the replay's row only)
+   goldPerHour: number;                    // task 017: gold a character-hour is worth (design D.2): a fare's price in hours
+   sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
++  // task 022 (scratch): the strategy experiment's keys, every one off by default
++  home?: number;                          // 1 = a tolled step ends at a bank on the home side (the stranding repair, P0s)
++  gates?: number;                         // 1 = rule 3 scores the best gate of the lane, not the nearest (bundle.ts bestGate, D1)
++  fleetGear?: number;                     // 1 = gear by need (a) is judged for the fleet: one G, the sums of H0 and H1 (gear.ts fleetNeeds, D2)
+ }
+ 
+ export type Costs = Record<string, { sec: number; n: number; at: number }>;

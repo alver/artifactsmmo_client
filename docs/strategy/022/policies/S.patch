@@ -1,0 +1,238 @@
+# 022 policy S: the scratch branch 'tiers' against HEAD 2db1053 (src/ only); its runs set config {"home":1,"spine":30|35|40} over the World's own.
+# The spine (tier.ts, hooks in decide.ts, supply.ts parents): S30, S35, S40; with the calendar guard calKeep 72.
+# Every key is off by default; with all keys off the tree plays P0's road (runs/B-off.jsonl). git apply skips these lines.
+
+diff --git a/src/plan/planner/decide.ts b/src/plan/planner/decide.ts
+index 81bc2aa..339bf99 100644
+--- a/src/plan/planner/decide.ts
++++ b/src/plan/planner/decide.ts
+@@ -35,6 +35,7 @@ import { crafterOf, rolesFor } from "./roles";
+ import { available, poolBank } from "./stock";
+ import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
+ import { sourceFor, targetsOf } from "./targets";
++import { calTight, firstOf, tierOf } from "./tier";
+ import { GEAR_SLOTS } from "../../types/api";
+ import type { Parent } from "./supply";
+ import type { Character, GearSlot } from "../../types/api";
+@@ -186,6 +187,7 @@ export function rank(name: string, world: World): Ranking {
+   if (tidy) return { step: tidy, objectives: [], levels: [], supply: [], fillers: [], lanes };
+   const targets = targetsOf(world);
+   const calH = Math.max(0, (Date.parse(cfg.deadline) - world.now) / 3.6e6);
++  const tier = tierOf(world, name); // task 022 (scratch): the experiment's first tier, undefined with every key off
+   const last = world.current[name];
+   const others = Object.entries(world.current).filter(([n, s]) => n !== name && s).map(([, s]) => s!);
+   const inFlight = (key: string): number => others.reduce((t, s) => t + (s.target === key && s.as !== "level" && s.as !== "fallback" ? s.units : 0), 0);
+@@ -253,8 +255,9 @@ export function rank(name: string, world: World): Ranking {
+ 
+   // Rule 3: per lane, the next gate behind which open achievements sit, and the bundle up to it (bundle.ts).
+   const levels: Candidate[] = [];
+-  const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string): void => {
++  const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string, tag?: string): void => {
+     const t = targets.find((x) => x.key === `lvl:${lane}:${to}`) ?? { key: `lvl:${lane}:${to}`, points: 0, work: { kind: "level", lane, to }, left: 1, gates: [], filler: false };
++    if (tier && tag) tier.tags.set(t.key, tag);
+     if (blocked(t.key) || levels.some((c) => c.target.key === t.key && c.fit >= fit * boost(t.key))) return;
+     let p0 = planLevel(lane, ch, world, bonus);
+     let p = p0 && fightPlan(p0, 1, fit * boost(t.key), any * boost(t.key), Infinity);
+@@ -274,7 +277,13 @@ export function rank(name: string, world: World): Ranking {
+     const road = b.wall ? `its road ends at ${b.wall} (no XP source there; ${fmt(b.hGate)} h to the gate at the pace before it)` : `${fmt(b.hGate)} h to the gate`;
+     // task 013: an event achievement behind the gate says by how many spawns of what, with how many members
+     const evs = b.events.map((e) => `; ${e.code} behind it, by ${e.spawns} spawns of ${e.event}, about ${fmt(e.days)} days with ${e.members} ${e.members === 1 ? "member" : "members"}`).join("");
+-    levelCand(lane, to, s.fit, s.any, (what, p) => `${lane} ${L} → ${b.next}: +${s.points} pts behind it (${b.behind.map((x) => x.code).join(", ")}), ${road}${evs}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
++    const tag = tier && (lane === "combat" && ch.level < tier.spine ? "spine" : calTight(b, calH, tier.calKeep) ? "cal" : undefined);
++    levelCand(lane, to, s.fit, s.any, (what, p) => `${lane} ${L} → ${b.next}: +${s.points} pts behind it (${b.behind.map((x) => x.code).join(", ")}), ${road}${evs}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, tag);
++  }
++  // task 022 (scratch, config.crafters): a gear-crafting role holder below the floor takes its skill there, a level at a time
++  for (const lane of tier?.floorLanes ?? []) {
++    const b = bundleOf(lane, name, world), s = b && Number.isFinite(b.hGate) ? bundleScore(b, b.hGate, calH) : undefined;
++    levelCand(lane, tier!.crafters, s?.fit || 1e-9, s?.any || 1e-9, (what, p) => `${lane} ${levelOf(ch, lane)} → ${tier!.crafters}: the crafters' floor; ${what}, ${p.units} now (${fmt(p.hours)} h)`, "floor");
+   }
+ 
+   // Gear by need (section 4) and supply through the bank (section 3).
+@@ -288,11 +297,13 @@ export function rank(name: string, world: World): Ranking {
+     parents.push(pieceParent(code, piece, qty, world, name));
+     if (crafterOf(r.skill, world) !== name) continue;
+     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
++    const spineTag = tier?.spinePieces.has(code) ? "spine" : undefined;
+     if (levelOf(ch, r.skill as Lane) < r.level) {
+-      levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
++      levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, spineTag);
+       continue;
+     }
+     const key = `gear:${code}`;
++    if (tier && spineTag) tier.tags.set(key, spineTag);
+     const spot = nearestSpot(placeOf(ch), "workshop", r.skill, world);
+     const runs = Math.min(qty, feedable(code, world, name));
+     if (blocked(key) || !spot || runs < 1) continue;
+@@ -306,6 +317,7 @@ export function rank(name: string, world: World): Ranking {
+     // task 013, settled point 1: an event-only material is the event interrupt's work, never a step
+     if (blocked(s.key) || s.gates.some((g) => g.kind === "event")) continue;
+     const par = s.parent;
++    if (tier && s.parents?.some((k) => tier.spineParents.has(k))) tier.tags.set(s.key, "spine");
+     const t: Target = { key: s.key, points: 0, work: s.work, left: s.short, gates: s.gates, filler: false };
+     let p: (Plan & { wear?: Record<string, string> }) | undefined, node = "", note = "";
+     if (s.kind === "src") {
+@@ -345,7 +357,7 @@ export function rank(name: string, world: World): Ranking {
+   // a candidate for this lane's role holders, carrying the parent's score (as a crafter's missing level for gear).
+   for (const par of parents) for (const g of par.gated ?? []) {
+     if (!Number.isFinite(g.hours) || !lanes.includes(g.lane)) continue;
+-    levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`);
++    levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`, tier?.spineParents.has(par.key) ? "spine" : undefined);
+   }
+ 
+   const byScore = (k: "fit" | "any") => (a: Candidate, b: Candidate): number => b[k] - a[k] || (a.target.key < b.target.key ? -1 : a.target.key > b.target.key ? 1 : 0);
+@@ -359,6 +371,7 @@ export function rank(name: string, world: World): Ranking {
+   const real = [...objectives, ...levels, ...supply].filter(fresh);
+   if (stuck) fillers.splice(0, fillers.length, ...fillers.filter(fresh));
+   const firsts = real.filter((c) => c.target.achievement && cfg.first.includes(c.target.achievement));
++  if (tier) firsts.push(...firstOf(tier, real).filter((c) => !firsts.includes(c))); // task 022 (scratch)
+   // Task 011, settled point 1: filler that fits goes before a road that fits nothing (the road takes the fallback's hours)
+   const realAny = real.some((c) => c.any > 0);
+   const best = top(firsts, "fit") ?? top(firsts, "any") ?? top(real, "fit");
+diff --git a/src/plan/planner/forward.ts b/src/plan/planner/forward.ts
+index d531f08..dbfd2a1 100644
+--- a/src/plan/planner/forward.ts
++++ b/src/plan/planner/forward.ts
+@@ -25,7 +25,7 @@ import { decide, met } from "./decide";
+ import { isOn } from "./gates";
+ import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
+ import { consFree, consumed, potionSet } from "./consumables";
+-import { fareShort, fightRec, winLevel } from "./reach";
++import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
+ import { available } from "./stock";
+ import { billOf } from "./supply";
+ import { isDone, targetsOf, unhandledOf } from "./targets";
+@@ -191,7 +191,9 @@ export function advance(world: World, step: Step): World {
+     ch[`${w.lane}_xp`] = 0;
+   }
+   ch.hp = ch.max_hp;
+-  if (step.place) Object.assign(ch, { x: step.place.x, y: step.place.y, layer: step.place.layer });
++  // task 022 (scratch, config.home): a tolled step's last item walks back to a bank on the home side, as in play
++  const at = step.place && world.config.home && step.toll?.via.length ? homeBankOf(step.place) ?? step.place : step.place;
++  if (at) Object.assign(ch, { x: at.x, y: at.y, layer: at.layer });
+ 
+   const characters = world.characters.map((c, i) => (i === idx ? (ch as Character) : c));
+   const top = Math.max(...characters.map((c) => c.level));
+diff --git a/src/plan/planner/reach.ts b/src/plan/planner/reach.ts
+index 5263a25..ce327a2 100644
+--- a/src/plan/planner/reach.ts
++++ b/src/plan/planner/reach.ts
+@@ -178,6 +178,11 @@ function nearestBankOf(p: Place, may: May): { sec: number; place?: Place } {
+   }
+   return s;
+ }
++/** Task 022 (scratch, config.home): every transition open — the bank a tolled trip comes home to (the toll's round trip
++ *  starts and ends at the bank nearest its place, never the island's conditional bank). */
++const ALL_OPEN: May = () => true;
++mayKeys.set(ALL_OPEN, "all");
++export const homeBankOf = (p: Place): Place | undefined => nearestBankOf(p, ALL_OPEN).place;
+ /** Seconds from a place to the nearest bank it reaches by a free route (or through `may`). */
+ export const bankSec = (p: Place, may: May = FREE): number => nearestBankOf(p, may).sec;
+ 
+diff --git a/src/plan/planner/supply.ts b/src/plan/planner/supply.ts
+index 3d857cc..fc6f679 100644
+--- a/src/plan/planner/supply.ts
++++ b/src/plan/planner/supply.ts
+@@ -297,7 +297,7 @@ export function objectiveParents(world: World, name: string, calH: number): Pare
+ }
+ 
+ /** A short code as a target for one character: what it is, how much is short, its best parent. */
+-export interface SupplyNeed { key: string; kind: "src" | "mat"; code: string; short: number; work: Work; gates: Gate[]; parent: Parent }
++export interface SupplyNeed { key: string; kind: "src" | "mat"; code: string; short: number; work: Work; gates: Gate[]; parent: Parent; parents?: string[] /* task 022 (scratch): every parent */ }
+ 
+ /** The short codes of every parent, the bank shared in turn from the best-scoring parent down; `inFlight` = what
+  *  the others' current steps of the same key are making (actions for src, products for mat). */
+@@ -308,8 +308,8 @@ export function supplyNeeds(world: World, name: string, parents: Parent[], inFli
+     for (const l of billOf(world, name, p.demand, vb, false).leaves.values()) {
+       const qty = l.kind === "src" ? l.qty * perOf(l.work) : l.qty;
+       const s = out.get(l.key);
+-      if (s) s.short += qty;
+-      else out.set(l.key, { key: l.key, kind: l.kind, code: l.code, short: qty, work: l.work, gates: l.gates, parent: p });
++      if (s) { s.short += qty; s.parents!.push(p.key); }
++      else out.set(l.key, { key: l.key, kind: l.kind, code: l.code, short: qty, work: l.work, gates: l.gates, parent: p, parents: [p.key] });
+     }
+   }
+   return [...out.values()].map((s) => ({ ...s, short: s.short - inFlight(s.key) })).filter((s) => s.short > 1e-6);
+diff --git a/src/plan/planner/tier.ts b/src/plan/planner/tier.ts
+new file mode 100644
+index 0000000..6625307
+--- /dev/null
++++ b/src/plan/planner/tier.ts
+@@ -0,0 +1,62 @@
++// Task 022 (scratch): the strategy experiment's first tier — what rank() puts where config.first ranks (decide.ts), among
++// themselves by today's scores. Every key is off by default; off, nothing here is called. Pure.
++//   config.spine N    — while a character's combat is below N, what serves its combat road: its combat level step, the
++//                       gear pieces and the consumables whose need's work is that road (gear.ts (a), consumables.ts (a))
++//                       and every link of their supply (a supply leaf any of whose parents is such a need, a level of a
++//                       lane gated in such a chain, the crafter's level for such a piece). For all five.
++//   config.crafters N — the three gear-crafting role holders take their skill to N (one level of `train` at a time; the
++//                       train step sources its own materials, so their supply rides inside it).
++//   both              — the crafters' floor first for the three, the spine for all five (CS).
++//   config.calKeep H  — a level road behind which an event achievement sits joins the first tier while its calendar's
++//                       slack (the deadline less the road and the calendar) is under H hours: a calendar is never sold for
++//                       a level. 72 when spine or crafters is on and calKeep is not given; 0 = off.
++
++import { GEAR_CRAFT } from "./config";
++import { consumableNeeds } from "./consumables";
++import { levelOf } from "./cost";
++import { gearNeeds } from "./gear";
++import { crafterOf } from "./roles";
++import type { Bundle } from "./bundle";
++import type { Lane, World } from "./types";
++
++export interface Tier {
++  spine: number; crafters: number; calKeep: number;
++  /** the gear pieces and consumable needs (parent keys) that serve the road of a character below the spine */
++  spineParents: Set<string>;
++  spinePieces: Set<string>;
++  /** the gear-crafting lanes this character holds below the floor */
++  floorLanes: Lane[];
++  /** target key → why it is first tier ("spine", "floor", "cal") */
++  tags: Map<string, string>;
++}
++
++export function tierOf(world: World, name: string): Tier | undefined {
++  const cfg = world.config;
++  const spine = cfg.spine ?? 0, crafters = cfg.crafters ?? 0;
++  if (!spine && !crafters) return undefined;
++  const calKeep = cfg.calKeep ?? 72;
++  const ch = world.characters.find((c) => c.name === name)!;
++  const below = (who: string): boolean => (world.characters.find((c) => c.name === who)?.level ?? Infinity) < spine;
++  const spineParents = new Set<string>(), spinePieces = new Set<string>();
++  if (spine) {
++    for (const n of gearNeeds(world, name).needs) if (n.offered && n.key.startsWith("lvl:combat:") && below(n.for)) for (const code of n.pieces.keys()) { spinePieces.add(code); spineParents.add(`gear:${code}`); }
++    for (const n of consumableNeeds(world, name)) { const m = /^lvl:combat:\d+@(.+)$/.exec(n.workKey); if (m && below(m[1])) spineParents.add(n.key); }
++  }
++  const floorLanes = crafters ? GEAR_CRAFT.filter((l) => crafterOf(l, world) === name && levelOf(ch, l) < crafters) : [];
++  return { spine, crafters, calKeep, spineParents, spinePieces, floorLanes, tags: new Map() };
++}
++
++/** Whether a bundle's calendar is about to stop fitting: an event achievement behind it whose slack is in [0, calKeep). */
++export function calTight(b: Bundle, calH: number, calKeep: number): boolean {
++  if (!calKeep || !b.events.length) return false;
++  const ev = new Set(b.events.map((e) => e.code));
++  return b.behind.some((x, i) => ev.has(x.code) && calH - b.hGate - b.cal[i] >= 0 && calH - b.hGate - b.cal[i] < calKeep);
++}
++
++/** The first tier of rank(): `tag` of a candidate's target key; CS — a crafter below its floor takes its floor (and a tight
++ *  calendar) alone. */
++export function firstOf<C extends { target: { key: string } }>(tier: Tier, real: C[]): C[] {
++  const floor = real.filter((c) => tier.tags.get(c.target.key) === "floor" || tier.tags.get(c.target.key) === "cal");
++  if (tier.floorLanes.length && floor.some((c) => tier.tags.get(c.target.key) === "floor")) return floor;
++  return real.filter((c) => tier.tags.has(c.target.key) && tier.tags.get(c.target.key) !== "floor");
++}
+diff --git a/src/plan/planner/types.ts b/src/plan/planner/types.ts
+index fdda931..5e93320 100644
+--- a/src/plan/planner/types.ts
++++ b/src/plan/planner/types.ts
+@@ -100,6 +100,11 @@ export interface PlannerConfig {
+   tolls: number;                          // task 017: 1 = conditional transitions open, tasks coins spent; 0 = report 016's model whole (the replay's row only)
+   goldPerHour: number;                    // task 017: gold a character-hour is worth (design D.2): a fare's price in hours
+   sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
++  // task 022 (scratch): the strategy experiment's keys, every one off by default
++  home?: number;                          // 1 = a tolled step ends at a bank on the home side (the stranding repair, P0s)
++  spine?: number;                         // N = while a character's combat is below N, its combat road is first tier (tier.ts)
++  crafters?: number;                      // N = the three gear-crafting role holders take their skill to N first (tier.ts)
++  calKeep?: number;                       // hours: a level road whose event calendar has less slack joins the first tier (72)
+ }
+ 
+ export type Costs = Record<string, { sec: number; n: number; at: number }>;

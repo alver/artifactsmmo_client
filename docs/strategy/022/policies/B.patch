@@ -1,0 +1,57 @@
+# 022 policy B: the scratch branch 'home' against HEAD 2db1053 (src/ only); its runs set config {"home":1,"potionK":0} over the World's own.
+# Consumables free: the replay's row B config (potionK 0) on P0s; no code beyond P0s's. B on S30 and on D1+D2: the S and D1D2 patches with potionK 0.
+# Every key is off by default; with all keys off the tree plays P0's road (runs/B-off.jsonl). git apply skips these lines.
+
+diff --git a/src/plan/planner/forward.ts b/src/plan/planner/forward.ts
+index d531f08..dbfd2a1 100644
+--- a/src/plan/planner/forward.ts
++++ b/src/plan/planner/forward.ts
+@@ -25,7 +25,7 @@ import { decide, met } from "./decide";
+ import { isOn } from "./gates";
+ import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
+ import { consFree, consumed, potionSet } from "./consumables";
+-import { fareShort, fightRec, winLevel } from "./reach";
++import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
+ import { available } from "./stock";
+ import { billOf } from "./supply";
+ import { isDone, targetsOf, unhandledOf } from "./targets";
+@@ -191,7 +191,9 @@ export function advance(world: World, step: Step): World {
+     ch[`${w.lane}_xp`] = 0;
+   }
+   ch.hp = ch.max_hp;
+-  if (step.place) Object.assign(ch, { x: step.place.x, y: step.place.y, layer: step.place.layer });
++  // task 022 (scratch, config.home): a tolled step's last item walks back to a bank on the home side, as in play
++  const at = step.place && world.config.home && step.toll?.via.length ? homeBankOf(step.place) ?? step.place : step.place;
++  if (at) Object.assign(ch, { x: at.x, y: at.y, layer: at.layer });
+ 
+   const characters = world.characters.map((c, i) => (i === idx ? (ch as Character) : c));
+   const top = Math.max(...characters.map((c) => c.level));
+diff --git a/src/plan/planner/reach.ts b/src/plan/planner/reach.ts
+index 5263a25..ce327a2 100644
+--- a/src/plan/planner/reach.ts
++++ b/src/plan/planner/reach.ts
+@@ -178,6 +178,11 @@ function nearestBankOf(p: Place, may: May): { sec: number; place?: Place } {
+   }
+   return s;
+ }
++/** Task 022 (scratch, config.home): every transition open — the bank a tolled trip comes home to (the toll's round trip
++ *  starts and ends at the bank nearest its place, never the island's conditional bank). */
++const ALL_OPEN: May = () => true;
++mayKeys.set(ALL_OPEN, "all");
++export const homeBankOf = (p: Place): Place | undefined => nearestBankOf(p, ALL_OPEN).place;
+ /** Seconds from a place to the nearest bank it reaches by a free route (or through `may`). */
+ export const bankSec = (p: Place, may: May = FREE): number => nearestBankOf(p, may).sec;
+ 
+diff --git a/src/plan/planner/types.ts b/src/plan/planner/types.ts
+index fdda931..beaf1c6 100644
+--- a/src/plan/planner/types.ts
++++ b/src/plan/planner/types.ts
+@@ -100,6 +100,8 @@ export interface PlannerConfig {
+   tolls: number;                          // task 017: 1 = conditional transitions open, tasks coins spent; 0 = report 016's model whole (the replay's row only)
+   goldPerHour: number;                    // task 017: gold a character-hour is worth (design D.2): a fare's price in hours
+   sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
++  // task 022 (scratch): the strategy experiment's keys, every one off by default
++  home?: number;                          // 1 = a tolled step ends at a bank on the home side (the stranding repair, P0s)
+ }
+ 
+ export type Costs = Record<string, { sec: number; n: number; at: number }>;
