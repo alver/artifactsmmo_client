@@ -1,16 +1,20 @@
 // Task 024, section 2: the statistics (a)–(h) from base/ alone (+ public/data, the newest outlook record of
 // logs/journal/ at or before the read for table (g), and docs/strategy/022/sec3.json for the model's hours in (f)).
 // No request. Prints every table and writes each to docs/strategy/024/tables/2*.md (the old 2*.md are removed first).
-//   node docs/strategy/024/tools/stats.mjs
+//   node docs/strategy/024/tools/stats.mjs [<dir> [<out dir>]]
+// Task 025: with a directory (the service's daily read, logs/leaders) the base is <dir>/base (build.mjs <dir>), the tables
+// go to <out dir>, by default <dir>/tables, and one more is printed and written: (i) the days.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { HOME, ROOT, J, D, items, med, quart, f1, pieceInfo, marks, short, SKILLS } from "./lib.mjs";
 
 const ME = "alverus";
-const rows = (f) => readFileSync(join(HOME, "base", f), "utf8").trim().split("\n").map(JSON.parse);
+const [DIR, OUT] = process.argv.slice(2).map((p) => resolve(p));
+const rows = (f) => readFileSync(join(DIR ?? HOME, "base", f), "utf8").trim().split("\n").map(JSON.parse);
 const CH = rows("characters.jsonl"), AC = rows("accounts.jsonl"), AH = rows("achievements.jsonl");
 const SNAPS = [...new Set(CH.map((c) => c.snap))].sort();
-const NOW = SNAPS.at(-1), OLD = SNAPS[0];
+// the newest read that holds this account (a daily read a 429 cut may not); OLD the first
+const NOW = SNAPS.filter((s) => CH.some((c) => c.snap === s && c.account === ME)).at(-1), OLD = SNAPS[0];
 const accNow = AC.filter((a) => a.snap === NOW);
 const LEAD = accNow.filter((a) => a.account !== ME).map((a) => a.account); // the first 25 of the board
 const ALL = [...LEAD, ME];
@@ -363,7 +367,54 @@ const paceRows = [];
     "Distance = how far outside the quartiles, in interquartile ranges (an IQR under a tenth of the median counts as a tenth of it). Measures from tables (a)–(g); the pace ones over the accounts in both reads.");
 }
 
-const TD = join(HOME, "tables");
+// ===== (i) the days (task 025: with a directory — the service's daily read, logs/leaders/) =====
+if (DIR) {
+  /** The same character's newest earlier read (in a fight set: `fs`). */
+  const before = (c1, fs = false) => CH.filter((c) => c.snap < c1.snap && c.account === c1.account && c.name === c1.name && (!fs || fightSet(c))).at(-1);
+  /** The hours, the combat XP and the levels (with the share of each) between two reads of a character. */
+  const step = (c0, c1) => {
+    const g = gained(c0.level, c0.xp, c1.level, c1.xp);
+    return { h: (Date.parse(c1.read) - Date.parse(c0.read)) / 3600e3, xp: g.xp, lv: g.parts.reduce((s, [, f]) => s + f, 0) };
+  };
+  const lost = (c) => c.pos.x === 0 && c.pos.y === 0 && (c.pos.layer ?? "overworld") === "overworld" && c.stats.hp < c.stats.max_hp / 5;
+  const body = [];
+  for (const a of ALL) {
+    let prev;
+    for (const s of SNAPS) {
+      const cs = CH.filter((c) => c.snap === s && c.account === a), A = accOf(a, s);
+      if (!cs.length || !A) continue;
+      const pairs = prev ? cs.map((c1) => [CH.find((c) => c.snap === prev && c.account === a && c.name === c1.name), c1]).filter(([c0, c1]) => c0?.read && c1.read) : [];
+      const xph = pairs.length ? pairs.reduce((t, [c0, c1]) => t + step(c0, c1).xp, 0) / step(...pairs[0]).h : NaN;
+      const moved = cs.filter(fightSet).flatMap((c1) => {
+        const c0 = before(c1, true) ?? before(c1);
+        const d = c0 ? [c0.slots.weapon !== c1.slots.weapon ? `${c0.slots.weapon} → ${c1.slots.weapon}` : "", c0.slots.rune !== c1.slots.rune ? `rune ${c0.slots.rune ?? "—"} → ${c1.slots.rune ?? "—"}` : ""].filter(Boolean) : [];
+        return d.length ? [`${c1.name}: ${d.join(", ")}`] : [];
+      });
+      const lv = cs.map((c) => c.level);
+      body.push([acct(a), s, f1(A.points), AH.filter((x) => x.snap === s && x.account === a && x.completed_at).length, Math.max(...lv), f1(med(lv)), f1(Math.round(xph)),
+        cs.filter((c) => content(c)?.type === "monster").length, cs.filter(lost).length, moved.join("; ") || "—"]);
+      prev = s;
+    }
+  }
+  table("2i-days", `(i1) The days: per account (the newest read's ${ALL.length}) and read — ${SNAPS.join(", ")}`,
+    ["account", "read", "pts (board)", "achievements completed", "combat top", "median", "fleet combat XP/h since its read before", "on a monster", "a loss seen", "fighters' weapon and rune, where changed"], body,
+    "Combat XP/h: the combat XP its characters gained since the account's read before, ÷ the hours between the two reads (requests.log). On a monster: characters on a monster's tile (maps.json, else an event's place). A loss seen: characters at (0, 0) of the overworld below a fifth of their max HP — where a lost fight leaves one. Changed: each character in a fight set now, its weapon and rune against its newest earlier read in a fight set (none: its newest earlier read). The 2026-11-22 read holds completed achievements only.");
+  const runs = [];
+  for (const c1 of CH) {
+    const c0 = before(c1);
+    if (!c0?.read || !c1.read || !(fightSet(c0) || fightSet(c1))) continue;
+    const st = step(c0, c1);
+    if (st.lv > 0.005) runs.push({ snap: c1.snap, band: bandOf(c0.level), me: c1.account === ME, ...st });
+  }
+  const cell = (rs) => (rs.length ? `${f1(med(rs.map((r) => r.h / r.lv)))} (${rs.length})` : "—");
+  const later = SNAPS.slice(1);
+  const brows = BANDS.map(([b]) => [b, ...later.map((s) => cell(runs.filter((r) => !r.me && r.band === b && r.snap === s)))]).filter((r) => r.slice(1).some((x) => x !== "—"));
+  brows.push([`**◀ ${ME}**`, ...later.map((s) => cell(runs.filter((r) => r.me && r.snap === s)))]);
+  table("2i-days", "(i2) Per band (the combat level at the read before): the fighters' median hours a level from one read to the next (n)", ["band", ...later.map((s) => `→ ${s}`)], brows,
+    "Fighters: a character in a fight set (a weapon that is not a tool) at either read that gained combat XP; hours a level = the hours between its two reads ÷ the levels gained (each level by the share crossed). The whole interval counts: a fighter that also gathered, crafted or idled shows slower, and a day's combat offering (a quarter of a level) is in it.");
+}
+
+const TD = OUT ?? join(DIR ?? HOME, "tables");
 mkdirSync(TD, { recursive: true });
 for (const f of readdirSync(TD)) if (f.startsWith("2")) rmSync(join(TD, f));
 for (const [id, md] of files) writeFileSync(join(TD, `${id}.md`), md);

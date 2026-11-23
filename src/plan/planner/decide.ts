@@ -21,21 +21,21 @@
 
 import { achievement as achievementOf, item, itemName, resource as resourceOf } from "../../catalog";
 import { CRAFT_SEC } from "../xp";
-import { jobGear } from "../jobgear";
+import { PINNED_ARTIFACTS, jobGear } from "../jobgear";
 import { CHUNK_SEC, GATHER_LANES, TRAIN_LANES } from "./config";
 import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { bankStuck, newCodes, tidyStep } from "./bank";
 import { met } from "./gates";
-import { consParents, fightTake, gearWorld } from "./consumables";
+import { consFree, consParents, fightTake, gearWorld } from "./consumables";
 import { gearPieces, pieceParent } from "./gear";
 import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
-import { fightRec, nearestSpot, placeOf, withToll } from "./reach";
+import { fightRec, nearestSpot, placeOf, withToll, verdictOf } from "./reach";
 import { crafterOf, rolesFor } from "./roles";
 import { available, poolBank } from "./stock";
 import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
 import { sourceFor, targetsOf } from "./targets";
-import { GEAR_SLOTS } from "../../types/api";
+import { GEAR_SLOTS, slotCode } from "../../types/api";
 import type { Parent } from "./supply";
 import type { Character, GearSlot } from "../../types/api";
 import type { Answer, Input, Lane, Place, Source, Step, Target, Toll, Work, World } from "./types";
@@ -158,8 +158,9 @@ function planLevel(lane: Lane, ch: Character, world: World, bonus: Set<string>):
   return undefined;
 }
 
-/** The slots a step's set is worn in (task 009: runes, artifacts, utilities and bags are not planned). */
-export const WEAR_SLOTS: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag" && g !== "rune");
+/** The slots a step's set is worn in (task 009: artifacts, utilities and bags are not planned; task 025, settled point 5:
+ *  the rune is — the healing rune a fight's solve wears). */
+export const WEAR_SLOTS: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag");
 /** The set a step's job wears from the character's pool: the fight solve's, else the gather argmax; none for the rest. */
 function wearOf(w: Work, ch: Character, world: World): Record<string, string> | undefined {
   const set: Partial<Record<GearSlot, string>> | undefined =
@@ -371,7 +372,17 @@ export function rank(name: string, world: World): Ranking {
     : fillAny ? { ...fillAny.step, why: `filler (nothing else scores): ${fillAny.step.why}` }
     : fallback(ch, world, last);
   const wear = step.wear ?? wearOf(step.work, ch, world); // task 014: a kill whose potions could not be stocked wears the set without them
-  return { step: wear ? { ...step, wear } : step, objectives, levels, supply, fillers, lanes };
+  // task 025, settled point 2: the verdict on the very set the step wears (its wear and its take's potions) — the why states
+  // its win rate; the runtime's end record and the forward model's losses read it
+  // `wear` leaves the artifact slots out: play keeps the worn pinned ones on (the Novice Guide's 25 HP decides initiative ties)
+  const pinned = GEAR_SLOTS.map((g) => slotCode(ch, g)).filter((c): c is string => !!c && PINNED_ARTIFACTS.has(c));
+  // consumables free or 0 (the replay's rows B and C): no take — the solve's potions are at hand
+  const noTake = !(cfg.consumables ?? 1) || consFree(world);
+  const pots = step.work.kind !== "kill" ? [] : noTake ? (["utility1", "utility2"] as const).map((g) => fightRec(ch, world, (step.work as { monster: string }).monster)?.slots[g]).filter((c): c is string => !!c)
+    : Object.keys(step.withdraw ?? {}).filter((c) => item(c)?.type === "utility");
+  const fight = step.work.kind === "kill" ? verdictOf(ch, world, step.work.monster, [...Object.values(wear ?? {}), ...pinned, ...pots]) : undefined;
+  const why = fight ? `${step.why}; wins ${Math.round(fight.p * 100)}% of fights, ${Math.round(fight.sec)} s a win` : step.why;
+  return { step: { ...step, why, ...(wear ? { wear } : {}), ...(fight ? { fight } : {}) }, objectives, levels, supply, fillers, lanes };
 }
 
 /** C.4: a gather chunk on the best node of the character's highest gathering skill — always possible. Task 009:

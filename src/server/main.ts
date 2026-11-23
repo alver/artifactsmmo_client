@@ -11,7 +11,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { constants, setPriority } from "node:os";
 import path from "node:path";
@@ -25,6 +25,7 @@ import { SYNCED } from "../state/synced";
 import { boot } from "../state/sync";
 import { queues } from "../state/queue";
 import { setOutlookRunner } from "../state/outlook";
+import { startLeaders } from "../state/leaders";
 
 const PORT = Number(process.env.PORT) || 5173;
 const DEV = process.argv.includes("--dev");
@@ -56,6 +57,7 @@ setDevlogSink(fileSinks({
   append: (p, s) => (dirOf(p), appendFileSync(p, s)),
   replace: (p, s) => (dirOf(p), writeFileSync(`${p}.tmp`, s), renameSync(`${p}.tmp`, p)),
   exists: (p) => existsSync(p),
+  list: (p) => (existsSync(p) ? readdirSync(p) : []),
 }, LOGS));
 
 /** The commit the checkout stood on at boot, read from .git (no child process): HEAD, its ref or packed-refs. */
@@ -288,4 +290,7 @@ server.listen(PORT, "127.0.0.1", () => {
   console.log(`[server] ${DEV ? "dev" : "prod"} — http://localhost:${PORT}/`);
   devlog(`server start (${DEV ? "dev" : "prod"}) on :${PORT}`);
   void boot();
+  // Task 025: the leaders' read once a UTC day at 12:22 (state/leaders.ts) — not for a dev service, a smoke test on another
+  // port, or with LEADERS=off in .env (read at the start, like TOKEN and PORT)
+  if (!DEV && PORT === 5173 && process.env.LEADERS !== "off") startLeaders();
 });

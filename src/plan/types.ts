@@ -10,8 +10,8 @@ export interface GearRecommendation {
   slots: Record<GearSlot, string>; // slot → item code ("" = leave empty)
   codes: string[]; // the non-empty item codes, de-duplicated
   forecast: FightForecast; // expected-value outcome
-  worst: FightForecast; // pessimistic (no player crit / monster always crits)
-  safe: boolean; // pessimistic pass still wins
+  worst: FightForecast; // pessimistic (no player crit / monster always crits) — shown, decides nothing (task 025)
+  p: number; // task 025: the rolled win rate (sim/monte.ts winRate; 0 for an expected loss)
   score: number; // objective value used to rank sets
 }
 

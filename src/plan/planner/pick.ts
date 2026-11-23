@@ -2,14 +2,14 @@
 // formulas the forward model uses as well. Pure.
 //
 // For 008: state/queue.ts `trainingMonsterFor` and plan/hive/skills.ts `trainingResourceFor` answer the same
-// questions (win instead of safe win; the highest node instead of XP per hour).
+// questions (win instead of an admitted win; the highest node instead of XP per hour).
 
 import { catalog, monster as monsterOf } from "../../catalog";
 import { CRAFT_SEC, fightXp } from "../xp";
 import { actionSec, levelOf, perOf } from "./cost";
 import { rolesFor } from "./roles";
 import { CHUNK_SEC } from "./config";
-import { fightRec, nearestSpot, placeOf, safeWin, setWisdom } from "./reach";
+import { fightRec, nearestSpot, placeOf, admitted, setWisdom } from "./reach";
 import { available } from "./stock";
 import { inputsOf, placeGates } from "./targets";
 import { met } from "./gates";
@@ -37,7 +37,7 @@ export function pickMonster(ch: Character, world: World, bonus: Set<string>): Mo
     if (m.type === "boss" || m.type === "raid_boss" || m.level > ch.level + 10) continue;
     if (fightXp(m.level, m.hp, m.type, ch.level) <= 0) continue;
     const spot = nearestSpot(placeOf(ch), "monster", m.code, world, ch.name); // task 017: through the transitions it may open
-    if (!spot || !safeWin(ch, world, m.code)) continue;
+    if (!spot || !admitted(ch, world, m.code)) continue;
     // task 012: with the wisdom of the set the fight is planned with
     const xp = fightXp(m.level, m.hp, m.type, ch.level, setWisdom(ch, fightRec(ch, world, m.code))) * favorXp(world, ch.name, "monster", m.code);
     const sec = actionSec({ kind: "kill", monster: m.code }, ch, world);
@@ -100,7 +100,7 @@ export function pickRecipe(lane: Lane, ch: Character, world: World, first = fals
     for (const i of inputs) {
       // shortcut: an input counts as paid for when the bank holds 100 runs of it; upgrade if a pick flips on stock
       const bank = available(i.code, world, ch.name) >= i.per * 100;
-      const field = i.source.kind !== "craft" && i.gates.every((g) => g.kind === "level" ? levelOf(ch, g.lane) >= g.level : g.kind === "win" ? safeWin(ch, world, g.monster) : false);
+      const field = i.source.kind !== "craft" && i.gates.every((g) => g.kind === "level" ? levelOf(ch, g.lane) >= g.level : g.kind === "win" ? admitted(ch, world, g.monster) : false);
       if (!bank && !field) { sec = Infinity; break; }
       if (!bank) sec += i.per * actionSec(i.source, ch, world) * perOf(i.source);
     }
@@ -126,7 +126,7 @@ const NO_BONUS = new Set<string>();
 /**
  * Task 012, settled point 7: where this character gets more of `code` — among the nodes and monsters that drop it, that
  * exist now (static or a live event's), that it reaches by a free route and whose gates it meets (the skill level; a
- * safe win; no boss): the least NET seconds an item, the action's seconds × actions an item × (1 − the XP share). The
+ * admitted win; no boss): the least NET seconds an item, the action's seconds × actions an item × (1 − the XP share). The
  * XP share is the source's XP per second over that of the character's best XP source of the lane (pickNode;
  * pickMonster without the objective bonus), at most 1, and counts only when the character holds that lane's role
  * (combat is everyone's): a specialist's level is wanted anyway, so a gather that is also its levelling work costs
@@ -158,7 +158,7 @@ export function pickSource(code: string, ch: Character, world: World): SourcePic
   for (const m of catalog().monsters.values()) {
     if (m.type === "boss" || m.type === "raid_boss" || !m.drops.some((d) => d.code === code)) continue;
     const spot = nearestSpot(placeOf(ch), "monster", m.code, world, ch.name);
-    if (!spot || !open("monster", m.code) || !safeWin(ch, world, m.code)) continue;
+    if (!spot || !open("monster", m.code) || !admitted(ch, world, m.code)) continue;
     const work = { kind: "kill" as const, monster: m.code, drop: code };
     const sec = actionSec(work, ch, world), xp = fightXp(m.level, m.hp, m.type, ch.level, setWisdom(ch, fightRec(ch, world, m.code))) * favorXp(world, ch.name, "monster", m.code);
     if (!(sec <= 2 * CHUNK_SEC)) continue; // a kill longer than two chunks (potions at the field price) is no source of a step

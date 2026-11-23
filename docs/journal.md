@@ -67,6 +67,9 @@ The working tree may differ from the commit: the service runs `src/` as it is.
 - `wd`: what the step takes from the bank, by code (potions and food for a kill step);
 - `wear`: the set its job wears, slot → code;
 - `until`: the end of an event's tile.
+
+Task 025: a kill step's `why` ends with its verdict — "wins 96% of fights, 151 s a win" (the rolled win rate p of the set it
+wears and the expected seconds a win, a loss priced in; the core's `Step.fight`).
 ```json
 {"t":"2026-11-21T00:47:11.400Z","run":"tdhi","k":"step","who":"First","key":"ach:the_reaper:1@First#1","target":"ach:the_reaper:1","as":"objective","work":{"kind":"kill","monster":"vampire"},"units":11,"h":0.212,"score":0.1342,"why":"objective: the_reaper: 120 Vampire kills left, +3 pts in ~20 h; 11 now (0.2 h) with 14 Air Boost Potion and 93 Minor Health Potion and 12 Cooked Trout from the bank","wd":{"air_boost_potion":14,"minor_health_potion":93,"cooked_trout":12},"wear":{"weapon":"steel_battleaxe","body_armor":"skeleton_armor"}}
 ```
@@ -84,6 +87,11 @@ The working tree may differ from the commit: the service runs `src/` as it is.
   - `noslot`: it ended with no unit because the bank had no slot, and is not blocked;
   - `dropped`, with `why`: a take-over, or a hand-back;
   - `gone`: its items were gone at boot;
+  - `braked` (task 025), with `why`: the brake or the gate ended it (`<monster>: forecast 75%, won 0 of 3`, or the gate's
+    "forecast N% at the gate … below the floor"); the monster is blocked for the character already (a `block` record);
+- `fight` (task 025, a step whose items fought): `fights`, `wins`, `losses` (the meter's), `p` (the forecast's win rate of
+  the step's set, `Step.fight`), `pWon` (wins ÷ fights), `sec` (the forecast's expected seconds a win, the walks to the
+  bank left out) and `secWon` (the step's running seconds ÷ its wins: everything it did, walks and bank trips in);
 - `partial`: it was re-attached after a restart, so its meter holds only what this run saw;
 - `m`: the meter (below) for what the step's own items did, and nothing that an interrupt inside it did. `wall − m.s` is
   the time in interrupts, plus the moment from the decision to the first action.
@@ -110,6 +118,11 @@ The working tree may differ from the commit: the service runs `src/` as it is.
 - `nostep`: no decision could be made. Keys: `who`, `why` (the exception).
 - `defect`: a decision while a step item is queued. Keys: `who`, `what`.
 - `stopped`: the heartbeat found an owned queue with items stopped, and started it. Keys: `who`, `head`.
+- Task 025: a fight block — `target` `kill:<monster>`, `who`, `until` (24 h), `why` (the brake's "forecast 75%, won 0 of 3",
+  or the gate's refusal), `level` and `set` (the combat pieces worn, sorted: `bis.ts fightSig`). It holds until the 24 h
+  pass or the character's level or set changes (the core: `reach.ts braked`; the executor: `exec.ts fightBlocked`). No
+  strike: "not a safe win", three times running, is gone. Written by `planner.ts setFightBlocks`'s hook, for an owned
+  character only.
 ```json
 {"t":"2026-11-21T02:33:24.700Z","run":"tdhi","k":"block","who":"Third","target":"ach:alchemist:2","key":"ach:alchemist:2@Third#1","until":"2026-11-21T08:33:24.700Z","why":"no Nettle Leaf (need 2) for Health Splash Potion in bag + bank","strikes":1}
 {"t":"2026-11-21T03:10:00.000Z","run":"tdhi","k":"flap","who":"Fifth","target":"src:ogre_skin","n":6,"until":"2026-11-21T03:40:00.000Z"}
@@ -193,6 +206,33 @@ run killed because a newer one started (a config change, ↻).
 {"t":"2026-01-15T12:07:00.000Z","run":"7wu9","k":"outlook","from":"2026-01-15T12:02:00.000Z","until":"2026-02-05T12:02:00.000Z","sec":300,"points":0,"expected":5,"next":[{"code":"chicken_hunt","at":"2026-01-15T14:02:00.000Z"}]}
 {"t":"2026-01-15T12:15:12.000Z","run":"7wu9","k":"outlook","from":"2026-01-15T12:14:12.000Z","failed":"the child exited with 1 before the road was whole: made up: it died"}
 ```
+
+### `loss`: a fight was lost (task 025; `src/state/exec.ts fightRound`)
+Any character's, written when the fight's echo says `loss`. A lost fight is an outcome: the item goes on — at (0, 0) on the
+overworld with 1 HP (as play shows: every loss since 11-19), recover, walk back, fight — unless the brake ends it.
+- `who`, `monster`, `set` (the codes worn), `p` (the gate's rolled win rate of that set, three decimals), `hp` and `max` (the
+  HP the fight started with, of its max), `turns` (the echo's), `drunk` (the worn stacks before less after), `item` (the queue
+  item's tally key), `fights` and `losses` (the item's so far: the brake's count).
+```json
+{"t":"2026-01-15T12:00:20.050Z","run":"x2a1","k":"loss","who":"Ann","monster":"chicken","set":["copper_dagger"],"p":1,"hp":165,"max":165,"turns":6,"item":"pl:ach:made_up_chickens:0@Ann#1:1","fights":1,"losses":1}
+```
+
+### `rune`: the planner buys a healing rune (task 025; `src/state/planner.ts runeCheck`)
+- `who`, `price`, `why` (`consumables.ts runePays`: the fight work it pays for — "Pig: 82 → 71 s a win with it (−13%)", or
+  "crosses the floor with it", or "no XP monster is admitted without it; with it …"), `held` (the fleet's runes before it).
+  The purchase itself is the merchant interrupt's `buy` (a `spend` record with `what` `gold`) and a `gear` item that wears it.
+
+### `leaders`: the day's read of the leaders ended (task 025; `src/state/leaders.ts`)
+- `stamp`: the read's folder, `logs/leaders/<stamp>/` (`YYYY-MM-DDTHHMMZ`, the UTC start); `requests`: the requests made;
+  `bytes`: their bodies' bytes; `seconds`: from the first request's start to the end; `status`: the first status that was
+  not 200 (`null`: every one was; 429, a 5xx or 0 — no answer — ended the day's read; a 4xx did not).
+```json
+{"t":"2026-01-16T12:23:07.600Z","run":"u037","k":"leaders","stamp":"2026-01-16T1222Z","requests":53,"bytes":1272106,"seconds":67.6,"status":null}
+{"t":"2026-01-17T12:22:11.700Z","run":"u037","k":"leaders","stamp":"2026-01-17T1222Z","requests":10,"bytes":120053,"seconds":11.7,"status":429}
+```
+Beside it, under `logs/leaders/`: every 200 body byte for byte in `<stamp>/` with report 024's file names, and
+`requests.log`, one line a request: `<path> <status> <bytes> <iso start>`. `npm run leaders` builds `logs/leaders/base/` and
+`logs/leaders/tables/` from them (024's tools, `docs/strategy/024/README.md`).
 
 ### `pause` and `server`: errors
 - `pause`: a queue paused on an error (`queue.ts runLoop`). Keys: `who`, `id`, `item`, `err`, `code` (the API's, when it was one).

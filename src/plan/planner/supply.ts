@@ -21,7 +21,7 @@ import { CRAFT_SEC } from "../xp";
 import { CHUNK_SEC, CRAFT_LANES, GATHER_LANES, GEAR_CRAFT } from "./config";
 import { actionSec, hoursToLevel, killWalk, levelOf, makePlace, perOf, stepSec } from "./cost";
 import { isOn, met, outOfReach } from "./gates";
-import { cachesOn, fightSecOf, planRec, wins } from "./reach";
+import { cachesOn, fightSecOf, planRec, admits } from "./reach";
 import { crafterOf } from "./roles";
 import { available } from "./stock";
 import { materialCal } from "./events";
@@ -94,7 +94,7 @@ export function fleetSec(work: Work, gates: Gate[], world: World): number {
       if (!isOn(c.name, world) || !gates.every((g) => (g.kind === "win" ? true : met(g, c, world)))) continue;
       if (work.kind !== "kill") { s = Math.min(s, actionSec(work, c, world)); continue; }
       const r = planRec(c, world, work.monster);
-      if (wins(r, world)) { s = fightSecOf(r!.forecast, world, c.name) + killWalk(c, world, work.monster); break; }
+      if (admits(r, world)) { s = fightSecOf(r!, world, c.name, work.monster) + killWalk(c, world, work.monster); break; }
     }
     m.set(k, s);
   }

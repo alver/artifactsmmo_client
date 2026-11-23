@@ -45,6 +45,18 @@ export function equippedCodes(ch: Character): string[] {
   return out;
 }
 
+/** Task 025: a character's initiative before any item. The API's `initiative` is the worn items' + 100 on 40 of 40 fight
+ *  sets (report 024, table 3a); a Character without the field (a made-up or old snapshot, the atlas's hypothetical one)
+ *  starts here. */
+export const BASE_INITIATIVE = 100;
+
+/** The worn items' initiative — only for a Character that does not carry the API's total. */
+function wornInitiative(ch: Character): number {
+  let v = 0;
+  for (const code of equippedCodes(ch)) for (const e of item(code)?.effects ?? []) if (e.code === "initiative") v += e.value;
+  return v;
+}
+
 /** Character's current totals as a normalized stat block (base + equipped gear). */
 export function currentStats(ch: Character): EffectiveStats {
   const s = zeroStats();
@@ -57,6 +69,7 @@ export function currentStats(ch: Character): EffectiveStats {
   s.res_water = ch.res_water; s.res_air = ch.res_air;
   s.critical_strike = ch.critical_strike; s.haste = ch.haste;
   s.wisdom = ch.wisdom; s.prospecting = ch.prospecting;
+  s.initiative = ch.initiative ?? BASE_INITIATIVE + wornInitiative(ch);
   return s;
 }
 
@@ -71,10 +84,7 @@ export function baseStats(ch: Character): EffectiveStats {
   const junk: EffectEntry[] = [];
   for (const code of equippedCodes(ch)) foldEffects(scratch, item(code)?.effects, junk, 1);
   for (const k of STAT_KEYS) s[k] -= scratch[k];
-  // `initiative` isn't reported on Character totals, so `currentStats` left it 0
-  // and we just subtracted equipped initiative into the negatives — reset to 0.
-  s.initiative = 0;
-  return s;
+  return s; // initiative: the API's total less the worn items' = BASE_INITIATIVE (task 025)
 }
 
 /**
@@ -106,7 +116,6 @@ export function currentFighter(ch: Character): Fighter {
     const potion = potionOf(code);
     for (const e of item(code)?.effects ?? []) {
       if (isCombatEffect(e.code)) effects.push(potion ? { code: e.code, value: e.value, potion } : { code: e.code, value: e.value });
-      if (e.code === "initiative") stats.initiative += e.value; // not in Character totals
     }
   }
   return { stats, effects };

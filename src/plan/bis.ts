@@ -17,8 +17,10 @@
 //
 // Objective (lexicographic, encoded as one scalar):
 //   1. feasible: EV win AND not a 100-turn timeout            (else the -1e12 tier)
-//   2. safe: the pessimistic pass also wins                   (+1e9)
-//   3. minimize seconds per kill (killSeconds): the fight's cooldown (2 s/turn)
+//   2. admitted (task 025): p, the rolled win rate (sim/monte.ts winRate), at least the floor (opts.minWin) — below it the
+//      set ranks by p; the pessimistic pass decides nothing (it only spares the rolls of a set it wins: p = 1, winP)
+//   3. minimize the expected seconds a win (winSeconds): (p × a won attempt + (1 − p) × a lost one) ÷ p, a won attempt
+//      being killSeconds: the fight's cooldown (2 s/turn)
 //      + resting back the HP really missing at its end (1 s per 1% of max HP,
 //      the docs — task 012; it was 5 HP/s) + every potion the fight drinks at
 //      what making another costs (xp.ts potionSec: a small health potion
@@ -33,7 +35,9 @@
 //      at half of max, so every +HP armor read as MORE rest and the solver
 //      stripped body armor, 2026-11-08: here the armor saves procs).
 //      scripts/check-planner.mts keeps both cases.
-// So any safe win beats any risky win; within a tier, the fastest grind.
+//      A lost attempt (task 025, lossSeconds): the fight, the potions it drank, the way back from where a beaten character
+//      wakes (opts.wayBack) and the rest from the 1 HP it wakes with.
+// So any admitted win beats any set below the floor; within the admitted tier, the cheapest win.
 // Sets that can't win at all still rank (on a tier no win loses to, by turns
 // survived) — when NOTHING owned beats the monster, the solver still returns
 // the best-effort set, so "equip for a fight" always dresses the character.
@@ -44,6 +48,8 @@ import { applyGear, baseStats } from "../sim/stats";
 import type { EffectiveStats } from "../sim/types";
 import { simulate } from "../sim/combat";
 import type { FightForecast } from "../sim/combat";
+import { SEARCH_N, fightKey, winRate } from "../sim/monte";
+import type { Fighter } from "../sim/types";
 import { fightSec, potionSec } from "./xp";
 import { restSeconds } from "../sim/cost";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../types/api";
@@ -81,6 +87,10 @@ export interface BisOptions {
   potionPrice?: (code: string) => number;
   perSlotCap?: number; // default 12
   weaponCap?: number; // default 10
+  /** Task 025: the floor of the rolled win rate a set is admitted at (default MIN_WIN, Alex's 0.75). */
+  minWin?: number;
+  /** Task 025: the seconds a lost attempt walks back — from where a beaten character wakes to the monster (default 0). */
+  wayBack?: number;
   /** Task 021: false — the set worn is not read (no `keep` tiebreak, the worn weapon no extra option): the planner's
    *  solves (reach.ts), so one pool gives one answer whatever is worn. Default true: the executor keeps what it wears
    *  rather than swap it for an equal piece at the bank. */
@@ -99,6 +109,35 @@ export const USE_SEC = 4.5;
 export function healSeconds(lost: number, maxHp: number, price: (code: string) => number, food?: Food): number {
   const n = food && food.hp > 0 ? Math.floor(lost / food.hp) : 0;
   return n > 0 ? USE_SEC + n * price(food!.code) + restSeconds(lost - n * food!.hp, maxHp) : restSeconds(lost, maxHp);
+}
+
+/** Task 025: the combat pieces of a set — what a fight block names (no tool, no wisdom-only artifact, no bag): its set
+ *  changes when one of them does. The core (reach.ts braked) and the executor (exec.ts blockFight) sign a set alike. */
+export function fightSig(codes: string[]): string {
+  return codes.filter((c) => { const it = item(c); return !!it && it.type !== "bag" && (it.effects ?? []).some((e) => !["wisdom", "prospecting", "inventory_space"].includes(e.code) && !e.code.endsWith("_gathering") && !e.code.endsWith("_crafting")); }).sort().join(",");
+}
+
+/** Task 025, settled point 2: the floor (Alex, decision 61) — a fight is admitted when its rolled win rate is at least
+ *  this; the planner's config.risk.minWin overrides it. */
+export const MIN_WIN = 0.75;
+/** Task 025: the HP a beaten character wakes with (docs/design/planner.md:704; task 025's report reads it from play). */
+export const WAKE_HP = 1;
+/** Task 025, settled point 2: a lost attempt's seconds — the fight, the potions it drank (drunk is drunk) and the
+ *  recovery from WAKE_HP (rest, or eating `food`), plus the way back from where it wakes (`wayBack`). No XP, no drop. */
+export function lossSeconds(f: Pick<FightForecast, "turns" | "maxHp" | "used">, price: (code: string) => number = potionSec, wayBack = 0, food?: Food): number {
+  let s = fightSec(f.turns) + healSeconds(f.maxHp - WAKE_HP, f.maxHp, price, food) + wayBack;
+  for (const code in f.used) if (f.used[code] > 0) s += f.used[code] * price(code);
+  return s;
+}
+/** Task 025, settled point 2: the expected seconds a win — (p × a won attempt + (1 − p) × a lost one) ÷ p; ∞ at p 0. */
+export const winSeconds = (won: number, lost: number, p: number): number => (p > 0 ? (p * won + (1 - p) * lost) / p : Infinity);
+/** Task 025: p of a fighter — 1 when the pessimistic pass (no player crit, a crit on every monster hit) wins, since every
+ *  roll lies between it and the best case; else the rolled share (sim/monte.ts winRate).
+ *  shortcut: an effect that makes a crit hurt its owner (none is modelled) or a full initiative and HP tie (the rolls toss a
+ *  coin, the pessimistic pass gives it to the player) could break "every roll wins"; upgrade if one appears */
+export function winP(fighter: Fighter, m: Monster, pessimisticWin?: boolean, n?: number, floor?: number): number {
+  const pw = pessimisticWin ?? simulate(fighter, m, { pessimistic: true }).win;
+  return pw ? 1 : winRate(fighter, m, fightKey(fighter, m), n, floor);
 }
 
 /** Wall-clock per kill: the fight's cooldown, the healing back from the HP missing at its end (rest: 1 s per 1% of max
@@ -255,7 +294,7 @@ function capPools(pools: Record<GearSlot, string[]>, m: Monster, pinned: Set<str
 
 /** What a set's score reads of its expected fight (task 021: kept across solves in numbers, makeEvaluator). */
 type Fight = Pick<FightForecast, "win" | "timedOut" | "turns" | "hpRemaining" | "maxHp" | "used">;
-interface Eval { score: number; f: Fight; safe: boolean }
+interface Eval { score: number; f: Fight; p: number }
 
 /** Task 020: a small number per item code, in the order codes are met (a set's key is a character a slot). */
 const codeIds = new Map<string, number>();
@@ -289,7 +328,7 @@ function setKey(slots: Record<GearSlot, string>): string {
  * evictions for the collector).
  */
 const FIGHTS_CAP = 500_000;
-const FIGHT_ROW = 8;
+const FIGHT_ROW = 9; // task 025: + p, the rolled win rate
 interface FightTable { idx: Map<string, number>; rows: Float64Array; n: number }
 const fightTables = new Map<string, FightTable>();
 let fightRows = 0, fightGen = 0;
@@ -301,19 +340,33 @@ function fightTable(k: string): FightTable {
   return t;
 }
 
-export function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>, worn: Partial<Record<GearSlot, string>>, price: (code: string) => number = potionSec) {
+export function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnType<typeof monsterOf>>, worn: Partial<Record<GearSlot, string>>, price: (code: string) => number = potionSec, minWin = MIN_WIN, wayBack = 0) {
   const memo = new Map<string, Eval>(); // task 020: a set (slot by slot) scores the same every time a solve asks again
   const wornIds = GEAR_SLOTS.map((s) => (worn[s] ? idOf(worn[s]!) : 0));
-  const tk = `${monster.code}|${Object.values(base).join(",")}`;
+  const tk = `${monster.code}|${minWin}|${Object.values(base).join(",")}`; // task 025: the search's p stops against the floor
   let table = fightTable(tk), gen = fightGen;
-  return (slots: Record<GearSlot, string>): Eval => {
+  const evaluate = (slots: Record<GearSlot, string>): Eval => {
     const key = setKey(slots);
     let e = memo.get(key);
     if (!e) memo.set(key, (e = score(slots, key)));
     return e;
   };
-  /** The set's expected fight and whether the pessimistic one wins too: from the table, else simulated and kept. */
-  function fights(slots: Record<GearSlot, string>, key: string): { f: Fight; safe: boolean } {
+  /** Task 025 (speed): an upper bound of the set's score without rolling its p — exact for a set that loses, a set the
+   *  pessimistic pass wins (p 1) and a set already rolled; for a contested one its score at p 1 (a lost attempt never costs
+   *  less than a won one, so the expected seconds a win are at least a won attempt's). The search rolls only a set whose
+   *  bound beats the best it holds: the same answer, with far fewer rolls. */
+  const upper = (slots: Record<GearSlot, string>): number => {
+    const key = setKey(slots);
+    const e = memo.get(key);
+    if (e) return e.score;
+    const { f, p } = fights(slots, key);
+    if (!f.win || f.timedOut || p >= 0) return evaluate(slots).score;
+    return 1e9 - killSeconds(f, price) * 1000 + tiebreakOf(key);
+  };
+  return Object.assign(evaluate, { upper });
+  /** The set's expected fight and its win rate p: from the table, else simulated and kept. p is −1 for a contested set (an
+   *  expected win the pessimistic pass loses) until `rolled` asks for it (winP, coarse: it only ranks — monte.ts SEARCH_N). */
+  function fights(slots: Record<GearSlot, string>, key: string): { f: Fight; p: number } {
     if (gen !== fightGen) { table = fightTable(tk); gen = fightGen; }
     const i = table.idx.get(key);
     const r = table.rows;
@@ -321,25 +374,46 @@ export function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnT
       const o = i * FIGHT_ROW, u1 = r[o + 6], u2 = r[o + 7];
       let used = NO_POTION;
       if (u1 >= 0 || u2 >= 0) { used = {}; if (u1 >= 0) used[slots.utility1] = u1; if (u2 >= 0) used[slots.utility2] = u2; }
-      return { f: { win: r[o] === 1, timedOut: r[o + 1] === 1, turns: r[o + 3], hpRemaining: r[o + 4], maxHp: r[o + 5], used }, safe: r[o + 2] === 1 };
+      return { f: { win: r[o] === 1, timedOut: r[o + 1] === 1, turns: r[o + 3], hpRemaining: r[o + 4], maxHp: r[o + 5], used }, p: r[o + 8] };
     }
     const codes: string[] = [];
     for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
     const fighter = applyGear(base, codes);
     const f = simulate(fighter, monster);
-    const safe = f.win && !f.timedOut && simulate(fighter, monster, { pessimistic: true }).win;
+    const p = !f.win || f.timedOut ? 0 : simulate(fighter, monster, { pessimistic: true }).win ? 1 : -1;
     if (fightRows >= FIGHTS_CAP) { fightTables.clear(); fightRows = 0; fightGen++; table = fightTable(tk); gen = fightGen; }
     if ((table.n + 1) * FIGHT_ROW > table.rows.length) { const g = new Float64Array(table.rows.length * 2); g.set(table.rows); table.rows = g; }
     const o = table.n * FIGHT_ROW, w = table.rows, c1 = slots[GEAR_SLOTS[U1]], c2 = slots[GEAR_SLOTS[U2]];
-    w[o] = f.win ? 1 : 0; w[o + 1] = f.timedOut ? 1 : 0; w[o + 2] = safe ? 1 : 0; w[o + 3] = f.turns; w[o + 4] = f.hpRemaining; w[o + 5] = f.maxHp;
+    w[o] = f.win ? 1 : 0; w[o + 1] = f.timedOut ? 1 : 0; w[o + 2] = p === 1 ? 1 : 0; w[o + 3] = f.turns; w[o + 4] = f.hpRemaining; w[o + 5] = f.maxHp; w[o + 8] = p;
     w[o + 6] = c1 && f.used[c1] !== undefined ? f.used[c1] : -1;
     w[o + 7] = c2 && f.used[c2] !== undefined ? f.used[c2] : -1;
     table.idx.set(key, table.n++);
     fightRows++;
-    return { f, safe };
+    return { f, p };
+  }
+  /** A contested set's p, rolled once and kept in its row. */
+  function rolled(slots: Record<GearSlot, string>, key: string): number {
+    const codes: string[] = [];
+    for (const s of GEAR_SLOTS) if (slots[s]) codes.push(slots[s]);
+    const p = winP(applyGear(base, codes), monster, false, SEARCH_N, minWin);
+    if (gen === fightGen) { const i = table.idx.get(key); if (i !== undefined) table.rows[i * FIGHT_ROW + 8] = p; }
+    return p;
+  }
+  /** The tiebreak of a set, read off its key (task 020: a slot's character is its code's id, 0 empty). */
+  function tiebreakOf(key: string): number {
+    let tier = 0, filled = 0, keep = 0;
+    for (let i = 0; i < GEAR_SLOTS.length; i++) {
+      const id = key.charCodeAt(i);
+      if (!id) continue;
+      tier += levels[id];
+      filled++;
+      if (id === wornIds[i]) keep++;
+    }
+    return tier * 5e-4 + filled * 1e-4 + keep * 1e-5;
   }
   function score(slots: Record<GearSlot, string>, key: string): Eval {
-    const { f, safe } = fights(slots, key);
+    const fp = fights(slots, key), f = fp.f;
+    const p = fp.p >= 0 ? fp.p : rolled(slots, key);
     // Combat-equal sets are broken deterministically, in order: prefer the
     // HIGHER-TIER items (Σ item level — "best in class": an iron ring whose
     // +2% dmg rounds away vs this monster still beats the worn copper one),
@@ -352,25 +426,18 @@ export function makeEvaluator(base: EffectiveStats, monster: NonNullable<ReturnT
     // slot (1e-4) outranks a kept slot (1e-5); totals stay far below any real
     // forecast difference (1 s = 1000) and far above double-precision noise
     // at the 1e9 safe-tier magnitude (ulp ≈ 2.4e-7).
-    let tier = 0;
-    let filled = 0;
-    let keep = 0;
-    // task 020: read off the set's key (a slot's character is its code's id, 0 empty) — the same sums in the same order
-    for (let i = 0; i < GEAR_SLOTS.length; i++) {
-      const id = key.charCodeAt(i);
-      if (!id) continue;
-      tier += levels[id];
-      filled++;
-      if (id === wornIds[i]) keep++;
-    }
-    const tiebreak = tier * 5e-4 + filled * 1e-4 + keep * 1e-5;
+    const tiebreak = tiebreakOf(key);
     if (!f.win || f.timedOut) {
       // Can't win with this set. Still rank it — survive the longest — on a
       // tier every winning set beats, so the solver can recommend the best
       // AVAILABLE set even when nothing owned can beat the monster.
-      return { score: -1e12 + f.turns * 1000 + f.hpRemaining + tiebreak, f, safe: false };
+      return { score: -1e12 + f.turns * 1000 + f.hpRemaining + tiebreak, f, p: 0 };
     }
-    return { score: (safe ? 1e9 : 0) - killSeconds(f, price) * 1000 + tiebreak, f, safe };
+    // task 025: admitted at the floor, the cheapest expected win first; below it, the likeliest win first (a step of p,
+    // 1/WIN_N, is 2.5e7 here: the seconds, capped, stay below it)
+    const E = winSeconds(killSeconds(f, price), lossSeconds(f, price, wayBack), p);
+    if (p >= minWin) return { score: 1e9 - E * 1000 + tiebreak, f, p };
+    return { score: -1e11 + p * 1e10 - Math.min(E, 1e4) * 1000 + tiebreak, f, p };
   }
 }
 
@@ -398,12 +465,13 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
   const worn: Partial<Record<GearSlot, string>> = {};
   if (opts.worn !== false) for (const s of GEAR_SLOTS) worn[s] = slotCode(ch, s);
   const base = baseStats(ch);
-  const evaluate = makeEvaluator(base, m, worn, opts.potionPrice);
+  const evaluate = makeEvaluator(base, m, worn, opts.potionPrice, opts.minWin, opts.wayBack);
   // How many copies of a code the group search may place: owned counts when
   // known, else "as many as the group has slots" (craftable candidates).
   const countOf = (code: string): number => opts.ownedQty?.get(code) ?? 3;
   const pinned = new Set(opts.extraCandidates ?? []);
   const score = (s: Record<GearSlot, string>): number => evaluate(s).score;
+  const upper = evaluate.upper;
 
   /** Passes of one slot at a time (the weapon too when `weapons` is given), then the ring pair, the artifacts and the
    *  utility pair each chosen exhaustively among their pool, until a pass changes nothing (a fixpoint of those moves). */
@@ -411,8 +479,8 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
     const singles = SINGLE_SLOTS.map((s) => ["", ...p[s]]);
     for (let pass = 0; pass < MAX_PASSES; pass++) {
       const before = score(slots);
-      if (weapons) pick(slots, "weapon", weapons, score);
-      for (let i = 0; i < SINGLE_SLOTS.length; i++) pick(slots, SINGLE_SLOTS[i], singles[i], score);
+      if (weapons) pick(slots, "weapon", weapons, score, upper);
+      for (let i = 0; i < SINGLE_SLOTS.length; i++) pick(slots, SINGLE_SLOTS[i], singles[i], score, upper);
       // Rings may repeat a code (two copper rings) up to the owned count; artifacts must stay distinct.
       chooseGroup(slots, RING_SLOTS, p.ring1, evaluate, countOf);
       chooseGroup(slots, ARTIFACT_SLOTS, p.artifact1, evaluate);
@@ -468,19 +536,25 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
     // the forecasts whole (the table keeps only what a score reads)
     const fighter = applyGear(base, codes);
     const forecast = simulate(fighter, m);
-    uniq.push({ slots: { ...slots }, codes, forecast, worst: forecast.win && !forecast.timedOut ? simulate(fighter, m, { pessimistic: true }) : forecast, safe: e.safe, score: e.score });
+    const worst = forecast.win && !forecast.timedOut ? simulate(fighter, m, { pessimistic: true }) : forecast;
+    // task 025: the answer's p is the rolled share whatever the pessimistic pass says (winRate: the very number the
+    // executor's gate reads for this fight); a runner-up keeps the search's
+    const p = !uniq.length && forecast.win && !forecast.timedOut ? winRate(fighter, m) : e.p;
+    uniq.push({ slots: { ...slots }, codes, forecast, worst, p, score: e.score });
     if (uniq.length >= 3) break;
   }
   return uniq;
 }
 
-/** One slot to its best option while the others stand (the first wins a tie: the current one, then the list's order). */
-function pick(slots: Record<GearSlot, string>, s: GearSlot, options: string[], score: (s: Record<GearSlot, string>) => number): void {
+/** One slot to its best option while the others stand (the first wins a tie: the current one, then the list's order). Task
+ *  025: an option whose upper bound does not beat the best held is not scored (it could not be chosen). */
+function pick(slots: Record<GearSlot, string>, s: GearSlot, options: string[], score: (s: Record<GearSlot, string>) => number, upper: (s: Record<GearSlot, string>) => number = score): void {
   let best = slots[s];
   let bestScore = score(slots);
   for (const opt of options) {
     if (opt === slots[s]) continue;
     slots[s] = opt;
+    if (upper(slots) <= bestScore) continue;
     const sc = score(slots);
     if (sc > bestScore) { bestScore = sc; best = opt; }
   }
@@ -500,7 +574,7 @@ function chooseGroup(
   slots: Record<GearSlot, string>,
   group: GearSlot[],
   pool: string[],
-  evaluate: (s: Record<GearSlot, string>) => Eval,
+  evaluate: ((s: Record<GearSlot, string>) => Eval) & { upper?: (s: Record<GearSlot, string>) => number },
   countOf?: (code: string) => number,
 ): void {
   const n = group.length;
@@ -508,6 +582,7 @@ function chooseGroup(
   let bestScore = evaluate(slots).score;
   for (const combo of groupCombos(pool, n, countOf)) {
     for (let i = 0; i < n; i++) slots[group[i]] = combo[i] ?? "";
+    if (evaluate.upper && evaluate.upper(slots) <= bestScore) continue; // task 025: it could not be chosen
     const sc = evaluate(slots).score;
     if (sc > bestScore) { bestScore = sc; best = group.map((g) => slots[g]); }
   }

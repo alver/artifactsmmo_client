@@ -37,6 +37,8 @@ export interface Character {
   critical_strike: number;
   wisdom: number;
   prospecting: number;
+  /** The API's total: 100 + the worn items' (task 025). Optional: a made-up or old snapshot may lack it (sim/stats.ts). */
+  initiative?: number;
 
   attack_fire: number;
   attack_earth: number;

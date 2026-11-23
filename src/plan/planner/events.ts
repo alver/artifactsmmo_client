@@ -17,17 +17,19 @@
 
 import { catalog, item, itemName, monster as monsterOf, resource as resourceOf, tileAt } from "../../catalog";
 import type { GameEvent } from "../../catalog";
-import { killSeconds } from "../bis";
 import { jobGear, ownedQtyOf } from "../jobgear";
-import { EVENT_MIN_SEC, EVENT_SEEN_SEC, MARGIN, SPAWN_LOG, STEP_BANK_SEC, killLog } from "./config";
+import { EVENT_MIN_SEC, EVENT_SEEN_SEC, MARGIN, SPAWN_LOG, STEP_BANK_SEC } from "./config";
 import { actionSec, killWalk, levelOf, perOf } from "./cost";
 import { WEAR_SLOTS } from "./decide";
 import { isOn } from "./gates";
 import { gearPieces, pieceParent } from "./gear";
-import { CITY, bankSec, chAt, fightRec, openOf, placeOf, planRec, potionPrice, safeWin, travel, winLevel, wins } from "./reach";
+import { CITY, bankSec, chAt, fightRec, openOf, placeOf, planRec, admitted, travel, winLevel, admits, winSecOf } from "./reach";
 import { rolesFor } from "./roles";
 import { available, poolBank, reserved } from "./stock";
-import { STACK, potionSet, takeOf, useOf } from "./consumables";
+import { STACK, potionSet, takeOf, useOf, useOfSet } from "./consumables";
+
+/** Task 014: a member's potions are the event's reserve, made before the trip — free inside the hour. */
+const FREE_POTION = (): number => 0;
 import { objectiveParents, supplyNeeds } from "./supply";
 import { perUnit, sourceFor, targetsOf, unhandledOf } from "./targets";
 import type { Parent } from "./supply";
@@ -78,10 +80,10 @@ export function usableSec(ev: GameEvent): number {
 export function contentSec(c: Content, ch: Character, world: World, level = ch.level): number {
   if (c.type === "resource") return actionSec({ kind: "gather", resource: c.code, drop: "" }, ch, world);
   const at = level === ch.level ? ch : chAt(ch, level);
-  const r = at === ch ? (safeWin(ch, world, c.code) ? fightRec(ch, world, c.code) : undefined) : planRec(at, world, c.code);
-  if (!r || !wins(r, world)) return Infinity;
+  const r = at === ch ? (admitted(ch, world, c.code) ? fightRec(ch, world, c.code) : undefined) : planRec(at, world, c.code);
+  if (!r || !admits(r, world)) return Infinity;
   // task 014: the potions a member drinks are the event's reserve, made before the trip (free inside the hour); its food is eaten
-  return killSeconds(r.forecast, () => 0, potionPrice(world, ch.name).food?.(r.forecast.maxHp - r.forecast.hpRemaining)) * killLog(world) + killWalk(ch, world, c.code);
+  return winSecOf(r, world, ch.name, c.code, FREE_POTION) + killWalk(ch, world, c.code);
 }
 
 const possibleMemo = new WeakMap<World, Map<string, Member[]>>();
@@ -110,10 +112,10 @@ export function possibleMembers(ev: GameEvent, world: World): Member[] {
       let at = winLevel(ch, fw, m.code);
       let sec = at == null ? Infinity : contentSec(c, ch, fw, at);
       // task 014, settled point 7: a member with the potions its reserve would hold — the potion set at its level now
-      // (consumables.ts potionSet, on the fleet's gear: reach.ts openOf); the spawn itself still asks for a safe win from
+      // (consumables.ts potionSet, on the fleet's gear: reach.ts openOf); the spawn itself still asks for an admitted win from
       // the pool (eventMembers)
       const r = !Number.isFinite(sec) && (world.config.consumables ?? 1) ? potionSet(ch, world, m.code, true) : undefined;
-      if (r) { at = ch.level; sec = killSeconds(r.forecast, () => 0, potionPrice(world, ch.name).food?.(r.forecast.maxHp - r.forecast.hpRemaining)) * killLog(world) + killWalk(ch, world, m.code); }
+      if (r) { at = ch.level; sec = winSecOf(r, world, ch.name, m.code, FREE_POTION) + killWalk(ch, world, m.code); }
       if (Number.isFinite(sec)) out.push({ name: ch.name, sec, level: at });
     }
   }
@@ -370,8 +372,8 @@ const f0 = (x: number): string => (!Number.isFinite(x) ? "∞" : String(Math.rou
 
 /**
  * Settled points 1–4: who goes to this live spawn. Every owned character that is on and is not `busy` (the runtime's:
- * "group", "offering" after 22:00 UTC, or another spawn's key — its trip), meets the content's gate (a safe win from its
- * pool by safeWin, the node's skill level; a boss is nobody's), reaches the tile by a free route with EVENT_MIN_SEC of
+ * "group", "offering" after 22:00 UTC, or another spawn's key — its trip), meets the content's gate (an admitted win from its
+ * pool by admitted, the node's skill level; a boss is nobody's), reaches the tile by a free route with EVENT_MIN_SEC of
  * it left after the walk and the bank reset; chosen one at a time, the one that brings the most actions first, each on
  * the pool less the sets of the members already chosen, while the demand left is more than the members so far bring.
  * A character `busy` with this spawn's key is on the trip already: it counts with what is left of the hour; one `busy`
@@ -443,7 +445,11 @@ function membersOf(e: ActiveEvent, world: World, busy: Record<string, string>, d
     const wm = content.type === "monster" ? stockWorld(w, ch, own) : w;
     const sec = contentSec(content, ch, wm);
     const time = Number.isFinite(sec) ? use / sec : 0;
-    const paid = capOn && content.type === "monster" ? paidKills(useOf(wm, ch, content.code), (c) => own[c] ?? 0) : Infinity;
+    // task 025: the use of the very set its trip wears (with its potions), where the trip names one — a fresh solve may drift
+    const tripSet = t?.wear ? [...new Set([...Object.values(t.wear), ...Object.keys(own).filter((c) => item(c)?.type === "utility")])] : undefined;
+    const foodCode = Object.keys(own).find((c) => item(c)?.type === "consumable");
+    const perKill = content.type !== "monster" ? undefined : tripSet ? useOfSet(wm, ch, content.code, tripSet, foodCode) : useOf(wm, ch, content.code);
+    const paid = capOn && content.type === "monster" ? paidKills(perKill, (c) => own[c] ?? 0) : Infinity;
     const n = Math.min(time, paid);
     members.push({ name: ch.name, member: true, why: `on the trip, ≈${f0(n)} ${unit} left${paid < time ? ` (its stacks buy ${f0(paid)})` : ""}`, actions: n, use: Number.isFinite(sec) ? n * sec : 0 });
     left -= n;
@@ -458,7 +464,7 @@ function membersOf(e: ActiveEvent, world: World, busy: Record<string, string>, d
       // (c): the set, its kills and its take from one stock — what the take may draw after the reset
       const wm = content.type === "monster" ? stockWorld(w, x.ch) : w;
       const s = contentSec(content, x.ch, wm);
-      if (!Number.isFinite(s)) return void gate.set(x.ch.name, members.length ? "gate: no safe win on the pool the members before it left" : "gate: no safe win");
+      if (!Number.isFinite(s)) return void gate.set(x.ch.name, members.length ? "gate: no admitted win on the pool the members before it left" : "gate: no admitted win");
       gate.delete(x.ch.name);
       const time = x.sec / s;
       // task 014, settled point 7: the trip's reset takes what the hour drinks and eats (its set's potions, its pool's food)

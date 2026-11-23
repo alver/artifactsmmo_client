@@ -20,11 +20,12 @@ import { journal, lastRecords, meterCut, runInfo, setMeterKey, writeStatus, writ
 import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn, pushLog } from "./store";
 import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue, setOwnedOfferings } from "./queue";
 import { liveEvents } from "./events";
-import { invCount } from "./exec";
+import { invCount, setFightBlocks, setMinWin } from "./exec";
 import { noSlotFor, setNoSlotHook } from "./loopkit";
 import { DEFAULTS } from "../plan/planner/config";
 import { EXPAND_BELOW, TIDY_BELOW, expansionOk, freeSlots, tidyLeft, tidyVerdicts, usedSlots } from "../plan/planner/bank";
-import { bankSec, placeOf } from "../plan/planner/reach";
+import { bankSec, minWinOf, placeOf, staticTiles } from "../plan/planner/reach";
+import { RUNE, runeOffer, runePays, runesHeld } from "../plan/planner/consumables";
 import { item as itemOf, itemName } from "../catalog";
 import { costKey, levelHoursEstimate, levelOf, perOf, sample, unitSec } from "../plan/planner/cost";
 import { decide, rank } from "../plan/planner/decide";
@@ -71,6 +72,25 @@ export function configOf(patch: Partial<PlannerConfig>): PlannerConfig {
   return merged.cfg;
 }
 effect(() => void (plannerOn.value = configOf(planner.value.config).on));
+// task 025: the executor's gate admits a fight at the planner's floor (config.risk.minWin)
+effect(() => setMinWin(minWinOf({ config: configOf(planner.value.config) } as World)));
+
+/** Task 025, settled point 2: a fight block — the brake (play against the forecast) or a gate that refused — keyed
+ *  `kill:<monster>@<name>`, for 24 h or until the set (its combat pieces) or the level changes (the core reads it: reach.ts
+ *  braked; the executor: exec.ts fightBlocked). No strike: the old "not a safe win", three times running, is this rule now. */
+const FIGHT_BLOCK_MS = 24 * 3600_000;
+const brakedSteps = new Map<string, string>(); // name → the why of a block written while its step ran (its end record)
+if (IS_SERVER) setFightBlocks((name, monster, why, set, level) => {
+  if (!isOwned(name)) return;
+  const now = Date.now();
+  const blocked = { ...planner.value.blocked };
+  for (const [k, b] of Object.entries(blocked)) if (b.until <= now) delete blocked[k];
+  blocked[`kill:${monster}@${name}`] = { until: now + FIGHT_BLOCK_MS, why, set, level };
+  put({ blocked });
+  if (planner.value.current[name] && !planner.value.current[name]!.over) brakedSteps.set(name, `${monster}: ${why}`);
+  plog(name, `blocked ${monster} for ${name} 24 h or until its set or level changes — ${why}`);
+  journal("block", { who: name, target: `kill:${monster}`, until: iso(now + FIGHT_BLOCK_MS), why, level, set });
+}, (name, monster) => planner.value.blocked[`kill:${monster}@${name}`]);
 
 const put = (patch: Partial<PlannerState>): void => void (planner.value = { ...planner.value, ...patch });
 const setRunning = (name: string, r: Running | undefined): void => put({ current: { ...planner.value.current, [name]: r } });
@@ -234,12 +254,16 @@ const bucketOf = (id: string | undefined): string => (id?.startsWith("pl:") ? id
 if (IS_SERVER) setMeterKey((name) => bucketOf(queues.value[name]?.items[0]?.id));
 
 /** A step is over: units done of planned, the wall, running and planned seconds, how it ended, and what its own items did. */
-function endRecord(name: string, r: Running, how: "done" | "blocked" | "empty" | "noslot" | "dropped" | "gone", why?: string): void {
+function endRecord(name: string, r: Running, how: "done" | "blocked" | "empty" | "noslot" | "dropped" | "gone" | "braked", why?: string): void {
   const now = Date.now();
   const m = meterCut(name, `pl:${r.step.key}`);
+  // task 025, settled point 2: a fight step's fights, wins and losses, the forecast's p and seconds a win beside the measured
+  // ones (the step's running seconds a win, its walks and bank trips in)
+  const won = m?.won ?? 0, lost = m?.lost ?? 0, f = r.step.fight;
+  const fight = f || won || lost ? { fights: won + lost, wins: won, losses: lost, p: f ? Math.round(f.p * 1000) / 1000 : undefined, pWon: won + lost ? Math.round((1000 * won) / (won + lost)) / 1000 : undefined, sec: f ? Math.round(f.sec) : undefined, secWon: won ? Math.round(r.run / won) : undefined } : undefined;
   journal("end", {
     who: name, key: r.step.key, units: r.units, of: r.step.units, wall: Math.round((now - r.startedAt) / 1000), ran: Math.round(r.run),
-    plan: Math.round(r.step.hours * 3600), how, why, partial: reattached.delete(`pl:${r.step.key}`) || undefined, m,
+    plan: Math.round(r.step.hours * 3600), how, why, partial: reattached.delete(`pl:${r.step.key}`) || undefined, fight, m,
   });
   statusNow();
 }
@@ -415,7 +439,7 @@ function stepSample(name: string, r: Running): void {
   addSample(name, key, r.run / Math.max(1, r.units), r.units, unitSec(t, characters.value[name]!, world) / perOf(w), 1);
 }
 
-/** The lanes whose level-up ends a long block of this target: its level gates, combat for a safe win. */
+/** The lanes whose level-up ends a long block of this target: its level gates, combat for an admitted win. */
 function gateLanes(s: Step): Lane[] {
   if (s.target.startsWith("lvl:")) return [s.target.split(":")[1] as Lane];
   const t = targetsOf(worldOf(Date.now())).find((x) => x.key === s.target);
@@ -461,9 +485,12 @@ async function next(name: string, block?: string): Promise<void> {
       // task 015, settled point 1: a step that ended because the bank had no slot is not blocked for it
       const noSlot = !block && r.units === 0 && (noSlotAt.get(name) ?? 0) >= r.startedAt;
       if (noSlot) plog(name, `${r.step.key} ended with no unit — the bank had no slot; not blocked`);
-      const empty = !block && !noSlot && r.units === 0;
+      // task 025: a step the brake or the gate ended has its monster blocked already (setFightBlocks) — not blocked again
+      const brake = brakedSteps.get(name);
+      brakedSteps.delete(name);
+      const empty = !block && !noSlot && !brake && r.units === 0;
       if (empty) block = `ended empty${skipReason(name, r.startedAt)}`;
-      endRecord(name, r, noSlot ? "noslot" : empty ? "empty" : block ? "blocked" : "done", block);
+      endRecord(name, r, noSlot ? "noslot" : brake && !block ? "braked" : empty ? "empty" : block ? "blocked" : "done", block ?? brake);
       if (block) blockStep(name, r.step, block);
       else {
         stepSample(name, r);
@@ -561,7 +588,34 @@ function heartbeat(): void {
   if (Date.now() - lastRead >= READ_EVERY) void readAchievements();
   catchUpOfferings();
   bankCheck();
+  runeCheck();
   tick();
+}
+
+/** Task 025, settled point 5: the planner buys a healing rune for a character it pays for (consumables.ts runePays: its fight
+ *  work at least 5% cheaper a win, or over the floor; inside Alex's 50,000 gold; the gold after it covering the floor, the
+ *  fares and a due expansion) — the merchant interrupt, as the Lost World Maps were bought: walk to the Rune Vendor, buy one
+ *  with the bank's gold (a `spend` record from the echo), wear it (a worn healing rune stays on: jobgear.ts PINNED_RUNE).
+ *  One at a time; a character with a step that is no fight is asked too (the rune is for its fight work on the road). */
+function runeCheck(): void {
+  const names = owned();
+  if (!names.length || !bankDetails.value) return;
+  if (names.some((n) => queues.value[n]?.items.some((it) => it.id.startsWith("pl:int:merchant:rune")))) return;
+  const world = worldOf(Date.now());
+  const offer = runeOffer();
+  if (!offer) return;
+  for (const name of names) {
+    const v = runePays(world, name);
+    if (!v.pays) continue;
+    const tile = staticTiles("npc", offer.npc)[0];
+    plog(name, `buys a healing rune for ${fmtG(offer.price)} gold — ${v.why}`);
+    journal("rune", { who: name, price: offer.price, why: v.why, held: runesHeld(world) });
+    interrupt(name, "merchant", [
+      { kind: "buy", code: RUNE, quantity: 1, npc: offer.npc, ...(tile ? { x: tile.x, y: tile.y, layer: tile.layer } : {}) },
+      { kind: "gear", desired: { rune: RUNE } },
+    ], `rune${runesHeld(world)}`);
+    return;
+  }
 }
 
 // ── the bank (task 015) ──────────────────────────────────────────────────────

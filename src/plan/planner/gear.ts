@@ -38,7 +38,7 @@ import { actionSec, hoursOf, hoursToLevel, killWalk, levelHoursEstimate, levelOf
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { isOn, met } from "./gates";
 import { pickMonster } from "./pick";
-import { fightSecOf, gatherCut, nearestSpot, placeOf, planRec, safeWin, setWisdom, toolCut, wins } from "./reach";
+import { fightSecOf, gatherCut, nearestSpot, placeOf, planRec, admitted, setWisdom, toolCut, admits } from "./reach";
 import { crafterOf, rolesFor } from "./roles";
 import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
@@ -70,7 +70,7 @@ const solve = planRec;
 
 /** Seconds per kill as cost.ts prices it, for a solved set: the fight and the rest × the log, plus the bank trips. */
 const killSec = (ch: Character, world: World, monster: string, r: GearRecommendation): number =>
-  fightSecOf(r.forecast, world, ch.name) + killWalk(ch, world, monster);
+  fightSecOf(r, world, ch.name, monster) + killWalk(ch, world, monster);
 
 interface Cands { fight: string[]; tools: string[]; rejected: Rejected[] }
 const candMemo = new WeakMap<World, Map<string, Cands>>();
@@ -152,7 +152,7 @@ function fightNeed(ch: Character, world: World, monster: string, cands: string[]
   let best: { pieces: Map<string, number>; H1: number; mk: ReturnType<typeof makeHours> } | undefined;
   for (let d = 0; d <= DROPS && extra.length; d++) {
     const r = solve(ch, world, monster, extra);
-    if (!r || !wins(r, world)) break;
+    if (!r || !admits(r, world)) break;
     const pieces = newPieces(r, ch, world);
     if (!pieces.size) break; // it wins without a new piece
     const H1 = h1(r), mk = makeHours(pieces, ch, world);
@@ -219,7 +219,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
       };
       // the current pick (a speed-up), and the four monsters at most two levels up with the most XP at this level that
       // it does not win now (a flip) — all of them when it wins none (no XP source at all: any flip is the way on)
-      const flips = [...catalog().monsters.values()].filter((m) => m.level <= L + 2 && ok(m.code) && !safeWin(ch, world, m.code))
+      const flips = [...catalog().monsters.values()].filter((m) => m.level <= L + 2 && ok(m.code) && !admitted(ch, world, m.code))
         .sort((x, y) => fightXp(y.level, y.hp, y.type, L) - fightXp(x.level, x.hp, x.type, L) || (x.code < y.code ? -1 : 1)).slice(0, cur ? FLIPS : Infinity).map((m) => m.code);
       const short = [...new Set([cur?.monster ?? "", ...flips])].filter(Boolean);
       let best: { monster: string; pieces: Map<string, number>; H1: number; mk: ReturnType<typeof makeHours> } | undefined;
@@ -227,7 +227,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
         const mon = monsterOf(m)!;
         // H1: per level to the gate, the better of the pool's own pick and this monster with the new set
         const h1 = (r: GearRecommendation): number => {
-          if (!wins(r, world)) return Infinity;
+          if (!admits(r, world)) return Infinity;
           const sec = killSec(ch, world, m, r), wis = setWisdom(ch, r); // task 012: XP with the new set's wisdom
           let h = 0;
           for (let l = L; l < end; l++) {
@@ -286,7 +286,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
     const evOn = !!(world.config.events ?? 1);
     const able = world.characters.filter((ch) => isOn(ch.name, world) && t.gates.every((g) => g.kind === "win" || (evOn && g.kind === "event") || met(g, ch, world)));
     let H0 = Infinity;
-    for (const ch of able) if (safeWin(ch, world, m.code)) H0 = Math.min(H0, (left * actionSec(t.work, ch, world) * per) / 3600);
+    for (const ch of able) if (admitted(ch, world, m.code)) H0 = Math.min(H0, (left * actionSec(t.work, ch, world) * per) / 3600);
     let best: Need | undefined;
     for (const ch of able) {
       const c = candidatesOf(ch, world);

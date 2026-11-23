@@ -1,6 +1,11 @@
 // Atlas combat: hypothetical characters, tiered progressive pools, memoized BIS, min safe levels.
 import { C, obtain, EQUIP_TYPES, sourcesOf, availability } from "./model.mts";
-import { bestInSlot, killSeconds } from "../../src/plan/bis";
+import { MIN_WIN, bestInSlot, killSeconds, lossSeconds, winSeconds } from "../../src/plan/bis";
+import type { GearRecommendation } from "../../src/plan/types";
+/** Task 025: the atlas's "safe" is the verdict's — admitted at the floor (the rolled win rate p ≥ MIN_WIN); its kill seconds
+ *  the expected seconds a win (a loss rests from 1 HP; the atlas has no places, so no way back). */
+const admittedAt = (r: GearRecommendation): boolean => r.forecast.win && !r.forecast.timedOut && r.p >= MIN_WIN;
+const winSec = (r: GearRecommendation): number => winSeconds(killSeconds(r.forecast), lossSeconds(r.forecast), r.p);
 import { STAT_CODES, isCombatEffect } from "../../src/sim/types";
 import { fightXp } from "../../src/plan/xp";
 import type { Character } from "../../src/types/api";
@@ -91,7 +96,7 @@ export function ensure(T: number, L: number): void {
         // health bar of potions per kill (potion-chugging stalemates are not a farm).
         const r = bestInSlot(hypo(l), m.code, { owned: P, includeCraftable: false })[0];
         const f = r.forecast;
-        let ok = f.win && !f.timedOut && (f.hpRestored === 0 || (r.safe && f.hpRestored <= f.maxHp));
+        let ok = f.win && !f.timedOut && (f.hpRestored === 0 || (admittedAt(r) && f.hpRestored <= f.maxHp));
         if (!ok && f.win && !f.timedOut) { const g = bestInSlot(hypo(l), m.code, { owned: P, includeCraftable: false, noUtilities: true })[0].forecast; ok = g.win && !g.timedOut; }
         if (ok) { unlocked[T].set(m.code, l); any = true; }
       }
@@ -132,12 +137,12 @@ export function fight(L: number, m: string, T: number, util = false): Fight {
   const r = bestInSlot(hypo(L), m, { owned: poolAt(T, L, util), includeCraftable: false, noUtilities: !util })[0];
   const mon = C.monsters.get(m)!;
   const f = r.forecast;
-  const ks = killSeconds(f);
+  const ks = f.win && !f.timedOut && r.p > 0 ? winSec(r) : killSeconds(f);
   const xp = fightXp(mon.level, mon.hp, mon.type, L);
   const slots: Record<string, string> = {};
   for (const [s, c] of Object.entries(r.slots)) if (c) slots[s] = c;
   const out: Fight = {
-    L, m, T, util, win: f.win && !f.timedOut, safe: r.safe, turns: f.turns, hpLeft: f.hpRemaining, maxHp: f.maxHp, hpRestored: f.hpRestored,
+    L, m, T, util, win: f.win && !f.timedOut, safe: admittedAt(r), turns: f.turns, hpLeft: f.hpRemaining, maxHp: f.maxHp, hpRestored: f.hpRestored,
     killSec: ks, xp, xps: f.win && !f.timedOut ? xp / ks : 0, slots,
   };
   memo.set(k, out);
@@ -154,11 +159,11 @@ export function fightIdeal(L: number, m: string): Fight {
   const r = bestInSlot(hypo(L), m, { owned: P, includeCraftable: false })[0];
   const mon = C.monsters.get(m)!;
   const f = r.forecast;
-  const ks = killSeconds(f);
+  const ks = f.win && !f.timedOut && r.p > 0 ? winSec(r) : killSeconds(f);
   const xp = fightXp(mon.level, mon.hp, mon.type, L);
   const slots: Record<string, string> = {};
   for (const [s, c] of Object.entries(r.slots)) if (c) slots[s] = c;
-  const out: Fight = { L, m, T: 3, util: true, win: f.win && !f.timedOut, safe: r.safe, turns: f.turns, hpLeft: f.hpRemaining, maxHp: f.maxHp, hpRestored: f.hpRestored, killSec: ks, xp, xps: f.win && !f.timedOut ? xp / ks : 0, slots };
+  const out: Fight = { L, m, T: 3, util: true, win: f.win && !f.timedOut, safe: admittedAt(r), turns: f.turns, hpLeft: f.hpRemaining, maxHp: f.maxHp, hpRestored: f.hpRestored, killSec: ks, xp, xps: f.win && !f.timedOut ? xp / ks : 0, slots };
   idealMemo.set(k, out);
   return out;
 }

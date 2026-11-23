@@ -11,9 +11,12 @@
 import * as actions from "../api/actions";
 import { ApiError } from "../api/client";
 import { item, itemName, monster as monsterOf, npc as npcOf } from "../catalog";
-import { currentFighter, fighterForGear } from "../sim/stats";
+import { currentFighter, equippedCodes, fighterForGear } from "../sim/stats";
 import { simulate } from "../sim/combat";
-import { fightSeconds, jobGear, jobSetFromRecommendation, nextGearAction, ownedFightRec } from "../plan/jobgear";
+import { winRate } from "../sim/monte";
+import { MIN_WIN, fightSig } from "../plan/bis";
+import { journal } from "../lib/journal";
+import { fightWinSeconds, jobGear, jobSetFromRecommendation, nextGearAction, ownedFightRec } from "../plan/jobgear";
 import { carriedFood, foodPlan, foodQuantity, gatherSourceFor } from "../plan/consumables";
 import { bankDetails, bankItems, characters, isOwned } from "./store";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, moveTo, nearest, nearestBank, noSlotFor, reportNoSlot, step } from "./loopkit";
@@ -262,7 +265,7 @@ function freeBank(name: string): { bank: BankItem[]; sig: string } {
 }
 
 /** A fight's set, the forecast of exactly that set (what the gate sees once it is worn) and its seconds a kill. */
-export interface FightSet { desired?: Partial<Record<GearSlot, string>>; forecast?: FightForecast; sec?: number }
+export interface FightSet { desired?: Partial<Record<GearSlot, string>>; forecast?: FightForecast; sec?: number; p?: number }
 const UTILITY = ["utility1", "utility2"] as const;
 /**
  * jobGear for the live-job callers. Fight sets run the BIS solver (thousands of simulate calls), so they are memoized per
@@ -297,12 +300,15 @@ export function fightSetFor(name: string, ch: Character, monster: string, take?:
   if (m && m.bank === bankItems.value && m.sig === sig && m.level === ch.level && !gone(m.desired)) return m;
   let desired: FightSet["desired"];
   if (own) {
-    const rec = ownedFightRec(ch, bank, monster);
+    const rec = ownedFightRec(ch, bank, monster, minWin);
     desired = rec && jobSetFromRecommendation(ch, bankItems.value, rec);
   } else desired = jobGear(ch, bankItems.value, { kind: "fight", monster }, take);
   const mon = monsterOf(monster);
-  const forecast = desired && mon ? simulate(fighterForGear(ch, Object.values(desired).filter((c): c is string => !!c)), mon) : undefined;
-  const v = { bank: bankItems.value, sig, level: ch.level, desired, forecast, sec: forecast && fightSeconds(forecast, bank) };
+  const fighter = desired && mon ? fighterForGear(ch, Object.values(desired).filter((c): c is string => !!c)) : undefined;
+  const forecast = fighter && mon ? simulate(fighter, mon) : undefined;
+  // task 025: the verdict of exactly that set — p (what the gate reads once it is worn) and its expected seconds a win
+  const p = fighter && mon && forecast?.win && !forecast.timedOut ? winRate(fighter, mon) : 0;
+  const v = { bank: bankItems.value, sig, level: ch.level, desired, forecast, p, sec: forecast && fightWinSeconds(forecast, p, bank) };
   fightSetMemo.set(key, v);
   return v;
 }
@@ -537,14 +543,72 @@ export async function provisionPotions(
   return "none";
 }
 
+// ── task 025, settled point 2: the verdict in the executor ───────────────────
+
+/** The floor the gate admits a fight at — the planner's config.risk.minWin (state/planner.ts sets it), MIN_WIN without it. */
+let minWin = MIN_WIN;
+export const setMinWin = (v: number): void => void (minWin = v);
+export const minWinNow = (): number => minWin;
+/** The gate's p: the rolled win rate (sim/monte.ts winRate) of the character as the API gives it — its stats, its worn set
+ *  and stacks — against the monster; 0 when the expected fight is no win. The planner's solve folds the same set on the same
+ *  base stats (scripts/check-stats.mts), so the same fight gives it the same number (the seed is the fight). */
+export function gateP(ch: Character, m: Monster): number {
+  const f = currentFighter(ch);
+  const ev = simulate(f, m);
+  return ev.win && !ev.timedOut ? winRate(f, m) : 0;
+}
+/** One item's fights against its monster, for the brake: the fights, the losses and the forecast's p summed. */
+export interface FightTally { item: string; fights: number; losses: number; pSum: number }
+/** P(X ≥ k) for X ~ Binomial(n, q): the chance of k or more losses in n fights at a loss rate q. */
+export function lossTail(n: number, k: number, q: number): number {
+  if (k <= 0) return 1;
+  if (q <= 0) return 0;
+  if (q >= 1) return 1;
+  let term = Math.pow(1 - q, n), below = 0; // P(X = 0)
+  for (let i = 0; i < k; i++) { below += term; term *= ((n - i) / (i + 1)) * (q / (1 - q)); }
+  return Math.max(0, 1 - below);
+}
+/** Task 025, settled point 2: the brake is play against the forecast — at least BRAKE_LOSSES losses, and that many or more
+ *  in that many fights had a chance below BRAKE_TAIL at the forecast's p (its mean over the fights). */
+export const BRAKE_LOSSES = 3;
+export const BRAKE_TAIL = 0.05;
+export function braking(t: FightTally): boolean {
+  return t.losses >= BRAKE_LOSSES && lossTail(t.fights, t.losses, 1 - t.pSum / Math.max(1, t.fights)) < BRAKE_TAIL;
+}
+/** The brake's why: forecast and observed, e.g. "forecast 82%, won 3 of 9". */
+export const brakeWhy = (t: FightTally): string => `forecast ${Math.round((100 * t.pSum) / Math.max(1, t.fights))}%, won ${t.fights - t.losses} of ${t.fights}`;
+
+/** Who blocks a monster for a character (state/planner.ts: an owned character's block until its set or level changes or
+ *  24 h pass; nothing for the others) and who reads that block (canBeat, an offering's dry run). */
+let onFightBlock: (name: string, monster: string, why: string, set: string, level: number) => void = () => {};
+let fightBlockOf: (name: string, monster: string) => { set?: string; level?: number; until: number; why: string } | undefined = () => undefined;
+export const setFightBlocks = (write: typeof onFightBlock, read: typeof fightBlockOf): void => { onFightBlock = write; fightBlockOf = read; };
+/** Task 025: block `monster` for this character — the brake or a gate that refuses (the why says which). */
+export const blockFight = (name: string, ch: Character, monster: string, why: string): void =>
+  onFightBlock(name, monster, why, fightSig(equippedCodes(ch)), ch.level);
+/** Whether a block holds for this character and the set it would wear (`codes`). */
+export function fightBlocked(name: string, ch: Character, monster: string, codes: string[]): boolean {
+  const b = fightBlockOf(name, monster);
+  return !!b && b.until > Date.now() && (b.level == null || b.level === ch.level) && (b.set == null || b.set === fightSig(codes));
+}
+/** Task 025: a character beaten to 1 HP cannot unequip (the game's 483 "not enough HP to unequip", the log of 11-20 and
+ *  11-21): before any gear swap, a fighter under a quarter of its HP heals first. True ⇒ the tick was spent. */
+export async function recoverFirst(name: string, ch: Character, ctx: StepCtx): Promise<boolean> {
+  if (ch.hp >= ch.max_hp / 4) return false;
+  await healOnce(name, ch, foodInHand(ch), ctx.note);
+  return true;
+}
+
 /**
  * A fight round's outcome. "acted" ⇒ an intermediate action (move/heal/bank)
- * ran; "won"/"lost" ⇒ a fight happened; the terminal outcomes are RETURNED
- * for the caller to decide (the queue pauses):
- *   "no-win"  — the fresh forecast refuses the fight
- *   "gave-up" — 2 losses in a row
+ * ran; "won"/"lost" ⇒ a fight happened (task 025: a loss is an outcome — the
+ * next rounds heal at (0, 0), walk back and fight); the terminal outcomes are
+ * RETURNED for the caller to decide:
+ *   "no-win" — the gate refuses: the worn set's p is below the floor
+ *   "brake"  — play against the forecast (braking): the monster is blocked for
+ *              this character already (blockFight); the item ends
  */
-export type FightOutcome = "acted" | "won" | "lost" | "no-win" | "gave-up";
+export type FightOutcome = "acted" | "won" | "lost" | "no-win" | "brake";
 
 /**
  * One combat-phase action: heal (food first — provisioning more when the hand
@@ -558,7 +622,7 @@ export async function fightRound(
   ch: Character,
   m: Monster,
   tile: Place,
-  S: { losses: number },
+  T: FightTally,
   ctx: StepCtx,
 ): Promise<FightOutcome> {
   if (ch.hp < ch.max_hp) {
@@ -568,20 +632,30 @@ export async function fightRound(
     return "acted";
   }
   if (invCount(ch) >= ch.inventory_max_items) { await bankOff(name, ctx.keep, ctx.note, ctx.gold); return "acted"; }
+  // Task 025: the gate before the walk — a beaten character wakes at (0, 0), and the log of 11-20 to 11-22 walked back eight
+  // times to a fight the gate then refused. The worn set's p at the floor (gateP), not "a win".
+  const p = gateP(ch, m);
+  if (p < minWin) return "no-win";
   if (!isAt(ch, tile)) { ctx.note("→ monster"); await moveTo(name, tile); return "acted"; }
-  // Re-forecast with actual current gear; refuse a fight that isn't a win.
-  if (!simulate(currentFighter(ch), m).win) return "no-win";
 
+  const before = equippedCodes(ch), hp = ch.hp;
+  const stacks = (c: Character): Record<string, number> => Object.fromEntries((["utility1", "utility2"] as const).map((g) => [slotCode(c, g), slotQuantity(c, g)]).filter(([c]) => c));
+  const s0 = stacks(ch);
   const r = await actions.fight(name);
   const won = r.fight?.result === "win";
-  if (won) {
-    S.losses = 0;
-  } else {
-    S.losses += 1;
-    if (S.losses >= 2) return "gave-up";
-    // A single loss is usually variance — the caller logs it; the next tick
-    // walks back from spawn, heals, re-forecasts, and retries once.
+  T.fights++;
+  T.pSum += p;
+  if (!won) {
+    T.losses++;
+    // Task 025, settled point 2: a lost fight is an outcome, not a fault — a `loss` record, and the step goes on
+    const now = characters.value[name] ?? ch, s1 = stacks(now);
+    const drunk = Object.fromEntries(Object.entries(s0).map(([c, q]) => [c, q - (s1[c] ?? 0)]).filter(([, q]) => (q as number) > 0));
+    journal("loss", { who: name, monster: m.code, set: before, p: Math.round(p * 1000) / 1000, hp, max: ch.max_hp, turns: r.fight?.turns, drunk: Object.keys(drunk).length ? drunk : undefined, item: T.item, fights: T.fights, losses: T.losses });
   }
   await step(name, () => Promise.resolve()); // wait out the fight cooldown
+  if (!won && braking(T)) {
+    blockFight(name, ch, m.code, brakeWhy(T));
+    return "brake";
+  }
   return won ? "won" : "lost";
 }

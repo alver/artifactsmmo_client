@@ -18,7 +18,7 @@ await scenario(
     t.world.events.push(camp);
     await t.run({ minutes: 8 });
     const line = eventLines(t)[0] ?? "";
-    t.ok(line.includes("members: Ann (≈") && line.includes("Ben — gate: no safe win"), `the line: Ann goes, Ben's reason — ${line}`);
+    t.ok(line.includes("members: Ann (≈") && line.includes("Ben — gate: no admitted win"), `the line: Ann goes, Ben's reason — ${line}`);
     t.ok(t.q("Ann").items.some((it) => it.id.startsWith("pl:int:event:")) || planLines(t, "Ann").some((l) => l.startsWith("interrupt event")), "Ann's trip");
     t.ok(!t.q("Ben").items.some((it) => it.id.startsWith("pl:int:event:")) && !planLines(t, "Ben").some((l) => l.startsWith("interrupt event")), "Ben stays on its step");
   },

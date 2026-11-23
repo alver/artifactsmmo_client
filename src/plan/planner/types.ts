@@ -73,7 +73,12 @@ export interface Step {
   parent?: string;        // a supply step: the key of the parent it is for (the best-scoring one)
   for?: string;           // a gear step: the character the piece is made for
   toll?: Toll;            // task 017: the conditional transitions of its round trip (bank → place → bank), in `withdraw` too
+  fight?: FightVerdict;   // task 025: a kill step's verdict on the set it wears (its why states it; the runtime's end record)
 }
+
+/** Task 025, settled point 2: what the verdict says of a kill step's set — p, the rolled win rate; `sec`, the expected seconds
+ *  a win (the walks to the bank left out); `back`: the fares and keys a lost attempt's way back takes (none: free). */
+export interface FightVerdict { p: number; sec: number; back?: { gold: number; keys: Record<string, number> } }
 
 /** Task 017: what a round trip through conditional transitions takes — the fares (gold), the keys it consumes, the item it
  *  carries and keeps, its transitions' seconds, and which transitions (their tiles). */
@@ -91,7 +96,7 @@ export interface PlannerConfig {
   offeringMin: number;                    // minutes one offering takes (design A.3, a guess)
   craftK: number;                         // × the atlas's craftTrain hours for the three gear crafting skills, up to 40
   craftAbove40: number;                   // hours a level of those skills above 40 (guess, design A.5)
-  risk: "safe" | "win";                   // a planned fight: a safe win (default), or any win (task 009's replay row D only)
+  risk: { minWin: number };              // task 025: a fight is admitted when its rolled win rate p is at least minWin (Alex: 0.75; bis.ts MIN_WIN)
   potionK: number;                        // × the price of a potion a fight drinks, in the core's solves and prices (the replay's row B only; 1)
   potionStock: number;                    // task 012: 1 = an ingredient the stock covers is free (reach.ts potionPrice); 0 = the field price always (row C only)
   events: number;                         // task 013: 1 = an event is a calendar (events.ts) and the forward model attends it; 0 = a wall, no events (row E only)
@@ -112,7 +117,7 @@ export interface World {  // everything decide() reads — a snapshot, so it run
   current: Record<string, Step | undefined>;
   costs: Costs;
   /** Key "<target key>@<character>". `levels`: a long block (three strikes) also ends when one of these lanes passes its level. */
-  blocked: Record<string, { until: number; why: string; levels?: Record<string, number> }>;
+  blocked: Record<string, { until: number; why: string; levels?: Record<string, number>; level?: number; set?: string }>;
   config: PlannerConfig;
   /** Forward model only: when each character is free (ms). Missing = `now`. */
   clock?: Record<string, number>;

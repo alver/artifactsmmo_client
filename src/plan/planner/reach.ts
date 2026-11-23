@@ -6,12 +6,13 @@
 // For 008: state/loopkit.ts `nearest()` answers the same question from signals.
 
 import { catalog, item, monster as monsterOf } from "../../catalog";
-import { baseStats } from "../../sim/stats";
+import { applyGear, baseStats } from "../../sim/stats";
+import { simulate } from "../../sim/combat";
+import { winRate } from "../../sim/monte";
 import { FREE, route, travelSec } from "../route";
 import type { May } from "../route";
-import { bestInSlot, bisPools, canEquip, killSeconds, ownedPools } from "../bis";
+import { MIN_WIN, bestInSlot, bisPools, canEquip, fightSig, killSeconds, lossSeconds, ownedPools, winSeconds } from "../bis";
 import type { BisOptions, Food } from "../bis";
-import type { FightForecast } from "../../sim/combat";
 import { killLog } from "./config";
 import { potionPriceOf, potionSec, wisdomOf } from "../xp";
 import { PINNED_ARTIFACTS, jobGear, ownedQtyOf } from "../jobgear";
@@ -21,8 +22,11 @@ import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../types/api";
 import type { BankItem, Character, GearSlot } from "../../types/api";
 import type { GameMap, Transition } from "../../types/catalog";
 import type { GearRecommendation } from "../types";
-import type { Place, Toll, World } from "./types";
+import type { FightVerdict, Place, Toll, World } from "./types";
 
+/** Task 025: where a beaten character wakes — (0, 0) on the overworld (docs/design/planner.md:704; task 025's report reads
+ *  it from play). */
+export const WAKE: Place = { x: 0, y: 0, layer: "overworld" };
 export const placeOf = (ch: Character): Place => ({ x: ch.x, y: ch.y, layer: (ch as { layer?: string }).layer ?? "overworld" });
 const pkey = (p: Place): string => `${p.layer}:${p.x},${p.y}`;
 
@@ -266,6 +270,7 @@ let caching = true;
 export function setCaches(on: boolean): void {
   caching = on;
   solveMemo.clear();
+  backMemo.clear();
   cutMemo.clear();
   spotMemo.clear();
   tollMemo.clear();
@@ -335,7 +340,7 @@ function solveKey(ch: Character, monster: string, pools: Record<GearSlot, string
   const rings = pools.ring1.map((c) => Math.min(2, opts.ownedQty?.get(c) ?? 3)).join(",");
   const prices = util ? pools.utility1.map((c) => price(c)).join(",") : "-";
   const pins = [...(opts.extraCandidates ?? [])].sort().join(",");
-  return `${monster}|${statsOf(ch)}|${worn}|${cands}|${rings}|${prices}|${pins}`;
+  return `${monster}|${statsOf(ch)}|${worn}|${cands}|${rings}|${prices}|${pins}|${opts.minWin ?? MIN_WIN}|${opts.wayBack ?? 0}`;
 }
 const solveMemo = new Map<string, GearRecommendation | null>();
 /** Counts for the measuring (task 020): asks, asks served within their World, keys looked up, keys served, solves. */
@@ -397,7 +402,7 @@ export function chAt(ch: Character, level: number): Character {
 
 /** Task 015, settled point 7: `food` — the food eaten in a fight that loses `lost` HP (consumables.ts poolFood: the best of
  *  the pool the loss covers at least once); undefined: the fighter rests. */
-export interface Price { key: string; price: (code: string) => number; covered: string[]; tag: string; food?: (lost: number) => Food | undefined }
+export interface Price { key: string; price: (code: string) => number; covered: string[]; tag: string; food?: (lost: number, maxHp?: number) => Food | undefined }
 const FIELD: Price = { key: "field", price: potionSec, covered: [], tag: "field" };
 const scaledMemo = new Map<string, (code: string) => number>();
 const priceMemo = new WeakMap<World, Map<string, Price>>();
@@ -432,12 +437,60 @@ export function potionPrice(world: World, name: string): Price {
   byName.set(name, p);
   return p;
 }
-/** A won fight's seconds as the planner prices a kill, the walks left out: killSeconds at the character's price (task 014:
- *  and its food) × the log factor of the World's config (config.ts killLog). */
-export const fightSecOf = (f: FightForecast, world: World, name: string): number => {
-  const p = potionPrice(world, name);
-  return killSeconds(f, p.price, p.food?.(f.maxHp - f.hpRemaining)) * killLog(world);
+/** Task 025, settled point 2: the floor of the World's config (config.risk.minWin; a stored "safe"/"win" of the old
+ *  config reads as the default). */
+export const minWinOf = (world: World): number => (typeof world.config.risk === "object" && world.config.risk?.minWin != null ? world.config.risk.minWin : MIN_WIN);
+const backMemo = new Map<string, { sec: number; gold: number; keys: Record<string, number> } | null>();
+/** Task 025, settled point 2: a lost attempt's way back — from WAKE to the monster's nearest tile through the transitions
+ *  this character's plan may open (mayOf): its seconds, the fares (gold) and the keys its transitions take on the way in.
+ *  Undefined: no way back (a loss would strand it). */
+export function wayBack(world: World, name: string, monster: string): { sec: number; gold: number; keys: Record<string, number> } | undefined {
+  const may = mayOf(world, name);
+  const k = `${mayKeys.get(may) ?? "?"}|${monster}|${eventTiles("monster", monster, world).map((e) => pkey({ x: e.tile.x, y: e.tile.y, layer: e.tile.layer })).join(";")}`;
+  let b = caching ? backMemo.get(k) : undefined;
+  if (b === undefined) {
+    b = null;
+    const spot = nearestSpot(WAKE, "monster", monster, world, name);
+    const legs = spot && route(WAKE, spot.place, may);
+    if (spot && legs) {
+      b = { sec: spot.sec, gold: 0, keys: {} };
+      for (const l of legs) if (l.kind === "transition") for (const c of l.to.conditions ?? []) {
+        if (c.operator === "cost" && c.code === "gold") b.gold += c.value;
+        else if (c.operator === "cost") b.keys[c.code] = (b.keys[c.code] ?? 0) + c.value;
+      }
+    }
+    if (caching) remember(backMemo, k, b);
+  }
+  return b ?? undefined;
+}
+/** Task 025: the way back in seconds as a price — the walk and its fares at config.goldPerHour (a key is a fare in kind:
+ *  its price is the stock's, task 017, so only its seconds here). */
+export const wayBackSec = (world: World, name: string, monster: string): number => {
+  const b = wayBack(world, name, monster);
+  return b ? b.sec + (b.gold * 3600) / (world.config.goldPerHour || 300) : 0;
 };
+/** Task 025, settled point 2: the price of a kill — its expected seconds a win, (p × a won attempt + (1 − p) × a lost one)
+ *  ÷ p, at the character's price of a potion (and its food, task 014), × the log factor of the World's config (config.ts
+ *  killLog); a lost attempt walks back from WAKE (wayBackSec) and rests from 1 HP. The walks to the bank are left out. */
+export function winSecOf(r: GearRecommendation, world: World, name: string, monster: string, price = potionPrice(world, name).price, food: ((lost: number, maxHp?: number) => Food | undefined) | undefined = potionPrice(world, name).food): number {
+  const f = r.forecast, fd = food?.(f.maxHp - f.hpRemaining, f.maxHp);
+  return winSeconds(killSeconds(f, price, fd), lossSeconds(f, price, wayBackSec(world, name, monster), food?.(f.maxHp - 1, f.maxHp)), r.p) * killLog(world);
+}
+/** Task 025: the verdict on a kill step's set — the codes it wears (its `wear` and the potions of its take): p and the
+ *  expected seconds a win of exactly that set, and the fares its losses' way back takes. */
+export function verdictOf(ch: Character, world: World, monster: string, codes: string[]): FightVerdict | undefined {
+  const m = monsterOf(monster);
+  if (!m) return undefined;
+  const fighter = applyGear(baseStats(ch), codes);
+  const forecast = simulate(fighter, m);
+  const p = forecast.win && !forecast.timedOut ? winRate(fighter, m) : 0;
+  const b = wayBack(world, ch.name, monster);
+  const back = b && (b.gold || Object.keys(b.keys).length) ? { gold: b.gold, keys: b.keys } : undefined;
+  const sec = winSecOf({ slots: {} as GearRecommendation["slots"], codes, forecast, worst: forecast, p, score: 0 }, world, ch.name, monster);
+  return { p, sec, ...(back ? { back } : {}) };
+}
+/** A kill's seconds as the planner prices it (task 025: the expected seconds a win, winSecOf), the walks left out. */
+export const fightSecOf = (r: GearRecommendation, world: World, name: string, monster: string): number => winSecOf(r, world, name, monster);
 /** Task 014: row B (consumables free) — every potion the character may drink is at hand, as an extra candidate. */
 const freeExtra = (ch: Character, world: World, extra: string[]): string[] =>
   (world.config.consumables ?? 1) && (world.config.potionK ?? 1) === 0 ? [...new Set([...extra, ...potionCands(ch)])] : extra;
@@ -448,14 +501,17 @@ const freeExtra = (ch: Character, world: World, extra: string[]): string[] =>
  * search the dearest part of a decision.
  */
 export function fightRec(ch: Character, world: World, monster: string): GearRecommendation | undefined {
-  return asked(world, ch, `fight|${monster}`, () => solve(ch, monster, fightOptions(ch, world)));
+  return asked(world, ch, `fight|${monster}`, () => solve(ch, monster, fightOptions(ch, world, monster)));
 }
 /** fightRec's options (task 021: scripts/check-solve.mts solves with them at the three caps). Task 021, settled point 5:
  *  the planner's solves do not read what is worn (bis.ts `worn`), so a solve serves every worn set. */
-export function fightOptions(ch: Character, world: World): BisOptions {
+export function fightOptions(ch: Character, world: World, monster?: string): BisOptions {
   const qty = poolOf(ch, world).qty;
-  return { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: freeExtra(ch, world, []), perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world, ch.name).price, worn: false };
+  return { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: freeExtra(ch, world, []), perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world, ch.name).price, worn: false, ...riskOf(ch, world, monster) };
 }
+/** Task 025: what a solve needs of the verdict — the floor and the way back a lost attempt walks. */
+const riskOf = (ch: Character, world: World, monster?: string): Pick<BisOptions, "minWin" | "wayBack"> =>
+  ({ minWin: minWinOf(world), wayBack: monster ? wayBackSec(world, ch.name, monster) : 0 });
 /** Task 012: the wisdom of the set a fight is planned with (xp.ts fightXp's last argument): the solved set's pieces,
  *  plus a pinned artifact the character wears that the set left out (the executor never takes one off). */
 export function setWisdom(ch: Character, r: GearRecommendation | undefined): number {
@@ -463,16 +519,44 @@ export function setWisdom(ch: Character, r: GearRecommendation | undefined): num
   for (const g of GEAR_SLOTS) { const c = slotCode(ch, g); if (c && PINNED_ARTIFACTS.has(c) && !codes.includes(c)) codes.push(c); }
   return wisdomOf(codes);
 }
-/** A solved set the planner may plan a fight with: a safe win (the pessimistic pass wins too), or any win when
- *  config.risk is "win". */
-export const wins = (r: GearRecommendation | undefined, world: World): boolean =>
-  !!r && (world.config.risk === "win" ? r.forecast.win && !r.forecast.timedOut : r.safe);
-/** Whether the character may fight the monster now: the full solve (`fightRec`), asked only when the planning-grade
- *  solve (its utility potions included) wins in expectation.
+/** Task 025, settled point 2: a solved set the planner may plan a fight with — its rolled win rate p (bis.ts, the answer's
+ *  winRate) is at least the floor (config.risk.minWin) and its expected fight is no timeout. The pessimistic pass decides
+ *  nothing. */
+export const admits = (r: GearRecommendation | undefined, world: World): boolean =>
+  !!r && r.forecast.win && !r.forecast.timedOut && r.p >= minWinOf(world);
+/** Task 025, settled point 2: the brake's block of a monster for a character (state/planner.ts, key
+ *  `kill:<monster>@<name>`) holds while it lasts and neither the set nor the level changed. */
+export function braked(ch: Character, world: World, monster: string, r: GearRecommendation | undefined): boolean {
+  const b = world.blocked[`kill:${monster}@${ch.name}`];
+  return !!b && b.until > world.now && (b.level == null || b.level === ch.level) && (b.set == null || b.set === fightSig(r?.codes ?? []));
+}
+/** Task 025, settled point 2: a fare-paid way back the gold budget cannot pay for the losses a bag of kills is expected to
+ *  ask (stock.ts available: bank gold less the others' reservations and GOLD_FLOOR), or a key it lacks for them. */
+export function strands(ch: Character, world: World, monster: string, r: GearRecommendation): boolean {
+  const b = wayBack(world, ch.name, monster);
+  if (!b) return true;
+  if (!b.gold && !Object.keys(b.keys).length) return false;
+  const losses = Math.ceil(((1 - r.p) / Math.max(r.p, 1e-9)) * bagActions(ch, monster));
+  if (losses <= 0) return false;
+  return available("gold", world, ch.name) < losses * b.gold || Object.entries(b.keys).some(([c, q]) => available(c, world, ch.name) < losses * q);
+}
+/** Kills one bag carries of this monster (its drops by their odds): the run a loss's fares are budgeted over. */
+function bagActions(ch: Character, monster: string): number {
+  const drops = monsterOf(monster)?.drops ?? [];
+  const per = drops.reduce((t, d) => t + (d.min_quantity + d.max_quantity) / 2 / d.rate, 0);
+  return Math.max(1, Math.floor(ch.inventory_max_items / Math.max(0.01, per)));
+}
+/** Whether the character may fight the monster now (task 025: the one verdict every fight this fleet decides reads): the
+ *  full solve (`fightRec`) admitted at the floor, its losses' way back paid, not braked — asked only when the
+ *  planning-grade solve (its utility potions included) wins in expectation.
  *  shortcut: a set the capped search finds losing is taken not to win with the wider one; upgrade if that ever flips —
  *  task 021 counted it: of 1,160 fights (the Worlds of 11-20, 11-21, 11-22 and the wall World of report 021, every character
- *  at its own level × every monster) none the 3/3 solve loses in expectation and the 6/6 one wins safely */
-export const safeWin = (ch: Character, world: World, monster: string): boolean => !!planRec(ch, world, monster)?.forecast.win && wins(fightRec(ch, world, monster), world);
+ *  at its own level × every monster) none the 3/3 solve loses in expectation and the 6/6 one is admitted */
+export function admitted(ch: Character, world: World, monster: string): boolean {
+  if (!planRec(ch, world, monster)?.forecast.win) return false;
+  const r = fightRec(ch, world, monster);
+  return admits(r, world) && !strands(ch, world, monster, r!) && !braked(ch, world, monster, r);
+}
 
 /**
  * The planning-grade solve (fleetBis's solve with smaller caps: 3 a slot, 3 weapons; utility potions of the pool in,
@@ -490,7 +574,7 @@ export function planRec(ch: Character, world: World, monster: string, extra: str
     const bare = !!(world.config.consumables ?? 1) && ch.level !== world.characters.find((c) => c.name === ch.name)?.level;
     const w = bare ? openOf(world) : world;
     const qty = bare ? bareOf(poolOf(ch, w).qty) : poolOf(ch, w).qty;
-    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: bare ? extra : freeExtra(ch, world, extra), perSlotCap: 3, weaponCap: 3, potionPrice: potionPrice(world, ch.name).price, noUtilities: bare, worn: false });
+    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: bare ? extra : freeExtra(ch, world, extra), perSlotCap: 3, weaponCap: 3, potionPrice: potionPrice(world, ch.name).price, noUtilities: bare, worn: false, ...riskOf(ch, world, monster) });
   });
 }
 const openMemo = new WeakMap<World, World>();
@@ -524,17 +608,17 @@ export function openOf(world: World): World {
 export function potionRec(ch: Character, world: World, monster: string, potions: string[], price: (code: string) => number, fleet = false): GearRecommendation | undefined {
   return asked(world, ch, `potions|${monster}|${potions.join(",")}|${fleet ? "fleet" : ""}`, () => {
     const qty = bareOf(poolOf(ch, fleet ? openOf(world) : world).qty);
-    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: potions, perSlotCap: 3, weaponCap: 3, potionPrice: price, worn: false });
+    return solve(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: potions, perSlotCap: 3, weaponCap: 3, potionPrice: price, worn: false, ...riskOf(ch, world, monster) });
   });
 }
 
-/** Section 2: the first level, up to ten above, at which this character wins the monster safely with the pool it has
+/** Section 2: the first level, up to ten above, at which this character's fight is admitted (task 025) with the pool it has
  *  now (+5 max HP a level, the gear the level allows) — undefined: it waits for gear, not for a level. Its own level
  *  with the full solve, the levels above with the planning-grade one.
  *  shortcut: a win is taken to hold at every higher level (+HP, more gear), so the search is a bisection; upgrade if a
  *  level-up ever loses a monster */
 export function winLevel(ch: Character, world: World, monster: string): number | undefined {
-  return safeWin(ch, world, monster) ? ch.level : firstWin(ch, world, monster);
+  return admitted(ch, world, monster) ? ch.level : firstWin(ch, world, monster);
 }
 /** The first level above the character's own, up to ten above, at which the planning-grade solve wins: a bisection.
  *  Task 020: started from the top every time (it started from the answer the last pool gave, which made the answer
@@ -542,7 +626,7 @@ export function winLevel(ch: Character, world: World, monster: string): number |
 export function firstWin(ch: Character, world: World, monster: string): number | undefined {
   const top = Math.min(50, ch.level + 10);
   if (top <= ch.level) return undefined;
-  const at = (L: number): boolean => wins(planRec(chAt(ch, L), world, monster), world);
+  const at = (L: number): boolean => admits(planRec(chAt(ch, L), world, monster), world);
   if (!at(top)) return undefined;
   let lo = ch.level + 1, hi = top;
   while (lo < hi) { const mid = (lo + hi) >> 1; if (at(mid)) hi = mid; else lo = mid + 1; }

@@ -1,7 +1,7 @@
 // Task 016, settled points 2 and 4: a gather step and a kill step from the decision to the end, read from the journal.
 // Pia (owned) has an open gathering objective: the step gathers its ore and banks it. Then (the fake's achievements move
 // on, as the game's would) the ore objective is complete and a slime objective is open: the kill step plans the bank's
-// potions and food, the fights drink four potions each (forced) and lose 100 HP, so it eats, and it ends when the
+// potions (task 025: no food — it rests), the fights drink four potions each (forced) and lose 100 HP, and it ends when the
 // potions run dry. Each step has its `step` and `end` record; each end's meter has the seconds by group summing to the
 // step's wall seconds within a second (no interrupt inside), and says what was withdrawn, drunk, eaten and banked.
 import { achievement, scenario } from "../harness/index.mts";
@@ -12,7 +12,7 @@ const sum = (o: Record<string, number> = {}): number => Object.values(o).reduce(
 
 await scenario(
   {
-    planner: { on: { Pia: true } },
+    planner: { on: { Pia: true }, first: ["made_up_slimes"] }, // task 025: at the potions' chain the supply of more outscores the stock's kill step; ⭐ keeps this on the kill step
     characters: [{ name: "Pia", level: 10, x: 4, y: 1, alchemy_level: 5, mining_level: 5 }], // on the bank
     bank: { copper_dagger: 1, small_health_potion: 40, cooked_gudgeon: 30 },
     achievements: [achievement("made_up_ore", 5, ["gathering", "copper_ore", 30])],
@@ -46,9 +46,12 @@ await scenario(
     t.ok(eg.m.by.gather === 900 && eg.m.by.walk > 0, `its seconds: ${JSON.stringify(eg.m.by)}`);
     t.eq(ek.m.dep?.copper_ore, 30, "the kill step's reset banked the gather step's ore (a step's bag goes to the bank at the next reset)");
     t.eq([ek.m.won, ek.m.drunk?.small_health_potion, ek.m.wd?.small_health_potion], [10, 40, 40], "the kill step: 10 won, the 40 potions withdrawn and drunk");
+    // task 025: the plan eats only where eating beats resting at the food's chain, and only a food its forecast loss covers
+    // (task 015) — Pia now strikes first and loses 66 HP a fight by the forecast, under a gudgeon's 75: the step plans no
+    // food and rests (it ate what it withdrew before: the forced 100 HP losses are the fake's, not the plan's)
     const ate = t.calls("use", "Pia").length;
-    t.ok(ate > 0 && ek.m.used?.cooked_gudgeon === ate && ek.m.n.use === ate && (ek.m.wd?.cooked_gudgeon ?? 0) >= ate, `…and ate what it withdrew: ${ate} used, ${ek.m.wd?.cooked_gudgeon} withdrawn`);
-    t.ok(ek.m.by.fight > 0 && ek.m.by.eat > 0, `its seconds: ${JSON.stringify(ek.m.by)}`);
+    t.ok(ate === 0 && !ek.m.wd?.cooked_gudgeon, `…and planned no food, so it ate none: ${ate} used, ${ek.m.wd?.cooked_gudgeon} withdrawn`);
+    t.ok(ek.m.by.fight > 0 && ek.m.by.rest > 0, `its seconds: ${JSON.stringify(ek.m.by)}`);
     t.ok(t.journal("ach").some((a) => a.code === "made_up_ore" && a.pts === 5), "the ore objective's completion is an `ach` record");
     t.ok(planner.value.current.Pia?.step.key !== k.key && t.q("Pia").running, "the next step runs");
   },

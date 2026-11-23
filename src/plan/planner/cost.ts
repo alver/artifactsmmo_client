@@ -99,8 +99,9 @@ export function actionSec(w: Work, ch: Character, world: World): number {
   if (w.kind === "kill") {
     const mon = monsterOf(w.monster);
     if (!mon) return Infinity;
-    const f = planRec(ch, world, w.monster)?.forecast.win ? fightRec(ch, world, w.monster)?.forecast : undefined; // reach.ts safeWin's first look
-    const fight = f?.win ? fightSecOf(f, world, ch.name) : atlasKillSec(w.monster) * killLog(world);
+    const r = planRec(ch, world, w.monster)?.forecast.win ? fightRec(ch, world, w.monster) : undefined; // reach.ts admitted's first look
+    // task 025: the expected seconds a win (a loss priced in); a set below the floor is no price — the atlas's
+    const fight = r?.forecast.win && r.p > 0 ? fightSecOf(r, world, ch.name, w.monster) : atlasKillSec(w.monster) * killLog(world);
     return fight + walkPerAction(ch, world, "monster", w.monster, mon.drops);
   }
   if (w.kind === "gather") {
@@ -232,7 +233,7 @@ function roadRate(ch: Character, world: World, L: number): number {
       const at = firstWin(ch, world, m.code);
       if (at == null) continue;
       const r = planRec(chAt(ch, at), world, m.code)!;
-      const sec = measured(world.costs, `kill:${m.code}`) ?? fightSecOf(r.forecast, world, ch.name) + killWalk(ch, world, m.code);
+      const sec = measured(world.costs, `kill:${m.code}`) ?? fightSecOf(r, world, ch.name, m.code) + killWalk(ch, world, m.code);
       road.push({ code: m.code, at, sec, wis: setWisdom(chAt(ch, at), r) }); // task 012: the XP with the wisdom of that set
     }
     byName.set(k, road);

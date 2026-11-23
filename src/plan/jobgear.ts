@@ -17,7 +17,7 @@
 // Pure module: catalog lookups only — no signals, no API.
 
 import { item, tileAt } from "../catalog";
-import { bestInSlot, canEquip, killSeconds } from "./bis";
+import { MIN_WIN, bestInSlot, canEquip, killSeconds, lossSeconds, winSeconds } from "./bis";
 import { brewablePotions } from "./consumables";
 import { potionPriceOf } from "./xp";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode, slotQuantity } from "../types/api";
@@ -42,6 +42,8 @@ const isUtility = (g: GearSlot): boolean => g.startsWith("utility");
  * Lv 20) is bought from the Nomadic Merchant event, one per character.
  */
 export const PINNED_ARTIFACTS = new Set(["novice_guide", "lost_world_map"]);
+/** Task 025, settled point 5: the rune the plan wears and buys; worn, no swap or reset takes it off (nextGearAction). */
+export const PINNED_RUNE = "healing_rune";
 
 /** Every gear slot mapped to "" — the desired map for a full strip. */
 export function stripAllMap(): Partial<Record<GearSlot, string>> {
@@ -137,10 +139,10 @@ export function canWinWithOwned(ch: Character, bank: BankItem[], monster: string
 export function ownedFightForecast(ch: Character, bank: BankItem[], monster: string): FightForecast | undefined {
   return ownedFightRec(ch, bank, monster)?.forecast;
 }
-/** The best set owned right now vs the monster, with its `safe` verdict (the pessimistic pass wins too). */
-export function ownedFightRec(ch: Character, bank: BankItem[], monster: string): GearRecommendation | undefined {
+/** The best set owned right now vs the monster, with its win rate p (task 025: admitted at `minWin`, the executor's floor). */
+export function ownedFightRec(ch: Character, bank: BankItem[], monster: string, minWin = MIN_WIN): GearRecommendation | undefined {
   const qty = ownedQtyOf(ch, bank);
-  return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, potionPrice: potionPrice(bank) })[0];
+  return bestInSlot(ch, monster, { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, potionPrice: potionPrice(bank), minWin })[0];
 }
 /** Task 012: the price of a potion a fight drinks in the executor's solves — xp.ts potionPriceOf over the bank given
  *  (an ingredient it holds for 100 runs is free), as the planner's core prices it. */
@@ -149,6 +151,9 @@ const potionPrice = (bank: BankItem[]): ((code: string) => number) =>
 /** Task 023: a forecast fight's seconds as the executor prices it (bis.ts killSeconds: the fight, the rest back to full,
  *  its potions at the bank's price) — a train loop's hunt resting between fights. */
 export const fightSeconds = (f: FightForecast, bank: BankItem[]): number => killSeconds(f, potionPrice(bank));
+/** Task 025: a fight's expected seconds a win as the executor prices it — a won attempt (fightSeconds) and a lost one (the
+ *  fight, its potions, the rest from 1 HP; the executor knows no way back: shortcut, it is the planner's to price) at p. */
+export const fightWinSeconds = (f: FightForecast, p: number, bank: BankItem[]): number => winSeconds(killSeconds(f, potionPrice(bank)), lossSeconds(f, potionPrice(bank)), p);
 
 /**
  * The best gear set for a job from what is owned right now (bank ∪ inventory ∪
@@ -200,7 +205,7 @@ export function jobGear(ch: Character, bank: BankItem[], job: GearJob, planned?:
         recB &&
         rec &&
         ((recB.forecast.win && !rec.forecast.win) ||
-          (recB.safe && !rec.safe) ||
+          (recB.p >= MIN_WIN && rec.p < MIN_WIN) ||
           (recB.forecast.win && killSeconds(recB.forecast, price) < killSeconds(rec.forecast, price)))
       ) {
         return jobSetFromRecommendation(ch, bank, recB);
@@ -488,6 +493,12 @@ export function nextGearAction(
       desired = { ...desired };
       delete desired[g];
     }
+  }
+  // Task 025, settled point 5: a worn healing rune stays on — a reset does not strip it, a gathering or craft job keeps it;
+  // only a set that names another rune takes it off
+  if (slotCode(ch, "rune") === PINNED_RUNE && !desired.rune && desired.rune !== undefined) {
+    desired = { ...desired };
+    delete desired.rune;
   }
   const bankQty = new Map<string, number>();
   for (const b of bank) bankQty.set(b.code, (bankQty.get(b.code) ?? 0) + b.quantity);

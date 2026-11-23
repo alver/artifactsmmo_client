@@ -11,7 +11,8 @@ const spawn = fieldEvent("full_moon", { type: "monster", code: "full_moon_vampir
 await scenario(
   {
     planner: { on: { Ann: true, Bob: true, Cid: true } },
-    characters: ["Ann", "Bob", "Cid"].map((name) => ({ name, level: 30, x: 4, y: 1 })),
+    // task 025: alchemy 30 — the health potion's chain is finite only for a fleet that can brew it (∞ otherwise: never drunk)
+    characters: ["Ann", "Bob", "Cid"].map((name) => ({ name, level: 30, x: 4, y: 1, alchemy_level: 30 })),
     bank: { steel_battleaxe: 3, health_potion: 200 },
     achievements: [achievement("made_up_ore", 2, ["gathering", "copper_ore", 1200]), achievement("made_up_vampires", 3, ["combat_kill", "full_moon_vampire", 20])],
     limits: { actions: 3000, minutes: 60 },

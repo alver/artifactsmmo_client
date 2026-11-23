@@ -24,7 +24,7 @@ import { craftsPerLevel, hoursToLevel, levelOf, perOf } from "./cost";
 import { decide, met } from "./decide";
 import { isOn } from "./gates";
 import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
-import { consFree, consumed, potionSet } from "./consumables";
+import { consFree, consumed, potionSet, runeBought, runePays } from "./consumables";
 import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
 import { available } from "./stock";
 import { billOf } from "./supply";
@@ -34,7 +34,7 @@ import type { AccountAchievement, BankItem, Character, GearSlot } from "../../ty
 import type { Gate, Lane, Step, Target, Work, World } from "./types";
 
 /** The slots the model wears (runes, artifacts, utilities and bags stay as they are). */
-const WORN: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag" && g !== "rune");
+const WORN: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag");
 
 /** A bank with `delta` added (code → quantity, may be fractional or negative). */
 export function bankPlus(bank: BankItem[], delta: Map<string, number>): BankItem[] {
@@ -53,13 +53,15 @@ export function wear(world: World, step: Step): World {
   const add = (code: string, q: number): void => void delta.set(code, (delta.get(code) ?? 0) + q);
   const stats = (code: string, sign: number): void => {
     for (const e of item(code)?.effects ?? []) {
-      if (!STAT_CODES.has(e.code) || e.code === "initiative") continue;
+      if (!STAT_CODES.has(e.code) || (e.code === "initiative" && ch.initiative == null)) continue; // task 025: the API's total follows the gear
       const f = e.code === "hp" ? "max_hp" : e.code;
       ch[f] = ((ch[f] as number) ?? 0) + sign * e.value;
     }
   };
   for (const g of WORN) {
-    const now = slotCode(ch, g), want = step.wear?.[g] ?? "";
+    // task 025, settled point 5: a worn rune stays on (a reset does not strip it, a gathering step keeps it) unless a step's
+    // set names one
+    const now = slotCode(ch, g), want = g === "rune" ? step.wear?.rune ?? now : step.wear?.[g] ?? "";
     if (now === want) continue;
     if (now) { add(now, 1); stats(now, -1); }
     if (want) { add(want, -1); stats(want, 1); }
@@ -123,6 +125,7 @@ export function drinksOf(world: World, step: Step): Map<string, number> {
   return out;
 }
 
+const w0 = (s: Step): Work => s.work;
 /** The world after a step has finished, by the estimates. */
 export function advance(world: World, step: Step): World {
   const idx = world.characters.findIndex((c) => c.name === step.character);
@@ -142,6 +145,14 @@ export function advance(world: World, step: Step): World {
   const tolls = !!(world.config.tolls ?? 1);
   let gold = tolls ? -(step.toll?.gold ?? 0) : 0;
   if (tolls) for (const [k, q] of Object.entries(step.toll?.keys ?? {})) put(k, -q);
+  // task 025, settled point 2: the forward model throws no dice — a kill step's expected losses, (1 − p) ÷ p a win, walk
+  // back through the fares and keys of the way back (step.fight.back); their seconds and potions are in the step's price
+  const back = tolls && w0(step).kind === "kill" ? step.fight?.back : undefined;
+  if (back && step.fight!.p > 0) {
+    const losses = (step.as === "supply" ? step.units : step.units * perOf(step.work)) * ((1 - step.fight!.p) / step.fight!.p);
+    gold -= losses * back.gold;
+    for (const [k, q] of Object.entries(back.keys)) put(k, -losses * q);
+  }
   const field = (w: Work, actions: number): void => {
     if (w.kind === "kill") {
       const m = monsterOf(w.monster);
@@ -264,6 +275,9 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
     }
     const current = Object.fromEntries(names.map((n) => [n, n === name ? last[n] : pending[n]]));
     w = { ...w, now: t, current, clock: { ...w.clock, [name]: t } };
+    // task 025, settled point 5: the planner buys a healing rune where it pays (consumables.ts runePays) — in play the
+    // merchant interrupt's buy and equip (state/planner.ts runeCheck)
+    if (runePays(w, name).pays) w = runeBought(w, name);
     const step = decide(name, w);
     onDecide?.(w, step);
     const st = stretch(step.hours, sharesOf(name, w));
@@ -279,7 +293,7 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
 
 /**
  * The open achievements and what each waits for, fleet-wide (a gate counts as met when any character meets
- * it): unhandled, another layer, an event, a group, use, offerings, a level, gear (no safe win from the
+ * it): unhandled, another layer, an event, a group, use, offerings, a level, gear (no admitted win, task 025, from the
  * bank), filler not reached, does not fit.
  */
 export function waitingOf(world: World): { achievement: string; points: number; waits: string; why?: string }[] {
@@ -325,8 +339,10 @@ export function waitingOf(world: World): { achievement: string; points: number; 
       : has("layer") ? "another layer" : has("event") && evStuck(ts) ? "an event" : has("group") ? "a group"
       : coins ? coins
       : ts.some((t) => t.work.kind === "use") ? "use" : ts.every((t) => t.work.kind === "favor") ? "offerings"
-      : potions ? "potions (a safe win once they are made)"
-      : combatGear ? "gear (no safe win within ten levels)"
+      // task 025, settled point 9: a sale (turning_treasures_to_gold) is no step at all — not "does not fit"
+      : ts.length && ts.every((t) => t.work.kind === "sell") ? "a sale (no step sources or sells it)"
+      : potions ? "potions (an admitted win once they are made)"
+      : combatGear ? "gear (no admitted win within ten levels)"
       : noRoad ? "a level with no XP source on the way"
       : gs.some((g) => g.kind === "level" && g.level > top(g.lane)) || has("win") ? "a level"
       : ts.some((t) => t.filler) ? "filler not reached" : "does not fit";

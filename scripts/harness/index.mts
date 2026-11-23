@@ -71,15 +71,18 @@ const broken: string[] = [];
 const rawSink = fileSinks({
   append: (p, s) => void files.set(p, (files.get(p) ?? "") + s),
   replace: (p, s) => {
+    const text = typeof s === "string" ? s : Buffer.from(s).toString("utf8"); // task 025: a leaders' body comes as bytes
     try {
-      JSON.parse(s);
+      JSON.parse(text);
     } catch {
       broken.push(p);
     }
-    files.set(p, s);
+    files.set(p, text);
     replaced.set(p, (replaced.get(p) ?? 0) + 1);
   },
   exists: (p) => files.has(p),
+  // task 025: the names under a directory, from the paths held
+  list: (dir) => [...new Set([...files.keys()].filter((p) => p.startsWith(`${dir}/`)).map((p) => p.slice(dir.length + 1).split("/")[0]))],
 }, "logs");
 /** The journal's records so far (this process's), every day's file in order; one kind or every kind. */
 export type Rec = { t: string; run: string; k: string } & Record<string, any>;

@@ -25,6 +25,8 @@ interface Sinks {
   world?: (day: string, json: string) => void;
   hasWorld?: (day: string) => boolean;
   market?: (line: string, t: number) => void;
+  leaders?: (rel: string, data: string | Uint8Array) => void;
+  leadersDir?: () => string[];
 }
 let sinks: Sinks = {};
 const last: Rec = {}; // the last `pause` and `server` record (the status shows them)
@@ -88,12 +90,32 @@ export function writeMarket(rec: Rec): void {
   }
 }
 
+/** Task 025: the leaders' daily read (src/state/leaders.ts) under leaders/ — a string is a line appended (requests.log),
+ *  bytes are a body written whole, byte for byte (<stamp>/<file>). */
+export function writeLeaders(rel: string, data: string | Uint8Array): void {
+  try {
+    sinks.leaders?.(rel, data);
+  } catch {
+    /* as above */
+  }
+}
+/** Task 025: the names under leaders/ (the reads' stamped folders, requests.log, base, tables); undefined without a disk. */
+export function leadersDir(): string[] | undefined {
+  try {
+    return sinks.leadersDir?.();
+  } catch {
+    return undefined;
+  }
+}
+
 /** Where the files go: `append` adds to a file, `replace` writes a file whole (the service: a temporary file and a
  *  rename, so a reader never sees half a status), `exists` asks. Paths use "/" under `root`. */
 export interface Disk {
   append(path: string, text: string): void;
-  replace(path: string, text: string): void;
+  replace(path: string, text: string | Uint8Array): void;
   exists(path: string): boolean;
+  /** Task 025: the names in a directory ([] when there is none). */
+  list?(dir: string): string[];
 }
 
 const dayOf = (t: number): string => new Date(t).toISOString().slice(0, 10);
@@ -101,7 +123,7 @@ const STAMP = /^\d{4}-\d\d-\d\dT\d\d/;
 
 /**
  * Settled point 1: every file of the journal under `root` (logs/), all in UTC — `journal/<day>.jsonl` by the record's
- * time, `status.json`, `world/<day>.json`, and (task 017) `market/<day>.jsonl` by the line's time. Returns the raw log's sink for setDevlogSink: each line goes to
+ * time, `status.json`, `world/<day>.json`, (task 017) `market/<day>.jsonl` by the line's time and (task 025) `leaders/`. Returns the raw log's sink for setDevlogSink: each line goes to
  * `raw/<day>/<HH>.log` by its own time stamp (a line without one — a stack's next line — goes with the line before), so
  * an hour's or a day's turn needs no timer: the first line of the new hour opens the new file.
  */
@@ -112,6 +134,8 @@ export function fileSinks(disk: Disk, root: string): (lines: string) => void {
     world: (day, json) => disk.replace(`${root}/world/${day}.json`, json),
     hasWorld: (day) => disk.exists(`${root}/world/${day}.json`),
     market: (line, t) => disk.append(`${root}/market/${dayOf(t)}.jsonl`, line + "\n"),
+    leaders: (rel, data) => (typeof data === "string" ? disk.append(`${root}/leaders/${rel}`, data) : disk.replace(`${root}/leaders/${rel}`, data)),
+    leadersDir: disk.list && (() => disk.list!(`${root}/leaders`)),
   };
   return (lines) => {
     const byHour = new Map<string, string[]>();

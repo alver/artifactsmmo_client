@@ -42,8 +42,29 @@ game again. Report: `tasks/024-leaders.report.md`. Run everything from the repos
 node docs/strategy/024/tools/build.mjs                # snapshots → base/
 node docs/strategy/024/tools/stats.mjs                # base/ → tables/2*.md, printed
 node --import tsx docs/strategy/024/tools/model.mts   # base/ + this fleet's newest logs/world/ → tables/3*.md, printed
-npm run leaders                                       # the three in a row
 ```
+
+Without arguments `build.mjs` and `stats.mjs` give this folder's committed `base/` and `tables/2*.md`, the same bytes.
+
+## The daily read (task 025)
+
+The service reads the same 53 paths by itself once a UTC day at 12:22 (`src/state/leaders.ts`; not a dev service, not
+one on another port, not with `LEADERS=off` in `.env`): public, no token, one at a time ≥ 1.3 s apart, at most 60 a day,
+a 429 or a 5xx ends the day's read. Every 200 body lands byte for byte in `logs/leaders/<stamp>/` with the file names
+above, one line a request in `logs/leaders/requests.log` (this folder's format), and one `leaders` record in the journal.
+The tools take a snapshots directory and an output directory:
+
+```bash
+node docs/strategy/024/tools/build.mjs logs/leaders [<out>]   # 022's read + 024's + every day of logs/leaders → logs/leaders/base/
+node docs/strategy/024/tools/stats.mjs logs/leaders [<out>]   # logs/leaders/base/ → logs/leaders/tables/2*.md, + (i) the days
+npm run leaders                                               # the two in a row
+```
+
+`(i) the days` (`tables/2i-days.md`): per account of the newest read and per read, the board's points, the achievements
+completed, the top and the median combat level, the fleet's combat XP an hour since its read before, how many of its
+characters stand on a monster, how many stand at (0, 0) below a fifth of their HP (a loss seen), each fighter's weapon and
+rune where they changed; per band the fighters' median hours a level from one read to the next; this account marked.
+(a)–(h) are computed on the newest read that holds this account (a read a 429 cut may not).
 
 `stats.mjs` also reads `public/data/` (items, monsters, maps, events, achievements, the atlas),
 `docs/strategy/022/sec3.json` (report 022's roads, table (f)) and, for table (g), the newest `outlook` record of

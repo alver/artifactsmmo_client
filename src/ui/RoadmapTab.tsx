@@ -292,11 +292,13 @@ function Priorities() {
   const patch = planner.value.config;
   const cfg = configOf(patch);
   const first = patch.first ?? [], out = patch.exclude ?? [], weight = Object.entries(patch.weight ?? {});
-  if (!first.length && !out.length && !weight.length) return null;
   const x = (title: string, run: () => void) => <button class="cat-btn" title={title} onClick={run}>✕</button>;
+  const floor = typeof cfg.risk === "object" ? cfg.risk.minWin : 0.75;
   return (
     <section class="ws-card">
       <h3>Priorities</h3>
+      {/* task 025, settled point 2: the floor a fight is admitted at — its rolled win rate (Alex: 0.75) */}
+      <div class="prio-row">⚔ fights admitted at a win rate of at least <select value={String(floor)} onChange={(e) => void setPlannerConfig({ risk: { minWin: Number((e.target as HTMLSelectElement).value) } })}>{[0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 0.95, 0.98, 0.99].map((v) => <option key={v} value={String(v)}>{Math.round(v * 100)}%</option>)}</select></div>
       {first.map((c) => <div key={`f:${c}`} class="prio-row">⭐ first: {nameOf(c)} {x("Take it out of first", () => void setPlannerConfig({ first: cfg.first.filter((y) => y !== c) }))}</div>)}
       {out.map((c) => <div key={`x:${c}`} class="prio-row">⛔ excluded: {nameOf(c)} {x("Let the planner work on it again", () => void setPlannerConfig({ exclude: cfg.exclude.filter((y) => y !== c) }))}</div>)}
       {weight.map(([c, v]) => <div key={`w:${c}`} class="prio-row">⚖ weight ×{v}: {nameOf(c)} {x("Back to ×1", () => { const { [c]: _, ...rest } = cfg.weight; void setPlannerConfig({ weight: rest }); })}</div>)}

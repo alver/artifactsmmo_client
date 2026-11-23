@@ -10,7 +10,7 @@ import { planner } from "../../src/state/planner";
 await scenario(
   {
     planner: { on: { Pia: true } },
-    characters: [{ name: "Pia", level: 20, x: 4, y: 1 }],
+    characters: [{ name: "Pia", level: 20, x: 4, y: 1, rune_slot: "healing_rune" }], // task 025: she holds a rune, so the planner buys her none
     bank: { copper_dagger: 1, golden_egg: 5 },
     gold: 45_000, // 45,000 − 20,000 + 5,000 = one map, for the one level-20 character
     events: [merchantEvent("nomadic_merchant", 3, 2)],

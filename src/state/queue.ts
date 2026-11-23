@@ -31,9 +31,9 @@ import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendin
 import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
-import { bankOff, craftableTimes, desiredForJob, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep, stackCaps } from "./exec";
+import { bankOff, blockFight, brakeWhy, craftableTimes, desiredForJob, fightBlocked, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gateP, gearSwapStep, goToMaster, invCount, invQty, minWinNow, provisionPotions, recoverFirst, runStep, stackCaps } from "./exec";
 import { categoryLevel, loadOfferings, offeringMayTake, offeringSlots, todayOfferings } from "./offerings";
-import type { StepCtx } from "./exec";
+import type { FightTally, StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
 import type { Place } from "../plan/route";
@@ -454,6 +454,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       // Bank-gear self-heal: when something better landed in the bank, detour
       // and swap (memoized per bank reference — free when nothing changed).
       // Planned-but-unowned utility potions get brewed (provisionPotions).
+      if (await recoverFirst(name, ch, ctx)) return false; // task 025: at 1 HP after a loss no piece comes off (483)
       if (it.gear) {
         const desired = plannedSet(name, ch, it, it.take) ?? desiredForJob(name, ch, { kind: "fight", monster: it.monster }, it.take);
         // task 014, settled points 1 and 4: an owned step's utility slots are its reset's — a round never refills them
@@ -463,16 +464,18 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         if (!it.take && desired && (await provisionPotions(name, ch, desired, ctx)) === "acted") return false;
       }
       ctx.note(`fighting ${it.done + 1}${it.times > 0 ? `/${it.times}` : ""}`);
-      const out = await fightRound(name, ch, m, tile, S(name), ctx);
+      const out = await fightRound(name, ch, m, tile, S(name, it.id), ctx);
       // task 014, settled point 5: running dry is the end of the step, not a failure
       if (out === "no-win" && it.take && ranDry(ch, it.take)) {
         log(name, `ran dry after ${it.done} fights vs ${m.name}: its potions or food are gone and the fresh forecast is no win — the step ends`, "info");
         return true;
       }
-      if (out === "no-win") throw new Error(`not a safe win vs ${m.name}`);
-      if (out === "gave-up") throw new Error("lost 2 fights in a row");
+      // task 025, settled point 2: a refusal at the gate or the brake ends the item and blocks the monster for this character
+      // (until its set or level changes or 24 h pass) — no pause, no strike
+      if (out === "no-win") return refusedFight(name, ch, m);
+      if (out === "brake") return braked(name, m);
       if (out === "won") patchItem(name, it.id, { done: it.done + 1 });
-      if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+      if (out === "lost") log(name, lostLine(name, it.id), "bad");
       return false;
     }
     case "deposit-all": {
@@ -713,8 +716,12 @@ function forecastVs(ch: Character, monster: string): FightForecast | undefined {
 }
 /** Task 023, settled point 2: for an owned character the verdict of the very set its fight will wear (exec.ts
  *  fightSetFor) — what picks a train loop's recipe or accepts an offering is what the gate admits. */
-const canBeat = (ch: Character, monster: string): boolean =>
-  isOwned(ch.name) ? !!fightSetFor(ch.name, ch, monster).forecast?.win : !!forecastVs(ch, monster)?.win;
+const canBeat = (ch: Character, monster: string): boolean => {
+  if (!isOwned(ch.name)) return !!forecastVs(ch, monster)?.win;
+  // task 025: the one verdict — the set's rolled win rate at the floor, and no block of the monster for this set and level
+  const v = fightSetFor(ch.name, ch, monster);
+  return (v.p ?? 0) >= minWinNow() && !fightBlocked(ch.name, ch, monster, Object.values(v.desired ?? {}).filter((c): c is string => !!c));
+};
 /** Seconds a drop fight costs: for an owned character its verdict's (the fight, the rest back to full, the potions — task
  *  023: Third's 102 skeleton fights of 11-23 cost 79 s each, two thirds of it rest, against FIGHT_SEC's 40), else FIGHT_SEC. */
 const huntSec = (ch: Character, monster: string): number => (isOwned(ch.name) ? fightSetFor(ch.name, ch, monster).sec ?? FIGHT_SEC : FIGHT_SEC);
@@ -947,12 +954,14 @@ async function sourceOne(
   if (src?.how === "fight") {
     const tile = nearest("monster", src.mon.code, ch);
     if (!tile) return skipItem(name, it, missingText("monster", src.mon.code, ch));
+    if (await recoverFirst(name, ch, ctx)) return false;
     if (await fightGear(name, ch, it, src.mon.code, ctx)) return false;
     ctx.note(`${label}: hunt ${src.mon.name} for ${itemName(code)} ${invQty(ch, code)}/${invQty(ch, code) + need}`);
-    const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
-    if (out === "no-win") throw new Error(`not a safe win vs ${src.mon.name}`);
-    if (out === "gave-up") throw new Error("lost 2 fights in a row");
-    if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+    const out = await fightRound(name, ch, src.mon, tile, S(name, `${it.id}|${src.mon.code}`), ctx);
+    // task 025: the gate or the brake blocks the monster; canBeat reads the block, so the next pick is another recipe
+    if (out === "no-win") { refusedFight(name, ch, src.mon); return false; }
+    if (out === "brake") { braked(name, src.mon); return false; }
+    if (out === "lost") log(name, lostLine(name, `${it.id}|${src.mon.code}`), "bad");
     return false;
   }
   if (src?.how === "craft" && deep) {
@@ -1093,12 +1102,13 @@ async function runWorkTask(
     const m = monsterOf(ch.task);
     const tile = m ? nearest("monster", ch.task, ch) : undefined;
     if (!m || !tile) throw new Error(missingText("monster", ch.task, ch));
+    if (await recoverFirst(name, ch, ctx)) return false;
     if (await taskGear(name, ch, it, { kind: "fight", monster: ch.task }, ctx)) return false;
     ctx.note(`task ${ch.task_progress + 1}/${ch.task_total}: fight ${m.name}`);
-    const out = await fightRound(name, ch, m, tile, S(name), ctx);
-    if (out === "no-win") return giveUpTask(name, ch, it, ctx, `not a safe win vs ${m.name}`);
-    if (out === "gave-up") throw new Error("lost 2 fights in a row");
-    if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+    const out = await fightRound(name, ch, m, tile, S(name, `${it.id}|${m.code}`), ctx);
+    if (out === "no-win") return giveUpTask(name, ch, it, ctx, gateWhy(ch, m));
+    if (out === "brake") return giveUpTask(name, ch, it, ctx, `the brake vs ${m.name}: ${brakeWhy(S(name, `${it.id}|${m.code}`))}`);
+    if (out === "lost") log(name, lostLine(name, `${it.id}|${m.code}`), "bad");
     return false;
   }
   if (ch.task_type !== "items") return true; // unknown task type — leave it be
@@ -1126,12 +1136,13 @@ async function runWorkTask(
     }
     const tile = nearest("monster", src.mon.code, ch);
     if (!tile) throw new Error(missingText("monster", src.mon.code, ch));
+    if (await recoverFirst(name, ch, ctx)) return false;
     if (await taskGear(name, ch, it, { kind: "fight", monster: src.mon.code }, ctx)) return false;
     ctx.note(`task ${held + ch.task_progress}/${ch.task_total}: hunt ${src.mon.name}`);
-    const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
-    if (out === "no-win") return giveUpTask(name, ch, it, ctx, `not a safe win vs ${src.mon.name}`);
-    if (out === "gave-up") throw new Error("lost 2 fights in a row");
-    if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+    const out = await fightRound(name, ch, src.mon, tile, S(name, `${it.id}|${src.mon.code}`), ctx);
+    if (out === "no-win") return giveUpTask(name, ch, it, ctx, gateWhy(ch, src.mon));
+    if (out === "brake") return giveUpTask(name, ch, it, ctx, `the brake vs ${src.mon.name}: ${brakeWhy(S(name, `${it.id}|${src.mon.code}`))}`);
+    if (out === "lost") log(name, lostLine(name, `${it.id}|${src.mon.code}`), "bad");
     return false;
   }
 
@@ -1267,15 +1278,17 @@ async function obtainOffering(
   }
   const tile = nearest("monster", src.mon.code, ch);
   if (!tile) return "dead";
+  if (await recoverFirst(name, ch, ctx)) return "acted";
   const desired = desiredForJob(name, ch, { kind: "fight", monster: src.mon.code });
   if (desired && (await gearSwapStep(name, ch, desired, ctx, { utility: stackCaps(name, ch, desired) })) === "acted") return "acted";
   // task 023: nothing is brewed inside an owned character's fight (task 014's rule) — its set names no potion nobody has
   if (desired && !isOwned(name) && (await provisionPotions(name, ch, desired, ctx)) === "acted") return "acted";
   ctx.note(`offering: hunt ${src.mon.name} for ${itemName(code)} ${have}/${have + need}`);
-  const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
-  if (out === "no-win") return "dead";
-  if (out === "gave-up") throw new Error("lost 2 fights in a row");
-  if (out === "lost") log(name, "lost a fight — healing and retrying", "bad");
+  const out = await fightRound(name, ch, src.mon, tile, S(name, `offering|${src.mon.code}`), ctx);
+  // task 025: the gate or the brake ends this category for the day (the brake blocks the monster too)
+  if (out === "no-win") { refusedFight(name, ch, src.mon); return "dead"; }
+  if (out === "brake") { braked(name, src.mon); return "dead"; }
+  if (out === "lost") log(name, lostLine(name, `offering|${src.mon.code}`), "bad");
   return "acted";
 }
 
@@ -1380,13 +1393,30 @@ async function runOffering(name: string, ch: Character, it: OfferingItem, ctx: S
 // Dev forensics: last head-item id per character, to log head transitions once.
 const lastHead = new Map<string, string>();
 
-// Loss streaks are per-run, in-memory.
-const lossState = new Map<string, { losses: number }>();
-const S = (name: string): { losses: number } => {
-  let s = lossState.get(name);
-  if (!s) { s = { losses: 0 }; lossState.set(name, s); }
+// Task 025: one item's fights, losses and forecast (exec.ts FightTally, the brake's count) — per character, started again
+// when the item (or the monster of a hunt) changes; in memory, so a restart counts afresh.
+const tallies = new Map<string, FightTally>();
+const S = (name: string, item: string): FightTally => {
+  let s = tallies.get(name);
+  if (!s || s.item !== item) { s = { item, fights: 0, losses: 0, pSum: 0 }; tallies.set(name, s); }
   return s;
 };
+/** The line a lost fight leaves: the step goes on (task 025). */
+const lostLine = (name: string, item: string): string => { const t = S(name, item); return `lost a fight (${t.losses} of ${t.fights}; ${brakeWhy(t)}) — back, recover, fight on`; };
+/** The gate's refusal as a why: the worn set's p against the floor. */
+const gateWhy = (ch: Character, m: Monster): string => `forecast ${Math.round(100 * gateP(ch, m))}% at the gate vs ${m.name}, below the floor ${Math.round(100 * minWinNow())}%`;
+/** Task 025: the gate refused — the monster is blocked for this character (exec.ts blockFight) and the item ends. */
+function refusedFight(name: string, ch: Character, m: Monster): true {
+  const why = gateWhy(ch, m);
+  log(name, `${why} — the item ends, ${m.name} blocked for ${name}`, "bad");
+  blockFight(name, ch, m.code, why);
+  return true;
+}
+/** Task 025: the brake (exec.ts fightRound blocked the monster already) — the item ends. */
+function braked(name: string, m: Monster): true {
+  log(name, `the brake vs ${m.name}: play below the forecast — the item ends, ${m.name} blocked for ${name}`, "bad");
+  return true;
+}
 
 // 486 "an action is already in progress": the server is still working on this
 // character's previous call (seen on the retry after a 500). It means "wait,
@@ -1436,7 +1466,7 @@ async function runLoop(name: string): Promise<void> {
           setQueue(name, { items: rest, note: undefined, ...(ready ? { running: false } : {}) });
           if (ready) log(name, `ready to fight ${monsterOf(item.monster)?.name ?? item.monster} — queue stopped`, "ok");
         }
-        S(name).losses = 0;
+        tallies.delete(name);
       };
       // Task 015, settled point 1: a bag full of codes the bank has no slot for ends the item — never a pause.
       const bankFull = (e: BankFullError): void => {
@@ -1532,7 +1562,7 @@ export function runQueue(name: string): void {
   if (!q.items.length) { log(name, "queue is empty", "bad"); return; }
   if (!characters.value[name]) return;
   stopFlags.delete(name);
-  S(name).losses = 0;
+  tallies.delete(name);
   const head = q.items[0];
   const items = head?.error ? q.items.map((it) => (it.id === head.id ? { ...it, error: undefined } : it)) : q.items;
   queues.value = { ...queues.value, [name]: { ...q, items, running: true, note: "starting…" } };

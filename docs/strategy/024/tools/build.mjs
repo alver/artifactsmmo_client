@@ -1,13 +1,16 @@
 // Task 024: the base, built from the snapshot folders alone — no request (it imports nothing that reaches the network).
-//   node docs/strategy/024/tools/build.mjs
+//   node docs/strategy/024/tools/build.mjs [<snapshots dir> [<out dir>]]
 // Snapshots: docs/strategy/022/snapshot/ (read in place, 17 accounts, 11-22 19:23 UTC; its log docs/strategy/022/requests.log)
 // and every docs/strategy/024/snapshot/<stamp>/ (its log docs/strategy/024/requests.log). Writes docs/strategy/024/base/
 // characters.jsonl, accounts.jsonl, achievements.jsonl — one JSON object a line, in a fixed order (same input, same bytes).
+// Task 025: with a snapshots directory (the service's daily read, logs/leaders: its <stamp>/ folders and requests.log)
+// its reads come after those two, and the base goes to <out dir>, by default <snapshots dir>/base.
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { HOME, ROOT, J, D, sday, SKILLS } from "./lib.mjs";
 
-const BASE = join(HOME, "base");
+const [DIR, OUT] = process.argv.slice(2).map((p) => resolve(p));
+const BASE = OUT ?? (DIR ? join(DIR, "base") : join(HOME, "base"));
 const monsters = new Map(D("monsters").map((m) => [m.code, m]));
 const resources = new Map(D("resources").map((r) => [r.code, r]));
 const tiles = new Map(D("maps").map((t) => [t.map_id, t]));
@@ -34,16 +37,21 @@ const snaps = [];
   snaps.push({ id: "2026-11-22T1923Z", dir, log: logOf(join(ROOT, "docs/strategy/022/requests.log")), from: stampMs("2026-11-22T1923Z"), lb, accounts,
     achFiles: (a) => [`acc-${a}-achievements.json`] });
 }
-const SNAP24 = join(HOME, "snapshot");
-const log24 = existsSync(join(HOME, "requests.log")) ? logOf(join(HOME, "requests.log")) : new Map();
-for (const s of existsSync(SNAP24) ? readdirSync(SNAP24).sort() : []) {
-  const dir = join(SNAP24, s);
-  const files = readdirSync(dir);
-  const lb = files.includes("leaderboard-1.json") ? J(join(dir, "leaderboard-1.json")).data : [];
-  const accounts = files.filter((f) => f.endsWith("-characters.json")).map((f) => f.slice(4, -16));
-  snaps.push({ id: s, dir, log: log24, from: stampMs(s), lb, accounts,
-    achFiles: (a) => files.filter((f) => f.startsWith(`acc-${a}-achievements-`)).sort((x, y) => parseInt(x.split("-").pop()) - parseInt(y.split("-").pop())) });
-}
+/** Every <stamp>/ folder of a snapshots directory, with the requests.log `logFile` (a stamp read already is skipped). */
+const addSnaps = (root, logFile) => {
+  const log = existsSync(logFile) ? logOf(logFile) : new Map();
+  for (const s of existsSync(root) ? readdirSync(root).filter((s) => /^\d{4}-\d\d-\d\dT\d{4}Z$/.test(s)).sort() : []) {
+    if (snaps.some((x) => x.id === s)) continue;
+    const dir = join(root, s);
+    const files = readdirSync(dir);
+    const lb = files.includes("leaderboard-1.json") ? J(join(dir, "leaderboard-1.json")).data : [];
+    const accounts = files.filter((f) => f.endsWith("-characters.json")).map((f) => f.slice(4, -16));
+    snaps.push({ id: s, dir, log, from: stampMs(s), lb, accounts,
+      achFiles: (a) => files.filter((f) => f.startsWith(`acc-${a}-achievements-`)).sort((x, y) => parseInt(x.split("-").pop()) - parseInt(y.split("-").pop())) });
+  }
+};
+addSnaps(join(HOME, "snapshot"), join(HOME, "requests.log"));
+if (DIR) addSnaps(DIR, join(DIR, "requests.log"));
 
 /** When a path was read inside this snapshot: the first 200 line of its log at or after the stamp (022: the one line). */
 const readAt = (snap, path) => (snap.log.get(path) ?? []).find((t) => t >= snap.from && t < snap.from + 3 * 3600e3);

@@ -12,6 +12,9 @@
 // Task 017: a gated tile opens on the scenario's achievements (the Tasks Trader), a
 // `has_item` transition counts the bag and the worn set (the docs), and the public
 // market read `GET /grandexchange/orders` answers from `world.ge` (its own counter).
+// Task 025: the leaders' read — the leaderboard, `/accounts/{a}/characters` and
+// `/accounts/{a}/achievements` asked without a token — answers byte for byte from
+// report 024's snapshot (`world.publicReads`, `world.publicFault`).
 // Not modelled: XP and levels (a level is what the scenario set), achievement
 // conditions of transitions (always unmet), task /
 // give actions, `use` of anything but food,
@@ -20,6 +23,7 @@
 // The altar knows only what the scenario's `offerings` list holds: no favor
 // effects, no XP reward, no daily rotation.
 
+import { readFileSync } from "node:fs";
 import { API_BASE } from "../../src/api/client";
 import { catalog, item, monster, npc, resource, tileAt } from "../../src/catalog";
 import { canEquip } from "../../src/plan/bis";
@@ -100,6 +104,10 @@ export const world = {
   ge: [] as { id: string; type: "sell" | "buy"; account: string; code: string; quantity: number; price: number; created_at: string }[],
   geReads: 0,
   geFail: 0,
+  /** Task 025: the leaders' read — every public request asked without a token (virtual ms since the start, path and query),
+   *  counted apart from `reads`; `publicFault` answers the public request after `after` more with `code`, once. */
+  publicReads: [] as { t: number; path: string }[],
+  publicFault: null as { after: number; code: number } | null,
   ended: false,
   /** What each gather of a resource / kill of a monster yields; unset = the catalog default (see yieldOf). */
   yields: new Map<string, ItemStack[]>(),
@@ -161,7 +169,7 @@ function newCharacter(init: CharInit): Char {
   const ch = {
     account: "harness", skin: "men1", level, xp: 0, max_xp: 150, gold: 0, speed: 0,
     max_hp: 115 + 5 * level, // naked base HP [1.4]
-    haste: 0, critical_strike: 0, wisdom: 0, prospecting: 0,
+    haste: 0, critical_strike: 0, wisdom: 0, prospecting: 0, initiative: 100, // the API's base initiative (task 025)
     attack_fire: 0, attack_earth: 0, attack_water: 0, attack_air: 0,
     dmg: 0, dmg_fire: 0, dmg_earth: 0, dmg_water: 0, dmg_air: 0,
     res_fire: 0, res_earth: 0, res_water: 0, res_air: 0,
@@ -696,7 +704,28 @@ const reply = (payload: unknown, status = 200): Response =>
   }) as unknown as Response;
 const refuse = (code: number, message: string): Response => reply({ error: { code, message } }, code);
 
-export async function fakeFetch(input: unknown, init: { method?: string; body?: unknown } = {}): Promise<Response> {
+/** Task 025: the leaders' read, answered byte for byte from report 024's snapshot (its file names, docs/strategy/024/README.md). */
+const SNAP024 = new URL("../../docs/strategy/024/snapshot/2026-11-23T1222Z/", import.meta.url);
+const PUBLIC = /^\/(leaderboard\/accounts|accounts\/[^/]+\/(characters|achievements))$/;
+function publicRead(url: URL): Response {
+  world.publicReads.push({ t: Date.now() - T0, path: url.pathname + url.search });
+  const bytes = (status: number, body: Buffer): Response =>
+    ({ status, ok: status < 400, headers: { get: () => null }, arrayBuffer: async () => new Uint8Array(body).buffer }) as unknown as Response;
+  const f = world.publicFault;
+  if (f && f.after-- <= 0) {
+    world.publicFault = null;
+    return bytes(f.code, Buffer.from(JSON.stringify({ error: { code: f.code, message: `injected fault ${f.code}` } })));
+  }
+  const page = url.searchParams.get("page") ?? "1", a = url.pathname.split("/")[2];
+  const file = url.pathname === "/leaderboard/accounts" ? `leaderboard-${page}.json` : url.pathname.endsWith("/characters") ? `acc-${a}-characters.json` : `acc-${a}-achievements-${page}.json`;
+  try {
+    return bytes(200, readFileSync(new URL(file, SNAP024)));
+  } catch {
+    return bytes(404, Buffer.from(JSON.stringify({ error: { code: 404, message: "Not found." } })));
+  }
+}
+
+export async function fakeFetch(input: unknown, init: { method?: string; body?: unknown; headers?: HeadersInit } = {}): Promise<Response> {
   const url = new URL(String(input));
   if (url.origin !== API_BASE) fatal(`request to ${url.origin}${url.pathname} — a scenario has no real network`);
   if (world.ended) throw new Error("fake game: the scenario has ended");
@@ -709,6 +738,9 @@ export async function fakeFetch(input: unknown, init: { method?: string; body?: 
     const size = Number(url.searchParams.get("size")) || 50, n = Number(url.searchParams.get("page")) || 1;
     return reply({ data: world.ge.slice((n - 1) * size, n * size), total: world.ge.length, page: n, size, pages: Math.max(1, Math.ceil(world.ge.length / size)) });
   }
+  // Task 025: a public path asked without a token is the leaders' read; with one it is the account's (read(): its own
+  // achievements, and anything else of the three ends the scenario)
+  if (method === "GET" && PUBLIC.test(url.pathname) && !new Headers(init.headers).has("authorization")) return publicRead(url);
   if (method === "GET") return reply(read(url));
   const m = method === "POST" ? /^\/my\/([^/]+)\/action\/(.+)$/.exec(url.pathname) : null;
   if (!m) return fatal(`${method} ${url.pathname} is not implemented`);

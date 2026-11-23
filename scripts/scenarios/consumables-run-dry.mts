@@ -7,7 +7,9 @@ import { planner } from "../../src/state/planner";
 
 await scenario(
   {
-    planner: { on: { Pia: true } },
+    // task 025: at the potions' chain the supply of more (sunflowers, 1.92) outscores the kill step with the stock (1.52); the
+    // objective first (⭐) keeps the scenario on running dry
+    planner: { on: { Pia: true }, first: ["made_up_slimes"] },
     characters: [{ name: "Pia", level: 10, x: 4, y: 1, alchemy_level: 5 }], // on the bank
     bank: { copper_dagger: 1, small_health_potion: 40 },
     achievements: [achievement("made_up_slimes", 5, ["combat_kill", "green_slime", 50])],

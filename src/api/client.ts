@@ -98,6 +98,31 @@ export interface ApiOptions {
  * Returns `payload.data` (or the whole payload if there is no `data`).
  */
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
+  inFlight++;
+  try {
+    return await apiOnce<T>(path, opts);
+  } finally {
+    inFlight--;
+  }
+}
+let inFlight = 0;
+/** Task 025: no account request (`api()`: every action, the account's reads) is in flight — the leaders' read
+ *  (state/leaders.ts) waits for that before each of its requests, so it goes behind the characters' actions. */
+export const accountIdle = (): boolean => inFlight === 0;
+
+/** Task 025: a public GET for the leaders' read (state/leaders.ts) — no token, no Authorization header, no retry (a 429
+ *  is the caller's answer); the status and the body's bytes as they came. A transport failure is status 0. */
+export async function publicGet(path: string): Promise<{ status: number; body: Uint8Array }> {
+  if (!IS_SERVER) throw new Error(`publicGet(${path}) called in the browser — engine calls run on the local server`);
+  try {
+    const r = await fetch(API_BASE + path, { headers: { Accept: "application/json" } });
+    return { status: r.status, body: new Uint8Array(await r.arrayBuffer()) };
+  } catch (e) {
+    return { status: 0, body: new TextEncoder().encode(String(e)) };
+  }
+}
+
+async function apiOnce<T>(path: string, opts: ApiOptions): Promise<T> {
   if (!IS_SERVER) throw new Error(`api(${path}) called in the browser — engine calls run on the local server`);
   const { method = "GET", body, retries = 4 } = opts;
   const url = API_BASE + path;

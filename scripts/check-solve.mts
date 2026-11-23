@@ -13,7 +13,7 @@
 import { readFile } from "node:fs/promises";
 import { setDataReader } from "../src/catalog/load";
 import { catalog, loadCatalog, monster as monsterOf } from "../src/catalog";
-import { ARTIFACT_SLOTS, RING_SLOTS, SINGLE_SLOTS, UTILITY_SLOTS, bestInSlot, bisPools, groupCombos, makeEvaluator } from "../src/plan/bis";
+import { ARTIFACT_SLOTS, RING_SLOTS, SINGLE_SLOTS, UTILITY_SLOTS, bestInSlot, bisPools, MIN_WIN, groupCombos, makeEvaluator } from "../src/plan/bis";
 import type { BisOptions } from "../src/plan/bis";
 import { DEFAULTS } from "../src/plan/planner/config";
 import { bankPlus } from "../src/plan/planner/forward";
@@ -30,7 +30,9 @@ const t0 = performance.now();
 const VERBOSE = process.env.AMMO_CHECK_VERBOSE === "1";
 const CAPS: [number, number][] = [[3, 3], [6, 6], [12, 10]];
 const TIER: Record<string, number> = { lost: 0, win: 1, safe: 2 };
-const tierOf = (r: GearRecommendation | undefined): string => (!r ? "lost" : r.safe ? "safe" : r.forecast.win && !r.forecast.timedOut ? "win" : "lost");
+// Task 025: the top tier is "admitted" — the rolled win rate p at least the floor (bis.ts MIN_WIN); the table keeps the
+// label "safe": a set known safe (its pessimistic pass wins) has p = 1, so wherever it stands an admitted set exists.
+const tierOf = (r: GearRecommendation | undefined): string => (!r ? "lost" : r.forecast.win && !r.forecast.timedOut && r.p >= MIN_WIN ? "safe" : r.forecast.win && !r.forecast.timedOut ? "win" : "lost");
 let failed = 0;
 const fail = (what: string): void => { failed++; if (failed <= 20) console.log(`FAIL ${what}`); };
 
@@ -40,7 +42,7 @@ function improving(ch: Character, monster: string, opts: BisOptions, r: GearReco
   const pools = bisPools(ch, m, opts);
   const worn: Partial<Record<GearSlot, string>> = {};
   if (opts.worn !== false) for (const g of GEAR_SLOTS) worn[g] = slotCode(ch, g);
-  const score = ((ev) => (s: Record<GearSlot, string>) => ev(s).score)(makeEvaluator(baseStats(ch), m, worn, opts.potionPrice));
+  const score = ((ev) => (s: Record<GearSlot, string>) => ev(s).score)(makeEvaluator(baseStats(ch), m, worn, opts.potionPrice, opts.minWin, opts.wayBack));
   const at = score(r.slots);
   if (at !== r.score) return `the answer scores ${at}, not ${r.score}`;
   const singles: [GearSlot, string[]][] = [["weapon", [...new Set(["", ...pools.weapon, ...(worn.weapon ? [worn.weapon] : [])])]], ...SINGLE_SLOTS.map((s): [GearSlot, string[]] => [s, ["", ...pools[s]]])];

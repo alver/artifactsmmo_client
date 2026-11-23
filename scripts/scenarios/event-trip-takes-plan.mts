@@ -11,7 +11,7 @@ const spawn = fieldEvent("full_moon", { type: "monster", code: "full_moon_vampir
 await scenario(
   {
     planner: { on: { Ann: true } },
-    characters: [{ name: "Ann", level: 30, x: 4, y: 1 }],
+    characters: [{ name: "Ann", level: 30, x: 4, y: 1, alchemy_level: 30 }], // task 025: she could brew them — a potion nobody that is on may make costs ∞ and is never drunk
     bank: { steel_battleaxe: 1, health_potion: 75 },
     achievements: [achievement("made_up_ore", 2, ["gathering", "copper_ore", 400]), achievement("made_up_vampires", 3, ["combat_kill", "full_moon_vampire", 200])],
     limits: { actions: 3000, minutes: 120 },

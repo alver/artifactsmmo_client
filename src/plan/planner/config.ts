@@ -36,7 +36,9 @@ export const DEFAULTS: PlannerConfig = {
   offeringMin: 20,
   craftK: 0.1,
   craftAbove40: 60,
-  risk: "safe",
+  // Task 025, settled point 2: the floor of a fight's rolled win rate (Alex, decision 61: 0.75). It guards against the
+  // model's error; the price (the expected seconds a win, a loss priced in) chooses. "safe" and "win" ended with it.
+  risk: { minWin: 0.75 },
   // Task 011: the price factor of a potion a fight drinks, in every solve and price of the core (reach.ts potionPrice).
   // For the replay's row B (0: potions free) only: the UI does not show it, the executor's own solves (jobgear.ts)
   // keep 1, and a patch over it is never written.

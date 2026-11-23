@@ -391,7 +391,10 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
   refreshHit(P, M, !!rng);
   refreshHit(M, P, !!rng);
 
-  const playerFirst = P.init >= M.init;
+  // Task 025: the higher initiative strikes first; a tie goes to the higher HP, then to chance (the game's documents as
+  // docs/audit/domain-rules.md 1.1 records them — "ties go by HP, then random"). The expected pass gives a full tie to the
+  // player, as before; the rolled pass tosses a coin.
+  const playerFirst = P.init !== M.init ? P.init > M.init : P.hp !== M.hp ? P.hp > M.hp : rng ? rng() < 0.5 : true;
 
   let win = false;
   let timedOut = false;
