@@ -31,8 +31,8 @@ import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendin
 import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
-import { bankOff, craftableTimes, desiredForJob, fightRound, foodInHand, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep } from "./exec";
-import { categoryLevel, loadOfferings, offeringSlots, todayOfferings } from "./offerings";
+import { bankOff, craftableTimes, desiredForJob, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gearSwapStep, goToMaster, invCount, invQty, provisionPotions, runStep, stackCaps } from "./exec";
+import { categoryLevel, loadOfferings, offeringMayTake, offeringSlots, todayOfferings } from "./offerings";
 import type { StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
@@ -247,7 +247,9 @@ function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
   // Persisted queues from before food became a boolean may carry an old
   // FoodSpec object here — any non-false value means "keep fed".
   // task 014: an owned step's fight item (`take`) eats what its reset took and never provisions more
-  const fed = it.kind === "fight" ? !it.take && it.food !== false : it.kind === "task-loop" || it.kind === "offering" || (it.kind === "train" && it.skill === "combat") ? true : undefined;
+  // task 023: an owned character's offering and task fights eat what is in hand and rest — nothing is cooked or gathered
+  // inside a fight its step did not plan (task 014's rule)
+  const fed = it.kind === "fight" ? !it.take && it.food !== false : it.kind === "task-loop" || it.kind === "offering" ? !isOwned(name) : it.kind === "train" && it.skill === "combat" ? true : undefined;
   return {
     keep: keepOf(it, ch),
     gold: (it.kind === "fight" || it.kind === "gather") ? it.take?.gold : undefined, // task 017: the fares stay in the pocket
@@ -690,14 +692,16 @@ async function craftGear(name: string, ch: Character, it: Extract<QueueItem, { k
   return !!tool && itemOf(tool)?.subtype === "tool" && (await gearSwapStep(name, ch, { weapon: tool }, ctx)) === "acted";
 }
 
-/** Before a drop fight: wear the bank's best set vs the monster (the fight item's self-heal). True ⇒ tick spent. */
+/** Before a drop fight: wear the set of the one verdict vs the monster (exec.ts fightSetFor; task 023: for an owned
+ *  character no brew set, its stacks capped at what the bank may give it). True ⇒ tick spent. */
 async function fightGear(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, monster: string, ctx: StepCtx): Promise<boolean> {
   if (!it.gear) return false;
   const desired = desiredForJob(name, ch, { kind: "fight", monster });
-  return !!desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted";
+  return !!desired && (await gearSwapStep(name, ch, desired, ctx, { utility: stackCaps(name, ch, desired) })) === "acted";
 }
 
-/** The forecast of the bank's best set vs the monster — a BIS solve, memoized per bank reference. */
+/** The forecast of the bank's best set vs the monster — a BIS solve, memoized per bank reference (a character the planner
+ *  does not own). */
 const forecastMemo = new Map<string, { bank: BankItem[]; level: number; forecast?: FightForecast }>();
 function forecastVs(ch: Character, monster: string): FightForecast | undefined {
   const key = `${ch.name}|${monster}`;
@@ -707,7 +711,13 @@ function forecastVs(ch: Character, monster: string): FightForecast | undefined {
   forecastMemo.set(key, { bank: bankItems.value, level: ch.level, forecast });
   return forecast;
 }
-const canBeat = (ch: Character, monster: string): boolean => !!forecastVs(ch, monster)?.win;
+/** Task 023, settled point 2: for an owned character the verdict of the very set its fight will wear (exec.ts
+ *  fightSetFor) — what picks a train loop's recipe or accepts an offering is what the gate admits. */
+const canBeat = (ch: Character, monster: string): boolean =>
+  isOwned(ch.name) ? !!fightSetFor(ch.name, ch, monster).forecast?.win : !!forecastVs(ch, monster)?.win;
+/** Seconds a drop fight costs: for an owned character its verdict's (the fight, the rest back to full, the potions — task
+ *  023: Third's 102 skeleton fights of 11-23 cost 79 s each, two thirds of it rest, against FIGHT_SEC's 40), else FIGHT_SEC. */
+const huntSec = (ch: Character, monster: string): number => (isOwned(ch.name) ? fightSetFor(ch.name, ch, monster).sec ?? FIGHT_SEC : FIGHT_SEC);
 
 /** Actions (gathers or fights) per unit dropped: "1 in N" rate ÷ mean quantity. */
 const dropRate = (src: { drops: DropRate[] }, code: string): number => {
@@ -733,7 +743,7 @@ function unitSec(by: Character[], code: string): number {
         const raw = subs.reduce((t, x) => { const r = (x.src as { res: Resource }).res; return t + x.g.quantity * gatherSec(r.level) * dropRate(r, x.g.code); }, 0);
         s = (raw + CRAFT_SEC) / Math.max(1, src.recipe.quantity);
       }
-    } else if (canBeat(ch, src.mon.code)) s = FIGHT_SEC * dropRate(src.mon, code);
+    } else if (canBeat(ch, src.mon.code)) s = huntSec(ch, src.mon.code) * dropRate(src.mon, code);
     best = Math.min(best, s);
   }
   return best;
@@ -984,18 +994,19 @@ async function taskGear(
 ): Promise<boolean> {
   if (!it.gear) return false;
   const desired = desiredForJob(name, ch, job);
+  const utility = job.kind === "fight" ? stackCaps(name, ch, desired) : undefined; // task 023: an owned fighter's stacks
   if (it.geared !== ch.task) {
     // Utility strip as an UNDERLAY: a fight set's potion picks override it.
     const total = { ...RESET_UTILITY_STRIP, ...(desired ?? stripAllMap()) };
-    if ((await gearSwapStep(name, ch, total, ctx, { reset: true })) === "acted") return true;
+    if ((await gearSwapStep(name, ch, total, ctx, { reset: true, utility })) === "acted") return true;
     patchItem(name, it.id, { geared: ch.task });
     return true; // converged — acquiring starts next tick
   }
   if (!desired) return false;
-  if ((await gearSwapStep(name, ch, desired, ctx)) === "acted") return true;
+  if ((await gearSwapStep(name, ch, desired, ctx, { utility })) === "acted") return true;
   // Fight-job sets may plan brewable potions in; non-fight sets have no
-  // utility wants, so this is a cheap no-op for them.
-  return job.kind === "fight" && (await provisionPotions(name, ch, desired, ctx)) === "acted";
+  // utility wants, so this is a cheap no-op for them. Task 023: never for an owned character (task 014's rule).
+  return job.kind === "fight" && !isOwned(name) && (await provisionPotions(name, ch, desired, ctx)) === "acted";
 }
 
 /** Hand the deliverable in hand to the items master (bagfuls, never via the bank). */
@@ -1216,7 +1227,9 @@ async function obtainOffering(
   depth: number,
   useBank: boolean,
 ): Promise<"acted" | "dead"> {
-  const banked = useBank ? bankQty(code) : 0;
+  // task 023, settled point 3: never a code the fleet's gear is made of that cannot be had again at will; the planner's
+  // running steps' reservations stay in the bank (exec.ts freeQty)
+  const banked = useBank && offeringMayTake(code) ? freeQty(name, code) : 0;
   if (banked > 0) {
     if (freeSpace(ch) === 0) { await bankOff(name, ctx.keep, ctx.note); return "acted"; }
     const bank = nearestBank(ch);
@@ -1255,8 +1268,9 @@ async function obtainOffering(
   const tile = nearest("monster", src.mon.code, ch);
   if (!tile) return "dead";
   const desired = desiredForJob(name, ch, { kind: "fight", monster: src.mon.code });
-  if (desired && (await gearSwapStep(name, ch, desired, ctx)) === "acted") return "acted";
-  if (desired && (await provisionPotions(name, ch, desired, ctx)) === "acted") return "acted";
+  if (desired && (await gearSwapStep(name, ch, desired, ctx, { utility: stackCaps(name, ch, desired) })) === "acted") return "acted";
+  // task 023: nothing is brewed inside an owned character's fight (task 014's rule) — its set names no potion nobody has
+  if (desired && !isOwned(name) && (await provisionPotions(name, ch, desired, ctx)) === "acted") return "acted";
   ctx.note(`offering: hunt ${src.mon.name} for ${itemName(code)} ${have}/${have + need}`);
   const out = await fightRound(name, ch, src.mon, tile, S(name), ctx);
   if (out === "no-win") return "dead";
@@ -1267,7 +1281,7 @@ async function obtainOffering(
 
 /** Dry run of obtainOffering — same sources, no actions — so an offering is only accepted when it can be completed. */
 export function canObtainOffering(ch: Character, code: string, need: number, favor: OfferingFavor | undefined, depth: number, useBank: boolean): boolean {
-  if (need <= 0 || (useBank && bankQty(code) >= need)) return true;
+  if (need <= 0 || (useBank && offeringMayTake(code) && freeQty(ch.name, code) >= need)) return true;
   const src = favorSource(ch, code, favor) ?? fieldSource(ch, code);
   if (!src) return false;
   if (src.how === "gather") return !!nearest("resource", src.res.code, ch);

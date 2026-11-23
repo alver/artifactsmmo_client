@@ -1,4 +1,6 @@
-// Self-check: public/data/atlas.json still says what the 2026-11-15 atlas said (run after `npm run atlas`):
+// Self-check: public/data/atlas.json still says what the 2026-11-15 atlas said (run after `npm run atlas`). Task 023: the
+// atlas of the repaired solver (2026-11-23) moved two pins — the Lv 20 plus tier trains on wolves at about 32 s a kill
+// (the 11-17 atlas: pigs at 49 s):
 //   node --import tsx scripts/check-atlas.mts
 import { readFileSync } from "node:fs";
 import type { Atlas } from "../src/catalog/atlas";
@@ -6,8 +8,8 @@ import type { Atlas } from "../src/catalog/atlas";
 const a = JSON.parse(readFileSync("public/data/atlas.json", "utf8")) as Atlas;
 const at = (L: number) => a.path[L - 1];
 const cases: [string, boolean][] = [
-  ["Lv 20 plus tier trains on pigs", at(20).t[1]?.m === "pig"],
-  ["Lv 20 vs pig on plus gear ≈ 49 s per kill", Math.abs((at(20).t[1]?.killSec ?? 0) - 49) <= 3],
+  ["Lv 20 plus tier trains on wolves (task 023; pigs before)", at(20).t[1]?.m === "wolf"],
+  ["Lv 20 vs wolf on plus gear ≈ 32 s per kill (task 023; 49 s vs pig before)", Math.abs((at(20).t[1]?.killSec ?? 0) - 32) <= 3],
   ["core gear stalls at Lv 29 (no safe target)", at(28).t[0] != null && at(29).t[0] == null],
   ["plus gear stalls at Lv 38", at(37).t[1] != null && at(38).t[1] == null],
   ["nine bands, 1–9 … 45–50", a.bands.length === 9 && a.bands[0].a === 1 && a.bands[8].b === 50],

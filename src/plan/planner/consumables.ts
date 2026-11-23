@@ -48,7 +48,8 @@ import type { FightForecast } from "../../sim/combat";
 import type { Lane, Step, World } from "./types";
 
 /** What a utility slot holds (src/plan/jobgear.ts UTILITY_STACK; the game answers 484 above it). */
-const STACK = 100;
+/** A utility slot's stack (the game's 484); task 023: an event member's take caps at it too (events.ts). */
+export const STACK = 100;
 const cons = (world: World): boolean => !!(world.config.consumables ?? 1);
 /** Row B: every consumable a fight wants is at hand and free. */
 export const consFree = (world: World): boolean => cons(world) && (world.config.potionK ?? 1) === 0;

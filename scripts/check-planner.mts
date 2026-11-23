@@ -38,7 +38,7 @@ import type { Need } from "../src/plan/planner/gear";
 import { recordFight, simAccuracy, simDeviations } from "../src/sim/validate";
 import { isOn } from "../src/plan/planner/gates";
 import { pickMonster, pickNode, pickRecipe, pickSource } from "../src/plan/planner/pick";
-import { bankSec, chAt, fightRec, mayOf, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setCaches, setWisdom, tollOf, travel, winLevel } from "../src/plan/planner/reach";
+import { CITY, bankSec, chAt, fightRec, mayOf, memoSizes, nearestSpot, placeOf, potionPrice, safeWin, setCaches, setWisdom, tollOf, travel, winLevel } from "../src/plan/planner/reach";
 import { road } from "../src/plan/planner/road";
 import type { RoadLine } from "../src/plan/planner/road";
 import { crafterOf, rolesFor } from "../src/plan/planner/roles";
@@ -1570,6 +1570,15 @@ const BANK_NOW = bankWorld();
   const pt0 = decide("First", t0);
   cases.push(["task 017: config.tolls 0 — the same isle world plans nothing behind the boat, and the palms wait for another layer", pt0.target !== "ach:made_up_palm:0" && !pt0.toll && waitingOf(t0).find((x) => x.achievement === "made_up_palm")?.waits === "another layer"]);
   console.log(`  tolls 0: ${pt0.key}`);
+  // task 023, section 1: the stranding — a tolled step's character ends at the bank its round trip starts from (forward.ts
+  // advance, reach.ts homeBankOf), never behind the boat (report 021: four characters on Sandwhisper Isle from 12-24, 260 gold
+  // over the floor against a 1,000-gold fare back)
+  const oneWay = { ...inW, bankGold: 23_000 }; // the round trip's 2,000 paid, 1,000 over GOLD_FLOOR: one way only
+  const ps = decide("First", oneWay);
+  const after = advance(wear({ ...oneWay, current: { First: ps } }, ps), ps);
+  const home = placeOf(after.characters.find((c) => c.name === "First")!);
+  cases.push(["task 023: gold for one way only — the isle's step ends at the bank its trip starts from, a free route to the city", ps.target === "ach:made_up_palm:0" && !!ps.toll?.via.length && after.bankGold <= 21_000 && travel(home, CITY) != null]);
+  console.log(`  the stranding: ${ps.key} (toll ${ps.toll?.gold} gold) ends at (${home.x}, ${home.y}, ${home.layer}) with ${after.bankGold} gold in the bank; a free route to the city: ${travel(home, CITY) != null}`);
   // settled point 13: tidy-left-in-flight — during a character's last tidy step, once its copies left the bank, the others'
   // tidy steps are held back by it (bank.ts tidyStep, its second line): "something is left" must still hold
   const t3 = tidyStep(BANK_NOW, "Third");

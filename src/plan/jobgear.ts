@@ -146,6 +146,9 @@ export function ownedFightRec(ch: Character, bank: BankItem[], monster: string):
  *  (an ingredient it holds for 100 runs is free), as the planner's core prices it. */
 const potionPrice = (bank: BankItem[]): ((code: string) => number) =>
   potionPriceOf((c) => bank.reduce((t, b) => t + (b.code === c ? b.quantity : 0), 0)).price;
+/** Task 023: a forecast fight's seconds as the executor prices it (bis.ts killSeconds: the fight, the rest back to full,
+ *  its potions at the bank's price) — a train loop's hunt resting between fights. */
+export const fightSeconds = (f: FightForecast, bank: BankItem[]): number => killSeconds(f, potionPrice(bank));
 
 /**
  * The best gear set for a job from what is owned right now (bank ∪ inventory ∪

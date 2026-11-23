@@ -2,7 +2,9 @@
 // full moon vampire only with health potions; the bank holds 100. At the spawn she is a member: the trip's reset takes
 // what the hour drinks (a utility slot's 100 at most), the fights drink them, the trip ends when they are gone, and she
 // resumes her own step (copper ore) in its own set. At the next spawn the reserve is empty and she does not win without
-// it: no member, and the line says why.
+// it: no member, and the line says why. Task 023, settled point 2 (c): her kills are what her take pays for — a stack of
+// 100 buys 6 of the hour's 35 at about 12 a kill and MARGIN — and the take is those 6 kills' 87; the 13 left at the next
+// spawn buy none: no member ("its stacks buy 0 kills").
 import { achievement, eventLines, fieldEvent, scenario } from "../harness/index.mts";
 import { slotCode } from "../../src/types/api";
 
@@ -26,11 +28,11 @@ await scenario(
     const trip = t.q("Ann").items.filter((it) => it.id.startsWith("pl:int:event:"));
     const fight = trip.find((it) => it.kind === "fight") as { take?: Record<string, number> } | undefined;
     t.eq(trip.map((it) => it.kind), ["gear", "fight", "gear"], "the trip: reset, fight ×∞, the step's own reset");
-    t.eq(fight?.take, { health_potion: 100 }, "the trip's fight item carries what the hour drinks, a slot's 100 at most");
+    t.eq(fight?.take, { health_potion: 87 }, "the trip's fight item carries what its kills drink, the kills a slot's 100 pays for");
     await t.run({ until: () => !t.q("Ann").items.some((it) => it.id.startsWith("pl:int:event:")) });
     await t.run({ minutes: 2 });
     const took = t.calls("bank/withdraw/item", "Ann").flatMap((c) => (c.body as { code: string; quantity: number }[]).filter((x) => x.code === "health_potion").map((x) => x.quantity));
-    t.eq(took, [100], "the trip's reset withdrew its take");
+    t.eq(took, [87], "the trip's reset withdrew its take");
     const vamp = t.calls("fight", "Ann");
     t.ok(vamp.length >= 3 && vamp.every((c) => c.note === "win"), `the fights drank them, every fight a win: ${vamp.length}`);
     t.ok(t.devlog().some((l) => l.includes("ran dry after")), "the trip's fight item ended when the potions were gone");
@@ -41,7 +43,7 @@ await scenario(
     await t.run({ minutes: 1 });
     const lines = eventLines(t);
     t.ok(lines[0]?.includes("members: Ann") && lines[0].includes("Health Potion"), `the first spawn: Ann a member, with her potions — ${lines[0]}`);
-    t.ok(!!lines[1] && lines[1].includes("members: none") && lines[1].includes("Ann — gate: no safe win"), `the second: the reserve is empty, no member — ${lines[1]}`);
+    t.ok(!!lines[1] && lines[1].includes("members: none") && lines[1].includes("Ann — its stacks buy 0 kills"), `the second: the reserve is empty, no member — ${lines[1]}`);
     t.eq(t.q("Ann").items.filter((it) => it.id.startsWith("pl:int:event:")).length, 0, "no second trip");
   },
 );

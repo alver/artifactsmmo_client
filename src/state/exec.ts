@@ -13,15 +13,16 @@ import { ApiError } from "../api/client";
 import { item, itemName, monster as monsterOf, npc as npcOf } from "../catalog";
 import { currentFighter, fighterForGear } from "../sim/stats";
 import { simulate } from "../sim/combat";
-import { jobGear, nextGearAction } from "../plan/jobgear";
+import { fightSeconds, jobGear, jobSetFromRecommendation, nextGearAction, ownedFightRec } from "../plan/jobgear";
 import { carriedFood, foodPlan, foodQuantity, gatherSourceFor } from "../plan/consumables";
-import { bankDetails, bankItems, characters } from "./store";
+import { bankDetails, bankItems, characters, isOwned } from "./store";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, moveTo, nearest, nearestBank, noSlotFor, reportNoSlot, step } from "./loopkit";
-import { slotCode } from "../types/api";
+import { slotCode, slotQuantity } from "../types/api";
 import type { AcquisitionStep, FoodSpec, GearJob } from "../plan/types";
 import type { Place } from "../plan/route";
-import type { Character, GearSlot } from "../types/api";
+import type { BankItem, Character, GearSlot } from "../types/api";
 import type { CraftRecipe, Monster } from "../types/catalog";
+import type { FightForecast } from "../sim/combat";
 
 export const invCount = (ch: Character): number => (ch.inventory || []).reduce((s, it) => s + (it.quantity || 0), 0);
 const skillLevel = (ch: Character, skill: string): number => (ch as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
@@ -235,22 +236,87 @@ export async function gearSwapStep(
 }
 
 /**
- * jobGear for the live-job callers (standalone loops, hand-added queue items).
- * Fight sets run the BIS solver (thousands of simulate calls), so they are
- * memoized per character until the bank contents (by reference — replaced
- * wholesale on every bank echo), level, or job change; gather/craft sets are a
- * cheap scan and computed fresh.
+ * Task 023: what the planner's running steps hold for themselves — stock.ts reserved on the live World, every character's
+ * but `name`'s (state/planner.ts sets it). An owned character's own fight solves and its offerings leave it in the bank.
+ * Nothing until the planner runs (a check, the tab).
  */
-const fightSetMemo = new Map<string, { bank: unknown; level: number; key: string; desired?: Partial<Record<GearSlot, string>> }>();
+let reservedOf: (name: string) => Map<string, number> = () => new Map();
+export const setReservedOf = (f: (name: string) => Map<string, number>): void => void (reservedOf = f);
+/** Bank stock of a code a character may take for its own fights and offerings: for an owned one, the bank less what the
+ *  others' running steps reserved. */
+export const freeQty = (name: string, code: string): number => Math.max(0, bankQty(code) - (isOwned(name) ? (reservedOf(name).get(code) ?? 0) : 0));
+
+const freeMemo = new Map<string, { bank: BankItem[]; sig: string; free: BankItem[] }>();
+/** The bank an owned character's own fight solve reads (freeQty for every code), and the reservations' signature. */
+function freeBank(name: string): { bank: BankItem[]; sig: string } {
+  const res = reservedOf(name);
+  const sig = [...res].filter(([, q]) => q > 0).map(([c, q]) => `${c}:${q}`).sort().join(",");
+  if (!sig) return { bank: bankItems.value, sig };
+  const m = freeMemo.get(name);
+  if (m && m.bank === bankItems.value && m.sig === sig) return { bank: m.free, sig };
+  const q = new Map<string, number>();
+  for (const b of bankItems.value) q.set(b.code, (q.get(b.code) ?? 0) + b.quantity);
+  const free = [...q].map(([code, n]) => ({ code, quantity: n - (res.get(code) ?? 0) })).filter((b) => b.quantity > 0);
+  freeMemo.set(name, { bank: bankItems.value, sig, free });
+  return { bank: free, sig };
+}
+
+/** A fight's set, the forecast of exactly that set (what the gate sees once it is worn) and its seconds a kill. */
+export interface FightSet { desired?: Partial<Record<GearSlot, string>>; forecast?: FightForecast; sec?: number }
+const UTILITY = ["utility1", "utility2"] as const;
+/**
+ * jobGear for the live-job callers. Fight sets run the BIS solver (thousands of simulate calls), so they are memoized per
+ * character and job until the bank contents (by reference — replaced wholesale on every bank echo), the others' reservations
+ * or the level change — task 023, settled point 2 (a): or a utility stack the set named is gone (not worn, not in the bag,
+ * none the bank may give): a drained stack re-solves. Gather/craft sets are a cheap scan and computed fresh.
+ */
+const fightSetMemo = new Map<string, FightSet & { bank: unknown; sig: string; level: number }>();
 /** Task 014: `take` — an owned step's planned consumables (the fight item's): its solve counts only those potions. */
 export function desiredForJob(name: string, ch: Character, job: GearJob, take?: Record<string, number>): Partial<Record<GearSlot, string>> | undefined {
   if (job.kind !== "fight") return jobGear(ch, bankItems.value, job);
-  const key = take ? `${job.monster}|${JSON.stringify(take)}` : job.monster;
-  const m = fightSetMemo.get(name);
-  if (m && m.bank === bankItems.value && m.level === ch.level && m.key === key) return m.desired;
-  const desired = jobGear(ch, bankItems.value, job, take);
-  fightSetMemo.set(name, { bank: bankItems.value, level: ch.level, key, desired });
-  return desired;
+  return fightSetFor(name, ch, job.monster, take).desired;
+}
+/**
+ * Task 023, settled point 2: one verdict. The set a character's fight wears and the forecast of that very set — what
+ * chooses a fight (queue.ts canBeat: a train loop's recipe, an offering's dry run) and what the gate admits it by
+ * (fightRound) judge the same set with the same stacks. An owned character outside a planned take (a train loop's hunt,
+ * an offering's, a task's) gets no brew set (b): the best set of what it holds and the bank may give it (freeQty), its
+ * potions priced as the executor prices them; with a take, the take's solve (task 014); a character the planner does not
+ * own, today's jobGear with its brew escalation (provisionPotions brews for it).
+ */
+export function fightSetFor(name: string, ch: Character, monster: string, take?: Record<string, number>): FightSet {
+  const own = !take && isOwned(name);
+  const { bank, sig } = own ? freeBank(name) : { bank: bankItems.value, sig: "" };
+  const free = (c: string): number => (own ? freeQty(name, c) : bankQty(c));
+  const key = `${name}|${monster}${take ? `|${JSON.stringify(take)}` : ""}`;
+  const m = fightSetMemo.get(key);
+  const gone = (d: FightSet["desired"]): boolean => UTILITY.some((g) => {
+    const c = d?.[g];
+    return !!c && !UTILITY.some((u) => slotCode(ch, u) === c) && invQty(ch, c) === 0 && free(c) === 0;
+  });
+  if (m && m.bank === bankItems.value && m.sig === sig && m.level === ch.level && !gone(m.desired)) return m;
+  let desired: FightSet["desired"];
+  if (own) {
+    const rec = ownedFightRec(ch, bank, monster);
+    desired = rec && jobSetFromRecommendation(ch, bankItems.value, rec);
+  } else desired = jobGear(ch, bankItems.value, { kind: "fight", monster }, take);
+  const mon = monsterOf(monster);
+  const forecast = desired && mon ? simulate(fighterForGear(ch, Object.values(desired).filter((c): c is string => !!c)), mon) : undefined;
+  const v = { bank: bankItems.value, sig, level: ch.level, desired, forecast, sec: forecast && fightSeconds(forecast, bank) };
+  fightSetMemo.set(key, v);
+  return v;
+}
+/** Task 023, settled point 2 (b): what a swap toward an owned character's own fight set (no take) may put in its utility
+ *  slots — what it wears and holds of a potion plus what the bank may give it (freeQty), one stack at most; undefined for a
+ *  character the planner does not own (a whole stack, as before). */
+export function stackCaps(name: string, ch: Character, desired: Partial<Record<GearSlot, string>> | undefined): Record<string, number> | undefined {
+  if (!isOwned(name) || !desired) return undefined;
+  const out: Record<string, number> = {};
+  for (const g of UTILITY) {
+    const c = desired[g];
+    if (c) out[c] = Math.min(100, UTILITY.reduce((t, u) => t + (slotCode(ch, u) === c ? slotQuantity(ch, u) : 0), 0) + invQty(ch, c) + freeQty(name, c));
+  }
+  return out;
 }
 
 /** What one runStep call actually did — the queue counts it toward the item's progress. */
@@ -462,8 +528,8 @@ export async function provisionPotions(
     const recipe = item(want)?.craft;
     if (!recipe || skillLevel(ch, recipe.skill) < recipe.level) continue;
     // Units a fight drinks, by the forecast of the set being brewed for (desiredForJob's memo knows its monster).
-    const memo = fightSetMemo.get(name);
-    const mon = memo?.desired === desired ? monsterOf(memo.key) : undefined;
+    const memo = [...fightSetMemo].find(([k, v]) => k.startsWith(`${name}|`) && v.desired === desired);
+    const mon = memo ? monsterOf(memo[0].split("|")[1]) : undefined;
     const perFight = mon ? simulate(fighterForGear(ch, Object.values(desired).filter((c): c is string => !!c)), mon).used[want] ?? 0 : 1;
     const target = Math.min(BREW_MAX, Math.max(1, Math.ceil((ctx.fightsLeft ?? 1) * perFight)));
     if ((await produceOnce(name, ch, want, recipe, target, ctx)) === "acted") return "acted";

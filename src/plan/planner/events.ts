@@ -18,16 +18,16 @@
 import { catalog, item, itemName, monster as monsterOf, resource as resourceOf, tileAt } from "../../catalog";
 import type { GameEvent } from "../../catalog";
 import { killSeconds } from "../bis";
-import { jobGear } from "../jobgear";
-import { EVENT_MIN_SEC, EVENT_SEEN_SEC, SPAWN_LOG, STEP_BANK_SEC, killLog } from "./config";
+import { jobGear, ownedQtyOf } from "../jobgear";
+import { EVENT_MIN_SEC, EVENT_SEEN_SEC, MARGIN, SPAWN_LOG, STEP_BANK_SEC, killLog } from "./config";
 import { actionSec, killWalk, levelOf, perOf } from "./cost";
 import { WEAR_SLOTS } from "./decide";
 import { isOn } from "./gates";
 import { gearPieces, pieceParent } from "./gear";
 import { CITY, bankSec, chAt, fightRec, openOf, placeOf, planRec, potionPrice, safeWin, travel, winLevel, wins } from "./reach";
 import { rolesFor } from "./roles";
-import { available, poolBank } from "./stock";
-import { potionSet, takeOf, useOf } from "./consumables";
+import { available, poolBank, reserved } from "./stock";
+import { STACK, potionSet, takeOf, useOf } from "./consumables";
 import { objectiveParents, supplyNeeds } from "./supply";
 import { perUnit, sourceFor, targetsOf, unhandledOf } from "./targets";
 import type { Parent } from "./supply";
@@ -308,12 +308,62 @@ function setOf(c: Content, ch: Character, world: World): Record<string, string> 
   for (const g of WEAR_SLOTS) if (set?.[g]) out[g] = set[g]!;
   return out;
 }
-/** The world with a member's set out of the others' pool (its step underneath waits: its own reservations stay). */
-function withSet(world: World, name: string, set: Record<string, string>, take?: Record<string, number>): World {
-  const cur = world.current[name];
+/** The world with a member's set out of the others' pool (its step underneath waits: its own reservations stay). Task 023,
+ *  settled point 2 (d): the set is booked beside the step underneath's `wear`, never over it (the trip's reset banks the
+ *  step's pieces, its way back wears them again) — a code as many times as the more of the two wears it; the take less what
+ *  the member holds already (its reset banks its bag and worn stacks first). */
+function withSet(world: World, ch: Character, set: Record<string, string>, take?: Record<string, number>): World {
+  const name = ch.name, cur = world.current[name];
   const stub = { key: `event@${name}`, target: "event", character: name, as: "fallback", work: { kind: "task" }, units: 0, hours: 0, score: 0, why: "" } as Step;
-  return { ...world, current: { ...world.current, [name]: { ...(cur ?? stub), wear: { ...(cur?.wear ?? {}), ...set }, ...(take ? { withdraw: { ...(cur?.withdraw ?? {}), ...take } } : {}) } } };
+  const count = (m: Record<string, string>): Map<string, number> => { const n = new Map<string, number>(); for (const c of Object.values(m)) n.set(c, (n.get(c) ?? 0) + 1); return n; };
+  const under = count(cur?.wear ?? {}), trip = count(set);
+  const wear: Record<string, string> = { ...(cur?.wear ?? {}) };
+  for (const [c, n] of trip) for (let i = under.get(c) ?? 0; i < n; i++) wear[`event:${c}:${i}`] = c;
+  const held = ownedQtyOf(ch, []);
+  const left = take && Object.fromEntries(Object.entries(take).map(([c, q]) => [c, q - (held.get(c) ?? 0)]).filter(([, q]) => (q as number) > 0));
+  return { ...world, current: { ...world.current, [name]: { ...(cur ?? stub), wear, ...(left ? { withdraw: { ...(cur?.withdraw ?? {}), ...left } } : {}) } } };
 }
+
+const isCons = (c: string): boolean => ["utility", "consumable"].includes(item(c)?.type ?? "");
+const stockMemo = new WeakMap<World, Map<string, World>>();
+/**
+ * Task 023, settled point 2 (c): the World a member's set, kills and take are solved on — the stock its take may draw after
+ * its reset: of a potion or a food, what the bank holds less the others' reservations (stock.ts available, the members
+ * before it included), plus its own bag and worn stacks (the reset banks them first, then withdraws); its gear, the pool the
+ * members before it left (stock.ts poolBank). `own`: a member already on its trip — what it carries (its take while its
+ * reset is still to run, else what it holds), no bank: no second take inside a spawn. The World itself when that changes
+ * nothing a solve reads (the forward model: no bags, no worn stacks — only a potion all reserved by the others differs).
+ */
+function stockWorld(w: World, ch: Character, own?: Record<string, number>): World {
+  let m = stockMemo.get(w);
+  if (!m) stockMemo.set(w, (m = new Map()));
+  const fromBank = !own;
+  const k = `${ch.name}|${own ? JSON.stringify(own) : ""}`;
+  const hit = m.get(k);
+  if (hit) return hit;
+  const held = own ? new Map(Object.entries(own)) : ownedQtyOf(ch, []);
+  const stock = (c: string): number => (fromBank ? available(c, w, ch.name) : 0) + (isCons(c) ? (held.get(c) ?? 0) : 0);
+  const pool = poolBank(w, ch.name);
+  const codes = new Set([...w.bank.map((b) => b.code), ...held.keys()].filter(isCons));
+  // the World itself reads the bank's stock (available) for a take and a food, the pool (poolBank keeps a reserved potion)
+  // for a potion: it differs with a consumable in the bag or a worn stack, or a pool potion the others reserved whole
+  const differs = !fromBank || [...held].some(([c, q]) => isCons(c) && q > 0) || [...codes].some((c) => item(c)?.type === "utility" && pool.some((b) => b.code === c) && !(stock(c) > 0));
+  let out = w;
+  if (differs) {
+    const bank = pool.filter((b) => !isCons(b.code));
+    for (const c of codes) if (stock(c) > 0) bank.push({ code: c, quantity: stock(c) });
+    // the reservations are off the bank already: none left to take off twice (the gold budget keeps the others' off)
+    out = { ...w, bank, current: {}, bankGold: Math.max(0, w.bankGold - (reserved(w, ch.name).get("gold") ?? 0)) };
+  }
+  m.set(k, out);
+  return out;
+}
+/** Task 023, settled point 2 (c): the kills a member's consumables pay for at its forecast's use a kill (useOf), MARGIN kept —
+ *  as consumables.ts fightTake caps a fight step's. ∞: it uses none. */
+const paidKills = (perKill: Record<string, number> | undefined, stock: (c: string) => number): number =>
+  Object.entries(perKill ?? {}).reduce((k, [c, u]) => Math.min(k, Math.floor(stock(c) / (u * MARGIN) + 1e-9)), Infinity);
+/** A member whose stacks pay for fewer kills is none (decide.ts SLIVER: a kill step's sliver, the same 5). */
+const SLIVER = 5;
 
 const fmtUntil = (ms: number): string => new Date(ms).toISOString().slice(11, 16);
 const f0 = (x: number): string => (!Number.isFinite(x) ? "∞" : String(Math.round(x)));
@@ -328,7 +378,14 @@ const f0 = (x: number): string => (!Number.isFinite(x) ? "∞" : String(Math.rou
  * with "done:<this key>" came back from it early and is not sent again. `demand` may be passed in (the forward model
  * computes it on its own World).
  */
-export function eventMembers(e: ActiveEvent, world: World, busy: Record<string, string> = {}, demand?: Demand): EventPlan {
+export function eventMembers(e: ActiveEvent, world: World, busy: Record<string, string> = {}, demand?: Demand, trips: Trips = {}): EventPlan {
+  return membersOf(e, world, busy, demand, trips).plan;
+}
+/** Task 023, settled point 2 (d): a member already on a spawn's trip — the set and the take its trip carries, and whether its
+ *  reset is still to run (it has not withdrawn them yet) — the runtime's queue: state/eventorders.ts. */
+export type Trips = Record<string, { wear?: Record<string, string>; take?: Record<string, number>; reset?: boolean }>;
+/** eventMembers, and the World with its members' sets and takes booked (eventPlans hands it to the next spawn). */
+function membersOf(e: ActiveEvent, world: World, busy: Record<string, string>, demand: Demand | undefined, trips: Trips): { plan: EventPlan; world: World } {
   const key = `${e.code}@${e.created_at}`;
   const ev = eventOf(e.code);
   const cc = e.map.interactions?.content;
@@ -341,9 +398,9 @@ export function eventMembers(e: ActiveEvent, world: World, busy: Record<string, 
   const unit = content.type === "monster" ? "kills" : "gathers";
   const head = `event ${e.code} at (${at.x}, ${at.y}) until ${fmtUntil(until)}Z`;
   const what = (i: DemandItem): string => `${i.what} for ${i.for} (${f0(i.actions)} ${unit})`;
-  const done = (why: string): EventPlan => {
+  const done = (why: string): { plan: EventPlan; world: World } => {
     for (const ch of owned) others.push({ name: ch.name, member: false, why });
-    return { key, code: e.code, content, at, until, demand: d, members, others, line: `${head} — ${why}` };
+    return { plan: { key, code: e.code, content, at, until, demand: d, members, others, line: `${head} — ${why}` }, world };
   };
   if (!ev || (cc?.type !== "monster" && cc?.type !== "resource")) return done("not a monster or resource event");
   if (!d.items.length) return done("nobody needs it: no open objective kills or gathers its content, no open parent is short of its drops");
@@ -353,17 +410,11 @@ export function eventMembers(e: ActiveEvent, world: World, busy: Record<string, 
 
   let left = d.actions;
   const rest: { ch: Character; sec: number }[] = []; // seconds of the spawn each candidate would work
+  const onTrip: Character[] = [];
   for (const ch of owned) {
     const b = busy[ch.name]?.startsWith("done:") && busy[ch.name] !== `done:${key}` ? undefined : busy[ch.name]; // done elsewhere: free here
     if (b === `done:${key}`) { others.push({ name: ch.name, member: false, why: "its trip to this spawn ended early" }); continue; }
-    if (b === key) {
-      const sec = contentSec(content, ch, world);
-      const use = Math.max(0, (until - world.now) / 1000);
-      const n = Number.isFinite(sec) ? use / sec : 0;
-      members.push({ name: ch.name, member: true, why: `on the trip, ≈${f0(n)} ${unit} left`, actions: n, use });
-      left -= n;
-      continue;
-    }
+    if (b === key) { onTrip.push(ch); continue; }
     if (b === "group") { others.push({ name: ch.name, member: false, why: "in a group fight" }); continue; }
     if (b === "offering") { others.push({ name: ch.name, member: false, why: "its offering first (after 22:00 UTC)" }); continue; }
     if (b) { others.push({ name: ch.name, member: false, why: `on the trip to ${b.split("@")[0]}` }); continue; }
@@ -378,51 +429,81 @@ export function eventMembers(e: ActiveEvent, world: World, busy: Record<string, 
     if (sec < EVENT_MIN_SEC) { others.push({ name: ch.name, member: false, why: `too far: ${Math.max(0, Math.floor(sec / 60))} min would be left` }); continue; }
     rest.push({ ch, sec });
   }
-  // one at a time: the most actions first, on the pool the members before it left
   let w = world;
+  const capOn = !!(world.config.tolls ?? 1);
+  // task 023, settled point 2 (d): a member already on the trip holds its set and its take, or takes them at its reset — none
+  // of it is anyone else's (the 06:00 UTC trip of 11-22: Third's reset had not withdrawn the one Tromatising Mask by the next
+  // poll, which booked it for Second as well)
+  for (const ch of onTrip) w = withSet(w, ch, trips[ch.name]?.wear ?? {}, trips[ch.name]?.reset ? trips[ch.name]?.take : undefined);
+  for (const ch of onTrip) {
+    // (c): what it carries pays for its kills — its take while its reset is still to run, else what it holds; no second take
+    const t = trips[ch.name];
+    const own: Record<string, number> = t?.reset ? { ...t.take } : Object.fromEntries([...ownedQtyOf(ch, [])].filter(([c]) => isCons(c)));
+    const use = Math.max(0, (until - world.now) / 1000);
+    const wm = content.type === "monster" ? stockWorld(w, ch, own) : w;
+    const sec = contentSec(content, ch, wm);
+    const time = Number.isFinite(sec) ? use / sec : 0;
+    const paid = capOn && content.type === "monster" ? paidKills(useOf(wm, ch, content.code), (c) => own[c] ?? 0) : Infinity;
+    const n = Math.min(time, paid);
+    members.push({ name: ch.name, member: true, why: `on the trip, ≈${f0(n)} ${unit} left${paid < time ? ` (its stacks buy ${f0(paid)})` : ""}`, actions: n, use: Number.isFinite(sec) ? n * sec : 0 });
+    left -= n;
+  }
+  // one at a time: the most actions first — task 023 (c): the actions its stacks pay for — on the pool the members before it left
   const gate = new Map<string, string>();
+  const sliver = world.config.sliver ?? SLIVER;
   while (rest.length && left > 1e-9) {
-    let best: { i: number; n: number; s: number } | undefined;
+    type Pick = { i: number; n: number; s: number; time: number; paid: number; wm: World; perKill?: Record<string, number>; cap: (c: string) => number };
+    let best: Pick | undefined;
     rest.forEach((x, i) => {
-      const s = contentSec(content, x.ch, w);
+      // (c): the set, its kills and its take from one stock — what the take may draw after the reset
+      const wm = content.type === "monster" ? stockWorld(w, x.ch) : w;
+      const s = contentSec(content, x.ch, wm);
       if (!Number.isFinite(s)) return void gate.set(x.ch.name, members.length ? "gate: no safe win on the pool the members before it left" : "gate: no safe win");
       gate.delete(x.ch.name);
-      const n = x.sec / s;
-      if (!best || n > best.n + 1e-9 || (Math.abs(n - best.n) <= 1e-9 && x.ch.name < rest[best.i].ch.name)) best = { i, n, s };
+      const time = x.sec / s;
+      // task 014, settled point 7: the trip's reset takes what the hour drinks and eats (its set's potions, its pool's food)
+      const perKill = content.type === "monster" ? useOf(wm, x.ch, content.code) : undefined;
+      // task 017, settled point 13: what the trip plans is what the bank holds for it — the stock this member may take (the
+      // others' running steps and the members before it off), a potion one stack, the food at most a third of the bag (the
+      // reset's cap); the full moon trip of 01:12 UTC on 11-21 planned 100 + 100 potions and 72 trout of a bank that held 54, 0 and 9
+      const stock = (c: string): number => available(c, wm, x.ch.name);
+      const cap = (c: string): number => Math.floor(Math.min(stock(c), item(c)?.type === "utility" ? STACK : x.ch.inventory_max_items / 3) + 1e-9);
+      // task 023 (c): its kills are what the spawn's time gives and its take pays for, the lesser (consumables.ts fightTake)
+      const paid = capOn ? paidKills(perKill, cap) : Infinity;
+      const n = Math.min(time, paid);
+      if (!best || n > best.n + 1e-9 || (Math.abs(n - best.n) <= 1e-9 && x.ch.name < rest[best.i].ch.name)) best = { i, n, s, time, paid, wm, perKill, cap };
     });
     if (!best) break;
-    const b = best as { i: number; n: number; s: number };
+    const b = best as Pick;
     const x = rest.splice(b.i, 1)[0];
-    const set = setOf(content, x.ch, w);
-    // task 014, settled point 7: the trip's reset takes what the hour drinks and eats (its set's potions, its pool's food)
-    const perKill = content.type === "monster" ? useOf(w, x.ch, content.code) : undefined;
-    // task 017, settled point 13: what the trip plans is what the bank holds for it — the stock this member may take (the
-    // others' running steps and the members before it off), the food at most a third of the bag (the reset's cap); the
-    // full moon trip of 01:12 UTC on 11-21 planned 100 + 100 potions and 72 trout of a bank that held 54, 0 and 9
-    const want = takeOf(perKill, b.n);
-    const take = want && (world.config.tolls ?? 1)
-      ? Object.fromEntries(Object.entries(want).map(([c, q]) => [c, Math.min(q, Math.floor(available(c, w, x.ch.name) + 1e-9), item(c)?.type === "utility" ? q : Math.floor(x.ch.inventory_max_items / 3))]).filter(([, q]) => (q as number) > 0))
-      : want;
-    members.push({ name: x.ch.name, member: true, why: `≈${f0(b.n)} ${unit} in ${Math.round(x.sec / 60)} min${take && Object.keys(take).length ? ` with ${Object.entries(take).map(([c, q]) => `${q} ${itemName(c)}`).join(" and ")}` : ""}`, actions: b.n, use: x.sec, set, perKill, take });
+    if (b.paid < sliver) { others.push({ name: x.ch.name, member: false, why: `its stacks buy ${f0(b.paid)} ${unit}` }); continue; }
+    const set = setOf(content, x.ch, b.wm);
+    const want = takeOf(b.perKill, b.n);
+    const take = want && capOn ? Object.fromEntries(Object.entries(want).map(([c, q]) => [c, Math.min(q, b.cap(c))]).filter(([, q]) => (q as number) > 0)) : want;
+    const use = b.n * b.s;
+    const capped = b.paid < b.time ? ` (its stacks buy ${f0(b.paid)}; the spawn's time ${f0(b.time)})` : "";
+    members.push({ name: x.ch.name, member: true, why: `≈${f0(b.n)} ${unit} in ${Math.round(use / 60)} min${take && Object.keys(take).length ? ` with ${Object.entries(take).map(([c, q]) => `${q} ${itemName(c)}`).join(" and ")}` : ""}${capped}`, actions: b.n, use, set, perKill: b.perKill, take });
     left -= b.n;
-    w = withSet(w, x.ch.name, set, take);
+    w = withSet(w, x.ch, set, take);
   }
   for (const x of rest) others.push({ name: x.ch.name, member: false, why: gate.get(x.ch.name) ?? "not needed: the members bring the demand" });
   const line = `${head} — demand: ${fit.map(what).join("; ")}${late.length ? `; ${late.join("; ")}` : ""} → ${f0(d.actions)} ${unit}; members: ${members.map((m) => `${m.name} (${m.why})`).join(", ") || "none"}${others.length ? `; not: ${others.map((o) => `${o.name} — ${o.why}`).join(", ")}` : ""}`;
-  return { key, code: e.code, content, at, until, demand: d, members, others, line };
+  return { plan: { key, code: e.code, content, at, until, demand: d, members, others, line }, world: w };
 }
 
 /** Settled point 3, two spawns at once: the demand with the better score takes its members first. */
-export function eventPlans(events: ActiveEvent[], world: World, busy: Record<string, string> = {}): EventPlan[] {
+export function eventPlans(events: ActiveEvent[], world: World, busy: Record<string, string> = {}, trips: Trips = {}): EventPlan[] {
   const field = events.filter((e) => ["monster", "resource"].includes(e.map.interactions?.content?.type ?? "") && Date.parse(e.expiration) > world.now);
   const scored = field.map((e) => { const ev = eventOf(e.code); return { e, d: ev ? eventDemand(ev, world) : undefined }; })
     .sort((a, b) => (b.d?.score ?? 0) - (a.d?.score ?? 0) || (a.e.code < b.e.code ? -1 : a.e.code > b.e.code ? 1 : 0));
   const taken = { ...busy };
   const out: EventPlan[] = [];
+  let w = world; // task 023, settled point 2 (d): the next spawn's members plan on what this one's left
   for (const { e, d } of scored) {
-    const p = eventMembers(e, world, taken, d);
-    for (const m of p.members) taken[m.name] = p.key;
-    out.push(p);
+    const r = membersOf(e, w, taken, d, trips);
+    w = r.world;
+    for (const m of r.plan.members) taken[m.name] = r.plan.key;
+    out.push(r.plan);
   }
   return out;
 }

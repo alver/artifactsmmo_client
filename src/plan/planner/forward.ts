@@ -25,7 +25,7 @@ import { decide, met } from "./decide";
 import { isOn } from "./gates";
 import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf, stretch } from "./events";
 import { consFree, consumed, potionSet } from "./consumables";
-import { fareShort, fightRec, winLevel } from "./reach";
+import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
 import { available } from "./stock";
 import { billOf } from "./supply";
 import { isDone, targetsOf, unhandledOf } from "./targets";
@@ -191,7 +191,9 @@ export function advance(world: World, step: Step): World {
     ch[`${w.lane}_xp`] = 0;
   }
   ch.hp = ch.max_hp;
-  if (step.place) Object.assign(ch, { x: step.place.x, y: step.place.y, layer: step.place.layer });
+  // task 023 (022's P0s): a tolled step's last item walks back to a bank on the home side, as in play — never stranded
+  const at = step.place && step.toll?.via.length ? homeBankOf(step.place) ?? step.place : step.place;
+  if (at) Object.assign(ch, { x: at.x, y: at.y, layer: at.layer });
 
   const characters = world.characters.map((c, i) => (i === idx ? (ch as Character) : c));
   const top = Math.max(...characters.map((c) => c.level));

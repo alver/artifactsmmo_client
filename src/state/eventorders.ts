@@ -17,13 +17,20 @@ import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { achievements, bankDetails, bankItems, characters, isOwned, pushLog } from "./store";
 import { queues } from "./queue";
+import { setReservedOf } from "./exec";
 import { interrupt, planner, worldOf } from "./planner";
+import { reserved } from "../plan/planner/stock";
 import { eventKey, liveEvents } from "./events";
 import { merchantOrder, type EventOrder } from "../plan/events";
 import { itemsOf } from "../plan/planner/compile";
 import { eventDemandOpen, eventPlans as planEvents, tripOf } from "../plan/planner/events";
+import type { Trips } from "../plan/planner/events";
 import type { QueueItemInput } from "../plan/queue";
 import type { ActiveEvent, Character } from "../types/api";
+
+// Task 023, settled point 2: an owned character's own fight solves and its offerings leave what the planner's running steps
+// reserved in the bank (exec.ts freeQty) — the hook is set here, the runtime module that reads the planner's World already
+if (IS_SERVER) setReservedOf((name) => reserved(worldOf(Date.now()), name));
 
 const KEY = "ammo:v1:eventOrders";
 function load(): Record<string, string> {
@@ -86,6 +93,18 @@ function busyOf(names: string[]): Record<string, string> {
   }
   return out;
 }
+/** Task 023, settled point 2 (d): the set and the take each trip in the queues carries (its fight item's `wear` and `take`) —
+ *  the core books them, so the members after it never plan on a piece or a potion its reset has not withdrawn yet. */
+function tripsOf(names: string[]): Trips {
+  const out: Trips = {};
+  for (const n of names) {
+    const items = (queues.value[n]?.items ?? []).filter((it) => it.id.startsWith(EVENT_PREFIX));
+    const fight = items.find((it) => it.kind === "fight");
+    // the trip's reset (tripOf's first item, `…:0`) still in the queue: its take is not withdrawn yet
+    if (fight?.kind === "fight") out[n] = { wear: fight.wear, take: fight.take, reset: items.some((it) => it.kind === "gear" && it.id.endsWith(":0")) };
+  }
+  return out;
+}
 /** Spawn key → the owned characters sent there (this process): one whose trip was removed (a pause) is not sent to that
  *  spawn again — `done:<key>` to the core. */
 const sent = new Map<string, Set<string>>();
@@ -109,7 +128,7 @@ function ownedEvents(live: ActiveEvent[], plans: Record<string, string>, seen: M
   // a spawn nobody needs, or whose demand does not fit, stays so for its hour: not evaluated again (a gear-needs read)
   const open = field.filter((e) => !/^nothing to do — (nobody needs it|does not fit)/.test(plans[eventKey(e)] ?? ""));
   if (!open.length) return;
-  for (const p of planEvents(open, worldOf(Date.now()), busy)) {
+  for (const p of planEvents(open, worldOf(Date.now()), busy, tripsOf(names))) {
     const joined: string[] = [];
     for (const m of p.members) {
       if (busy[m.name] === p.key) continue; // on the trip already

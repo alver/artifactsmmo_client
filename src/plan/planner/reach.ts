@@ -178,6 +178,11 @@ function nearestBankOf(p: Place, may: May): { sec: number; place?: Place } {
   }
   return s;
 }
+/** Task 023 (022's P0s): every transition open — the bank a tolled trip comes home to (the toll's round trip starts and
+ *  ends at the bank nearest its place, never the island's conditional bank). */
+const ALL_OPEN: May = () => true;
+mayKeys.set(ALL_OPEN, "all");
+export const homeBankOf = (p: Place): Place | undefined => nearestBankOf(p, ALL_OPEN).place;
 /** Seconds from a place to the nearest bank it reaches by a free route (or through `may`). */
 export const bankSec = (p: Place, may: May = FREE): number => nearestBankOf(p, may).sec;
 
