@@ -3,7 +3,13 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-23 (midday), after report 023 was accepted (decision 58). **Alex had already restarted
+Last updated: 2026-11-23 (afternoon), after report 024 was accepted (decision 60) and **task 025, the fight
+round, was written** (decision 61 — Alex: risk is part of the game, fights at a 75–80% chance of winning are
+fine; the leaders are read once a day on a schedule and the trends looked at in a week). 024 changed nothing
+in the engine: no restart; the service runs `0yfi` (`7daf5e1`), 33 points at 12:58 UTC, all five on gathering
+steps. Alex starts 025 at once; its report is discussed in a new chat. **025 changes the engine: a restart
+follows its acceptance.**
+Before that, at midday: report 023 was accepted (decision 58). **Alex had already restarted
 the service on its code** before the chat looked: run `0yfi`, boot 11:48:03 UTC on 11-23, commit `7daf5e1`, all
 five steps re-attached, the first outlook 361.6 s (46 expected by 12-14), 33 points at 11:58 UTC. The reference
 road fell from 100 to **82** (the repairs 94, the new atlas 82: consumables by need now hold for works that never
@@ -1883,6 +1889,98 @@ accepted, Alex restarted the service (run `[yewz]`,
       — and the five largest distances at this fleet's own stage, with the code that makes each;
     - **nothing in `src/` changes, no restart**; the needs' rule (decision 58) and the gear road wait for
       this report. The comparison of this fleet's own fights, forecast against outcome, is not in 024.
+60. **Report 024 accepted** (2026-11-23, afternoon). Checked in the chat: `.git` — `HEAD` on `rework`,
+    `refs/heads/rework` and `refs/remotes/origin/rework` both at `0f94809` (`024: leaders`, on top of `7ae7d3c`
+    Rework notes, by `.git/logs/HEAD`), `main` at `edaaf23`; `logs/status.json` at 12:58 UTC: run `0yfi`,
+    `7daf5e1`, 33 points, bank 106 codes of 130 slots, gold 146,798, all five on gathering steps, the outlook
+    of 11:50 UTC 46. Not checked there: the gate, the tools' rebuild by hash, the request log (the chat read
+    the report and `tasks/`). **No engine change, no restart.**
+    - **The read**: 53 public requests of the 150 (one achievements page an account, not three), 26 accounts
+      (the first 25 and `alverus`, 38th with 33), 1.27 MB under `docs/strategy/024/snapshot/2026-11-23T1222Z/`;
+      the base holds 022's read of 11-22 as an earlier snapshot (12 accounts in both, 17.0 h apart). The
+      public achievements read carries the progress of open achievements.
+    - **The verdict: the forecast is not too dark, the safe rule is.** The simulator expects a win in 59 of
+      the leaders' 60 solo fights and its stats agree with the API's on every stat but initiative; `safeWin`
+      (`reach.ts:475`, the pessimistic pass of `bis.ts:330`) refuses 18 of the 60 and **16 of the 27 that give
+      XP**, fights that win 98.4% of 2,000 rolled fights (median; minimum 52.8%), 99.9% with the API's
+      initiative (minimum 90.0%). On this fleet's own pool there is no safe XP monster from combat 33; "a win
+      is enough" with a healing rune and no potion gives rat or vampire at 11–25 h a level through 35.
+    - **Initiative**: the API's is the worn items' + 100 on 40 of 40 fight sets; the model starts at 0
+      (`stats.ts:49-65`, `:74-76`, `:109`), so its monster strikes first in 31 of 65 fights, wrongly in 27.
+    - **Sustain**: 36 of 40 leaders' fight sets wear a rune (healing 25, burn 8), 27 carry cooked food (median
+      37 units), 2 a restore potion; this fleet none of the three. The planner's best set of the bank drinks
+      1–3 potions a fight against every monster the leaders' fighters of 20–34 stood on, and the same solve
+      with every potion taken out is safe too (30 of 30): a stocked potion costs nothing
+      (`consumables.ts:126`). Second at 26: rat at 5.7 h a level with 12 potions a kill, skeleton at 9.6 h
+      with none. A healing rune changes no verdict at 23–26 (60–70 HP at the end of a pig or wolf fight); it
+      pays from 30, together with a looser rule.
+    - **Gear**: to 29 the leaders' fight sets are craft 20 like this fleet's (68 of 73 crafted pieces) plus
+      King Slime's pieces (22 of 90) and the ring of the adept; at 30–34 the weapon is craft 30 with event or
+      coin materials (elderwood staff, greater dreadful staff, obsidian battleaxe) over craft-20 armor; from
+      35 the median piece is craft 30. Their best crafters' medians 32 / 35 / 32, this fleet's 20 / 23 / 21,
+      last of 26; one character holds the three gear crafts in 19 of 25, three here. With the leaders' 30–35
+      sets this fleet's planner prices a level at 6.7–12.8 h and no potion.
+    - **The fleets' shapes** (Alex's question of decision 58): no one shape. By the tile and the weapon at
+      the read: five fighters 1 account, four 1, three 4, two 5, one 8, none 6; `Pischke` has 61 points with
+      one fighter at 42 and four characters at combat 1; six accounts keep all five within 3 levels, as this
+      fleet does. What sets this fleet apart is not the shape: top combat 26 against quartiles 39 / 41 / 44.5
+      (72 of the leaders' 125 characters at 35+), all five gathering at the read, 0–0.24 levels of fight XP
+      each in 17 h. The leaders are not fast either — a median of 30 h a level at 40–44 (the fastest 11.3,
+      `uaprsf`'s two at 6.0 on a boss in a group) — they fight all the time, never a monster at or above
+      their level (the gap 5–14), and 15 of the 39 on a monster work a tasks-master task for that monster
+      (the coins behind 98 of 234 pieces at 40–44).
+    - **The achievements**: ten that more than half of the 25 have and this account has not, 16 points; the
+      outlook of 11:56 UTC expects eight of them by 12-14. Not `slimed_to_none` (24 of 25; King Slime, a
+      group) and not `turning_treasures_to_gold` (23 of 25; sell 5 Golden Eggs and 5 Golden Shrimps, this
+      account at 4 and 5). **Said too strongly to Alex in the chat**: "the planner does not see it" — the
+      report's "not read" only means the outlook's record does not name it among the expected completions;
+      why is read by 025.
+    - **Not measured**: a loss (one read shows one character at (0, 0) with low HP); the win rates are this
+      fleet's simulator with crits rolled, not play. Decision 28's "44 of 159 predicted wins lost" (skeleton,
+      11-18) says an expected win is not a high chance of winning: nobody has held the rolled rate against
+      play. The offering's quarter of a level taken off the pace is a guess.
+    - **The report's five distances**, most costly first: sustain; gear from 30; the safe rule; time on
+      combat and tasks; initiative. Its "Decisions for Alex": none.
+    - **Not fixed, from the report's notes**: the comment at `stats.ts:74-76` ("initiative isn't reported");
+      022's tools README on where its request log lay.
+61. **Task 025, the fight round, settled in the chat** (2026-11-23, afternoon; in the task file as "What is
+    settled"). Put to Alex: a floor of 95% or 98% rolled wins; a second leaders' read; the task's shape
+    (initiative, a win-rate rule with the loss priced, the potion's true price, rune and food; then 026 the
+    gear road, 027 group bosses). **Alex's answers**: (1) *the fleet has to level; small failures are no
+    reason to stop; he would go into fights at 75–80%; rare materials have to come from somewhere; risk is
+    part of the game — don't over-insure*; (2) he starts 025 at once; *the leaders' read goes on a schedule,
+    once a day, and the trends are looked at in a week*; (3) write it with what he said before (nothing
+    spent on potions or ingredients; healing runes up to 50,000 gold; no first-tier policy; nothing queued
+    by hand). Settled by the chat around it:
+    - **The verdict is a win rate**: p over seeded rolled fights of the final set; admitted at p ≥ 0.75
+      (`config.risk.minWin`; a knob if it is a few lines); **the price chooses** — expected seconds a win,
+      a lost attempt costing the way back from where the character wakes (fares included) and the recovery
+      from the HP it wakes with; what a loss is in play is read from the logs first. The pessimistic pass
+      decides nothing. One verdict on every path (decisions 57, 58), the gear's drop sources included — so
+      the owlbear and the cyclops of report 023's section 5 get a price instead of "none safely".
+    - **A loss is an outcome**: the step goes on; a `loss` record; a fight step's end carries fights, wins,
+      losses, forecast and measured. **The brake is play against the forecast** (at least three losses and a
+      binomial tail below 5% at the forecast's p): the step ends, the monster is blocked for that character
+      until set or level change or 24 h. The old three strikes are restated to it.
+    - **The forecast against play** is read before the floor is trusted; a band of 30 fights that wins more
+      than ten points under its forecast goes first in the Summary.
+    - **A potion costs its chain's seconds, stocked or not** (decision 32's "stock is free" ends for restore
+      and boost potions); the stock stays in the bank for the fights where a potion turns a verdict.
+    - **The rune** is part of a step's `wear` and survives a reset; the planner buys healing runes inside
+      Alex's 50,000 where a character's fight work gets 5% cheaper or crosses the floor. **Food** becomes a
+      consumable a need can ask for, from the fleet's own fish.
+    - **Measured on 022's harness**, a row a change, from the 11-22 World (82) and the newest: points, the
+      five combat levels by day, the consumables' share, runes, expected losses; floors 0.6 / 0.75 / 0.9 /
+      0.98. **If the top combat level on day 14 is below 30 the Summary says so first** — 026 is decided on
+      that line. The atlas once, last; the speed is part of the gate (the outlook under ten minutes).
+    - **The leaders daily, by the service**: 12:22 UTC, the day's first 25 and this account, 53 public
+      requests without the token, 1.3 s apart, a cap of 60 a day, under `logs/leaders/<stamp>/`; 024's tools
+      read both places and print a new table of the days; the committed base of 024 stays byte for byte. The
+      task itself makes no request. The chat runs the tables on about 11-30.
+    - `turning_treasures_to_gold`: read, repaired if it is a small fault, nothing bought.
+    - **Not in 025**: the gear road (a look above a fighter's level, a fleet set, one crafter, coins on
+      purpose, a task for the farmed monster) — 026; group fights and King Slime — 027; the needs' rule
+      (decision 58), measured only; any new term in the score. The restart follows the report's acceptance.
 
 ## Tasks
 | # | What | State |
@@ -1910,10 +2008,23 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 021 | The fight solve, right first, then fast again (decisions 52, 53): where the wider search loses; a search that is a fixpoint, nested in its caps and at the tier of the best set known; the wall at combat 23–26 and the road again; the planner's solves without the worn set; speed against the new reference and the horizon by 020's rule; riding along: a `spend` record for gold; read-only: 020 in play, Third's pauses, the offerings of 11-22 | done, `2db1053` on `rework`, pushed to `origin/rework`. Accepted 2026-11-22 (decision 54). **Engine change: Alex restarted the service on 2026-11-22 at 17:49:00 UTC** (run `0e2f`); all five steps re-attached; the first outlook 318.1 s for 21 days. The solve is right (three guarantees in the gate); the wall was the forward model's stranding, not the solver; 82 from the 11-21 World, 98 from 11-22's; `HORIZON_DAYS` 21 again. |
 | 022 | The strategy experiment (decision 55), nothing in the engine changes: what the leaders did (public reads, allowed by Alex); where this fleet's hours go and what play says about the model; what a combat level costs and what gear buys; the policies — the spine to 30 / 35 / 40, the crafters first, both, a rule that sees every gate, a crafter's road paid once, three fighters, consumables free — played by the forward model from `logs/world/2026-11-22.json` to the deadline; what the best leaves open; the recommendation | done, `7524933` on `rework`, pushed to `origin/rework`. Accepted 2026-11-23 (decision 56). **No engine change, no restart.** No policy is built: the order moves −8 to +3 points (`P0s` 100, the spine to 30 103, consumables free 121); 57% of the model's hours make potions the leaders do not drink; about 80 points wait for what the code cannot do. |
 | 023 | The repairs (decision 57): the forward model's stranding lifted (022's `P0s`) and proven; one verdict for a fight — a drained stack re-solves, a train loop's drop hunt holds what its set names, an event member's set, kills and take from one stock, no piece booked twice; an offering never gives away an event-only, boss, coin-bought or rare material; the atlas regenerated and the reference pinned (024's baseline); read-only: the potion-free set of report 022 today, piece by piece | done, `7daf5e1` on `rework`, pushed to `origin/rework`. Accepted 2026-11-23 (decision 58). **Engine change: Alex restarted the service on 2026-11-23 at 11:48:03 UTC** (run `0yfi`), before the chat asked; all five steps re-attached; the first outlook 361.6 s, 46 expected by 12-14. The four faults and the task's fight under one verdict, nothing brewed inside an owned fight; an offering keeps 50 codes; the new atlas; **the reference 82** (the repairs 94, the atlas −12: needs held for works that never complete); the replay 92 / 121 / 102 / 84 / 89; the potion-free set out of reach as drawn. |
-| 024 | The leaders' base (decision 59): the top 25 accounts and this one read once (≤ 150 public requests), every answer kept under `docs/strategy/024/`, a base and offline tools; the fleets' shapes, levels, gear by band, sustain, where they stand, the pace, the achievements; the leaders' characters through this fleet's simulator and safe-win rule; the verdict and the five largest distances | written 2026-11-23, `tasks/024-leaders.md`; not run yet. **No engine change, no restart.** |
-| 025… | **Decided on report 024.** Waiting: the needs that pay (decision 58: a need only for a work that completes), the gear road in its reachable half. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: 025 group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
+| 024 | The leaders' base (decision 59): the top 25 accounts and this one read once (≤ 150 public requests), every answer kept under `docs/strategy/024/`, a base and offline tools; the fleets' shapes, levels, gear by band, sustain, where they stand, the pace, the achievements; the leaders' characters through this fleet's simulator and safe-win rule; the verdict and the five largest distances | done, `0f94809` on `rework`, pushed to `origin/rework`. Accepted 2026-11-23 (decision 60). **No engine change, no restart.** 53 requests, 26 accounts; the forecast is right and the safe rule too dark (16 of the leaders' 27 XP fights refused at 98.4% rolled wins); the player's initiative is 100 short; the leaders sustain with a rune and food where this fleet's set drinks free stock; craft-30 weapons from combat 30; this fleet last of 26 in top combat, all five gathering. |
+| 025 | The fight round (decision 61): the player's initiative is the API's; a fight is admitted by its rolled win rate (floor 0.75, Alex) and chosen by its expected seconds a win, a loss priced in; a loss is an outcome in the executor, the brake is play against the forecast; the forecast held against play's fights; a potion costs its chain's seconds, stocked or not; the rune in a step's `wear` and bought (≤ 50,000 gold); food by need; the road row by row on 022's harness with the combat levels by day; the atlas and the new reference; the service reads the leaders once a day into `logs/leaders/`; `turning_treasures_to_gold` read | written 2026-11-23, `tasks/025-fight-round.md`; Alex starts it at once. **Engine change: a restart follows its acceptance.** |
+| 026… | **Decided on report 025.** Expected (decision 61): 026 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 027 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
+- **Can the model's win rate be trusted at 75%?** Alex takes fights at 75–80% (decision 61). The rate is this
+  fleet's simulator with crits rolled; play has never been held against it, and decision 28 counted 44 of 159
+  predicted wins lost at the skeleton. Task 025 reads every recorded fight against the forecast (settled
+  point 3) and brakes a step whose losses contradict it; from its restart on the journal's `loss` records and
+  a fight step's wins and losses answer it day by day.
+- **Does the fleet level once a fight costs what it costs?** No policy says "level first" (decision 56); the
+  price of a level falls with the rule, the potion's true price, the rune and food. Task 025 reports the five
+  combat levels by day on the new road; below 30 on day 14 means the score itself (`levelCand`, the filler)
+  has to be looked at in 026.
+- **What do the leaders do over a week?** From 025's restart the service reads the first 25 accounts daily
+  at 12:22 UTC into `logs/leaders/`; the chat prints the days' tables on about 11-30: the pace by band, who
+  loses fights, what changes in the sets, how the points come.
 - **Can the fleet fight without potions, as the leaders do?** Decision 56: the model says yes up to combat 40
   with nine pieces at craft 30 (event materials, tasks coins); nobody has built the way there. Report 023,
   section 5, says where each piece stands today; 024 plays the gear road on 022's harness. Open inside it: what
@@ -2049,7 +2160,9 @@ accepted, Alex restarted the service (run `[yewz]`,
   after that the fishing objectives' algae is drunk as it lands); the pig gives XP through combat 29 (the
   docs' reading of the gap rule); fight XP was read a third low and a kill priced at twice its time, both
   repaired.
-- **Who strikes first?** The API's characters carry `initiative` 100, the simulator starts the player at 0. The
+- **Who strikes first?** Answered by 024 (decision 60): the API's initiative is the worn items' + 100 on 40 of
+  40 fight sets; repaired by 025 (settled point 1). It was: the API's characters carry `initiative` 100, the
+  simulator starts the player at 0. The
   record of `validate.ts` (turn and potion errors) decides it at the next potion fights.
 - **Does 011's fix hold in play?** Acceptance step 7 (a kill objective beside one character only): not
   exercised by 21:49 UTC on 11-19 (report 012, section 1: seven decisions, no `gear:` step among them). Read
