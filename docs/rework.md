@@ -8,7 +8,11 @@ round, was written** (decision 61 — Alex: risk is part of the game, fights at 
 fine; the leaders are read once a day on a schedule and the trends looked at in a week). 024 changed nothing
 in the engine: no restart; the service runs `0yfi` (`7daf5e1`), 33 points at 12:58 UTC, all five on gathering
 steps. Alex starts 025 at once; its report is discussed in a new chat. **025 changes the engine: a restart
-follows its acceptance.**
+follows its acceptance.** While 025 runs, Alex asked about the fleet's shape: **it goes on the model as the
+first part of 026** (decision 62); nothing changes before 025's report. Later the same afternoon Alex set the
+direction himself (decision 63): **roles now — First and Fifth fight for good, Second probably, Third and
+Fourth carry the crafts; the leaders are read every four hours.** 026 becomes the roles, written on 025's
+report; the gear road moves to 027.
 Before that, at midday: report 023 was accepted (decision 58). **Alex had already restarted
 the service on its code** before the chat looked: run `0yfi`, boot 11:48:03 UTC on 11-23, commit `7daf5e1`, all
 five steps re-attached, the first outlook 361.6 s (46 expected by 12-14), 33 points at 11:58 UTC. The reference
@@ -1981,6 +1985,113 @@ accepted, Alex restarted the service (run `[yewz]`,
     - **Not in 025**: the gear road (a look above a fighter's level, a fleet set, one crafter, coins on
       purpose, a task for the farmed monster) — 026; group fights and King Slime — 027; the needs' rule
       (decision 58), measured only; any new term in the score. The restart follows the report's acceptance.
+62. **The fleet's shape goes on the model, as the first part of 026** (Alex, 2026-11-23, while 025 ran).
+    Alex's question: *should this fleet do as the leaders do — one character for the skills, one levelled by
+    fighting, the others he does not know where?* The chat's answer, which he took ("yes, let's"):
+    - **Not one fighter.** `Pischke` holds fifth place with one (61 points), but the four accounts above it
+      keep three or more strong characters; a boss is a group (the leaders stand on one in threes; 24 of 25
+      have King Slime), kill objectives count for the account, events need members.
+    - **Not five either**: five sets at craft 30, five runes, five roads (report 023: obsidian for five sets
+      553 fleet-hours). **The chat's aim is three fighters and two workers** — the workers as supply (fish and
+      cooking for the fighters' food and the fishing achievements, ore, wood, alchemy).
+    - **The loss that is certain is in the gathering lanes**: a skill is levelled per character and this
+      fleet holds mining 33 / 22 / 24 / 35 / 35, woodcutting 23 / 32 / 18 / 24 / 18, fishing 20 / 20 / 19 /
+      18 / 23 (`logs/status.json`, 12:58 UTC on 11-23; `docs/rework.md`'s parked note: three role holders
+      take one gated level for one parent's points). The leader's fleet is one miner, one woodcutter, one
+      fisher. One owner a gathering skill; the others add units only where their level already reaches.
+    - **One character for the three gear crafts** (19 of 25) is not taken on trust: a craft is levelled per
+      skill, three crafters craft side by side; it may only be the leaders' scripts. Measured.
+    - Report 022's three-fighters policy read 92–93 against 100 — on the old fight prices and with no boss
+      in the model; it is not the answer any more.
+    - **Settled: 026 starts with the experiment**, on 022's harness and 025's tree: five even (today's
+      rule), three fighters and two workers, one fighter and four workers, each with and without one owner
+      a gathering skill, and the three gear crafts on one character against three — points and the five
+      combat and skill levels by day, the gear's bill for the fighters, who the fighters should be (the five
+      stand within three levels today, so the choice costs nothing yet). The shape that wins is then built
+      with the gear road. If 025's report says the fleet does not level (top combat below 30 on day 14),
+      that question and this one are one.
+63. **Roles, and the leaders every four hours** (Alex, 2026-11-23, late afternoon, while 025 ran; he had
+    looked at the fleet). **Alex's direction — his to give, it is what the game is played for, and it ends
+    decision 56's "no first-tier policy" for the fighters**: *the fleet has to be rebuilt right now. First,
+    Fifth and probably Second go to levelling combat for good and take risks on hard monsters for the rare
+    materials; Third and Fourth level the crafts (look at how the others balance it). The raw read every
+    four hours instead of daily — more to analyse later. We are not far from the 25th place and can catch up
+    fairly fast.* What the chat read and answered:
+    - **The crafts among the 25** (`docs/strategy/024/tables/2b-levels.md`, b4): one character holds the
+      three in 19, three characters in 6, never two; in 10 of the 25 the gearcrafter wears a fight set and
+      is often the top fighter (`uaprsf` 50, `hunter2` 50, `Elemental` 43, `Turbofish` 42). The accounts at
+      ranks 19–25 stand at about 30 / 30 / 30 (27–35, 29–35, 26–37); this fleet 20 / 23 / 21. Thirty in each
+      is the entry. Their fighters cook for themselves (cooking 39–50 on most fight sets).
+    - **This fleet's own split is already there**: Second holds woodcutting 32 and weaponcrafting 20, Third
+      alchemy 34 and gearcrafting 23, Fourth mining 35 and jewelrycrafting 21 — one lane and one craft each;
+      First and Fifth hold no craft (2–3 in each), only a third and a fourth copy of mining (33, 35) and the
+      cooking 31 and fishing 23 a fighter's food needs. So **the chat's proposal, put to Alex, not answered
+      yet**: First and Fifth fight from the first hour; Second keeps wood and the weapons until
+      weaponcrafting is 30 (the weapon is the first craft-30 piece the leaders wear, at 30–34) and is the
+      third fighter from then on and whenever a boss asks for three; no craft is moved to another character
+      (a move pays levels 2 → 20 again). The crafts in the order weapon, gear, jewelry. The crafters to 30
+      are the long pole: 819–893 fleet-hours by play's measure (report 023), about twelve days of three
+      workers.
+    - **"Right now" is 025's restart**: on the running code the fights a fighter would take are refused or
+      priced in potions; nothing is queued by hand (decision 47's clean-up took the editor out, and Alex's
+      rule stands). 025's prices move the planner toward combat by themselves; the roles are **026, written
+      on 025's report, small and first**: a role for each character in the config (fighter: its standing
+      work is the best fight by expected XP an hour, kill objectives, risky drops for the gear; worker: its
+      lane and its craft), the offerings and events as today; the model's part of decision 62 shrinks to
+      the details (Second now or at weaponcrafting 30, who fishes and cooks, one owner a gathering skill).
+      **The gear road becomes 027, group bosses 028.**
+    - **How far the 25th place is**: 8 points (41) today, 13 to rank 19 (46). Of the twelve accounts with a
+      pace, five gained nothing in 17 h and this account gained 4; the top four gain 6–11 a day. Behind the
+      points `jowrjowr` (25th) has five characters at combat 31, crafts 30 / 30 / 26, cooking 42 — this fleet
+      24, 20 / 23 / 21, 31. The outlook on 023's code expects 46 by 12-14. Reachable in weeks, not days; the
+      aim stays bronze (105) and silver (158), not the 25th place.
+    - **The read every four hours**: the characters of the 26 every four hours (27 requests: positions,
+      XP, sets — what the pace and the losses are read from), the achievements once a day with the 12:22
+      read (they carry `completed_at`, a finer read adds only open progress): 6 × 27 + 26 = 188 requests a
+      day, cap 220. It is settled point 8 of 025 with another period; **the task file was not touched while
+      the task runs** — Alex either tells the running session (the sentence is in the chat) or it is the
+      first line of 026.
+64. **Second as the chat proposed; the four-hourly read is the player and its characters, neighbours
+    included; a reference to hold the fleet against** (Alex, 2026-11-23, evening, 025 still running).
+    - **Alex: "your variant, this is what to concentrate on."** First and Fifth fight from the first hour;
+      Second keeps woodcutting and the weapons until weaponcrafting 30 and is the third fighter from then on
+      (and when a boss asks for three); Third alchemy and gearcrafting, Fourth mining and jewelrycrafting;
+      no craft changes hands. Decision 63's open point is closed.
+    - **Alex: every four hours a snapshot of the player and the statistics of its characters — it shows
+      what they do; maybe find someone close to this fleet and repeat what they do.** The chat changed its
+      own proposal of decision 63: **the achievements are read every four hours too** — the counters of the
+      open ones (kills by monster, units gathered and crafted) are what says what a fleet did between two
+      reads; a position is one instant. And the accounts close to this one are not in the first 25, so the
+      read is: the leaderboard page (100 accounts with points and gold, one request), then characters and
+      achievements of the first 25, of this account and of **every account from the 26th place down to five
+      places below this account** (18 today, never fewer than through the 30th place): about 89 requests a
+      read, about 530 a day, cap 600. Into 025 if Alex tells the running session (the sentence is in the
+      chat), else the first line of 026.
+    - **Read in the chat from what is on disk** (the two leaderboard pages of 11-22 19:24 and 11-23 12:22
+      UTC; `docs/strategy/024/base/achievements.jsonl`, the 11-23 read, ordered by `completed_at`):
+      - *The neighbours are slow.* Ranks 15–47 gained 0–3 points in the 17 h, most of them 0; only
+        `LewisHeidrick` (47, +5), `sqidking` (33, +4) and this account (+4) more. Twelve accounts stand
+        between this one and the 25th place (41). Repeating an average neighbour repeats its standstill.
+      - *What the 25 did from where this account stands.* Every one of them went **from 33 points to 41 in
+        a median of 3.7 days** (0.9–7.4) and the fourteen that have 50 **from 33 to 50 in a median of 6.5
+        days** (4.3–11.9); they stood at 33 between 11-10 and 11-20. This fleet's outlook on 023's code:
+        46 by 12-14. **That is the yardstick for 025 and 026: 41 within four days of the restart, 50 within
+        a week.**
+      - *What they completed next* (the first ten after 33 that this account lacks; accounts of 25):
+        expert_lumberjack 17, expert_fisherman 15, cabinet_maker 14, arachnophobia_conquered 14 (2 points),
+        the_reaper 13 (3), lich_please 11 (2), intermediate_alchemist 10, cultist_purifier 10 (4),
+        ecologist 9, professional_fisherman 9, diamond_in_the_sky 7 (3), turning_treasures_to_gold 7 (2),
+        cult_destroyer 6 (2), life_lover 6 (4). The gathering half is what the planner works on today; the
+        fighting half is what it does not reach (the spider is where "not a safe win" blocked a level on
+        11-23). `slimed_to_none` is not in the list because they had it before 33.
+      - *A reference*: `LewisHeidrick` is the fleet this one is becoming — a fighter at 41, a miner, a
+        woodcutter and a fisher at combat 23–24 (skills 45 / 43 / 47), a crafter at 30 (crafts 30 / 35 /
+        27), 47 points, the fastest of the middle. `sqidking` stands at this account's points and pace and
+        has not been read. Chosen after some days of the four-hourly reads, two or three of them.
+    - **How a reference is used**: as a yardstick and a check on the planner (the ladder of monsters by
+      level and set, the order of crafts and achievements, the pace), not as a script — a fleet is seen
+      every four hours, not action by action, and its skills and bank are its own. Where the planner's
+      choice parts from what the fastest fleet of the same stage did, 026 and the tasks after it say why.
 
 ## Tasks
 | # | What | State |
@@ -2010,9 +2121,15 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 023 | The repairs (decision 57): the forward model's stranding lifted (022's `P0s`) and proven; one verdict for a fight — a drained stack re-solves, a train loop's drop hunt holds what its set names, an event member's set, kills and take from one stock, no piece booked twice; an offering never gives away an event-only, boss, coin-bought or rare material; the atlas regenerated and the reference pinned (024's baseline); read-only: the potion-free set of report 022 today, piece by piece | done, `7daf5e1` on `rework`, pushed to `origin/rework`. Accepted 2026-11-23 (decision 58). **Engine change: Alex restarted the service on 2026-11-23 at 11:48:03 UTC** (run `0yfi`), before the chat asked; all five steps re-attached; the first outlook 361.6 s, 46 expected by 12-14. The four faults and the task's fight under one verdict, nothing brewed inside an owned fight; an offering keeps 50 codes; the new atlas; **the reference 82** (the repairs 94, the atlas −12: needs held for works that never complete); the replay 92 / 121 / 102 / 84 / 89; the potion-free set out of reach as drawn. |
 | 024 | The leaders' base (decision 59): the top 25 accounts and this one read once (≤ 150 public requests), every answer kept under `docs/strategy/024/`, a base and offline tools; the fleets' shapes, levels, gear by band, sustain, where they stand, the pace, the achievements; the leaders' characters through this fleet's simulator and safe-win rule; the verdict and the five largest distances | done, `0f94809` on `rework`, pushed to `origin/rework`. Accepted 2026-11-23 (decision 60). **No engine change, no restart.** 53 requests, 26 accounts; the forecast is right and the safe rule too dark (16 of the leaders' 27 XP fights refused at 98.4% rolled wins); the player's initiative is 100 short; the leaders sustain with a rune and food where this fleet's set drinks free stock; craft-30 weapons from combat 30; this fleet last of 26 in top combat, all five gathering. |
 | 025 | The fight round (decision 61): the player's initiative is the API's; a fight is admitted by its rolled win rate (floor 0.75, Alex) and chosen by its expected seconds a win, a loss priced in; a loss is an outcome in the executor, the brake is play against the forecast; the forecast held against play's fights; a potion costs its chain's seconds, stocked or not; the rune in a step's `wear` and bought (≤ 50,000 gold); food by need; the road row by row on 022's harness with the combat levels by day; the atlas and the new reference; the service reads the leaders once a day into `logs/leaders/`; `turning_treasures_to_gold` read | written 2026-11-23, `tasks/025-fight-round.md`; Alex starts it at once. **Engine change: a restart follows its acceptance.** |
-| 026… | **Decided on report 025.** Expected (decision 61): 026 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 027 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
+| 026… | **Decided on report 025.** 026 the roles (decisions 63, 64, Alex): First and Fifth fighters for good, Second at weaponcrafting 30, Third and Fourth — and Second until then — a lane and a craft each, the crafts to 30; the yardstick 33 → 41 points in four days; the details on the model (decision 62); the leaders' and neighbours' read every four hours if 025 did not take it. 027 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 028 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
+- **What shape should the fleet have?** Settled (decisions 63, 64): First and Fifth fight; Second wood and
+  weapons until weaponcrafting 30, then the third fighter; Third alchemy and gear, Fourth mining and jewelry.
+  Open for 026: who fishes and cooks, one owner a gathering skill. Built as 026 on 025's prices.
+- **Does the fleet move as the leaders did at its stage?** Decision 64: they went from 33 points to 41 in a
+  median of 3.7 days and to 50 in 6.5. Held against play from 025's restart; the four-hourly read shows what
+  the reference fleets do meanwhile.
 - **Can the model's win rate be trusted at 75%?** Alex takes fights at 75–80% (decision 61). The rate is this
   fleet's simulator with crits rolled; play has never been held against it, and decision 28 counted 44 of 159
   predicted wins lost at the skeleton. Task 025 reads every recorded fight against the forecast (settled
