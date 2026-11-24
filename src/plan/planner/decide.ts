@@ -197,7 +197,7 @@ function wearOf(w: Work, ch: Character, world: World): Record<string, string> | 
   return out;
 }
 
-/** `need` (task 027): for a fighter's gear by need or a consumable need — a worker's first tier. `out`: a worker's objective
+/** `need` (task 027): for a fighter's gear by need, a lane holder's tool (027c) or a consumable need — a worker's first tier. `out`: a worker's objective
  *  outside its lanes — its second tier only. */
 export interface Candidate { target: Target; step: Step; fit: number; any: number; need?: boolean; out?: boolean }
 export interface Ranking { step: Step; objectives: Candidate[]; levels: Candidate[]; supply: Candidate[]; fillers: Candidate[]; lanes: Lane[] }
@@ -321,7 +321,8 @@ export function rank(name: string, world: World, free = false): Ranking {
   // Gear by need (section 4) and supply through the bank (section 3).
   const parents: Parent[] = objectiveParents(world, name, calH);
   const supply: Candidate[] = [];
-  const needs = new Set<string>(); // task 027: the parents that are a fighter's gear or a consumable need (a worker's first tier)
+  const needs = new Set<string>(); // task 027: the parents that are a fighter's gear, a lane holder's tool (027c) or a consumable need (a worker's first tier)
+  const ownTools = new Set<string>(); // 027c (Alex): the tools of this worker's own lanes — it hunts their materials itself, admitted fights only
   for (const [code, piece] of gearPieces(world, name)) {
     const { copies, works, best: n } = piece;
     const r = item(code)!.craft!;
@@ -329,9 +330,10 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (qty <= 0) continue;
     const par = pieceParent(code, piece, qty, world, name);
     parents.push(par);
-    const need = [...copies.keys()].some((who) => roleOf(who, world) === "fighter");
+    const need = item(code)!.subtype === "tool" || [...copies.keys()].some((who) => roleOf(who, world) === "fighter"); // 027c (Alex): a lane holder's tool too
     if (need) needs.add(par.key);
-    if (crafterOf(r.skill, world) !== name || (fighter && !need)) continue; // task 027b: a fighter forges only what a fighter needs
+    if (item(code)!.subtype === "tool" && copies.has(name)) ownTools.add(par.key);
+    if (crafterOf(r.skill, world) !== name || (fighter && !need)) continue; // task 027b: a fighter forges only what a fighter needs (027c: or a tool)
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
       levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, need);
@@ -358,7 +360,7 @@ export function rank(name: string, world: World, free = false): Ranking {
       // task 012, settled point 7: the node (or monster) is this character's — the least net seconds an item
       const src = pickSource(s.code, ch, world);
       if (!src) continue;
-      if (fighter ? src.work.kind !== "kill" : worker && src.work.kind === "kill" && fighterHunts(src.work.monster)) continue; // task 027
+      if (fighter ? src.work.kind !== "kill" : worker && src.work.kind === "kill" && fighterHunts(src.work.monster) && !ownTools.has(par.key)) continue; // task 027 (027c: pickSource admits at the floor)
       const items = s.short / perOf(s.work); // short is in actions of the static source (supplyNeeds)
       const acts = Math.ceil(items * src.per - 1e-9);
       const c = chunk(src.work, src.sec, acts, world, src, ch, 1);
@@ -448,7 +450,7 @@ export function rank(name: string, world: World, free = false): Ranking {
   let step: Step;
   if (worker) {
     const short = objectives.filter((c) => fresh(c) && achHours(c.target.achievement!, name, world) <= WORKER_SHORT_H);
-    step = tier(all.filter((c) => c.need), "a fighter's need") ?? tier(short, `done within ${WORKER_SHORT_H} h`) ?? craftTo() ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
+    step = tier(all.filter((c) => c.need), "a need") ?? tier(short, `done within ${WORKER_SHORT_H} h`) ?? craftTo() ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
   } else if (fighter) {
     // task 027b: what it forges by need (a piece of its craft, the level it asks) goes before its fights — one weapon
     // speeds every fighter; with no admitted fight at all it works by today's rule over the whole list

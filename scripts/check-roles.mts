@@ -153,7 +153,7 @@ const NO_EGG = { bank: fixture.bank.filter((b) => b.code !== "golden_egg") };
   const sN = step(geared, "Second");
   cases.push(["…no need → it fights", sN.work.kind === "kill" && sN.why.startsWith("fighter:"), `Second, the fixture's bank: ${said(sN)}`]);
   const w0 = fw({}, unarmed), s0 = step(w0, "Second"), k0 = step(w0, "Fourth");
-  cases.push(["…the materials missing → a worker gathers them and Second fights meanwhile", s0.work.kind === "kill" && k0.parent === "gear:battlestaff" && k0.why.startsWith("worker, a fighter's need"), `Second: ${said(s0)}; Fourth: ${said(k0)}`]);
+  cases.push(["…the materials missing → a worker gathers them and Second fights meanwhile", s0.work.kind === "kill" && k0.parent === "gear:battlestaff" && k0.why.startsWith("worker, a need"), `Second: ${said(s0)}; Fourth: ${said(k0)}`]);
   cases.push(["…First (no craft) never forges", !fB.target.startsWith("gear:") && fB.work.kind !== "train", `First: ${said(fB)}`]);
   // a fighter with no admitted fight (First stripped, the bank empty) and an open gathering objective
   const strip = Object.fromEntries(["weapon", "shield", "helmet", "body_armor", "leg_armor", "boots", "ring1", "ring2", "amulet", "rune", "utility1", "utility2"].map((g) => [`${g}_slot`, ""]));

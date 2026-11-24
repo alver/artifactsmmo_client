@@ -9,8 +9,9 @@
 //       characters that are on, meet its other gates and win the monster as config.risk asks with their own pool (∞
 //       only when none does); a need of X holds when G + H1(X) ≤ NEED_RATIO × that H0, and an objective has at most
 //       one need — the character with the least G + H1, ties to the name;
-//   (c) per gathering role, the road to that lane's next gate or an open gathering objective of the lane — a tool
-//       (still per role holder: one objective can ask a tool of each, report 011).
+//   (c) task 027c: per gathering lane, all that is left of it — the road to its last open gate and its open gathering
+//       objectives — a tool for its one holder, needed when it pays for itself over that work: G ≤ H0 − H1 (NEED_RATIO
+//       is (a)'s and (b)'s: from iron to steel H1 is 0.875 × H0, so G + H1 ≤ 0.85 × H0 could never hold). One need a lane.
 // Task 027: (a) and (b) are the fighters' (roles.ts fights: a character with no role too) — a worker has no combat road
 // and takes no kill objective. The same in consumables.ts consumableNeeds.
 // Candidates: pieces with a recipe the character can equip now (a piece its pool already holds is simply not new),
@@ -41,7 +42,7 @@ import { achHours, bundleOf, bundleScore } from "./bundle";
 import { isOn, met } from "./gates";
 import { pickMonster } from "./pick";
 import { fightSecOf, gatherCut, nearestSpot, placeOf, planRec, admitted, setWisdom, toolCut, admits } from "./reach";
-import { crafterOf, fights, rolesFor } from "./roles";
+import { crafterOf, fights, rolesOf } from "./roles";
 import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
 import type { Parent } from "./supply";
@@ -193,6 +194,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
     if (g == null) gMins.set(ch.name, (g = Math.min(...fight.map((code) => makeHours(new Map([[code, 1]]), ch, world).G))));
     return g;
   };
+  const holders = rolesOf(world.characters, world.config, []); // no targets: no event lane's second and third gatherer
   for (const ch of world.characters) {
     if (!isOn(ch.name, world)) continue;
     const c = candidatesOf(ch, world);
@@ -247,32 +249,32 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
       }
     }
 
-    // (c) a tool per gathering role: the lane's next gate, or an open gathering objective of the lane
-    for (const lane of rolesFor(world)[ch.name] ?? []) {
+    // (c) task 027c: a tool for the lane's one holder (no event lane's extra gatherer) when it pays for itself over all
+    // that is left of the lane — the road to its last open gate and its open gathering objectives: G ≤ H0 − H1
+    for (const lane of holders[ch.name] ?? []) {
       if (!GATHER_LANES.includes(lane) || !c.tools.length) continue;
       const cut0 = gatherCut(ch, world, lane);
-      const tool = c.tools.map((code) => ({ code, cut: toolCut(code, lane) })).filter((x) => x.cut > cut0).sort((a, b) => b.cut - a.cut || (a.code < b.code ? -1 : 1))[0];
-      if (!tool) continue;
-      const pieces = new Map([[tool.code, 1]]);
-      const mk = makeHours(pieces, ch, world);
-      const ratio = (1 - tool.cut) / (1 - cut0); // shortcut: the whole work's hours scale with the gather cooldown
+      // Alex (027c): the lowest-level tool that improves on the one held and pays; the next tier is judged once that one is held
+      const tools = c.tools.map((code) => ({ code, cut: toolCut(code, lane) })).filter((x) => x.cut > cut0).sort((a, b) => item(a.code)!.level - item(b.code)!.level || b.cut - a.cut || (a.code < b.code ? -1 : 1));
+      if (!tools.length) continue;
+      const L = levelOf(ch, lane);
+      const objs = targetsOf(world).filter((t) => t.work.kind === "gather" && t.achievement && !t.filler && catalog().resources.get(t.work.resource)?.skill === lane && t.gates.every((g) => (g.kind === "level" && g.lane === lane) || met(g, ch, world)));
+      const last = Math.max(L, ...targetsOf(world).map((t) => (t.work.kind === "level" && t.work.lane === lane ? t.work.to : 0)));
+      let H0 = objs.reduce((s, t) => s + hoursOf(t, ch, world), 0);
+      for (let l = L; l < last; l++) { const h = hoursToLevel(lane, l, l + 1, world, ch); if (!Number.isFinite(h)) break; H0 += h; } // the road as far as it goes
+      if (!(H0 > 0)) continue;
+      let pick: { tool: (typeof tools)[number]; H1: number; mk: ReturnType<typeof makeHours> } | undefined;
+      for (const tool of tools) {
+        const H1 = H0 * ((1 - tool.cut) / (1 - cut0)); // shortcut: the whole work's hours scale with the gather cooldown
+        const mk = makeHours(new Map([[tool.code, 1]]), ch, world);
+        if (mk.G <= H0 - H1) { pick = { tool, H1, mk }; break; }
+      }
+      if (!pick) continue;
+      const { tool, H1, mk } = pick, pieces = new Map([[tool.code, 1]]);
       const lb = bundleOf(lane, ch.name, world);
-      if (lb && Number.isFinite(lb.hGate)) {
-        const H0 = lb.hGate, H1 = H0 * ratio;
-        if (mk.G + H1 <= NEED_RATIO * H0) {
-          const s = bundleScore(lb, mk.G + H1, calH);
-          push({ work: `${lane} ${levelOf(ch, lane)} → ${lb.next} (tool)`, key: `lvl:${lane}:${lb.next}`, pieces, H0, H1, G: mk.G, parts: mk.parts, points: s.points, fit: s.fit, any: s.any, hours: s.hours, offered: mk.offered });
-        }
-      }
-      for (const t of targetsOf(world)) {
-        if (t.work.kind !== "gather" || !t.achievement || t.filler || !t.gates.every((g) => met(g, ch, world))) continue;
-        const r = catalog().resources.get(t.work.resource);
-        if (r?.skill !== lane) continue;
-        const H0 = hoursOf(t, ch, world), H1 = H0 * ratio;
-        if (!(mk.G + H1 <= NEED_RATIO * H0)) continue;
-        const pts = t.points * (world.config.weight[t.achievement] ?? 1), hours = mk.G + H1;
-        push({ work: `${t.achievement} (${t.work.resource}, tool)`, key: t.key, pieces, H0, H1, G: mk.G, parts: mk.parts, points: pts, fit: hours <= calH ? pts / hours : 0, any: pts / hours, hours, offered: mk.offered });
-      }
+      const s = lb && Number.isFinite(lb.hGate) ? bundleScore(lb, mk.G + H1, calH)
+        : ((points, hours) => ({ points, hours, fit: hours <= calH ? points / hours : 0, any: points / hours }))(objs.reduce((p, t) => p + t.points * (world.config.weight[t.achievement!] ?? 1), 0), mk.G + H1);
+      push({ work: `${lane} ${L} → ${last} and ${objs.length} gathering objective${objs.length === 1 ? "" : "s"} (tool: ${(H0 - H1).toFixed(1)} h saved)`, key: lb && Number.isFinite(lb.hGate) ? `lvl:${lane}:${lb.next}` : objs[0]?.key ?? `lvl:${lane}:${last}`, pieces, H0, H1, G: mk.G, parts: mk.parts, points: s.points, fit: s.fit, any: s.any, hours: s.hours, offered: mk.offered });
     }
   }
 
