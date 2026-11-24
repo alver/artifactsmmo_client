@@ -84,13 +84,19 @@ export interface FightVerdict { p: number; sec: number; back?: { gold: number; k
  *  carries and keeps, its transitions' seconds, and which transitions (their tiles). */
 export interface Toll { gold: number; keys: Record<string, number>; carried: Record<string, number>; sec: number; via: string[] }
 
+/** Task 027: a character's role (decisions 63, 64). A fighter takes fight work only; a worker its lanes and its craft, never
+ *  a combat level or a kill objective (decide.ts). `fighterFrom`: a worker until that level of that skill, a fighter from
+ *  then on — its gathering pins go to the next character that pins the lane (roles.ts). No `role`: neither, the rule before
+ *  task 027 (the made-up worlds). */
+export interface RoleConfig { gather?: string[]; craft?: string[]; role?: "fighter" | "worker"; fighterFrom?: { skill: Lane; level: number } }
+
 export interface PlannerConfig {
   deadline: string;                       // "2027-02-24T00:00:00Z"
   exclude: string[];                      // achievement codes the planner never works on
   first: string[];                        // achievement codes taken first whenever they are in reach
   weight: Record<string, number>;         // multiplies an achievement's points in the score (default 1)
   filler: string[];                       // ranked after the real candidates of its tier (rule 4: fits, then points per hour)
-  roles: Record<string, { gather?: string[]; craft?: string[] }>; // pins a specialist; default: computed (B.3)
+  roles: Record<string, RoleConfig>;     // pins a specialist; default: computed (B.3); task 027: fighter or worker
   on: Record<string, boolean>;            // which characters the planner owns (I.2; used by 008)
   offeringsPerDay: number;                // fleet-wide offerings a day the forward model counts (report 006: 10 of 15)
   offeringMin: number;                    // minutes one offering takes (design A.3, a guess)
@@ -132,6 +138,9 @@ export interface World {  // everything decide() reads — a snapshot, so it run
    *  only. A slot is a code, whatever the quantity (bank.ts freeSlots). The forward model has none: no tidy, no purchase. */
   bankSlots?: number;
   nextExpansion?: number;
+  /** Task 027: the kills done for a sale's item, by code (the golden egg's chickens); the hunt stops at supply.ts huntStop.
+   *  The runtime's PlannerState.hunted; the forward model counts its own. */
+  hunted?: Record<string, number>;
 }
 
 /** An accepted offering's favor: × `xp` XP (and × `drop` drops) on its target for that character until `until` (ms). */
@@ -162,4 +171,6 @@ export interface PlannerState {  // the synced, persisted signal of task 008 —
   /** Task 010: per owned character, the offerings day (the date of the most recent 00:05 UTC) whose offering interrupt
    *  was issued; `n` re-issues that day after a removed one (at most 3), the next one due at `again` (ms). */
   offered?: Record<string, { day: string; n: number; again?: number }>;
+  /** Task 027: the kills done for a sale's item, by code (World.hunted). */
+  hunted?: Record<string, number>;
 }

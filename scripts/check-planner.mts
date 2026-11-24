@@ -42,7 +42,7 @@ import { pickMonster, pickNode, pickRecipe, pickSource } from "../src/plan/plann
 import { CITY, bankSec, chAt, fightRec, mayOf, memoSizes, minWinOf, nearestSpot, placeOf, potionPrice, admitted, setCaches, setWisdom, tollOf, travel, winLevel } from "../src/plan/planner/reach";
 import { road } from "../src/plan/planner/road";
 import type { RoadLine } from "../src/plan/planner/road";
-import { crafterOf, rolesFor } from "../src/plan/planner/roles";
+import { crafterOf, roleOf, rolesFor } from "../src/plan/planner/roles";
 import { available, floor, poolBank } from "../src/plan/planner/stock";
 import { billOf, feedable, gateRoad, mayCraft, objectiveParents, recipeDemand, supplyNeeds, tradeOf } from "../src/plan/planner/supply";
 import type { Parent } from "../src/plan/planner/supply";
@@ -68,6 +68,10 @@ const NOW = Date.parse(status.server_time); // 2026-11-18 13:34 UTC, the snapsho
 const BANK_GOLD = 155_976; // docs/design/snapshot/leaderboard-accounts.json, account "alverus" (2026-11-18); bank gold is in no public read
 const NAMES = chars.map((c) => c.name);
 const ALL_ON: PlannerConfig = { ...DEFAULTS, on: Object.fromEntries(NAMES.map((n) => [n, true])) };
+/** Task 027: the roles before task 027 (five even characters: no `role`, a394ae1's pins) — the made-up cases that test a
+ *  mechanism (supply through the bank, rule 4, food, keys, the node of a src:, an event's members) on a character the role
+ *  table now makes a fighter or a worker. The roles themselves: scripts/check-roles.mts. */
+const EVEN: PlannerConfig = { ...ALL_ON, roles: { First: { craft: ["cooking"], gather: ["fishing", "mining", "woodcutting"] }, Second: { craft: ["weaponcrafting"], gather: ["woodcutting"] }, Third: { craft: ["gearcrafting"], gather: ["alchemy"] }, Fourth: { craft: ["jewelrycrafting"], gather: ["mining", "woodcutting"] }, Fifth: { gather: ["mining"] } } };
 const base: World = { now: NOW, characters: chars, bank: fx.bankItems, bankGold: BANK_GOLD, achievements, events: [], current: {}, costs: {}, blocked: {}, config: ALL_ON };
 /** Task 010/011: the combat levels logs/dev.log shows (read without a request): the snapshot's XP plus every `fight win ·
  *  +N xp` and combat offering logged since the snapshot's time, levelled by the atlas's xpNeeded. */
@@ -119,7 +123,7 @@ const INV = [
   "8 the same world gives the same step",
   "9 no blocked pair before its until",
   "10 points never fall, clocks move",
-  "11 the roles are the same as at the start",
+  "11 the roles are the same as at the start (task 027: until a character's role changes — Second at weaponcrafting 30)",
   "12 no piece in two sets, no stock another reserved",
   "13 no step over 2 chunks but a train level, a task, one item of a drop or one kill",
   "14 a supply step has an open parent, its crafter on",
@@ -162,6 +166,7 @@ const cases: [string, boolean][] = [];
 interface Run {
   points: number;
   roles: string;
+  fighters: string; // task 027: who is a fighter (roles.ts roleOf) when `roles` was taken
   made: { code: string; for: string; work: string; asked: number; bank?: number; worn?: number; parts?: { supply: number; crafts: number; levels: number }; why?: string }[];
   asked: Map<string, { at: number; work: string; parts: { supply: number; crafts: number; levels: number } }>;
   unsafeHours: number;
@@ -197,7 +202,8 @@ interface Run {
   gold: Map<number, number>;
   first: Map<number, Map<string, number>>;
 }
-const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0, byproducts: new Map(), toolDup: new Map(), atLevel: new Map(), drunk: new Map(), gained: new Map(), checkpoints: new Map(), uncovered: new Map(), evBy: new Map(), evDone: [], cons: { hours: new Map(), made: new Map(), waited: new Map(), refused: new Map() }, food: { ate: 0, rested: 0, capped: 0, ex: [] }, tolls: new Map(), gold: new Map([[0, w.bankGold]]), first: new Map() });
+const fightersOf = (w: World): string => w.characters.filter((c) => roleOf(c.name, w) === "fighter").map((c) => c.name).join();
+const newRun = (w: World): Run => ({ points: pointsOf(w), roles: JSON.stringify(rolesFor(w)), fighters: fightersOf(w), made: [], asked: new Map(), unsafeHours: 0, hours: new Map(), reached: new Map(), copies: new Map(), fightHours: 0, potionHours: 0, byproducts: new Map(), toolDup: new Map(), atLevel: new Map(), drunk: new Map(), gained: new Map(), checkpoints: new Map(), uncovered: new Map(), evBy: new Map(), evDone: [], cons: { hours: new Map(), made: new Map(), waited: new Map(), refused: new Map() }, food: { ate: 0, rested: 0, capped: 0, ex: [] }, tolls: new Map(), gold: new Map([[0, w.bankGold]]), first: new Map() });
 /** Task 015: the codes a bank holds in whole units — its used slots (the forward model banks expected fractions). */
 const codesOf = (w: World): number => w.bank.filter((b) => b.quantity >= 1 - 1e-9).length;
 /** …and with the tidy rule applied: less every gear code it calls outdated (bank.ts tidyVerdicts). */
@@ -260,14 +266,14 @@ function verify(w: World, step: Step, run: Run): void {
   }
   // rule 4 (task 011): first; real that fits; filler that fits; real by points per hour; filler by points per hour; fallback
   const r = rank(ch.name, w);
-  const realC = [...r.objectives, ...r.levels, ...r.supply];
+  const realC = [...r.objectives, ...r.levels, ...r.supply].filter((c) => !c.out); // task 027: a worker's rule 4 is inside its lanes
   const realFit = realC.some((c) => c.fit > 0), realAny = realC.some((c) => c.any > 0);
   const fillFit = r.fillers.some((c) => c.fit > 0), fillAny = r.fillers.some((c) => c.any > 0);
   const first = !!t?.achievement && w.config.first.includes(t.achievement);
-  check(INV[5],
-    step.as === "filler" ? !realFit && (fillFit || !realAny)
+  check(INV[5], step.why.startsWith("worker, ") /* task 027: a worker's first three tiers go before rule 4 */ ||
+    (step.as === "filler" ? !realFit && (fillFit || !realAny)
     : step.as === "fallback" ? !realAny && !fillAny
-    : realFit || !fillFit || first, tag);
+    : realFit || !fillFit || first), tag);
   const items = itemsOf(step, ch);
   check(INV[6], items.length >= 1 && items.length <= 4 && items.every((it) => it.id.startsWith("pl:") && !infinite(it)), () => `${tag()}: ${JSON.stringify(items)}`);
   check(INV[7], JSON.stringify(r.step) === JSON.stringify(step), tag);
@@ -275,6 +281,7 @@ function verify(w: World, step: Step, run: Run): void {
   const p = pointsOf(w);
   check(INV[9], p >= run.points && step.hours > 0, () => `${tag()}: ${run.points} → ${p}, ${step.hours} h`);
   run.points = p;
+  if (fightersOf(w) !== run.fighters) { run.fighters = fightersOf(w); run.roles = JSON.stringify(rolesFor(w)); } // task 027: a role changed
   check(INV[10], JSON.stringify(rolesFor(w)) === run.roles, () => `${tag()}: ${JSON.stringify(rolesFor(w))}`);
   const pool = ownedQtyOf(ch, poolBank(w, ch.name));
   const wearN = new Map<string, number>();
@@ -506,7 +513,8 @@ const DEADLINE = Date.parse(DEFAULTS.deadline);
 // at hand: the ceiling); C consumables 0 — report 013's row A whole, the anchor (77); D a win is enough (task 025: the floor
 // 0.5 — "safe" and "win" ended; an expected win is a rolled one about half the time); E no events; F all
 // five hold the alchemy role (gathering and its level roads): what self-supply by the fighters would be worth.
-const ALCHEMY_ALL: PlannerConfig["roles"] = Object.fromEntries(Object.entries(DEFAULTS.roles).map(([n, r]) => [n, { ...r, gather: [...new Set([...(r.gather ?? []), "alchemy"])] }]));
+// task 027: without the roles (role, fighterFrom) — five even characters, as the row was written
+const ALCHEMY_ALL: PlannerConfig["roles"] = Object.fromEntries(Object.entries(DEFAULTS.roles).map(([n, r]) => [n, { craft: r.craft, gather: [...new Set([...(r.gather ?? []), "alchemy"])] }]));
 // Task 017: G — config.tolls 0, report 016's model whole (no conditional transition, no tasks coin). Task 021: its pin (86,
 // report 016's row A) went with the solver's change; the row stays in the line.
 const ROWS: { label: string; potionK: number; potionStock: number; risk: PlannerConfig["risk"]; events: number; consumables: number; roles?: PlannerConfig["roles"]; tolls?: number }[] = [
@@ -575,20 +583,13 @@ const rows: Promise<[number, string][]> = !VERBOSE ? Promise.resolve([]) : Promi
 
 // ── 1. roles ─────────────────────────────────────────────────────────────────
 {
-  // The crafters as they are and the specialists of design B.3; then, for mining and woodcutting, as many more as make
-  // three per lane by rolesOf's rule (level, then fewer lanes, then account order), lane by lane in GATHER_LANES order.
-  const ruled: Record<string, string[]> = { First: ["combat", "cooking", "fishing"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "alchemy"], Fourth: ["combat", "jewelrycrafting", "mining"], Fifth: ["combat", "mining"] };
-  for (const lane of ["mining", "woodcutting"] as Lane[]) {
-    while (NAMES.filter((n) => ruled[n].includes(lane)).length < 3) {
-      const c = chars.filter((x) => !ruled[x.name].includes(lane)).sort((a, b) => levelOf(b, lane) - levelOf(a, lane) || ruled[a.name].length - ruled[b.name].length || NAMES.indexOf(a.name) - NAMES.indexOf(b.name))[0];
-      ruled[c.name].push(lane);
-    }
-  }
+  // Task 027 (decisions 63, 64): two fighters with no lane, three workers — one owner a gathering skill, no craft moved
+  const table: Record<string, string[]> = { First: ["combat"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "cooking", "alchemy", "fishing"], Fourth: ["combat", "jewelrycrafting", "mining"], Fifth: ["combat"] };
   const pinned = rolesFor(base);
-  const same = NAMES.every((n) => [...ruled[n]].sort().join() === [...pinned[n]].sort().join());
-  console.log(`## Roles (DEFAULTS.roles; the extras chosen by rolesOf's rule from the snapshot: ${same ? "the same" : "DIFFERENT"})`);
-  for (const n of NAMES) console.log(`  ${pad(n, 7)} ${pad(pinned[n].length, 2)} lanes: ${pinned[n].join(", ")}`);
-  cases.push(["the pinned roles are what rolesOf's rule chose from the snapshot", same]);
+  const same = NAMES.every((n) => [...table[n]].sort().join() === [...pinned[n]].sort().join());
+  console.log(`## Roles (DEFAULTS.roles, task 027's table: ${same ? "the same" : "DIFFERENT"})`);
+  for (const n of NAMES) console.log(`  ${pad(n, 7)} ${pad(roleOf(n, base) ?? "—", 7)} ${pad(pinned[n].length, 2)} lanes: ${pinned[n].join(", ")}`);
+  cases.push(["the roles are task 027's table (fighters First and Fifth, workers Second, Third and Fourth)", same]);
 }
 
 // ── 2. unhandled; the nine of report 007 ─────────────────────────────────────
@@ -720,7 +721,7 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   const ev = eventsData.find((e) => e.code === "strange_apparition")!;
   const tile = ev.maps.map((m) => tileAt(m.x, m.y, m.layer)).find((m): m is GameMap => !!m && travel(placeOf(miner), { x: m.x, y: m.y, layer: m.layer }) != null)!;
   const live: ActiveEvent = { name: ev.name, code: ev.code, map: { ...tile, interactions: { content: { type: "resource", code: "strange_rocks" }, transition: null } }, previous_map: tile, duration: 60, expiration: new Date(NOW + 50 * 60e3).toISOString(), created_at: new Date(NOW - 10 * 60e3).toISOString() };
-  const w0: World = { ...base, characters: [miner], achievements: only(["strange_miner", "expert_miner", "professional_miner"]), events: [live] };
+  const w0: World = { ...base, characters: [miner], achievements: only(["strange_miner", "expert_miner", "professional_miner"]), events: [live], config: EVEN };
   const a = steps1(w0, "Fifth");
   const b = steps1({ ...w0, now: NOW + 51 * 60e3 }, "Fifth");
   const node = (s: Step): string => (s.work.kind === "gather" ? s.work.resource : s.work.kind);
@@ -753,14 +754,16 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   const need1 = gearNeeds(w1).needs.find((n) => n.for === "Fifth");
   const piece = need1 ? [...need1.pieces.keys()][0] : "";
   const r1 = playOut(w1, NOW + 2 * DAY);
-  const made1 = at(r1, (s) => s.target === `gear:${piece}`);
+  // task 027: the worker serves the fighter's need first, and the cheapest flip moves with what the bank gets (the sword's
+  // ore and bars make an iron dagger first) — the piece made for Fifth, whichever it is
+  const made1 = at(r1, (s) => s.target.startsWith("gear:") && s.for === "Fifth"), piece1 = made1?.step.target.slice(5) ?? piece;
   const before = r1.played.filter((p) => p.step.character === "Fifth" && made1 && p.at < made1.at + made1.step.hours * 3.6e6);
   const after = r1.played.find((p) => p.step.character === "Fifth" && made1 && p.at >= made1.at + made1.step.hours * 3.6e6 && p.step.work.kind === "kill");
-  const chain = [...new Set(r1.played.filter((p) => p.step.as === "supply" && p.step.parent && (p.step.parent === `gear:${piece}` || p.step.target === `gear:${piece}`)).map((p) => `${p.step.target}@${p.step.character}`))];
+  const chain = [...new Set(r1.played.filter((p) => p.step.as === "supply" && p.step.parent && (p.step.parent === `gear:${piece1}` || p.step.target === `gear:${piece1}`)).map((p) => `${p.step.target}@${p.step.character}`))];
   cases.push(["a fighter without a safe XP monster: a piece flips one, its chain is worked through the bank", !pick0 && !!need1 && !!made1 && chain.length >= 2]);
-  cases.push(["…the fighter does something else meanwhile, and with the piece in the bank its pick wears it", before.every((p) => p.step.work.kind !== "kill") && !!after && Object.values(after.step.wear ?? {}).includes(piece)]);
+  cases.push(["…the fighter does something else meanwhile, and with the piece in the bank its pick wears it", before.every((p) => p.step.work.kind !== "kill") && !!after && Object.values(after.step.wear ?? {}).includes(piece1)]);
   console.log(`  1. no safe XP monster for Fifth (pick: ${pick0?.monster ?? "none"}); the need: ${need1 ? `${[...need1.pieces.keys()].join(" + ")} — ${need1.work}, H0 ${f1(need1.H0)} h, H1 ${f1(need1.H1)} h, G ${f1(need1.G)} h` : "none"}`);
-  console.log(`     the chain: ${chain.join(", ")}; Fifth meanwhile: ${[...new Set(before.map((p) => p.step.target))].join(", ")}; after: ${after ? `${after.step.target}, ${(after.step.work as { monster: string }).monster}, wears ${Object.values(after.step.wear ?? {}).join(", ")}` : "—"}`);
+  console.log(`     made for Fifth: ${piece1}; the chain: ${chain.join(", ")}; Fifth meanwhile: ${[...new Set(before.map((p) => p.step.target))].join(", ")}; after: ${after ? `${after.step.target}, ${(after.step.work as { monster: string }).monster}, wears ${Object.values(after.step.wear ?? {}).join(", ")}` : "—"}`);
 
   // 2. the same with the crafter two levels short of the piece's recipe
   const lv = piece ? item(piece)!.craft!.level : 10;
@@ -772,7 +775,8 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   // 3. two fighters (the same fighter twice) and one piece in the bank: once one wears it, the other asks for a
   //    copy of its own; played on for a day, no piece is in two sets (invariant 12)
   const twin = { ...fifth, name: "Fourth" } as Character;
-  const w3 = { ...flipWorld(sec.weaponcrafting_level, ["Second", "Fourth", "Fifth"], [fifth, twin]), bank: piece ? [{ code: piece, quantity: 1 }] : [] };
+  const w3f = flipWorld(sec.weaponcrafting_level, ["Second", "Fourth", "Fifth"], [fifth, twin]);
+  const w3 = { ...w3f, config: { ...w3f.config, roles: { ...w3f.config.roles, Fourth: { role: "fighter" as const } } }, bank: piece ? [{ code: piece, quantity: 1 }] : [] };
   const asks = (w: World, who: string): boolean => gearNeeds(w).needs.some((n) => n.for === who && n.pieces.has(piece));
   const armour5 = Object.fromEntries(ARMOUR.map((s) => [s, (fifth as unknown as Record<string, string>)[`${s}_slot`]]).filter(([, c]) => c));
   const w3a = wear(w3, { character: "Fifth", wear: { ...armour5, weapon: piece } } as Step);
@@ -783,15 +787,14 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   const fourthNeeds = gearNeeds(w3a).needs.filter((n) => n.for === "Fourth");
   const p3 = pickMonster(w3a.characters.find((c) => c.name === "Fourth")!, w3a, new Set());
   const lacks = !p3 || !Object.values(fightRec(w3a.characters.find((c) => c.name === "Fourth")!, w3a, p3.monster)?.slots ?? {}).includes(piece);
-  // task 025: "…and asks for its own" no more — Fourth's road above its own level is priced on the fleet's gear (reach.ts openOf,
-  // its shortcut: a piece another character wears counts as the bank's), where Fifth's sword now admits its fights (p 0.98 at
-  // the pig), so H0 is finite and the sword is no need of Fourth's; it was ∞ under the safe rule. Gear by need is 026's.
-  cases.push(["two fighters, one piece: nobody asks while it is free; once one wears it, the other plans without it", !asks(w3, "Fourth") && !asks(w3, "Fifth") && lacks]);
+  // task 027: the old reading again — a fighter's worn set is not the bank's for another fighter (reach.ts openOf), so Fourth's
+  // road above its level is priced without Fifth's sword and asks for its own (task 025 had restated it without "asks")
+  cases.push(["two fighters, one piece: nobody asks while it is free; once one wears it, the other plans without it and asks for its own", !asks(w3, "Fourth") && !asks(w3, "Fifth") && lacks && fourthNeeds.length > 0]);
   console.log(`  3. one ${piece} in the bank: asked for while it is free — ${asks(w3, "Fourth") || asks(w3, "Fifth") ? "yes" : "no"}; Fifth wears it → Fourth's pick ${p3?.monster ?? "none"} without it, its own need: ${fourthNeeds.map((n) => [...n.pieces.keys()].join(" + ")).join(" | ") || "none"}; a day played: ${piece} made ${made3.join(", ") || "never"}`);
 
   // 4. a material two crafts deep, across two characters through the bank: iron swords ← iron bars ← iron ore
   const sw: AccountAchievement = { code: "made_up_swords", name: "made up", description: "", points: 3, completed_at: null, objectives: [{ type: "crafting", target: "iron_sword", total: 3, progress: 0 }] } as AccountAchievement;
-  const w4: World = { ...base, characters: [{ ...chars.find((c) => c.name === "Second")!, mining_level: 5 }, fifth], bank: [], achievements: [...only([]), sw], config: { ...ALL_ON, on: { Second: true, Fifth: true } } };
+  const w4: World = { ...base, characters: [{ ...chars.find((c) => c.name === "Second")!, mining_level: 5 }, fifth], bank: [], achievements: [...only([]), sw], config: { ...EVEN, on: { Second: true, Fifth: true } } };
   const r4 = playOut(w4, NOW + 2 * DAY);
   const ore = at(r4, (s) => s.target === "src:iron_ore"), bar = at(r4, (s) => s.target === "mat:iron_bar"), sword = at(r4, (s) => s.target === "ach:made_up_swords:0");
   cases.push(["a material two crafts deep: source, material, final craft, across two characters", !!ore && !!bar && !!sword && sword.step.character === "Second" && ore.step.character !== "Second" && !!r4.completed.find((c) => c.code === "made_up_swords")]);
@@ -800,14 +803,14 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   // 5. a miner and a better pickaxe (the bank holds the jasper crystal): asked for only when it pays
   const miner = keepOnly({ ...base, characters: [chars.find((c) => c.name === "Second")!, fifth] }, "Fifth", ARMOUR).characters[1];
   const coal = (n: number): AccountAchievement => ({ code: "made_up_coal", name: "made up", description: "", points: 2, completed_at: null, objectives: [{ type: "gathering", target: "coal", total: n, progress: 0 }] } as AccountAchievement);
-  const pick5 = (n: number) => gearNeeds({ ...base, characters: [chars.find((c) => c.name === "Second")!, miner], bank: [{ code: "jasper_crystal", quantity: 1 }], achievements: [...only([]), coal(n)], config: { ...ALL_ON, on: { Second: true, Fifth: true } } }).needs.find((x) => x.for === "Fifth" && x.work.includes("tool"));
+  const pick5 = (n: number) => gearNeeds({ ...base, characters: [chars.find((c) => c.name === "Second")!, miner], bank: [{ code: "jasper_crystal", quantity: 1 }], achievements: [...only([]), coal(n)], config: { ...EVEN, on: { Second: true, Fifth: true } } }).needs.find((x) => x.for === "Fifth" && x.work.includes("tool"));
   const big = pick5(5000), small = pick5(100);
   cases.push(["a better pickaxe is asked for when it pays (5,000 coal), not when it does not (100)", !!big && !small]);
   console.log(`  5. 5,000 coal: ${big ? `${[...big.pieces.keys()]} — H0 ${f1(big.H0)} h, H1 ${f1(big.H1)} h, G ${f1(big.G)} h` : "no need"} · 100 coal: ${small ? "a need" : "no need (G + H1 > 0.85 × H0)"}`);
 
   // 6. alchemy at 17, nothing in the bank: the brewing step
   const third = chars.find((c) => c.name === "Third")!;
-  const w6: World = { ...base, characters: [third], bank: [], achievements: only(["intermediate_alchemist", "alchemist"]), config: { ...ALL_ON, on: { Third: true } } };
+  const w6: World = { ...base, characters: [third], bank: [], achievements: only(["intermediate_alchemist", "alchemist"]), config: { ...EVEN, on: { Third: true } } };
   const s6 = steps1(w6, "Third");
   cases.push(["alchemy at 17 with nothing in the bank: a brewing step that gathers its inputs", s6.as === "level" && s6.work.kind === "craft" && !!s6.sources?.length]);
   console.log(`  6. ${s6.why}; sources ${(s6.sources ?? []).map((s) => `${s.code} ×${s.times}`).join(", ")}`);
@@ -844,7 +847,7 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   // Task 011, section 3 (rule 4): a filler that fits goes before a road that fits nothing. Only grand_master (combat 50)
   // and ecologist open, the deadline 300 hours away. Task 014: on report 013's prices (consumables 0) — with the
   // snapshot bank's apple pie eaten the road to the wall fits 300 hours, and the case is about rule 4, not the price.
-  const short: PlannerConfig = { ...ALL_ON, deadline: new Date(NOW + 300 * 3.6e6).toISOString(), consumables: 0 };
+  const short: PlannerConfig = { ...EVEN, deadline: new Date(NOW + 300 * 3.6e6).toISOString(), consumables: 0 };
   const w = { ...base, achievements: only(["grand_master", "ecologist"]), config: short };
   const r = rank("Second", w);
   const s = steps1(w, "Second");
@@ -1058,7 +1061,7 @@ function killParts(who: string, level: number, monster: string, pieces: Record<s
 }
 {
   // section 5: the node of a src: gather, and a gated craft in a chain
-  const fifth = chars.find((c) => c.name === "Fifth")!, second = chars.find((c) => c.name === "Second")!;
+  const fifth = chars.find((c) => c.name === "Fourth")!, second = chars.find((c) => c.name === "Second")!; // task 027: Fourth, the one miner
   const sF = pickSource("diamond_stone", fifth, base), sS = pickSource("diamond_stone", second, base);
   cases.push(["task 012: a miner with the role takes a stone at the node that gives it XP (coal), over the cheaper one", sF?.work.kind === "gather" && sF.work.resource === "coal_rocks" && !!sF.over]);
   cases.push(["…a character without the role takes it at the cheaper node (copper)", sS?.work.kind === "gather" && sS.work.resource === "copper_rocks" && !sS.over]);
@@ -1075,7 +1078,7 @@ function killParts(who: string, level: number, monster: string, pieces: Record<s
   const wV: World = { ...wD, characters: wD.characters.map((c) => ({ ...c, layer: "void" }) as Character) };
   const waitsV = waitingOf(wV).find((x) => x.achievement === "diamond_in_the_sky")?.waits;
   cases.push(["…and with no XP source to that level the parent waits, and waitingOf says so", !objectiveParents(wV, "Fourth", calH).some((p) => p.key === "ach:diamond_in_the_sky:0") && waitsV === "a level with no XP source on the way"]);
-  console.log(`  task 012, the node: Fifth (mining ${fifth.mining_level}, the role) ${sF ? `${(sF.work as { resource: string }).resource}, ${sF.xp} XP a gather, share ${sF.share.toFixed(2)}, net ${f1(sF.net)} s a stone${sF.over ? ` (over ${sF.over})` : ""}` : "none"} · Second (mining ${second.mining_level}, no role) ${sS ? `${(sS.work as { resource: string }).resource}, net ${f1(sS.net)} s a stone` : "none"}`);
+  console.log(`  task 012, the node: Fourth (mining ${fifth.mining_level}, the role) ${sF ? `${(sF.work as { resource: string }).resource}, ${sF.xp} XP a gather, share ${sF.share.toFixed(2)}, net ${f1(sF.net)} s a stone${sF.over ? ` (over ${sF.over})` : ""}` : "none"} · Second (mining ${second.mining_level}, no role) ${sS ? `${(sS.work as { resource: string }).resource}, net ${f1(sS.net)} s a stone` : "none"}`);
   console.log(`     two in flight (Fifth 1,250 at the gold rocks, Fourth 1,500 at the copper rocks): Third's shortfall ${f1(l0 ?? NaN)} → ${f1(l1 ?? NaN)} actions`);
   console.log(`     the gate: diamond_in_the_sky's chain ~${f1(par?.hours ?? NaN)} h, of it the road to mining 35 ${f1(road?.hours ?? NaN)} h by ${road?.who}; Fourth's level candidate: ${lv ? `score ${lv.fit.toPrecision(3)} — ${lv.step.why}` : "none"}; nobody with a route: waits for "${waitsV}"`);
 }
@@ -1169,19 +1172,19 @@ const bars = (n: number): AccountAchievement => ({ code: "made_up_bars", name: "
   console.log(`  a parent short of strange ore: ${dBars.items.map((i) => `${i.what} for ${i.for} (${f1(i.actions)} gathers, fits ${i.fits})`).join("; ")}`);
 }
 {
-  // Section 3: an event in the score. strange_miner behind mining 35: in the bundle of a role holder, nobody else's.
-  const at30 = (names: string[], on: string[], deadline = DEFAULTS.deadline): World => ({ ...base, characters: chars.map((c) => (names.includes(c.name) ? ({ ...c, mining_level: 30 } as Character) : c)), achievements: only(["strange_miner"]), config: { ...ALL_ON, deadline, on: Object.fromEntries(on.map((n) => [n, true])) } });
+  // Section 3: an event in the score. strange_miner behind mining 35: in the bundle of a role holder, nobody else's (task 027: Fourth, the one miner).
+  const at30 = (names: string[], on: string[], deadline = DEFAULTS.deadline): World => ({ ...base, characters: chars.map((c) => (names.includes(c.name) ? ({ ...c, mining_level: 30 } as Character) : c)), achievements: only(["strange_miner"]), config: { ...EVEN, deadline, on: Object.fromEntries(on.map((n) => [n, true])) } }); // task 027: three miners only before the roles
   const w = at30(NAMES, NAMES);
-  const bF = bundleOf("mining", "Fifth", w), bS = bundleOf("mining", "Second", w);
+  const bF = bundleOf("mining", "Fourth", w), bS = bundleOf("mining", "Second", w);
   cases.push(["task 013: an event achievement behind a gathering level is in that lane's bundle for a role holder, for nobody else", !!bF?.behind.some((x) => x.code === "strange_miner") && bF.events.length === 1 && !bS]);
-  const lv = rank("Fifth", w).levels.find((c) => c.target.key === "lvl:mining:35");
-  console.log(`  strange_miner behind mining 35: Fifth's bundle ${bF ? `${bF.behind.map((x) => x.code).join(", ")}, ${JSON.stringify(bF.events)}` : "none"}; Second's ${bS ? "has one" : "none"}\n     Fifth's level candidate: ${lv?.step.why ?? "none"}`);
+  const lv = rank("Fourth", w).levels.find((c) => c.target.key === "lvl:mining:35");
+  console.log(`  strange_miner behind mining 35: Fourth's bundle ${bF ? `${bF.behind.map((x) => x.code).join(", ")}, ${JSON.stringify(bF.events)}` : "none"}; Second's ${bS ? "has one" : "none"}\n     Fourth's level candidate: ${lv?.step.why ?? "none"}`);
   // one member against three: the deadline between the two calendars
-  const one = at30(NAMES, ["Fifth"]), b1 = bundleOf("mining", "Fifth", one)!, b3 = bF!;
+  const one = at30(NAMES, ["Fourth"]), b1 = bundleOf("mining", "Fourth", one)!, b3 = bF!;
   const i1 = b1.behind.findIndex((x) => x.code === "strange_miner"), i3 = b3.behind.findIndex((x) => x.code === "strange_miner");
   const calH = b3.hGate + (b1.cal[i1] + b3.cal[i3]) / 2;
   const dl = new Date(NOW + calH * 3.6e6).toISOString();
-  const s1 = bundleScore(bundleOf("mining", "Fifth", at30(NAMES, ["Fifth"], dl))!, b1.hGate, calH), s3 = bundleScore(bundleOf("mining", "Fifth", at30(NAMES, NAMES, dl))!, b3.hGate, calH);
+  const s1 = bundleScore(bundleOf("mining", "Fourth", at30(NAMES, ["Fourth"], dl))!, b1.hGate, calH), s3 = bundleScore(bundleOf("mining", "Fourth", at30(NAMES, NAMES, dl))!, b3.hGate, calH);
   cases.push(["…with one member it does not fit, with three it does", s1.fit === 0 && s1.any > 0 && s3.fit > 0]);
   console.log(`     one miner on: ${b1.events[0]?.spawns} spawns, ${f1(b1.events[0]?.days ?? NaN)} days; three: ${b3.events[0]?.spawns} spawns, ${f1(b3.events[0]?.days ?? NaN)} days; deadline ${f1(calH / 24)} days away → fit ${s1.fit.toPrecision(2)} / ${s3.fit.toPrecision(2)}`);
   // an event monster's achievement behind a combat level by winLevel
@@ -1209,10 +1212,10 @@ const bars = (n: number): AccountAchievement => ({ code: "made_up_bars", name: "
   const pigs: AccountAchievement = { code: "made_up_pigs", name: "made up", description: "", points: 2, completed_at: null, objectives: [{ type: "combat_kill", target: "pig", total: 77, progress: 47 }] } as AccountAchievement;
   const wI: World = { ...realWorld(LOG_LEVELS), achievements: [...only([]), pigs] };
   const firstStep = { key: "ach:made_up_pigs:0@First#1", target: "ach:made_up_pigs:0", character: "First", as: "objective", work: { kind: "kill", monster: "pig" }, units: 55, hours: 1, score: 1, why: "made up" } as Step;
-  const unitsOf = (w: World): number | undefined => rank("Second", w).objectives.find((c) => c.target.key === "ach:made_up_pigs:0")?.step.units;
+  const unitsOf = (w: World): number | undefined => rank("Fifth", w).objectives.find((c) => c.target.key === "ach:made_up_pigs:0")?.step.units; // task 027: a fighter (a worker takes no kill objective)
   const whole = unitsOf({ ...wI, current: { First: firstStep } }), left = unitsOf({ ...wI, current: { First: { ...firstStep, units: 55 - 47 } } });
   cases.push(["task 013: the second decides while the first stands at 47 of 55 — it plans what is really left (22), not nothing", left === 22 && whole === undefined]);
-  console.log(`  pigs: 30 open by the read, First's step at 47 of 55: Second plans ${left ?? "none"} (the whole step in flight: ${whole ?? "none"})`);
+  console.log(`  pigs: 30 open by the read, First's step at 47 of 55: Fifth plans ${left ?? "none"} (the whole step in flight: ${whole ?? "none"})`);
 }
 
 // Task 013, sections 1 and 3: the tables (`npm run check -- planner`).
@@ -1297,7 +1300,7 @@ function consWorld(bank: Record<string, number>, achs: AccountAchievement[], on:
   return {
     ...base, characters: chars.map((c) => (who[c.name] ? ({ ...stripped(c, who[c.name].level ?? c.level), ...who[c.name] } as Character) : c)),
     bank: Object.entries(bank).map(([code, quantity]) => ({ code, quantity })), achievements: [...only([]), ...achs],
-    config: { ...ALL_ON, on: Object.fromEntries(on.map((n) => [n, true])), ...extra },
+    config: { ...EVEN, on: Object.fromEntries(on.map((n) => [n, true])), ...extra },
   };
 }
 {
@@ -1348,7 +1351,7 @@ function consWorld(bank: Record<string, number>, achs: AccountAchievement[], on:
 
   // 5. food from a by-product in the bank: needed and cooked by the cook; never from an open parent's own material
   const noFood = fx.bankItems.filter((b) => item(b.code)?.subtype !== "food");
-  const w5: World = { ...base, bank: [...noFood, { code: "raw_beef", quantity: 2000 }], characters: chars.map((c) => (c.name === "First" ? ({ ...c, cooking_level: 10 } as Character) : c)) };
+  const w5: World = { ...base, bank: [...noFood, { code: "raw_beef", quantity: 2000 }], characters: chars.map((c) => (c.name === "First" ? ({ ...c, cooking_level: 10 } as Character) : c)), config: EVEN };
   const f5 = consumableNeeds(w5, "First").filter((n) => n.food);
   const cook5 = rank("First", w5).supply.find((c) => c.target.key === "mat:cooked_beef");
   const w5b: World = { ...w5, achievements: [...w5.achievements, made("made_up_beef", 2, "crafting", "cooked_beef", 400)] };

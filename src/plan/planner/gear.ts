@@ -11,6 +11,8 @@
 //       one need — the character with the least G + H1, ties to the name;
 //   (c) per gathering role, the road to that lane's next gate or an open gathering objective of the lane — a tool
 //       (still per role holder: one objective can ask a tool of each, report 011).
+// Task 027: (a) and (b) are the fighters' (roles.ts fights: a character with no role too) — a worker has no combat road
+// and takes no kill objective. The same in consumables.ts consumableNeeds.
 // Candidates: pieces with a recipe the character can equip now (a piece its pool already holds is simply not new),
 // no rune, artifact, utility or bag, at most ten levels below it, whose bill of materials is in reach (bank stock
 // counts), that someone who is on can source and that have a crafter; the rest are listed as rejected, with why.
@@ -39,7 +41,7 @@ import { achHours, bundleOf, bundleScore } from "./bundle";
 import { isOn, met } from "./gates";
 import { pickMonster } from "./pick";
 import { fightSecOf, gatherCut, nearestSpot, placeOf, planRec, admitted, setWisdom, toolCut, admits } from "./reach";
-import { crafterOf, rolesFor } from "./roles";
+import { crafterOf, fights, rolesFor } from "./roles";
 import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
 import type { Parent } from "./supply";
@@ -200,7 +202,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
 
     // (a) the road to the next combat gate, judged on its next ten levels at most (the levels section 2 solves; a far
     // gate — grand_master at 50 — is reached a wall at a time); the score's hours run to the gate or the wall
-    const b = bundleOf("combat", ch.name, world);
+    const b = fights(ch.name, world) ? bundleOf("combat", ch.name, world) : null; // task 027: a worker has no combat road
     if (b && c.fight.length) {
       const end = Math.min(b.next, L + 10);
       const own = (l: number): number => levelHoursEstimate("combat", l, world, ch);
@@ -284,7 +286,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
     const per = perOf(t.work);
     // task 013: an event monster's kill objective is a need like any other — its work is done at the spawns
     const evOn = !!(world.config.events ?? 1);
-    const able = world.characters.filter((ch) => isOn(ch.name, world) && t.gates.every((g) => g.kind === "win" || (evOn && g.kind === "event") || met(g, ch, world)));
+    const able = world.characters.filter((ch) => isOn(ch.name, world) && fights(ch.name, world) && t.gates.every((g) => g.kind === "win" || (evOn && g.kind === "event") || met(g, ch, world)));
     let H0 = Infinity;
     for (const ch of able) if (admitted(ch, world, m.code)) H0 = Math.min(H0, (left * actionSec(t.work, ch, world) * per) / 3600);
     let best: Need | undefined;

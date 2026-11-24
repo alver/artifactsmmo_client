@@ -21,15 +21,15 @@ export const DEFAULTS: PlannerConfig = {
   first: [],
   weight: {},
   filler: FILLER,
-  // Task 009: every role pinned, so roles never follow levels. The crafters as they are; the gathering specialists of
-  // design B.3; the third miner and the second and third woodcutter chosen once from the 2026-11-18 snapshot by
-  // rolesOf's rule (level, then fewer lanes, then account order) — scripts/check-planner.mts prints that choice.
+  // Task 009: every role pinned, so roles never follow levels. Task 027 (Alex, decisions 63, 64): two fighters, three
+  // workers — one owner a gathering skill, no craft changes hands. Second is the third fighter from weaponcrafting 30; its
+  // woodcutting then goes to Fourth, the next character that pins it (roles.ts).
   roles: {
-    First: { craft: ["cooking"], gather: ["fishing", "mining", "woodcutting"] },
-    Second: { craft: ["weaponcrafting"], gather: ["woodcutting"] },
-    Third: { craft: ["gearcrafting"], gather: ["alchemy"] },
-    Fourth: { craft: ["jewelrycrafting"], gather: ["mining", "woodcutting"] },
-    Fifth: { gather: ["mining"] },
+    First: { role: "fighter" },
+    Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"], fighterFrom: { skill: "weaponcrafting", level: 30 } },
+    Third: { role: "worker", craft: ["gearcrafting", "cooking"], gather: ["alchemy", "fishing"] },
+    Fourth: { role: "worker", craft: ["jewelrycrafting"], gather: ["mining", "woodcutting"] },
+    Fifth: { role: "fighter" },
   },
   on: { Fifth: true }, // task 008: one character for a day of real play; 010 turns the other four on
   offeringsPerDay: 10, // measured 2026-11-17 and 11-18 (report 006); the cap is 15

@@ -14,9 +14,11 @@
 // settled point 3, the spawn assumed live: events.ts sharesOf) gives the share usable seconds a spawn ÷ the mean seconds
 // between spawns of its time; the step under it takes that much longer (stretch) and the event's work — kills, drops at
 // their expected rates, XP, the potions drunk — is applied after it as a kill or gather step's; demand met, the share ends.
+// Task 027: a sale is credited on its merchant's calendar (sales: one mean gap after its item is in the bank), and the kills
+// of its hunt are counted (World.hunted).
 
 import { atlas } from "../../catalog/atlas";
-import { item, monster as monsterOf, resource as resourceOf } from "../../catalog";
+import { item, itemName, monster as monsterOf, resource as resourceOf } from "../../catalog";
 import { STAT_CODES } from "../../sim/types";
 import { GEAR_SLOTS, slotCode } from "../../types/api";
 import { fightXp } from "../xp";
@@ -27,7 +29,7 @@ import { calendar, eventStep, eventWork, materialCal, possibleMembers, sharesOf,
 import { consFree, consumed, potionSet, runeBought, runePays } from "./consumables";
 import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
 import { available } from "./stock";
-import { billOf } from "./supply";
+import { billOf, huntStop, saleWait } from "./supply";
 import { isDone, targetsOf, unhandledOf } from "./targets";
 import { craftXpOf, gatherXp } from "./xp";
 import type { AccountAchievement, BankItem, Character, GearSlot } from "../../types/api";
@@ -207,8 +209,16 @@ export function advance(world: World, step: Step): World {
   if (at) Object.assign(ch, { x: at.x, y: at.y, layer: at.layer });
 
   const characters = world.characters.map((c, i) => (i === idx ? (ch as Character) : c));
-  const top = Math.max(...characters.map((c) => c.level));
-  const achievements = world.achievements.map((a): AccountAchievement => {
+  const achievements = progressed(world.achievements, prog, Math.max(...characters.map((c) => c.level)), end);
+  // task 027: the kills of a sale's hunt (supply.ts huntStop)
+  const sold = step.target.startsWith("src:") && w.kind === "kill" ? step.target.slice(4) : "";
+  const hunted = sold && targetsOf(world).some((t) => t.work.kind === "sell" && t.work.code === sold) ? { ...world.hunted, [sold]: (world.hunted?.[sold] ?? 0) + step.units } : world.hunted;
+  return { ...world, characters, achievements, bank: bankPlus(world.bank, delta), clock: { ...world.clock, [ch.name]: end }, ...(gold ? { bankGold: world.bankGold + gold } : {}), ...(hunted ? { hunted } : {}) };
+}
+
+/** The achievements with `prog` ("<objective type>:<target>" → units) added; a combat_level objective by the top level. */
+function progressed(list: AccountAchievement[], prog: Map<string, number>, top: number, end: number): AccountAchievement[] {
+  return list.map((a): AccountAchievement => {
     if (isDone(a)) return a;
     let changed = false;
     const objectives = a.objectives.map((o) => {
@@ -221,7 +231,26 @@ export function advance(world: World, step: Step): World {
     const b = { ...a, objectives };
     return isDone(b) ? { ...b, completed_at: new Date(end).toISOString() } : b;
   });
-  return { ...world, characters, achievements, bank: bankPlus(world.bank, delta), clock: { ...world.clock, [ch.name]: end }, ...(gold ? { bankGold: world.bankGold + gold } : {}) };
+}
+
+/** Task 027: a sale (an open `sell` target; events on) is credited on its merchant's calendar — one mean gap between spawns
+ *  (supply.ts saleWait) after a whole unit of its item is in the bank: the units leave the bank, the objective moves.
+ *  `due` holds per target the time it sells. */
+function sales(w: World, due: Map<string, number>, t: number): World {
+  if (!(w.config.events ?? 1)) return w;
+  for (const tg of targetsOf(w)) {
+    if (tg.work.kind !== "sell") continue;
+    const code = tg.work.code, have = w.bank.find((b) => b.code === code)?.quantity ?? 0;
+    if (have < 1 - 1e-6) { due.delete(tg.key); continue; }
+    const at = due.get(tg.key);
+    if (at == null) { due.set(tg.key, t + saleWait(tg) * 3.6e6); continue; }
+    if (at > t) continue;
+    const q = Math.min(tg.left, Math.floor(have + 1e-6));
+    due.delete(tg.key);
+    const top = Math.max(...w.characters.map((c) => c.level));
+    w = { ...w, bank: bankPlus(w.bank, new Map([[code, -q]])), achievements: progressed(w.achievements, new Map([[`npc_sell:${code}`, q]]), top, at) };
+  }
+  return w;
 }
 
 /** Task 013: an event the character attended while the step ran — its share of the time, the actions and hours it took. */
@@ -251,6 +280,7 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
   const played: Played[] = [];
   let steps = 0;
   const completed: Forward["completed"] = [];
+  const due = new Map<string, number>(); // task 027: per sale target, when its merchant buys (sales)
   for (;;) {
     if (!names.length) break;
     let name = names[0];
@@ -272,6 +302,11 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
         onEnd?.(w, s, prev);
       }
       for (const a of w.achievements) if (isDone(a) && !before.has(a.code)) completed.push({ code: a.code, points: a.points, at: t });
+    }
+    { // task 027: a sale on its merchant's calendar
+      const was = w.achievements;
+      w = sales(w, due, t);
+      if (w.achievements !== was) for (const a of w.achievements) if (isDone(a) && !was.find((b) => b.code === a.code && isDone(b))) completed.push({ code: a.code, points: a.points, at: t });
     }
     const current = Object.fromEntries(names.map((n) => [n, n === name ? last[n] : pending[n]]));
     w = { ...w, now: t, current, clock: { ...w.clock, [name]: t } };
@@ -318,6 +353,7 @@ export function waitingOf(world: World): { achievement: string; points: number; 
     const u = unhandled.find((x) => x.achievement === a.code);
     if (u) { out.push({ achievement: a.code, points: a.points, waits: u.why.includes("raid") ? "a raid" : "unhandled", why: u.why }); continue; }
     const ts = targets.filter((t) => t.achievement === a.code);
+    const sale = saleOf(ts, world);
     // task 012: a material made by another craft adds the gates of its bill (a craft gated at a level, settled point 8)
     const chain = (t: (typeof ts)[number]): Gate[] => (t.inputs ?? []).flatMap((i) => (i.source.kind === "craft" ? [...billOf(world, "", [[i.code, i.per * t.left]], undefined, false).leaves.values()].flatMap((l) => l.gates) : i.gates));
     const gs = ts.flatMap((t) => [...t.gates, ...chain(t)]).filter((g) => !world.characters.some((c) => met(g, c, world)));
@@ -339,14 +375,26 @@ export function waitingOf(world: World): { achievement: string; points: number; 
       : has("layer") ? "another layer" : has("event") && evStuck(ts) ? "an event" : has("group") ? "a group"
       : coins ? coins
       : ts.some((t) => t.work.kind === "use") ? "use" : ts.every((t) => t.work.kind === "favor") ? "offerings"
-      // task 025, settled point 9: a sale (turning_treasures_to_gold) is no step at all — not "does not fit"
-      : ts.length && ts.every((t) => t.work.kind === "sell") ? "a sale (no step sources or sells it)"
+      // task 027: a sale — its item hunted (supply.ts huntStop), then the merchant's next spawn
+      : sale ? sale.waits
       : potions ? "potions (an admitted win once they are made)"
       : combatGear ? "gear (no admitted win within ten levels)"
       : noRoad ? "a level with no XP source on the way"
       : gs.some((g) => g.kind === "level" && g.level > top(g.lane)) || has("win") ? "a level"
       : ts.some((t) => t.filler) ? "filler not reached" : "does not fit";
-    out.push({ achievement: a.code, points: a.points, waits });
+    out.push({ achievement: a.code, points: a.points, waits, ...(sale && waits === sale.waits ? { why: sale.why } : {}) });
   }
   return out;
+}
+
+/** Task 027: what an open sale waits for — its item in the bank (the merchant's next spawn), hunted (kills of the stop), or
+ *  a hunt that stopped. */
+function saleOf(ts: Target[], world: World): { waits: string; why: string } | undefined {
+  const t = ts.length && ts.every((x) => x.work.kind === "sell") ? ts.find((x) => x.inputs?.length) : undefined;
+  if (!t || t.work.kind !== "sell") return ts.length && ts.every((x) => x.work.kind === "sell") ? { waits: "a sale (no source for its item)", why: "" } : undefined;
+  const code = t.work.code, name = itemName(code), merchant = `the ${t.gates.find((g) => g.kind === "event")?.code.replace(/_/g, " ") ?? "merchant"} (every ~${Math.round(saleWait(t))} h)`;
+  const have = world.bank.find((b) => b.code === code)?.quantity ?? 0, kills = Math.round(world.hunted?.[code] ?? 0), stop = Math.round(huntStop(t));
+  return have >= 1 - 1e-6 ? { waits: "a sale: the merchant", why: `${name} in the bank; ${merchant} buys it` }
+    : kills >= stop ? { waits: "a sale: the hunt stopped", why: `no ${name} in ${kills} kills (the stop: ${stop}, 95% sure)` }
+    : { waits: "a sale: its item is hunted", why: `${name}: ${kills} of at most ${stop} kills, then ${merchant}` };
 }

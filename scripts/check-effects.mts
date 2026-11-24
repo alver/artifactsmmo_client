@@ -44,6 +44,21 @@ const cases: [string, unknown, unknown][] = [
   simulate(fighter(), mon({ hp: 1e6 }, [{ code: "protective_bubble", value: 65 }]), { trace: t });
   cases.push(["protective bubble EV first hit = 0.75·100 + 0.25·35", t[0].dmg, Math.round(83.75)]);
 }
+// Task 027: restore potions. The player (1000 HP, 100 fire, first) kills a 500-HP monster on fight turn 9; the monster hits
+// 300 on turns 2, 4, 6, 8 — the player starts turns 5, 7, 9 under half (400, then what the potions leave less 300).
+{
+  const m = mon({ hp: 500, attack_fire: 300 });
+  const two = (q?: number): Fighter => fighter({}, [{ code: "restore", value: 200, potion: "a", ...(q != null ? { qty: q } : {}) }, { code: "restore", value: 50, potion: "b" }]);
+  // slot order: 400 → +200 = 600, not under half, b waits; 300 → 500; 200 → 400 → +50 = 450 (both). Summed (the old
+  // reading) they gave 550 and drank 3 of each.
+  const f = run(two(), m);
+  cases.push(["two restore potions fire in slot order, the second only while HP is still under half", `${f.hpRemaining} ${f.used.a} ${f.used.b}`, "450 3 1"]);
+  // a stack of one: a fires on turn 5 (600), is spent; turn 7: 300 → b 350; turn 9: 50 → b 100
+  const s = run(two(1), m);
+  cases.push(["a worn stack stops when it is spent (qty 1), the next potion takes over", `${s.hpRemaining} ${s.used.a} ${s.used.b}`, "100 1 2"]);
+  const z = run(fighter({}, [{ code: "restore", value: 200, potion: "a", qty: 0 }]), m);
+  cases.push(["an empty stack never fires: the fight is lost on turn 8", `${z.win} ${z.used.a}`, "false 0"]);
+}
 // Roll mode bubble: the element never repeats two turns in a row (seeded rng).
 {
   let s = 7;

@@ -12,6 +12,7 @@ import { signal, useSignal } from "@preact/signals";
 import { achievements, characterList, isOwned } from "../state/store";
 import { configOf, planner, refreshAchievements, setPlannerConfig } from "../state/planner";
 import { outlook, refreshOutlook } from "../state/outlook";
+import { roleOfCh } from "../plan/planner/roles";
 import { queues } from "../state/queue";
 import { loadOptionalFile } from "../catalog/load";
 import { pct } from "../lib/util";
@@ -94,10 +95,16 @@ function Season() {
 
 const ANSWER: Record<string, string> = { objective: "ok", level: "info", supply: "warn", filler: "", fallback: "bad", tidy: "gold" };
 
+/** Task 027: the character's role as the config gives it (roles.ts roleOfCh) — Second's until its craft says otherwise. */
+function roleText(c: Character): string {
+  const cfg = configOf(planner.value.config), r = cfg.roles[c.name], now = roleOfCh(c, cfg);
+  return r?.fighterFrom && now === "worker" ? `worker → fighter at ${r.fighterFrom.skill} ${r.fighterFrom.level}` : now ?? "";
+}
+
 function nowCols(): Col<Character>[] {
   const st = planner.value, qs = queues.value, next = outlook.value.next;
   return [
-    { label: "Character", width: "170px", cell: (c) => <FleetWho c={c} /> },
+    { label: "Character", width: "170px", cell: (c) => <div><FleetWho c={c} /><div class="small muted">{roleText(c)}</div></div> },
     {
       label: "Doing", width: "130px",
       cell: (c) => {

@@ -18,6 +18,7 @@ import { potionPriceOf, potionSec, wisdomOf } from "../xp";
 import { PINNED_ARTIFACTS, jobGear, ownedQtyOf } from "../jobgear";
 import { consPrice, potionCands } from "./consumables";
 import { available, poolBank } from "./stock";
+import { roleOfCh } from "./roles";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../types/api";
 import type { BankItem, Character, GearSlot } from "../../types/api";
 import type { GameMap, Transition } from "../../types/catalog";
@@ -585,12 +586,14 @@ const openMemo = new WeakMap<World, World>();
  *  character × every event monster, every level of a road — missed the cache at nearly every decision (row A, days
  *  20–24: 7,500 of them). A need's potion set and every step's set stay on the character's own pool.
  *  shortcut: a piece another character wears counts as the bank's here; upgrade if a road is ever judged on a piece
- *  only one character can hold at a time */
+ *  only one character can hold at a time
+ *  Task 027: not a fighter's — each fighter gets its own set (a piece First wears is not Fifth's; report 025's twin
+ *  fighter): a fighter's worn set stays its own (the pool adds it), never the bank's for another. */
 export function openOf(world: World): World {
   let w = openMemo.get(world);
   if (!w) {
     const worn = new Map<string, number>();
-    for (const c of world.characters) for (const g of GEAR_SLOTS) {
+    for (const c of world.characters) if (roleOfCh(c, world.config) !== "fighter") for (const g of GEAR_SLOTS) {
       const code = g.startsWith("utility") ? "" : slotCode(c, g);
       if (code) worn.set(code, (worn.get(code) ?? 0) + 1);
     }

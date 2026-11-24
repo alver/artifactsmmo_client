@@ -32,8 +32,13 @@ type Running = import("../src/plan/planner/types").Running;
 setDataReader(async (name) => JSON.parse(readFileSync(`public/data/${name}.json`, "utf8")));
 await loadCatalog();
 
-const snap = JSON.parse(readFileSync(file, "utf8")) as { t: string; world: World; planner?: { current?: Record<string, Running> } };
+const snap = JSON.parse(readFileSync(file, "utf8")) as { t: string; world: World; planner?: { current?: Record<string, Running>; config?: Partial<World["config"]> } };
 const world = snap.world;
+// task 027: this code's defaults under the snapshot's patch — what the service plays on this World after a restart (a
+// snapshot's config is the merged one of the code that wrote it: its roles, its risk)
+const { DEFAULTS } = await import("../src/plan/planner/config");
+const patch = snap.planner?.config;
+if (patch) world.config = { ...DEFAULTS, ...patch, on: { ...DEFAULTS.on, ...patch.on } };
 const until = arg("days") ? world.now + Number(arg("days")) * 864e5 : Date.parse(world.config.deadline);
 if (!Number.isFinite(until)) { console.error("--days: a number"); process.exit(1); }
 

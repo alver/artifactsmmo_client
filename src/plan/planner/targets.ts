@@ -158,7 +158,10 @@ function staticOf(o: AchievementObjectiveProgress, coins: boolean): Static | str
       const buyer = [...catalog().npcs.values()].find((n) => (n.items ?? []).some((x) => x.code === t && x.sell_price != null));
       if (!buyer) return `no NPC buys ${t}`;
       const g = placeGates("npc", buyer.code);
-      return typeof g === "string" ? g : { work: { kind: "sell", code: t, npc: buyer.code }, gates: g };
+      // task 027: the item's field source is the sale's input (the golden egg: the chicken, 1 in 1,000) — supply.ts hunts it
+      // until one is in the bank; the merchant standing order sells it
+      const s = sourceFor(t);
+      return typeof g === "string" ? g : { work: { kind: "sell", code: t, npc: buyer.code }, gates: g, ...(typeof s !== "string" ? { inputs: [{ code: t, per: 1, source: s.work, gates: s.gates }] } : {}) };
     }
     default: return `unknown objective type ${o.type}`;
   }

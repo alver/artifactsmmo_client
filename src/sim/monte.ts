@@ -62,7 +62,7 @@ export function fightKey(player: Fighter, monster: Monster): string {
   const st = player.stats;
   let k = monster.code;
   for (const s of FIGHT_STATS) k += "," + st[s];
-  const eff = player.effects.map((e) => `${e.code}:${e.value}:${e.potion ?? ""}`);
+  const eff = player.effects.map((e) => `${e.code}:${e.value}:${e.potion ?? ""}${e.qty != null ? `#${e.qty}` : ""}`); // task 027: a short stack is another fight
   if (eff.length) k += "|" + eff.sort().join(";");
   return k;
 }

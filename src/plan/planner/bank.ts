@@ -14,7 +14,7 @@ import { catalog, item, itemName, itemUses, monster as monsterOf, resource as re
 import { GOLD_FLOOR } from "../events";
 import { jobGear } from "../jobgear";
 import { CRAFT_SEC, autoRecyclable, recycleReturn } from "../xp";
-import { GATHER_LANES } from "./config";
+import { GATHER_LANES, GEAR_CRAFT } from "./config";
 import { perOf, stepSec } from "./cost";
 import { baseParents } from "./consumables";
 import { possibleMembers } from "./events";
@@ -22,7 +22,7 @@ import { isOn } from "./gates";
 import { gearPieces } from "./gear";
 import { monsterName, pickMonster } from "./pick";
 import { fightRec, nearestSpot, placeOf } from "./reach";
-import { crafterOf } from "./roles";
+import { crafterOf, roleOf } from "./roles";
 import { available, poolBank } from "./stock";
 import { mayCraft, supplyNeeds } from "./supply";
 import { sourceFor, targetsOf } from "./targets";
@@ -175,7 +175,7 @@ export const backText = (back: [string, number][]): string => back.map(([c, q]) 
  * Settled point 4: the tidy step of `name` — the outdated codes it may recycle, of one workshop, at most three (a step
  * holds four items: a recycle of every copy of each, the deposit; compile.ts: no reset); every copy reserved like any
  * withdrawal. Undefined while TIDY_BELOW or more slots are free, while another character's tidy step runs, or when it may
- * recycle nothing.
+ * recycle nothing (task 027b: a fighter only the pieces of the gear craft it holds).
  */
 export function tidyStep(world: World, name: string): Step | undefined {
   const free = freeSlots(world);
@@ -186,7 +186,8 @@ export function tidyStep(world: World, name: string): Step | undefined {
   const blocked = (key: string): boolean => (world.blocked[`${key}@${name}`]?.until ?? 0) > world.now;
   const mine = tidyVerdicts(world, name).filter((v) => {
     const r = item(v.code)!.craft!;
-    return v.outdated && mayCraft(r.skill as Lane, r.level, name, world) && available(v.code, world, name) >= v.bank && !blocked(`tidy:${v.code}`);
+    // task 027b: a fighter recycles only pieces of the gear craft it holds
+    return v.outdated && mayCraft(r.skill as Lane, r.level, name, world) && (roleOf(name, world) !== "fighter" || GEAR_CRAFT.includes(r.skill as Lane)) && available(v.code, world, name) >= v.bank && !blocked(`tidy:${v.code}`);
   });
   if (!mine.length) return undefined;
   const skill = item(mine[0].code)!.craft!.skill;

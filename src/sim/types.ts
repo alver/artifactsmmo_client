@@ -24,6 +24,9 @@ export interface EffectEntry {
   value: number;
   /** The utility item (potion) the effect comes from: a fight consumes it (FightForecast.used). Unset for gear and runes. */
   potion?: string;
+  /** Task 027: the units of a worn stack, when it is short enough to run out in a fight (stats.ts currentFighter): a
+   *  restore entry stops after this many procs. Unset: it never runs out (the planner's solves pass none). */
+  qty?: number;
 }
 
 /** One "fighter" the simulator consumes: always-on stats + its combat effects. */

@@ -18,20 +18,28 @@
 // Task 013, settled point 1: a target with an event gate is never a step, live or not, nor an event-only material's
 // src: leaf — that work is the event interrupt's (events.ts eventMembers); its points ride a level's bundle (bundle.ts)
 // or a parent's calendar (supply.ts).
+// Task 027, the roles (roles.ts roleOf; no new scoring term — a candidate the role forbids is simply not one):
+//   a fighter: fight work only — a kill objective, a src: kill, a combat level; today's ranking among them, and when
+//     nothing ranks its XP pick. No gathering, crafting, supply-gather, filler or tidy step.
+//   a worker, in this order: (1) a fighter's gear by need or a consumable need (gear:, mat:, src:, the craft level a
+//     needed piece asks for), today's scoring among them; (2) an objective whose achievement completes within
+//     WORKER_SHORT_H of its work; (3) its gear craft to WORKER_CRAFT (lvl:<craft>:30, the train item); (4) today's rule
+//     inside its lanes (a work of no lane — a task, a trade — included). Never a combat level or a kill objective; a src:
+//     kill only when no fighter that is on is admitted for it. Its fallback gathers in its own lanes.
 
 import { achievement as achievementOf, item, itemName, resource as resourceOf } from "../../catalog";
 import { CRAFT_SEC } from "../xp";
 import { PINNED_ARTIFACTS, jobGear } from "../jobgear";
-import { CHUNK_SEC, GATHER_LANES, TRAIN_LANES } from "./config";
+import { CHUNK_SEC, GATHER_LANES, GEAR_CRAFT, TRAIN_LANES } from "./config";
 import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { bankStuck, newCodes, tidyStep } from "./bank";
-import { met } from "./gates";
+import { isOn, met } from "./gates";
 import { consFree, consParents, fightTake, gearWorld } from "./consumables";
 import { gearPieces, pieceParent } from "./gear";
 import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
-import { fightRec, nearestSpot, placeOf, withToll, verdictOf } from "./reach";
-import { crafterOf, rolesFor } from "./roles";
+import { admitted, fightRec, nearestSpot, placeOf, withToll, verdictOf } from "./reach";
+import { crafterOf, roleOf, rolesFor } from "./roles";
 import { available, poolBank } from "./stock";
 import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
 import { sourceFor, targetsOf } from "./targets";
@@ -45,6 +53,22 @@ export { met } from "./gates";
 /** Task 017, settled point 13: a kill step the potion stock caps below this many kills (and a third of its chunk) is a
  *  sliver — every one in the journal of 11-21 was one or two kills; section 1's own mark is five. */
 const SLIVER = 5;
+/** Task 027 (decision 66): a worker's objective goes before its craft when its achievement completes within this many
+ *  hours of the worker's own work (cheap points first), and the craft it levels before the rest of its lanes. */
+export const WORKER_SHORT_H = 6;
+export const WORKER_CRAFT = 30;
+
+/** The lane a work levels: combat for a kill, the skill of a gather, a craft or a recycle; none for a task or a trade. */
+function laneOfWork(w: Work, ch: Character, world: World): Lane | undefined {
+  switch (w.kind) {
+    case "kill": return "combat";
+    case "gather": return resourceOf(w.resource)?.skill as Lane | undefined;
+    case "craft": return item(w.code)?.craft?.skill as Lane | undefined;
+    case "train": case "level": return w.lane;
+    case "recycle": return recycleLane(ch, world);
+    default: return undefined;
+  }
+}
 
 const fmt = (h: number): string => (!Number.isFinite(h) ? "∞" : h < 10 ? h.toFixed(1) : String(Math.round(h)));
 
@@ -173,16 +197,26 @@ function wearOf(w: Work, ch: Character, world: World): Record<string, string> | 
   return out;
 }
 
-export interface Candidate { target: Target; step: Step; fit: number; any: number }
+/** `need` (task 027): for a fighter's gear by need or a consumable need — a worker's first tier. `out`: a worker's objective
+ *  outside its lanes — its second tier only. */
+export interface Candidate { target: Target; step: Step; fit: number; any: number; need?: boolean; out?: boolean }
 export interface Ranking { step: Step; objectives: Candidate[]; levels: Candidate[]; supply: Candidate[]; fillers: Candidate[]; lanes: Lane[] }
 
 /** Every candidate this character has now, scored, and the step decide() returns. */
-export function rank(name: string, world: World): Ranking {
+export function rank(name: string, world: World, free = false): Ranking {
   const ch = world.characters.find((c) => c.name === name);
   if (!ch) throw new Error(`no character ${name}`);
   const cfg = world.config;
   const lanes = rolesFor(world)[name] ?? ["combat"];
-  // Task 015, settled point 4: while fewer than TIDY_BELOW bank slots are free, a tidy step goes before any other
+  // Task 027: the role (fighter, worker, none) — what it forbids is no candidate (the module's header)
+  // task 027b: `free` — today's rule for a fighter with no admitted fight (the role's filters off)
+  const role = free ? undefined : roleOf(name, world), fighter = role === "fighter", worker = role === "worker";
+  /** A worker's work outside its lanes (a work of no lane is inside; a kill is the admission rule's, below). */
+  const outside = (w: Work): boolean => { const l = laneOfWork(w, ch, world); return worker && !!l && l !== "combat" && !lanes.includes(l); };
+  /** A src: kill goes to a fighter: to a worker only when no fighter that is on is admitted for it. */
+  const fighterHunts = (monster: string): boolean => world.characters.some((c) => c.name !== name && isOn(c.name, world) && roleOf(c.name, world) === "fighter" && admitted(c, world, monster));
+  // Task 015, settled point 4: while fewer than TIDY_BELOW bank slots are free, a tidy step goes before any other (task
+  // 027: not a fighter's — bank.ts tidyStep)
   const tidy = tidyStep(world, name);
   if (tidy) return { step: tidy, objectives: [], levels: [], supply: [], fillers: [], lanes };
   const targets = targetsOf(world);
@@ -238,6 +272,8 @@ export function rank(name: string, world: World): Ranking {
   for (const t of targets) {
     // task 013, settled point 1: a target with an event gate is never a step, live or not — its work is the interrupt's
     if (!t.achievement || blocked(t.key) || t.gates.some((g) => g.kind === "event")) continue;
+    // task 027: a fighter's objective is a kill, a worker's never; a worker's filler stays inside its lanes
+    if (fighter ? t.filler || t.work.kind !== "kill" : worker && (t.work.kind === "kill" || (t.filler && outside(t.work)))) continue;
     const left = t.left - inFlight(t.key);
     if (left <= 0) continue;
     const p0 = planObjective(t, ch, world, left);
@@ -249,14 +285,18 @@ export function rank(name: string, world: World): Ranking {
     if (!p) continue;
     const what = p.work.kind === "train" ? "recycled" : unitWord(t.work);
     const why = `${achievementOf(t.achievement)?.name ?? t.achievement}: ${left} ${what} left, +${t.points} pts in ~${fmt(h)} h; ${p.units} now (${fmt(p.hours)} h)${p.note}`;
-    (t.filler ? fillers : objectives).push({ target: t, step: stepOf(t, p, t.filler ? "filler" : "objective", any * fit, why), fit: any * fit, any });
+    (t.filler ? fillers : objectives).push({ target: t, step: stepOf(t, p, t.filler ? "filler" : "objective", any * fit, why), fit: any * fit, any, ...(outside(t.work) ? { out: true } : {}) });
   }
 
   // Rule 3: per lane, the next gate behind which open achievements sit, and the bundle up to it (bundle.ts).
   const levels: Candidate[] = [];
-  const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string): void => {
+  const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string, need = false): void => {
+    // task 027: a fighter's level is combat, a worker's never; 027b: and a fighter's own gear craft where a needed piece asks it
+    if (fighter ? lane !== "combat" && !(need && GEAR_CRAFT.includes(lane)) : worker && lane === "combat") return;
     const t = targets.find((x) => x.key === `lvl:${lane}:${to}`) ?? { key: `lvl:${lane}:${to}`, points: 0, work: { kind: "level", lane, to }, left: 1, gates: [], filler: false };
-    if (blocked(t.key) || levels.some((c) => c.target.key === t.key && c.fit >= fit * boost(t.key))) return;
+    const had = levels.find((c) => c.target.key === t.key);
+    if (had && need) had.need = true;
+    if (blocked(t.key) || (had && had.fit >= fit * boost(t.key))) return;
     let p0 = planLevel(lane, ch, world, bonus);
     let p = p0 && fightPlan(p0, 1, fit * boost(t.key), any * boost(t.key), Infinity);
     // task 014: the pick's potions are held for better works — the road goes on at the pick of the gear alone
@@ -264,7 +304,7 @@ export function rank(name: string, world: World): Ranking {
     if (!p0 || !p) return;
     const i = levels.findIndex((c) => c.target.key === t.key);
     if (i >= 0) levels.splice(i, 1);
-    levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p0.what, p) + p.note), fit: fit * boost(t.key), any: any * boost(t.key) });
+    levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p0.what, p) + p.note), fit: fit * boost(t.key), any: any * boost(t.key), ...(need || had?.need ? { need: true } : {}) });
   };
   for (const lane of lanes) {
     const b = bundleOf(lane, name, world);
@@ -281,16 +321,20 @@ export function rank(name: string, world: World): Ranking {
   // Gear by need (section 4) and supply through the bank (section 3).
   const parents: Parent[] = objectiveParents(world, name, calH);
   const supply: Candidate[] = [];
+  const needs = new Set<string>(); // task 027: the parents that are a fighter's gear or a consumable need (a worker's first tier)
   for (const [code, piece] of gearPieces(world, name)) {
     const { copies, works, best: n } = piece;
     const r = item(code)!.craft!;
     const qty = [...copies.values()].reduce((s, x) => s + x, 0) - inFlight(`gear:${code}`);
     if (qty <= 0) continue;
-    parents.push(pieceParent(code, piece, qty, world, name));
-    if (crafterOf(r.skill, world) !== name) continue;
+    const par = pieceParent(code, piece, qty, world, name);
+    parents.push(par);
+    const need = [...copies.keys()].some((who) => roleOf(who, world) === "fighter");
+    if (need) needs.add(par.key);
+    if (crafterOf(r.skill, world) !== name || (fighter && !need)) continue; // task 027b: a fighter forges only what a fighter needs
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
-      levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
+      levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, need);
       continue;
     }
     const key = `gear:${code}`;
@@ -299,13 +343,14 @@ export function rank(name: string, world: World): Ranking {
     if (blocked(key) || !spot || runs < 1) continue;
     const t: Target = { key, points: 0, work: { kind: "craft", code }, left: qty, gates: [], filler: false };
     const p: Plan = { work: t.work, units: runs, hours: (runs * CRAFT_SEC + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(code, runs)) };
-    supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }), fit: n.fit * boost(key), any: n.any * boost(key) });
+    supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }), fit: n.fit * boost(key), any: n.any * boost(key), ...(need ? { need: true } : {}) });
   }
   // task 014, settled point 3: potions and food by need, parents of supply with the score of the work they are for
-  parents.push(...consParents(world, name));
+  for (const p of consParents(world, name)) { parents.push(p); needs.add(p.key); }
   for (const s of supplyNeeds(world, name, parents, srcInFlight)) {
     // task 013, settled point 1: an event-only material is the event interrupt's work, never a step
     if (blocked(s.key) || s.gates.some((g) => g.kind === "event")) continue;
+    if (fighter && s.kind !== "src") continue; // task 027: a fighter's supply is a src: kill
     const par = s.parent;
     const t: Target = { key: s.key, points: 0, work: s.work, left: s.short, gates: s.gates, filler: false };
     let p: (Plan & { wear?: Record<string, string> }) | undefined, node = "", note = "";
@@ -313,6 +358,7 @@ export function rank(name: string, world: World): Ranking {
       // task 012, settled point 7: the node (or monster) is this character's — the least net seconds an item
       const src = pickSource(s.code, ch, world);
       if (!src) continue;
+      if (fighter ? src.work.kind !== "kill" : worker && src.work.kind === "kill" && fighterHunts(src.work.monster)) continue; // task 027
       const items = s.short / perOf(s.work); // short is in actions of the static source (supplyNeeds)
       const acts = Math.ceil(items * src.per - 1e-9);
       const c = chunk(src.work, src.sec, acts, world, src, ch, 1);
@@ -340,13 +386,13 @@ export function rank(name: string, world: World): Ranking {
     const unit = s.kind === "src" ? (p.work.kind === "kill" ? "kills" : "gathers") : "made";
     const why = `${itemName(s.code)}: ${fmt(s.short)} ${s.kind === "src" ? "actions" : ""} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h)${node}; ${p.units} ${unit} now (${fmt(p.hours)} h)${note}`;
     // task 013, settled point 9: the answer is prefixed once, where the chosen step's why is made ("supply: supply:")
-    supply.push({ target: t, step: stepOf(t, p, "supply", par.fit * boost(s.key), why.replace("  ", " "), { parent: par.key }), fit: par.fit * boost(s.key), any: par.any * boost(s.key) });
+    supply.push({ target: t, step: stepOf(t, p, "supply", par.fit * boost(s.key), why.replace("  ", " "), { parent: par.key }), fit: par.fit * boost(s.key), any: par.any * boost(s.key), ...(needs.has(par.key) ? { need: true } : {}), ...(outside(p.work) ? { out: true } : {}) });
   }
   // Task 012, settled point 8: a craft of a parent's chain gated at a level nobody that may craft it has — the level is
   // a candidate for this lane's role holders, carrying the parent's score (as a crafter's missing level for gear).
   for (const par of parents) for (const g of par.gated ?? []) {
     if (!Number.isFinite(g.hours) || !lanes.includes(g.lane)) continue;
-    levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`);
+    levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key));
   }
 
   const byScore = (k: "fit" | "any") => (a: Candidate, b: Candidate): number => b[k] - a[k] || (a.target.key < b.target.key ? -1 : a.target.key > b.target.key ? 1 : 0);
@@ -357,7 +403,8 @@ export function rank(name: string, world: World): Ranking {
   // Task 015, settled point 5: no slot, nothing to tidy, no purchase — a step that would bring a new code is no candidate
   const stuck = bankStuck(world, name);
   const fresh = (c: Candidate): boolean => !stuck || !newCodes(c.step, world).length;
-  const real = [...objectives, ...levels, ...supply].filter(fresh);
+  const all = [...objectives, ...levels, ...supply].filter(fresh);
+  const real = all.filter((c) => !c.out); // task 027: today's rule — a worker's inside its lanes
   if (stuck) fillers.splice(0, fillers.length, ...fillers.filter(fresh));
   const firsts = real.filter((c) => c.target.achievement && cfg.first.includes(c.target.achievement));
   // Task 011, settled point 1: filler that fits goes before a road that fits nothing (the road takes the fallback's hours)
@@ -367,10 +414,55 @@ export function rank(name: string, world: World): Ranking {
   const late = best || fill ? undefined : top(real, "any");
   const fillAny = best || fill || late ? undefined : top(fillers, "any");
   const chosen = best ?? late;
-  const step = chosen ? { ...chosen.step, why: `${chosen.step.as}: ${chosen.step.why}` }
+  const today = (): Step => chosen ? { ...chosen.step, why: `${chosen.step.as}: ${chosen.step.why}` }
     : fill ? { ...fill.step, why: `filler (${realAny ? "nothing else fits the deadline" : "nothing else scores"}): ${fill.step.why}` }
     : fillAny ? { ...fillAny.step, why: `filler (nothing else scores): ${fillAny.step.why}` }
-    : fallback(ch, world, last);
+    : fallback(ch, world, last, worker ? lanes : undefined);
+
+  // Task 027: a worker's tiers before today's rule; a fighter's XP pick where nothing ranks
+  const tier = (pool: Candidate[], label: string): Step | undefined => {
+    const c = top(pool, "fit") ?? top(pool, "any");
+    return c && { ...c.step, why: `worker, ${label}: ${c.step.as}: ${c.step.why}` };
+  };
+  const craftTo = (): Step | undefined => {
+    const lane = lanes.find((l) => GEAR_CRAFT.includes(l) && levelOf(ch, l) < WORKER_CRAFT);
+    const key = `lvl:${lane}:${WORKER_CRAFT}`;
+    const p = lane && !blocked(key) ? planLevel(lane, ch, world, bonus) : undefined;
+    if (!lane || !p) return undefined;
+    const t: Target = targets.find((x) => x.key === key) ?? { key, points: 0, work: { kind: "level", lane, to: WORKER_CRAFT }, left: 1, gates: [], filler: false };
+    const s = stepOf(t, p, "level", 0, `worker, craft to ${WORKER_CRAFT}: ${lane} ${levelOf(ch, lane)} → ${WORKER_CRAFT}: ${p.what}, ${p.units} now (${fmt(p.hours)} h)`);
+    return !stuck || !newCodes(s, world).length ? s : undefined;
+  };
+  const xpPick = (): Step | undefined => {
+    const c = levels.find((x) => x.target.key.startsWith("lvl:combat:")); // a combat level that scores nothing
+    if (c) return { ...c.step, why: `the XP pick (nothing ranks): ${c.step.why}` };
+    const L = levelOf(ch, "combat"), key = `lvl:combat:${L + 1}`;
+    if (blocked(key)) return undefined;
+    let p0 = planLevel("combat", ch, world, bonus);
+    let p = p0 && fightPlan(p0, 1, 0, 0, Infinity);
+    if (p0 && !p) p = (p0 = planLevel("combat", ch, gearWorld(world), bonus)) && fightPlan(p0, 1, 0, 0, Infinity);
+    if (!p0 || !p) return undefined;
+    const t: Target = { key, points: 0, work: { kind: "level", lane: "combat", to: L + 1 }, left: 1, gates: [], filler: false };
+    return stepOf(t, p, "level", 0, `the XP pick (nothing ranks): combat ${L}: ${p0.what}, ${p.units} now (${fmt(p.hours)} h)${p.note}`);
+  };
+  let step: Step;
+  if (worker) {
+    const short = objectives.filter((c) => fresh(c) && achHours(c.target.achievement!, name, world) <= WORKER_SHORT_H);
+    step = tier(all.filter((c) => c.need), "a fighter's need") ?? tier(short, `done within ${WORKER_SHORT_H} h`) ?? craftTo() ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
+  } else if (fighter) {
+    // task 027b: what it forges by need (a piece of its craft, the level it asks) goes before its fights — one weapon
+    // speeds every fighter; with no admitted fight at all it works by today's rule over the whole list
+    const forge = all.filter((c) => c.step.work.kind !== "kill");
+    const f = top(forge, "fit") ?? top(forge, "any");
+    const s = f ? { ...f.step, why: `${f.step.as}: ${f.step.why}` } : today();
+    const x = s.as === "fallback" ? xpPick() : undefined;
+    if (s.as === "fallback" && !x) {
+      const r = rank(name, world, true);
+      return { ...r, step: { ...r.step, why: `fighter, no fight admitted: ${r.step.why}` } };
+    }
+    step = { ...(x ?? s) };
+    step.why = `fighter${f ? ", forging" : ""}: ${step.why}`;
+  } else step = today();
   const wear = step.wear ?? wearOf(step.work, ch, world); // task 014: a kill whose potions could not be stocked wears the set without them
   // task 025, settled point 2: the verdict on the very set the step wears (its wear and its take's potions) — the why states
   // its win rate; the runtime's end record and the forward model's losses read it
@@ -386,9 +478,11 @@ export function rank(name: string, world: World): Ranking {
 }
 
 /** C.4: a gather chunk on the best node of the character's highest gathering skill — always possible. Task 009:
- *  a blocked `fallback:<skill>` is passed over for the next skill; all blocked: the one whose block ends first. */
-function fallback(ch: Character, world: World, last: Step | undefined): Step {
-  const skills = [...GATHER_LANES].sort((a, b) => levelOf(ch, b) - levelOf(ch, a));
+ *  a blocked `fallback:<skill>` is passed over for the next skill; all blocked: the one whose block ends first. Task 027:
+ *  a worker's in its own gathering lanes (`lanes`), when it holds one. */
+function fallback(ch: Character, world: World, last: Step | undefined, lanes?: Lane[]): Step {
+  const own = GATHER_LANES.filter((l) => lanes?.includes(l));
+  const skills = [...(own.length ? own : GATHER_LANES)].sort((a, b) => levelOf(ch, b) - levelOf(ch, a));
   const opts: { skill: Lane; until: number; c: Plan; p: NonNullable<ReturnType<typeof pickNode>> }[] = [];
   for (const skill of skills) {
     const p = pickNode(skill, levelOf(ch, skill), ch, world, true);
@@ -400,6 +494,7 @@ function fallback(ch: Character, world: World, last: Step | undefined): Step {
     opts.push({ skill, until: b && b.until > world.now ? b.until : 0, c, p });
   }
   const o = opts.find((x) => !x.until) ?? [...opts].sort((a, b) => a.until - b.until)[0];
+  if (!o && own.length) return fallback(ch, world, last); // none in its own lanes: any lane
   if (!o) throw new Error(`${ch.name} reaches no gathering node at all`);
   const key = `fallback:${o.skill}`;
   const n = last?.target === key ? Number(last.key.split("#").pop()) + 1 : 1;

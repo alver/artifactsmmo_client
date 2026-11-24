@@ -11,7 +11,7 @@
 // Pure combat primitives live in ./types (no catalog dependency).
 
 import { item } from "../catalog";
-import { GEAR_SLOTS, slotCode } from "../types/api";
+import { GEAR_SLOTS, slotCode, slotQuantity } from "../types/api";
 import type { Character, GearSlot } from "../types/api";
 import type { ItemEffect } from "../types/catalog";
 import { STAT_CODES, STAT_KEYS, isCombatEffect, zeroStats } from "./types";
@@ -112,11 +112,17 @@ export function fighterForGear(ch: Character, codes: string[]): Fighter {
 export function currentFighter(ch: Character): Fighter {
   const stats = currentStats(ch);
   const effects: EffectEntry[] = [];
-  for (const code of equippedCodes(ch)) {
+  for (const slot of GEAR_SLOTS) {
+    const code = slotCode(ch, slot as GearSlot);
+    if (!code) continue;
     const potion = potionOf(code);
+    // task 027: a worn stack shorter than a fight's turns runs out in it (EffectEntry.qty) — the gate sees a short stack
+    const q = potion ? slotQuantity(ch, slot as GearSlot) : SHORT_STACK;
     for (const e of item(code)?.effects ?? []) {
-      if (isCombatEffect(e.code)) effects.push(potion ? { code: e.code, value: e.value, potion } : { code: e.code, value: e.value });
+      if (isCombatEffect(e.code)) effects.push(potion ? { code: e.code, value: e.value, potion, ...(q < SHORT_STACK ? { qty: q } : {}) } : { code: e.code, value: e.value });
     }
   }
   return { stats, effects };
 }
+/** A stack this long never runs out: a side gets at most 50 turns of a fight's 100 (combat.ts MAX_TURNS). */
+const SHORT_STACK = 50;

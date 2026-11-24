@@ -32,7 +32,8 @@ export interface FightForecast {
   margin: number; // win ? hpRemaining/maxHp : 0 — used to rank/gate gear sets
   maxHp: number;
   /** Units of each worn utility potion one fight consumes (task 010): a `restore` potion one per proc (the start of
-   *  each own turn under half HP; two restore potions fire together, as their values are summed), every other potion
+   *  each own turn under half HP; task 027: two restore potions fire in slot order, the second only while HP is still under
+   *  half after the first, and a worn stack stops when its quantity is spent — EffectEntry.qty), every other potion
    *  one a fight — a boost is applied once at the fight's start (`opening`). An empty object when none is worn. */
   used: Record<string, number>;
 }
@@ -82,9 +83,8 @@ interface Combatant {
   crit: number; // 0..1
   init: number;
   // self regen / buffs
-  restore: number;
+  restores: { v: number; left: number; n: number }[] | null; // task 027: one restore potion an entry, in slot order (its value, units left, procs)
   restored: number; // HP restored by potion procs so far
-  procs: number; // restore procs so far (each consumes one unit of every restore potion worn)
   healing: number; // % max hp / 3 turns
   reconstitution: number; // full heal every N turns
   barrierRegen: number;
@@ -187,7 +187,7 @@ function newSide(hp: number, atk: Record<Element, number>, dmgPct: Record<Elemen
     hp, maxHp: hp, barrier: 0, turns: 0,
     atk, dmgPct, res, hitEV: 0, hitNormal: 0, hitCrit: 0, dirty: true, bonus: 0,
     dmgMult: 1, totalAtk: atk.fire + atk.earth + atk.water + atk.air, crit, init,
-    restore: 0, restored: 0, procs: 0, healing: 0, reconstitution: 0, barrierRegen: 0,
+    restores: null, restored: 0, healing: 0, reconstitution: 0, barrierRegen: 0,
     berserker: 0, berserked: false, lifesteal: 0,
     poisonApply: 0, burnApply: 0, poison: 0, burnCur: 0, burnActive: false,
     antipoison: 0, corrupted: 0, bubble: 0, bubbleEl: null, sunShield: 0,
@@ -197,12 +197,12 @@ function newSide(hp: number, atk: Record<Element, number>, dmgPct: Record<Elemen
 }
 
 /** One pass over a side's effects (usually 0–3 of them); same codes add up. */
-function applyEffects(c: Combatant, effects: { code: string; value: number }[]): void {
+function applyEffects(c: Combatant, effects: { code: string; value: number; qty?: number }[]): void {
   for (const e of effects) {
     const v = e.value;
     switch (e.code) {
       case "barrier": c.barrier += v; c.barrierRegen += v; break;
-      case "restore": c.restore += v; break;
+      case "restore": (c.restores ??= []).push({ v, left: e.qty ?? Infinity, n: 0 }); break;
       case "healing": c.healing += v; break;
       case "reconstitution": c.reconstitution += v; break;
       case "berserker_rage": c.berserker += v; break;
@@ -296,7 +296,7 @@ function startOfTurn(c: Combatant, opp: Combatant): boolean {
   if (c.reconstitution > 0 && c.turns % c.reconstitution === 0) c.hp = c.maxHp;
   if (c.healing > 0 && c.turns % 3 === 0) c.hp = Math.min(c.maxHp, c.hp + (c.maxHp * c.healing) / 100);
   if (c.barrierRegen > 0 && c.turns > 1 && (c.turns - 1) % 5 === 0) c.barrier += c.barrierRegen;
-  if (c.restore > 0 && c.hp < 0.5 * c.maxHp) { c.hp = Math.min(c.maxHp, c.hp + c.restore); c.restored += c.restore; c.procs++; }
+  if (c.restores) for (const r of c.restores) if (r.left > 0 && c.hp < 0.5 * c.maxHp) { c.hp = Math.min(c.maxHp, c.hp + r.v); c.restored += r.v; r.left--; r.n++; }
   if (c.voidDrain > 0 && c.turns % 4 === 0) {
     const drain = (opp.hp * c.voidDrain) / 100;
     hurt(opp, drain);
@@ -439,10 +439,12 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
   const clampedHp = Math.max(0, Math.round(P.hp));
   const lost = pMaxHp - clampedHp;
   let used = NO_USE;
+  let ri = 0; // the restore entries are in the order of the player's restore effects (applyEffects)
   for (const e of player.effects) {
+    const n = e.code === "restore" ? P.restores![ri++].n : 1;
     if (!e.potion) continue;
     if (used === NO_USE) used = {};
-    used[e.potion] = Math.max(used[e.potion] ?? 0, e.code === "restore" ? P.procs : 1);
+    used[e.potion] = Math.max(used[e.potion] ?? 0, n);
   }
   return {
     win,

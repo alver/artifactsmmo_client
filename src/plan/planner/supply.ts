@@ -24,7 +24,7 @@ import { isOn, met, outOfReach } from "./gates";
 import { cachesOn, fightSecOf, planRec, admits } from "./reach";
 import { crafterOf } from "./roles";
 import { available } from "./stock";
-import { materialCal } from "./events";
+import { eventOf, gapSec, materialCal } from "./events";
 import { placeGates, sourceFor, targetsOf } from "./targets";
 import type { Gate, Lane, Target, Work, World } from "./types";
 
@@ -271,7 +271,9 @@ export function objectiveParents(world: World, name: string, calH: number): Pare
   if (hit) return [...hit];
   const out: Parent[] = [];
   for (const t of targetsOf(world)) {
-    if (!t.achievement || t.filler || (t.work.kind !== "craft" && t.work.kind !== "buy") || inStep(t, world)) continue;
+    const sale = t.work.kind === "sell" && !!(world.config.events ?? 1); // task 027: a sale's item, hunted until the stop
+    if (!t.achievement || t.filler || (t.work.kind !== "craft" && t.work.kind !== "buy" && !sale) || (!sale && inStep(t, world))) continue;
+    if (sale && (world.hunted?.[(t.work as { code: string }).code] ?? 0) >= huntStop(t)) continue; // waitingOf names it
     const demand: [string, number][] = (t.inputs ?? []).map((i) => [i.code, i.per * t.left]);
     const bill = billOf(world, name, demand);
     if (bill.out.length) continue; // waits: waitingOf names it
@@ -290,10 +292,23 @@ export function objectiveParents(world: World, name: string, calH: number): Pare
     const own = (t.left * (t.work.kind === "craft" ? CRAFT_SEC / Math.max(1, r?.quantity ?? 1) : 5) + stepSec(makePlace(t.work, world))) / 3600;
     const hours = Math.max(0.01, bill.hours - bill.gated.reduce((s, g) => s + g.hours, 0) + road + own);
     const points = t.points * (world.config.weight[t.achievement] ?? 1);
-    out.push({ key: t.key, label: t.achievement, points, fit: hours <= calH ? points / hours : 0, any: points / hours, hours, demand, gated });
+    // task 027: a sale waits for its merchant's next spawn after the hunt — in the fit, not the price (nobody works it)
+    const wait = sale ? saleWait(t) : 0;
+    out.push({ key: t.key, label: t.achievement, points, fit: hours + wait <= calH ? points / hours : 0, any: points / hours, hours, demand, gated });
   }
   byName.set(k, out);
   return [...out];
+}
+
+/** Task 027: a sale's item is hunted until one is in the bank — at most HUNT_STOP times its source's actions a unit (3: 95%
+ *  sure of a drop; the golden egg's 3,000 chicken kills), counted in World.hunted. */
+export const HUNT_STOP = 3;
+export const huntStop = (t: Target): number => (t.inputs ?? []).reduce((s, i) => s + HUNT_STOP * i.per * t.left * perOf(i.source), 0);
+/** Task 027: the hours a sale waits for its merchant once the item is in the bank — one mean gap between spawns. */
+export function saleWait(t: Target): number {
+  const g = t.gates.find((x) => x.kind === "event");
+  const ev = g?.kind === "event" ? eventOf(g.code) : undefined;
+  return ev ? gapSec(ev) / 3600 : 0;
 }
 
 /** A short code as a target for one character: what it is, how much is short, its best parent. */

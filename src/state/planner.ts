@@ -118,6 +118,7 @@ export function worldOf(now: number): World {
     favors: favorsOf(now), bags: bagsOf(config),
     // task 015, settled point 2: the bank's slots and the next expansion's price
     bankSlots: bankDetails.value?.slots, nextExpansion: bankDetails.value?.next_expansion_cost,
+    ...(st.hunted ? { hunted: st.hunted } : {}), // task 027
   };
 }
 
@@ -491,6 +492,12 @@ async function next(name: string, block?: string): Promise<void> {
       const empty = !block && !noSlot && !brake && r.units === 0;
       if (empty) block = `ended empty${skipReason(name, r.startedAt)}`;
       endRecord(name, r, noSlot ? "noslot" : brake && !block ? "braked" : empty ? "empty" : block ? "blocked" : "done", block ?? brake);
+      // task 027: the kills of a sale's hunt (the golden egg's chickens), for its stop (supply.ts huntStop)
+      const sold = r.units > 0 && r.step.work.kind === "kill" && r.step.target.startsWith("src:") ? r.step.target.slice(4) : "";
+      if (sold && targetsOf(worldOf(Date.now())).some((t) => t.work.kind === "sell" && t.work.code === sold)) {
+        put({ hunted: { ...planner.value.hunted, [sold]: (planner.value.hunted?.[sold] ?? 0) + r.units } });
+        plog(name, `hunted ${sold}: ${planner.value.hunted![sold]} kills`);
+      }
       if (block) blockStep(name, r.step, block);
       else {
         stepSample(name, r);

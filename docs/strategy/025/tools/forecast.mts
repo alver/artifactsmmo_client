@@ -185,6 +185,7 @@ function patchedSim(): string {
   rep(`from "./types"`, `from "${pathToFileURL(join(ROOT, "src/sim/types.ts")).href}"`);
   rep(`from "./cost"`, `from "${pathToFileURL(join(ROOT, "src/sim/cost.ts")).href}"`);
   rep(`from "../types/catalog"`, `from "${pathToFileURL(join(ROOT, "src/types/catalog.ts")).href}"`);
+  if (src.includes("c.restores")) return src; // task 027: H-a is the simulator's own reading now — today's and H-a's agree
   rep(`case "restore": c.restore += v; break;`, `case "restore": c.restore += v; ((c as any).rs ??= []).push({ v, potion: (e as any).potion, left: (e as any).qty ?? Infinity, n: 0 }); break;`);
   rep(`if (c.restore > 0 && c.hp < 0.5 * c.maxHp) { c.hp = Math.min(c.maxHp, c.hp + c.restore); c.restored += c.restore; c.procs++; }`,
     `for (const r of (c as any).rs ?? []) if (r.left > 0 && c.hp < 0.5 * c.maxHp) { c.hp = Math.min(c.maxHp, c.hp + r.v); c.restored += r.v; r.n++; r.left--; c.procs++; }`);

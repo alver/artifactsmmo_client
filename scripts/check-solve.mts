@@ -94,7 +94,7 @@ const SAMPLE: [string, string, string, string][] = [
   ["wall", "First", "death_knight", "win win win"],
   ["wall", "First", "owlbear", "win win win"],
   ["wall", "First", "demon", "win win win"],
-  ["wall", "First", "cultist_acolyte", "win win win"],
+  ["wall", "First", "cultist_acolyte", "lost lost lost"], // task 027: won only on the summed restores (40/40 finds no win)
   ["wall", "First", "cursed_tree", "lost lost lost"],
   ["wall", "First", "goblin", "lost lost lost"],
   ["wall", "First", "orc", "lost lost lost"],
@@ -110,7 +110,7 @@ const SAMPLE: [string, string, string, string][] = [
   ["wall", "Third", "death_knight", "win win win"],
   ["wall", "Third", "owlbear", "win win win"],
   ["wall", "Third", "demon", "win win win"],
-  ["wall", "Third", "cultist_acolyte", "win win win"],
+  ["wall", "Third", "cultist_acolyte", "lost lost lost"], // task 027: won only on the summed restores (40/40 finds no win)
   ["wall", "Third", "cursed_tree", "lost lost lost"],
   ["wall", "Third", "goblin", "lost lost lost"],
   ["wall", "Third", "orc", "lost lost lost"],
@@ -118,7 +118,7 @@ const SAMPLE: [string, string, string, string][] = [
   ["wall", "Fourth", "death_knight", "win win win"],
   ["wall", "Fourth", "owlbear", "win win win"],
   ["wall", "Fourth", "demon", "win win win"],
-  ["wall", "Fourth", "cultist_acolyte", "win win win"],
+  ["wall", "Fourth", "cultist_acolyte", "lost lost lost"], // task 027: won only on the summed restores (40/40 finds no win)
   ["wall", "Fourth", "cursed_tree", "lost lost lost"],
   ["wall", "Fourth", "goblin", "lost lost lost"],
   ["wall", "Fourth", "orc", "lost lost lost"],
@@ -126,7 +126,7 @@ const SAMPLE: [string, string, string, string][] = [
   ["wall", "Fifth", "death_knight", "win win win"],
   ["wall", "Fifth", "owlbear", "win win win"],
   ["wall", "Fifth", "demon", "win win win"],
-  ["wall", "Fifth", "cultist_acolyte", "win win win"],
+  ["wall", "Fifth", "cultist_acolyte", "lost lost lost"], // task 027: won only on the summed restores (40/40 finds no win)
   ["wall", "Fifth", "cursed_tree", "lost lost lost"],
   ["wall", "Fifth", "goblin", "lost lost lost"],
   ["wall", "Fifth", "orc", "lost lost lost"],

@@ -40,7 +40,7 @@ import { isOn, met } from "./gates";
 import { gearPieces, pieceParent } from "./gear";
 import { pickMonster } from "./pick";
 import { fightRec, nearestSpot, placeOf, potionPrice, potionRec, admitted, setWisdom, admits, winSecOf } from "./reach";
-import { crafterOf } from "./roles";
+import { crafterOf, fights } from "./roles";
 import { available } from "./stock";
 import { billOf, mayCraft, objectiveParents, supplyNeeds } from "./supply";
 import type { Gated, Parent } from "./supply";
@@ -327,7 +327,7 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
   // (a) each fighter's road to its next combat gate, judged on its next ten levels (gear.ts (a)): H0 on the pool without
   // the potions it holds, level by level; H1 per level the better of that and the potion monster's run
   for (const ch of byLevel) {
-    const b = bundleOf("combat", ch.name, world);
+    const b = fights(ch.name, world) ? bundleOf("combat", ch.name, world) : null; // task 027: a worker has no combat road
     if (!b) continue;
     const L = ch.level, end = Math.min(b.next, L + 10);
     const w0 = bare; // the pool without its potions (one World a decision: its solves hold still while the stock moves)
@@ -393,7 +393,7 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
     if (t.work.kind !== "kill" || !t.achievement || t.filler || t.gates.some((g) => g.kind === "event")) continue;
     const m = monsterOf(t.work.monster), left = t.left - inFlight(t.key);
     if (!m || left <= 0 || m.type === "boss" || m.type === "raid_boss") continue;
-    const able = byLevel.filter((ch) => m.level <= ch.level + 10 && t.gates.every((g) => g.kind === "win" || met(g, ch, world)));
+    const able = byLevel.filter((ch) => fights(ch.name, world) && m.level <= ch.level + 10 && t.gates.every((g) => g.kind === "win" || met(g, ch, world)));
     if (!able.length || able.some((ch) => admitted(ch, bare, m.code))) continue;
     const ch = able.find((c) => potionSet(c, world, m.code));
     if (!ch) continue;
