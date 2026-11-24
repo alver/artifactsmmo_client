@@ -3,7 +3,20 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-24 (midday). **Report 027 read (decision 68): the task stopped before its commit — the
+Last updated: 2026-11-24 (late evening). **Level first (decision 71, Alex): a fighter's level is a goal in itself,
+the workers level the crafts for weapons and armour. Task 027e is written (`tasks/027e-level-first.md`): the
+fighter's order (the XP pick before ranked objectives), the workers' first tier is the fighters' road, the craft
+ahead of the fighters, the two defects at the wall of 45, and a read of where a fighter's seconds go. 027d is in
+work in Claude Code. Next: when 027d ends, Alex runs 027e on top of it; both reports are discussed in one new chat;
+one restart follows their acceptance. Then 027f: food for a levelling fighter (on 027e's measurement) and gold for
+fares.** Before that, the same evening: **Report 027c accepted (decision 70): `9375a24` on `origin/rework`; Alex
+restarted the service on it — run `3bd9`, boot 16:41:53 UTC on 11-24, all five steps re-attached, 37 points. The
+Steel Pickaxe and the Steel Axe are expected within the first hours (Second, 48 tasks coins); the rod is not made
+yet. Task 027d is written (`tasks/027d-tasks-coins.md`): tasks and coins, with the tool ranked by its payback.
+Next: Alex runs 027d in Claude Code; its report is discussed in a new chat; a restart follows its acceptance.
+Then 027e, the repairs (the sliver, the NaN, gold for fares; read-only: the_reaper's potions).** Before that, in
+the afternoon: report 027b accepted and 027c written (decision 69; run `q0c4`, 13:31:47 UTC, `00151c3`). Before
+that, at midday: **Report 027 read (decision 68): the task stopped before its commit — the
 role road gives 84 against `a394ae1`'s 96, because nobody forges once Second fights; its change is in the
 working tree, uncommitted, the service still runs `a394ae1` (no restart yet). Task 027b is written
 (`tasks/027b-roles-weapons.md`): a fighter with a craft forges by need, a fighter with no admitted fight works
@@ -2169,6 +2182,65 @@ accepted, Alex restarted the service (run `[yewz]`,
     reads if two scheduled ones exist by then. Read from the journal in report 027: since the restart five
     runes bought (50,000 gold), 36 → 37 points, First lost 2 of 13 to the spider at p 0.958; First's
     `mat:cheese` step stalled and was blocked at 09:33 UTC — not looked into yet.
+69. **Report 027b accepted; the steel tools, 027c** (2026-11-24, afternoon; written down in the evening from the
+    Tasks table). Alex accepted 027b as it stands ("everything stays": its four decisions as built) and restarted
+    the service on it (run `q0c4`, 13:31:47 UTC, `00151c3`). **Alex**: why does the fleet still have no steel tools
+    (rod, axe, pickaxe) — they are to be made, one of each; tasks coins are no limit, they are earned by doing
+    tasks, and the handling of tasks and coins is to be worked on — as its own task after the tools (027d). 027c
+    written: the tool's rule, and read-only where the fallback hours of 027b's roads come from.
+70. **Report 027c accepted; 027d** (2026-11-24, evening, `tasks/027d-tasks-coins.md`). Checked in the chat: `HEAD` =
+    `origin/rework` = `9375a24` (`027c: tools`), before it `9ce4d9f` (`Rework notes`). **Alex restarted the service
+    on its code**: run `3bd9`, boot 16:41:53 UTC on 11-24, all five steps re-attached, 37 points. What the report
+    says: work (c) is a tool that pays for itself over the lane's whole work, one need a lane; two rules Alex gave
+    in Claude Code while it ran — a tool is a need of the weaponcrafter whatever its role, the candidate being the
+    lowest-level tool that improves and pays; a worker hunts its own lane's tool's kill materials where admitted.
+    On the road (11-24's World, roles on): the Steel Pickaxe and the Steel Axe on day 0.04 for 48 coins; points 45
+    / 50 / 56 / 91 (027b: 43 / 46 / 56 / 93), the fighters 50 / 48 / 50 at the deadline (46 / 46 / 50), the gather
+    fallback 526 h (1,723); nine achievements 9 to 32 days earlier and two done that were never done
+    (master_alchemist, magic_lumberjack). Open from it:
+    - **the Steel Fishing Rod is never made** — the need holds from fishing 20 (93.5 h saved, 0.6 h to make), but
+      its score is the lane's bundle over 600 h, so its Ogre Skins rank last. **Alex agreed**: a tool is ranked by
+      its own payback (`points × (H0 − H1) ÷ H0 ÷ G`), riding in 027d;
+    - **gold**: master_miner, adamantite_mastery and shining_secrets are lost at the deadline for 1,054 gold of
+      fare (bank 20,947 against 141,700 on `a394ae1` and 348,907 with roles off); the report does not say where the
+      gold went — the chat's guess is bank expansions (the next costs 56,000);
+    - **the fallback** (part C): two defects, both already in `a394ae1`, both biting from combat 45 — a need whose
+      road walls scores NaN (0 × ∞, `gear.ts:247`, `consumables.ts:355`) and is dropped without a word; a set that
+      names a potion the bank holds a sliver of refuses the whole kill step (`decide.ts:262`) while no need asks
+      for that potion. Which of 027's riding changes moves the roles-off road is not isolated.
+    Read from `logs/status.json` at 16:34 UTC, not looked into: Second gathers algae for 830 Minor Health Potions
+    and Third cooks 412 trout for one achievement (the_reaper, Death Knight, +3 points, a chain of about 76 h) at
+    combat 24–26; Fifth rests at 102 of 685 HP because the trout is held for it; Fourth's one level of
+    jewelrycrafting has run 18 h against 4.6 h planned. **Alex agreed to the order**: 027d (tasks and coins, with
+    the rod), then 027e (the repairs: the sliver, the NaN, gold kept for fares before an expansion; read-only:
+    the_reaper's potions). 027d as written: a fighter always holds a monsters task (a visit to the master at the
+    head of a kill step); the task's monster joins the pick's `bonus`; coins a need lacks are a supply leaf a
+    fighter works on its held task; a cancel only where a task is worked on purpose (not admitted, or longer than
+    a fresh draw's mean plus a coin's hours — a cancel costs a coin and a task pays 3–5, so tasks are not chased);
+    the forward model plays it without dice. Not built: a coin's worth as a credit in the pick — at `codeSec`'s
+    price nearly every draw would pay and the fighters would do tasks instead of levelling.
+71. **Level first; 027e** (Alex, 2026-11-24, late evening, `tasks/027e-level-first.md`). **Alex**: the levels look
+    fundamentally wrong — in the season's fourth week the game has characters at 50, and this fleet's road ends at
+    46 at the deadline. The chat's reading, three causes: (1) the planner ranks by points an hour and a fighter
+    takes its XP pick only when nothing ranks — in play First and Fifth, combat 24–25, fight the level-20 Spider
+    for +2 points and rest between fights, and two workers supply the_reaper; the roles changed who fights, not
+    what for; (2) the 46 (027b) and the nine weeks from 45 to 50 (027c) are the wall of report 027c's part C, not a
+    pace; (3) for three and a half weeks nobody levelled combat (the roles are live since 13:31 UTC on 11-24). On
+    the board at noon: places 6–11 at combat 42–45, the neighbours at 30–42, this fleet at 24–26. **Decision 56
+    is withdrawn** (no first-tier policy, after 022's −8 to +3 points): the model prices a level only through the
+    points today's code can reach, and about 80 points wait for what it cannot do, so a level above about 40 was
+    worth almost nothing in it — Alex's proposal of 11-22 (level first, then the achievements faster) was right.
+    **Alex agreed**: a fighter's level is a goal in itself even if points come slower in the coming weeks; the
+    workers do not level combat — they level the crafts that make weapons and armour. 027e as written: a fighter's
+    order — `config.first`, forging by need, a kill a road's need asks, the XP pick (the ×1.25 of an objective's
+    and the task's monster stays), today's rule only with no admitted XP fight or at the cap; a worker's first
+    tier is the fighters' road (work (a), its consumables, a tool) — an objective's needs go to today's rule; the
+    gear craft to the tier the fighters wear next (top fighter + 5, down to a multiple of 5, at least 30) in place
+    of the fixed 30; the sliver fights without the potion and a potion-only XP fight makes the potion a need; no
+    NaN; read-only, where a fighter's seconds go (fight, rest, eating, walks) and what food would change — the
+    chat's estimate is that rest is most of a win's seconds and that food priced at its chain's fleet-seconds
+    never pays though the cook is a worker; nothing about food is built before that table. 027d was already in
+    work, so 027e runs on top of it and both reports are read together.
 
 ## Tasks
 | # | What | State |
@@ -2201,8 +2273,10 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 026 | The board watch (Alex, 11-23, written in the Opus chat): a standalone script and a Windows scheduled task read the whole ladder and the first 50 accounts (and those around this one) every two hours into `logs/board/`, gzipped; nothing in the engine | done, `555fd2b` on `rework`, pushed to `origin/rework`. Accepted 2026-11-24 (decision 67). **No engine change, no restart.** 105 requests and 0.49 MB gzipped a read; the scheduled task reads every even UTC hour from 12:00 UTC on 11-24, while Alex is logged on. |
 | 027 | The roles (decision 66): First and Fifth fighters, Second worker until weaponcrafting 30, Third and Fourth workers with fishing and cooking on Third; `decide` respects the role; each fighter its own set; riding along: the restore potions in the simulator, the golden egg's source; one road against `a394ae1` | done, committed with 027b (`00151c3`); `tasks/027-roles.report.md`. |
 | 027b | The roles, finished (decision 68): a fighter with a gear craft forges by need; a fighter with no admitted fight works by today's rule; three roads in one table; commits 027 with it, no stop condition; read-only: the board's offline reader and its first reading (`docs/strategy/board/`) | done, `00151c3` on `rework`, pushed to `origin/rework`; read in the chat on 2026-11-24 and accepted as it stands (Alex; its four decisions stay as built). **Engine change: Alex restarted the service on 2026-11-24 at 13:31:47 UTC** (run `q0c4`); all five steps re-attached. Roles on 93 at the deadline, roles off 93, `a394ae1` 96; the fighters at combat 34 / 33 / 34 on day 7 (`a394ae1`: 27 / 26 / 29), 43 / 45 / 44 on day 28, the workers stay at 24; 20 gathering and craft achievements land more than a week later, three never (master_alchemist, magic_lumberjack, magic_harvester). Open from it: the gather fallback (1,718 h roles on, 3,052 h roles off, `a394ae1` 229) — read in 027c; the model's crafts reach 30 on day 3 where play measured about twelve days, so Second's switch is later in play than on the road. |
-| 027c | Gathering tools (Alex, 11-24: the steel tools are to be made, one of each): work (c)'s `NEED_RATIO` can never hold from iron to steel (0.875) — a tool is needed when it pays for itself over the lane's whole known work, one copy a lane holder; read-only: where the fallback hours of 027b's roads come from | written 2026-11-24, `tasks/027c-tools.md`. **Engine change: a restart follows it.** |
-| 027d | Tasks and coins (Alex, 11-24: its own task, after the tools): a fighter always holds a monsters task (kills count whatever the fight is for); a long draw is cancelled when its hours exceed a fresh draw's plus a coin's price (the reward is fixed, the quantity 50–400); of two near-equal fights the task's monster; coins earned on purpose when a needed piece lacks them. Today: tasks are filler only, always the monsters master, cancelled only at a dead end (`compile.ts`, `queue.ts` task-loop). Taken out of the gear road | to write after 027c. |
+| 027c | Gathering tools (Alex, 11-24: the steel tools are to be made, one of each): work (c)'s `NEED_RATIO` can never hold from iron to steel (0.875) — a tool is needed when it pays for itself over the lane's whole known work, one copy a lane holder; read-only: where the fallback hours of 027b's roads come from | done, `9375a24` on `rework`, pushed to `origin/rework`. Accepted 2026-11-24 (decision 70). **Engine change: Alex restarted the service on 2026-11-24 at 16:41:53 UTC** (run `3bd9`); all five steps re-attached. The pickaxe and the axe on day 0.04 of the road (48 coins), the rod never (its score); 45 / 50 / 56 / 91 points, the fighters 50 / 48 / 50 at the deadline, the fallback 526 h; three achievements lost for 1,054 gold of fare; the fallback's two defects found (the NaN score, the sliver rule), not fixed. |
+| 027d | Tasks and coins (Alex, 11-24: its own task, after the tools): a fighter always holds a monsters task (kills count whatever the fight is for); a long draw is cancelled when its hours exceed a fresh draw's plus a coin's price (the reward is fixed, the quantity 50–400); of two near-equal fights the task's monster; coins earned on purpose when a needed piece lacks them. Today: tasks are filler only, always the monsters master, cancelled only at a dead end (`compile.ts`, `queue.ts` task-loop). Taken out of the gear road | written 2026-11-24, `tasks/027d-tasks-coins.md` (decision 70: the hold, the pick's `bonus`, coins as a supply leaf, the cancel only on purpose; with it a tool ranked by its payback). **Engine change: a restart follows it.** |
+| 027e | Level first (decision 71, Alex): a fighter's order — `config.first`, forging by need, a road's need's kill, the XP pick, today's rule only at a wall or the cap; a worker's first tier is the fighters' road, an objective's needs rank in today's rule; the gear craft ahead of the fighters; the wall at 45 (the sliver fights without the potion, no NaN); read-only: where a fighter's seconds go and what food would change; two roads side by side, the combat levels first | written 2026-11-24, `tasks/027e-level-first.md`; runs on top of 027d. **Engine change: a restart follows it** (one restart for 027d and 027e). |
+| 027f | Food for a levelling fighter, on 027e's measurement (eating against resting in the fighter's seconds, the chain being a worker's work); gold kept for the fares before a bank expansion (where the road's gold went, first); read-only: Fourth's craft level at four times its planned hours | to write after 027e. |
 | 028… | **Renumbered on 11-24: the roles are 027, the gear road 028, group bosses 029.** As it stood before — 026 the roles (decisions 63, 64, Alex): First and Fifth fighters for good, Second at weaponcrafting 30, Third and Fourth — and Second until then — a lane and a craft each, the crafts to 30; the yardstick 33 → 41 points in four days; the details on the model (decision 62); the leaders' and neighbours' read every four hours if 025 did not take it. 027 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 028 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
