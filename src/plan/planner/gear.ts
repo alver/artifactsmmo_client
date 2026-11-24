@@ -12,6 +12,8 @@
 //   (c) task 027c: per gathering lane, all that is left of it — the road to its last open gate and its open gathering
 //       objectives — a tool for its one holder, needed when it pays for itself over that work: G ≤ H0 − H1 (NEED_RATIO
 //       is (a)'s and (b)'s: from iron to steel H1 is 0.875 × H0, so G + H1 ≤ 0.85 × H0 could never hold). One need a lane.
+//       Task 027d (Alex): it ranks by its payback — the bundle's points × the share of the lane's hours it saves ÷ the hours
+//       to make it, `points × (H0 − H1) ÷ H0 ÷ G`, fit when G fits the calendar.
 // Task 027: (a) and (b) are the fighters' (roles.ts fights: a character with no role too) — a worker has no combat road
 // and takes no kill objective. The same in consumables.ts consumableNeeds.
 // Candidates: pieces with a recipe the character can equip now (a piece its pool already holds is simply not new),
@@ -272,8 +274,10 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
       if (!pick) continue;
       const { tool, H1, mk } = pick, pieces = new Map([[tool.code, 1]]);
       const lb = bundleOf(lane, ch.name, world);
-      const s = lb && Number.isFinite(lb.hGate) ? bundleScore(lb, mk.G + H1, calH)
-        : ((points, hours) => ({ points, hours, fit: hours <= calH ? points / hours : 0, any: points / hours }))(objs.reduce((p, t) => p + t.points * (world.config.weight[t.achievement!] ?? 1), 0), mk.G + H1);
+      const s0 = lb && Number.isFinite(lb.hGate) ? bundleScore(lb, mk.G + H1, calH)
+        : ((points, hours) => ({ points, hours }))(objs.reduce((p, t) => p + t.points * (world.config.weight[t.achievement!] ?? 1), 0), mk.G + H1);
+      const any = (s0.points * (H0 - H1)) / H0 / Math.max(mk.G, 1e-6); // task 027d (Alex): its payback, not the lane's whole hours
+      const s = { ...s0, any, fit: mk.G <= calH ? any : 0 };
       push({ work: `${lane} ${L} → ${last} and ${objs.length} gathering objective${objs.length === 1 ? "" : "s"} (tool: ${(H0 - H1).toFixed(1)} h saved)`, key: lb && Number.isFinite(lb.hGate) ? `lvl:${lane}:${lb.next}` : objs[0]?.key ?? `lvl:${lane}:${last}`, pieces, H0, H1, G: mk.G, parts: mk.parts, points: s.points, fit: s.fit, any: s.any, hours: s.hours, offered: mk.offered });
     }
   }

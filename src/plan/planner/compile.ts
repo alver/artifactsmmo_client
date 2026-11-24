@@ -43,10 +43,12 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
   // makes is in the bank when it ends; a src: step's units are actions. The craft item takes its materials from the
   // bank. A mat: step that is a trade (hard leather for cowhide) is [withdraw the currency, buy, deposit-all].
   const supply = step.as === "supply";
+  // task 027d: the visit to the tasks master, before the work or after the fights (its coins banked by the deposit or the reset)
+  const visit = (at: "start" | "end"): QueueItemInput[] => (step.visit?.at === at ? [{ kind: "task-visit", done: 0, ...(step.visit.cancel ? { cancel: step.visit.cancel } : {}) }] : []);
   switch (w.kind) {
     case "kill": case "gather":
       // task 017: a fight item's take is the step's withdraw (its consumables and its toll); a gather item's, its toll
-      out = [reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9)), step.withdraw, wear, tollTake(step)), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
+      out = [...visit("start"), reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9)), step.withdraw, wear, tollTake(step)), ...visit("end"), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
       break;
     case "craft": {
       if (supply) {
@@ -66,8 +68,8 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
       out = sources.length && tail.length < 4 ? [reset(step.sources![0].work), ...tail] : tail;
       break;
     }
-    case "task":
-      out = [{ kind: "task-loop", master: "monsters", times: step.units, done: 0, gear: true }];
+    case "task": // task 027d: a supply step of a task is its visit alone (src:tasks_coin with no task to work)
+      out = [...visit("start"), ...(supply ? [] : [{ kind: "task-loop", master: "monsters", times: step.units, done: 0, gear: true } as const])];
       break;
     case "train":
       out = [reset(w), { kind: "train", skill: w.lane, toLevel: 0, levels: 1, gear: true }];

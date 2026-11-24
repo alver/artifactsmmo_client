@@ -7,10 +7,13 @@
 //   3. a fighter (no lane) → no tool;
 //   4. two workers pinned to one lane → one copy (and with no pins, an event lane's extra gatherers ask for none);
 //   5. the next gather step of the holder wears it;
-//   1c. a worker hunts its own lane's tool's materials in a fight it is admitted to, not in one it is not (Alex).
+//   1c. a worker hunts its own lane's tool's materials in a fight it is admitted to, not in one it is not (Alex);
+//   6. task 027d (Alex): a tool ranks by its payback — on the World of 11-24 (scripts/fixtures/world-2026-11-24.json) at
+//      fishing 20 with one Ogre Skin short, the skin's hunt is Third's first-tier pick over a fighter's need.
 //   node --import tsx scripts/check-tools.mts
 // On 00151c3 (G + H1 ≤ 0.85 × H0 over the lane's next gate, the highest cut, a fighter forging a fighter's piece only) cases
-// 1, 1b, 1c and 4 fail (8 of 11; from iron to steel the ratio is 0.875), 2, 3 and 5 hold.
+// 1, 1b, 1c and 4 fail (8 of 11; from iron to steel the ratio is 0.875), 2, 3 and 5 hold. On 9375a24 (027c: the bundle over
+// G + H1) case 6 fails.
 import { readFile } from "node:fs/promises";
 import { setDataReader } from "../src/catalog/load";
 import { loadCatalog } from "../src/catalog";
@@ -118,6 +121,27 @@ const MATS = { steel_bar: 7, pig_skin: 3, spider_leg: 3, astralyte_crystal: 2 };
   const w = worldOf([made("made_up_iron", 5, "gathering", "iron_ore", 30)], { steel_pickaxe: 1, iron_pickaxe: 1 }, { Fourth: { jewelrycrafting_level: 30 } });
   const s = rank("Fourth", w).step;
   cases.push(["the holder's next gather step wears the tool", s.work.kind === "gather" && s.wear?.weapon === "steel_pickaxe", `Fourth: ${said(s)}; wears ${s.wear?.weapon ?? "nothing"}`]);
+}
+
+// ── 6. task 027d (Alex): a tool ranks by its payback ────────────────────────────
+{
+  // the World of 11-24, where 027c's road starts, as on that road's day 2: the Steel Pickaxe and Steel Axe made (day 0.04),
+  // Third at fishing 20 wearing the Spruce Fishing Rod (the iron tier), the Steel Fishing Rod's materials banked but one
+  // Ogre Skin — on 027c's road the skins ranked 12th of 12 in Third's first tier
+  const live = (JSON.parse(await readFile("scripts/fixtures/world-2026-11-24.json", "utf8")) as { world: World }).world;
+  const bank = new Map(live.bank.map((b) => [b.code, b.quantity]));
+  for (const [c, q] of Object.entries(live.bags ?? {})) bank.set(c, (bank.get(c) ?? 0) + q);
+  bank.set("ogre_skin", 2).set("astralyte_crystal", 2);
+  const w: World = {
+    ...live, bank: [...bank].map(([code, quantity]) => ({ code, quantity })), bags: {}, current: {}, blocked: {}, favors: undefined, bankSlots: undefined, nextExpansion: undefined,
+    characters: live.characters.map((c) => ({ ...c, ...({ Third: { fishing_level: 20 }, Fourth: { weapon_slot: "steel_pickaxe" }, Second: { weapon_slot: "steel_axe" } } as Record<string, object>)[c.name] }) as Character),
+    config: { ...live.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])) } as unknown as World["config"],
+  };
+  const r = rank("Third", w), all = [...r.objectives, ...r.levels, ...r.supply];
+  const skin = all.find((c) => c.target.key === "src:ogre_skin");
+  const other = all.filter((c) => c.need && c !== skin && c.step.parent !== skin?.step.parent).sort((a, b) => b.fit - a.fit || b.any - a.any)[0];
+  const sc = (c: typeof skin) => (c ? `${c.target.key} fit ${c.fit.toExponential(2)} any ${c.any.toExponential(2)} (${c.step.why.slice(0, 110)})` : "none");
+  cases.push(["fishing 20, an iron rod, one Ogre Skin short → the skin's hunt is the worker's first-tier pick (the rod ranked by its payback)", r.step.target === "src:ogre_skin", `Third: ${said(r.step)}; the skin: ${sc(skin)}; the best other need: ${sc(other)}`]);
 }
 
 let bad = 0;

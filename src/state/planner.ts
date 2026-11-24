@@ -368,8 +368,10 @@ function measure(r: Running, ch: Character): { counter: number; units: number } 
   for (const it of mine) counter += ("done" in it ? it.done : 0) + (it.kind === "buy" && it.bought ? 1 : 0);
   // A train step: every XP of the character, not only the lane's — sourcing a batch's materials gathers or hunts first.
   if (w.kind === "train") for (const [k, v] of Object.entries(ch)) if (k.endsWith("xp") && !k.endsWith("max_xp") && typeof v === "number") counter += v;
-  // the step's last item that counts: a supply step ends in a deposit-all, which has none (task 009)
-  const counts = itemsOf(r.step, ch).filter((it) => it.kind !== "deposit-all").pop()?.id;
+  // the step's last item that counts: a supply step ends in a deposit-all, which has none (task 009); task 027d: a visit to
+  // the tasks master counts only in a step that is the visit alone
+  const items = itemsOf(r.step, ch).filter((it) => it.kind !== "deposit-all");
+  const counts = (items.filter((it) => it.kind !== "task-visit").pop() ?? items.pop())?.id;
   const last = mine.find((it) => it.id === counts);
   // task 017, settled point 13: a tidy step's units are the copies of all its codes (a finished recycle item: its quantity)
   const tidy = r.step.as === "tidy" ? itemsOf(r.step, ch).reduce((s, it) => {

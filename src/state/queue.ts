@@ -643,6 +643,30 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       }
       return runWorkTask(name, ch, it, ctx);
     }
+    case "task-visit": {
+      // Task 027d: one visit to the tasks master — a finished task turned in, the step's cancel while it is the task held,
+      // a monsters task taken when none is held; done once it holds an unfinished task
+      if (it.done) return true;
+      const finished = !!ch.task && ch.task_progress >= ch.task_total;
+      if (finished || !ch.task) {
+        const type = finished && ch.task_type === "items" ? "items" : "monsters";
+        const at = await goToMaster(name, ch, type, ctx.note);
+        if (at === "missing") return skipItem(name, it, `no ${type} tasks master on the map`);
+        if (at === "there") {
+          ctx.note(finished ? "turning in the task" : "taking a monsters task");
+          if (finished) log(name, `task ${ch.task} turned in — rewards collected`, "ok");
+          await step(name, () => (finished ? actions.taskComplete(name) : actions.taskNew(name)));
+        }
+        return false;
+      }
+      if (it.cancel && ch.task === it.cancel) {
+        const r = await cancelTask(name, ch, ctx, "the plan's visit");
+        if (r !== "done") { log(name, `task ${ch.task} kept — ${r} to cancel it`, "bad"); patchItem(name, it.id, { cancel: undefined }); }
+        return false;
+      }
+      patchItem(name, it.id, { done: 1 });
+      return true;
+    }
   }
 }
 
@@ -1059,16 +1083,24 @@ async function giveUpTask(
       return false;
     }
   }
-  // Coin fetch, walk and cancel in ONE call — every leg of both walks too: a
-  // "no-win" verdict only exists on the monster tile, so returning between steps
-  // walked straight back there (and the swap's bag sweep, since removed, stowed
-  // the coin) — a livelock that never cancelled.
+  const r = await cancelTask(name, ch, ctx, why);
+  if (r === "no master") return skipItem(name, it, "no tasks master on the map");
+  if (r === "no coin") throw new Error(`${why} — and no tasks coin to cancel the task`);
+  if (r === "no bank") throw new Error(`${why} — and no bank to fetch a tasks coin from`);
+  return false; // the echo clears ch.task → a loop accepts the next one
+}
+
+/** Cancel the held task for a tasks coin — the coin from the bag, else fetched from the bank. Coin fetch, walk and cancel
+ *  in ONE call — every leg of both walks too: a "no-win" verdict only exists on the monster tile, so returning between
+ *  steps walked straight back there (and the swap's bag sweep, since removed, stowed the coin) — a livelock that never
+ *  cancelled. Giving up on a task (giveUpTask) and a planned visit (task 027d, `task-visit`) share it. */
+async function cancelTask(name: string, ch: Character, ctx: StepCtx, why: string): Promise<"done" | "no master" | "no coin" | "no bank"> {
   const master = nearest("tasks_master", ch.task_type === "items" ? "items" : "monsters", ch);
-  if (!master) return skipItem(name, it, "no tasks master on the map");
+  if (!master) return "no master";
   if (invQty(ch, "tasks_coin") <= 0) {
-    if (bankQty("tasks_coin") <= 0) throw new Error(`${why} — and no tasks coin to cancel the task`);
+    if (bankQty("tasks_coin") <= 0) return "no coin";
     const bank = nearestBank(ch);
-    if (!bank) throw new Error(`${why} — and no bank to fetch a tasks coin from`);
+    if (!bank) return "no bank";
     ctx.note("fetching a tasks coin to cancel the task");
     await walkTo(name, bank);
     await runStep(name, ch, { kind: "withdraw", code: "tasks_coin", quantity: 1, at: bank }, ctx);
@@ -1078,7 +1110,7 @@ async function giveUpTask(
   ctx.note("cancelling the task");
   await step(name, () => actions.taskCancel(name));
   log(name, `task cancelled for a tasks coin — ${why}`, "bad");
-  return false; // the echo clears ch.task → a loop accepts the next one
+  return "done";
 }
 
 /**

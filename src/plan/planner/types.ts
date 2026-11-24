@@ -74,6 +74,9 @@ export interface Step {
   for?: string;           // a gear step: the character the piece is made for
   toll?: Toll;            // task 017: the conditional transitions of its round trip (bank → place → bank), in `withdraw` too
   fight?: FightVerdict;   // task 025: a kill step's verdict on the set it wears (its why states it; the runtime's end record)
+  /** Task 027d: a visit to the tasks master (tasks.ts) — `start`: before the work, turn a finished task in, cancel `cancel`
+   *  (a coin from the bank), take a monsters task; `end`: after the fights, turn the finished task in and take the next. */
+  visit?: { at: "start" | "end"; cancel?: string };
 }
 
 /** Task 025, settled point 2: what the verdict says of a kill step's set — p, the rolled win rate; `sec`, the expected seconds
@@ -141,6 +144,8 @@ export interface World {  // everything decide() reads — a snapshot, so it run
   /** Task 027: the kills done for a sale's item, by code (the golden egg's chickens); the hunt stops at supply.ts huntStop.
    *  The runtime's PlannerState.hunted; the forward model counts its own. */
   hunted?: Record<string, number>;
+  /** Task 027d: the forward model's tasks drawn so far, fleet-wide — the rotation's counter (tasks.ts drawOf). */
+  drawn?: number;
 }
 
 /** An accepted offering's favor: × `xp` XP (and × `drop` drops) on its target for that character until `until` (ms). */

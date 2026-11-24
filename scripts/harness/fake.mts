@@ -16,7 +16,7 @@
 // `/accounts/{a}/achievements` asked without a token — answers byte for byte from
 // report 024's snapshot (`world.publicReads`, `world.publicFault`).
 // Not modelled: XP and levels (a level is what the scenario set), achievement
-// conditions of transitions (always unmet), task /
+// conditions of transitions (always unmet), task trade and exchange (task 027d: new, complete and cancel are modelled) /
 // give actions, `use` of anything but food,
 // group fights. Achievements are what the scenario wrote (`world.achievements`;
 // it moves progress by hand — nothing the fake does counts toward them).
@@ -25,7 +25,7 @@
 
 import { readFileSync } from "node:fs";
 import { API_BASE } from "../../src/api/client";
-import { catalog, item, monster, npc, resource, tileAt } from "../../src/catalog";
+import { catalog, item, monster, npc, resource, task, tileAt } from "../../src/catalog";
 import { canEquip } from "../../src/plan/bis";
 import { fightSec, gatherSec, recycleReturn } from "../../src/plan/xp";
 import { simulate } from "../../src/sim/combat";
@@ -54,6 +54,8 @@ export interface WorldInit {
   slots?: number;
   nextExpansion?: number;
   ladder?: number[];
+  /** Task 027d: the monsters tasks `task/new` hands out, in order (default: Chicken ×50). */
+  draws?: { code: string; total: number }[];
 }
 /** One action call as the game saw it. `code` 200 = ok; "network" = an injected transport failure. */
 export interface Call {
@@ -92,6 +94,7 @@ export const world = {
   expansions: 0,
   nextCost: 4500,
   ladder: [] as number[],
+  draws: [] as { code: string; total: number }[],
   events: [] as ActiveEvent[],
   achievements: [] as AccountAchievement[],
   pending: [] as PendingItem[],
@@ -207,6 +210,7 @@ export function seedWorld(init: WorldInit): void {
   world.slots = init.slots ?? 500;
   world.nextCost = init.nextExpansion ?? 4500;
   world.ladder = [...(init.ladder ?? [])];
+  world.draws = [...(init.draws ?? [])];
 }
 
 /** The world as JSON, for a second boot of the engine in a new process (index.mts restart()). Pending faults and
@@ -214,10 +218,10 @@ export function seedWorld(init: WorldInit): void {
 export const saveWorld = (): unknown => ({
   chars: [...world.chars], bank: [...world.bank], gold: world.gold, events: world.events, achievements: world.achievements,
   pending: world.pending, offerings: world.offerings, altar: [...world.altar], trace: world.trace, counts: [...counts],
-  slots: world.slots, expansions: world.expansions, nextCost: world.nextCost, ladder: world.ladder,
+  slots: world.slots, expansions: world.expansions, nextCost: world.nextCost, ladder: world.ladder, draws: world.draws,
 });
 export function loadWorld(s: ReturnType<typeof JSON.parse>): void {
-  Object.assign(world, { chars: new Map(s.chars), bank: new Map(s.bank), gold: s.gold, events: s.events, achievements: s.achievements, pending: s.pending, offerings: s.offerings, altar: new Map(s.altar), trace: s.trace, slots: s.slots, expansions: s.expansions, nextCost: s.nextCost, ladder: s.ladder });
+  Object.assign(world, { chars: new Map(s.chars), bank: new Map(s.bank), gold: s.gold, events: s.events, achievements: s.achievements, pending: s.pending, offerings: s.offerings, altar: new Map(s.altar), trace: s.trace, slots: s.slots, expansions: s.expansions, nextCost: s.nextCost, ladder: s.ladder, draws: s.draws ?? [] });
   for (const [k, v] of s.counts as [string, number][]) counts.set(k, v);
 }
 
@@ -575,6 +579,35 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
     return { seconds: 3, reason: "offering", data: { offering: world.offerings.find((x) => x.id === sel.offering_id), reward: { category: sel.category, xp: 0 } } };
   },
 
+  // Task 027d: the monsters master's task/new, task/complete and task/cancel (codes OpenAPI's). guess: a draw is the
+  // scenario's next `draws` entry (default Chicken ×50), the reward the task's coins of public/data/tasks.json and no gold,
+  // 3 s cooldowns; the master's type must match the task's ("All require the Tasks Master tile matching the task type").
+  "task/new"(d) {
+    standingOn(d.ch, "tasks_master", "Tasks Master", "monsters");
+    if (d.ch.task) throw new GameError(489, "The character already has an assigned task.");
+    const t = world.draws.shift() ?? { code: "chicken", total: 50 };
+    Object.assign(d.ch, { task: t.code, task_type: "monsters", task_progress: 0, task_total: t.total });
+    return { seconds: 3, reason: "task", data: { task: { code: t.code, type: "monsters", total: t.total, rewards: { items: [], gold: 0 } } } };
+  },
+  "task/complete"(d) {
+    standingOn(d.ch, "tasks_master", "Tasks Master", d.ch.task_type);
+    if (!d.ch.task) throw new GameError(487, "The character has no task assigned.");
+    if (d.ch.task_progress < d.ch.task_total) throw new GameError(488, "The character has not completed the task.");
+    const items = task(d.ch.task)?.rewards.items ?? [];
+    fits(d.ch, items.reduce((s, x) => s + x.quantity, 0));
+    for (const x of items) give(d.ch, x.code, x.quantity);
+    Object.assign(d.ch, { task: "", task_type: "", task_progress: 0, task_total: 0 });
+    return { seconds: 3, reason: "task", data: { rewards: { items, gold: 0 } } };
+  },
+  "task/cancel"(d) {
+    standingOn(d.ch, "tasks_master", "Tasks Master", d.ch.task_type);
+    if (!d.ch.task) throw new GameError(487, "The character has no task assigned.");
+    if (!(d.ch.inventory ?? []).some((s) => s.code === "tasks_coin" && s.quantity > 0)) throw new GameError(478, "Missing required item(s).");
+    take(d.ch, "tasks_coin", 1);
+    Object.assign(d.ch, { task: "", task_type: "", task_progress: 0, task_total: 0 });
+    return { seconds: 3, reason: "task", data: {} };
+  },
+
   fight(d, body: { participants?: string[] } | undefined) {
     if (body?.participants?.length) fatal("group fights are not implemented");
     const m = monster(standingOn(d.ch, "monster", "Monster").code)!;
@@ -609,6 +642,8 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
       d.ch.hp = hp;
       d.ch.gold += gold;
       for (const s of drops) give(d.ch, s.code, s.quantity);
+      // task 027d: a won fight of the held monsters task's monster counts for it (the game's rule)
+      if (d.ch.task === m.code && d.ch.task_type === "monsters") d.ch.task_progress = Math.min(d.ch.task_total, d.ch.task_progress + 1);
     } else {
       // A loss: back at the spawn tile (exec.ts "walks back from spawn"). guess: with 1 HP, on the overworld.
       Object.assign(d.ch, { hp: 1, x: 0, y: 0, layer: "overworld", map_id: tileAt(0, 0)?.map_id ?? 0 });

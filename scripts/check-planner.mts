@@ -250,7 +250,7 @@ function verify(w: World, step: Step, run: Run): void {
   for (const k of kills) check(INV[2], winsDirect(ch, w, k.monster), () => `${tag()}: ${k.monster}`);
   // task 025: the step's own verdict (the set it wears, the worn pinned artifacts, its take's potions) — the why's win rate,
   // the forward model's losses — at the floor too (an artifact left out of it read 62% for a set at 98.5%)
-  if (step.fight) check(INV[2], step.fight.p >= minWinOf(w) - 1e-9, () => `${tag()}: the step's own verdict p ${step.fight!.p.toFixed(3)}`);
+  if (step.fight) check(INV[2], step.fight.p >= minWinOf(w) - 1e-9, () => `${tag()}: the step's own verdict p ${step.fight!.p.toFixed(3)} (wear ${JSON.stringify(step.wear)}, take ${JSON.stringify(step.withdraw ?? {})}; …${step.why.slice(-160)})`);
   const t = targetsOf(w).find((x) => x.key === step.target);
   const workOk = (x: Step["work"]): boolean => {
     if (x.kind === "gather") { const r = resourceOf(x.resource); return !!r && levelOf(ch, r.skill as Lane) >= r.level; }
@@ -388,8 +388,11 @@ function verify(w: World, step: Step, run: Run): void {
 function ended(after: World, step: Step, before: World, run: Run): void {
   const q = (w: World, code: string): number => w.bank.reduce((s, b) => s + (b.code === code ? b.quantity : 0), 0);
   let ok = after.bank.every((b) => b.quantity >= -1e-6);
-  for (const b of before.bank) if (floor(b.code) > 0 && q(after, b.code) < Math.min(b.quantity, floor(b.code)) - 1e-6) ok = false;
-  check(INV[14], ok, () => `${step.key}: ${after.bank.filter((b) => b.quantity < -1e-6).map((b) => `${b.code} ${b.quantity.toFixed(2)}`).join(", ")}`);
+  // task 027d: a cancel's coin may come from under the floor — COIN_FLOOR is the coins kept for that fee (config.ts)
+  const fee = (code: string): number => (code === "tasks_coin" && step.visit?.cancel ? 1 : 0);
+  const under = before.bank.filter((b) => floor(b.code) > 0 && q(after, b.code) < Math.min(b.quantity, floor(b.code)) - fee(b.code) - 1e-6);
+  if (under.length) ok = false;
+  check(INV[14], ok, () => `${step.key}: ${[...after.bank.filter((b) => b.quantity < -1e-6), ...under.map((b) => ({ code: `${b.code} under its floor from ${b.quantity.toFixed(2)}`, quantity: q(after, b.code) }))].map((b) => `${b.code} ${b.quantity.toFixed(2)}`).join(", ")}`);
   if (step.target.startsWith("gear:") && step.for) {
     const code = step.target.slice(5);
     const whom = run.copies.get(step.key) ?? [];
@@ -823,10 +826,11 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   console.log(`  8. Second not on: ${offered8.length} need(s) for Fifth, none offered; Fifth — ${r8.step.why}`);
 
   // Task 011, section 4: a kill objective is the fleet's work. Fifth and its twin Fourth (armour, no weapon), ten kills of
-  // the monster the piece flips.
+  // the monster the piece flips. Task 027d: on the pins before 027 (EVEN) — with the roles Fourth is a worker, not a twin
+  // that fights, and the case held only while every other piece's coins were a wall.
   const mon = need1?.monster ?? "highwayman";
   const kills: AccountAchievement = { code: "made_up_kills", name: "made up", description: "", points: 2, completed_at: null, objectives: [{ type: "combat_kill", target: mon, total: 10, progress: 0 }] } as AccountAchievement;
-  const twins = (bank: World["bank"]): World => ({ ...flipWorld(sec.weaponcrafting_level, ["Second", "Fourth", "Fifth"], [fifth, twin]), bank, achievements: [...only([]), kills] });
+  const twins = (bank: World["bank"]): World => ((w) => ({ ...w, bank, achievements: [...only([]), kills], config: { ...EVEN, on: w.config.on } }))(flipWorld(sec.weaponcrafting_level, ["Second", "Fourth", "Fifth"], [fifth, twin]));
   const forKills = (w: World, name = ""): Need[] => gearNeeds(w, name).needs.filter((n) => n.key === "ach:made_up_kills:0");
   // 9. one wins safely (Fourth wears the piece): no need for the other
   const w9 = wear(twins(piece ? [{ code: piece, quantity: 1 }] : []), { character: "Fourth", wear: { ...armour5, weapon: piece } } as Step);

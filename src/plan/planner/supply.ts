@@ -1,8 +1,9 @@
 // Supply through the bank (task 009 section 3). Every open target that consumes items — a craft or buy objective,
 // a gear piece (gear.ts) — has a bill of materials: its recipe opened until each leaf is bank stock, a field source
 // (a gather or a kill, with its gates) or out of reach for now (an event that is not live, a boss, a raid, another
-// layer, gold, tasks coins). A code that is short is a target of its own:
-//   src:<code>  its field source; units are actions (a rare drop is a run of ordinary chunks)
+// layer, gold, tasks coins with no fighter on). A code that is short is a target of its own:
+//   src:<code>  its field source; units are actions (a rare drop is a run of ordinary chunks); task 027d: src:tasks_coin's
+//               units are coins, a fighter's held task's kills (decide.ts, tasks.ts)
 //   mat:<code>  its craft, from the bank; its inputs are demand in turn
 // and the gear piece itself is gear:<code>, made by its crafter. What a step produces is in the bank when it ends.
 // Supply is made for open demand only: when the parent closes its supply targets are gone. Pure.
@@ -19,10 +20,10 @@
 import { catalog, item, itemName } from "../../catalog";
 import { CRAFT_SEC } from "../xp";
 import { CHUNK_SEC, CRAFT_LANES, GATHER_LANES, GEAR_CRAFT } from "./config";
-import { actionSec, hoursToLevel, killWalk, levelOf, makePlace, perOf, stepSec } from "./cost";
+import { actionSec, codeSec, hoursToLevel, killWalk, levelOf, makePlace, perOf, stepSec } from "./cost";
 import { isOn, met, outOfReach } from "./gates";
 import { cachesOn, fightSecOf, planRec, admits } from "./reach";
-import { crafterOf } from "./roles";
+import { crafterOf, roleOf } from "./roles";
 import { available } from "./stock";
 import { eventOf, gapSec, materialCal } from "./events";
 import { placeGates, sourceFor, targetsOf } from "./targets";
@@ -211,8 +212,14 @@ export function billOf(world: World, name: string, demand: [string, number][], v
       need(t.work.currency, t.work.price * n, depth + 1);
       return;
     }
-    // task 017, settled point 11: the honest reason where the coins are short (the bank's above the floor, of the demand)
-    if (code === "tasks_coin" && coinsOn(world)) return void bill.out.push(`tasks coins: ${Math.floor(have)} of ${Math.ceil(have + q)}`);
+    if (code === "tasks_coin" && coinsOn(world)) {
+      // task 027d: coins are earned — a fighter that is on works its task for them (decide.ts src:tasks_coin), priced as
+      // codeSec's coin; with no fighter, task 017's wall and its honest reason (the bank's above the floor, of the demand)
+      if (!world.characters.some((c) => isOn(c.name, world) && roleOf(c.name, world) === "fighter")) return void bill.out.push(`tasks coins: ${Math.floor(have)} of ${Math.ceil(have + q)}`);
+      leaf("src:tasks_coin", code, "src", { kind: "task" }, [], q);
+      if (price) bill.hours += (q * codeSec(code, world.characters[0], world)) / 3600;
+      return;
+    }
     bill.out.push(priceOf(code, q));
   };
   for (const [code, q] of demand) need(code, q, 0);

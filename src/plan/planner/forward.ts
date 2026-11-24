@@ -31,6 +31,7 @@ import { fareShort, fightRec, homeBankOf, winLevel } from "./reach";
 import { available } from "./stock";
 import { billOf, huntStop, saleWait } from "./supply";
 import { isDone, targetsOf, unhandledOf } from "./targets";
+import { playVisit } from "./tasks";
 import { craftXpOf, gatherXp } from "./xp";
 import type { AccountAchievement, BankItem, Character, GearSlot } from "../../types/api";
 import type { Gate, Lane, Step, Target, Work, World } from "./types";
@@ -155,12 +156,24 @@ export function advance(world: World, step: Step): World {
     gold -= losses * back.gold;
     for (const [k, q] of Object.entries(back.keys)) put(k, -losses * q);
   }
+  // task 027d: a visit to the tasks master (tasks.ts playVisit) — a finished task turned in (its coins banked, `task:`
+  // counted), the step's cancel paid with a coin, a monsters task drawn from the rotation
+  let drawn = world.drawn ?? 0;
+  const visit = (cancel?: string, take = true): void => {
+    const v = playVisit(ch, drawn, cancel, take);
+    put("tasks_coin", v.coins);
+    add("task:", v.done);
+    drawn = v.drawn;
+  };
+  if (step.visit?.at === "start") visit(step.visit.cancel);
   const field = (w: Work, actions: number): void => {
     if (w.kind === "kill") {
       const m = monsterOf(w.monster);
       if (!m) return;
       if (tolls) gold += (actions * ((m.min_gold ?? 0) + (m.max_gold ?? 0))) / 2;
       add(`combat_kill:${m.code}`, actions);
+      // task 027d: the kills count for the held monsters task whatever the fight is for (the game's rule)
+      if (ch.task === m.code && ch.task_type === "monsters") ch.task_progress = Math.min(ch.task_total, ch.task_progress + actions);
       for (const d of m.drops) { add(`combat_drop:${d.code}`, actions * odds(d)); put(d.code, actions * odds(d)); }
       gain("combat", actions * fightXp(m.level, m.hp, m.type, ch.level, ch.wisdom ?? 0)); // task 012: the worn set's wisdom (wear keeps the stat)
     } else if (w.kind === "gather") {
@@ -184,7 +197,12 @@ export function advance(world: World, step: Step): World {
     }
   }
   if (w.kind === "buy") { add(`npc_buy:${w.code}`, step.units); put(w.code, step.units); put(w.currency, -w.price * step.units); }
-  if (w.kind === "task") add("task:", step.units);
+  if (step.visit?.at === "end") visit();
+  if (w.kind === "task" && step.as !== "supply") { // the filler's task-loop: the task held (else a draw) worked and turned in
+    if (!ch.task) visit();
+    ch.task_progress = ch.task_total;
+    visit(undefined, false); // shortcut: its hours stay TASK_SEC's (measured) whatever the task; it ends holding none, as in play
+  }
   add("favor:", offerings);
   for (const [code, q] of drinksOf(world, step)) put(code, -q); // task 012, settled point 6: the fights drank
 
@@ -213,7 +231,7 @@ export function advance(world: World, step: Step): World {
   // task 027: the kills of a sale's hunt (supply.ts huntStop)
   const sold = step.target.startsWith("src:") && w.kind === "kill" ? step.target.slice(4) : "";
   const hunted = sold && targetsOf(world).some((t) => t.work.kind === "sell" && t.work.code === sold) ? { ...world.hunted, [sold]: (world.hunted?.[sold] ?? 0) + step.units } : world.hunted;
-  return { ...world, characters, achievements, bank: bankPlus(world.bank, delta), clock: { ...world.clock, [ch.name]: end }, ...(gold ? { bankGold: world.bankGold + gold } : {}), ...(hunted ? { hunted } : {}) };
+  return { ...world, characters, achievements, bank: bankPlus(world.bank, delta), clock: { ...world.clock, [ch.name]: end }, ...(gold ? { bankGold: world.bankGold + gold } : {}), ...(hunted ? { hunted } : {}), ...(drawn !== (world.drawn ?? 0) ? { drawn } : {}) };
 }
 
 /** The achievements with `prog` ("<objective type>:<target>" → units) added; a combat_level objective by the top level. */

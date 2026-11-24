@@ -26,6 +26,9 @@
 //     WORKER_SHORT_H of its work; (3) its gear craft to WORKER_CRAFT (lvl:<craft>:30, the train item); (4) today's rule
 //     inside its lanes (a work of no lane — a task, a trade — included). Never a combat level or a kill objective; a src:
 //     kill only when no fighter that is on is admitted for it. Its fallback gathers in its own lanes.
+// Task 027d (tasks.ts): a fighter's kill step starts with a visit to the tasks master when it holds no task, a finished one
+// or an items task; its held task's monster joins pickMonster's bonus; coins a bill lacks are its src:tasks_coin step (the
+// held task's kills); a task worked on purpose (that step, the filler) is cancelled there when rule 4 says so.
 
 import { achievement as achievementOf, item, itemName, resource as resourceOf } from "../../catalog";
 import { CRAFT_SEC } from "../xp";
@@ -40,6 +43,7 @@ import { gearPieces, pieceParent } from "./gear";
 import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
 import { admitted, fightRec, nearestSpot, placeOf, withToll, verdictOf } from "./reach";
 import { crafterOf, roleOf, rolesFor } from "./roles";
+import { cancelOf, coinsInFlight, monstersTask, startVisit, taskText, visitSec } from "./tasks";
 import { available, poolBank } from "./stock";
 import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
 import { sourceFor, targetsOf } from "./targets";
@@ -227,11 +231,14 @@ export function rank(name: string, world: World, free = false): Ranking {
   /** Task 012: the others' src: steps in flight in actions of the static source (supplyNeeds' unit) — each at its own
    *  node, so its actions are items at that node's rate first. */
   const srcInFlight = (key: string): number => {
+    if (key === "src:tasks_coin") return coinsInFlight(others); // task 027d: the coins of the tasks the others turn in
     const st = key.startsWith("src:") ? sourceFor(key.slice(4)) : undefined;
     if (!st || typeof st === "string") return inFlight(key);
     return others.reduce((t, s) => t + (s.target === key && s.as !== "level" && s.as !== "fallback" ? (s.units / perOf(s.work)) * perOf(st.work) : 0), 0);
   };
   const bonus = new Set(targets.flatMap((t) => (t.work.kind === "kill" ? [t.work.monster] : [])));
+  const held = fighter ? monstersTask(ch) : undefined; // task 027d: of near-equal fights, the held task's (its kills count)
+  if (held) bonus.add(held);
   const blocked = (key: string): boolean => (world.blocked[`${key}@${name}`]?.until ?? 0) > world.now;
   const pts = (code: string, p: number): number => p * (cfg.weight[code] ?? 1);
   const boost = (key: string): number => (last?.target === key ? 1.1 : 1);
@@ -265,6 +272,39 @@ export function rank(name: string, world: World, free = false): Ranking {
     const withdraw = tk.withdraw && Object.fromEntries(Object.entries(tk.withdraw).map(([c, q]) => [c, Math.min(q, Math.ceil(q * k - 1e-9))]));
     const wear = tk.rec && Object.fromEntries(WEAR_SLOTS.filter((g) => tk.rec!.slots[g]).map((g) => [g, tk.rec!.slots[g]!]));
     return { ...p, units, hours: units === p.units && tk.sec == null ? p.hours : (units * unit) / 3600, withdraw, note: tk.note, wear };
+  };
+
+  /** Task 027d: a fighter's step for `short` coins of a parent (scored as the parent, as any supply leaf) — kills of its held
+   *  monsters task, a chunk at a time, the step that finishes it turning it in at the master (`visit` end); a visit alone
+   *  where it holds no task to work (none, a finished one, an items task, or one rule 4 cancels — tasks.ts cancelOf). */
+  const coinCand = (short: number, par: Parent, t: Target): Candidate | undefined => {
+    const fit = par.fit * boost(t.key), any = par.any * boost(t.key);
+    const head = `coins: ${fmt(short)} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h)`;
+    const cand = (p: Plan & { wear?: Record<string, string> }, why: string, visit?: Step["visit"]): Candidate =>
+      ({ target: t, step: stepOf(t, p, "supply", fit, why, { parent: par.key, ...(visit ? { visit } : {}) }), fit, any, ...(needs.has(par.key) ? { need: true } : {}) });
+    const cancel = cancelOf(ch, world);
+    const tk = cancel ? undefined : monstersTask(ch);
+    if (!tk) {
+      const v = cancel ? { cancel: ch.task } : startVisit(ch, world);
+      const sec = v ? visitSec(ch, world, v.cancel) : Infinity;
+      if (!v || !Number.isFinite(sec)) return undefined;
+      const what = v.cancel ? `cancels task ${taskText(ch)} for a coin (${cancel ?? "a fighter's items task"})` : ch.task ? `turns in task ${taskText(ch)}` : "holds no task";
+      return cand({ work: { kind: "task" }, units: 1, hours: sec / 3600 }, `${head}; ${what}, takes a monsters task at the master (${fmt(sec / 3600)} h)`, { at: "start", ...v });
+    }
+    const left = ch.task_total - ch.task_progress, w: Work = { kind: "kill", monster: tk };
+    const spot = nearestSpot(placeOf(ch), "monster", tk, world, name);
+    const plan = (n: number) => { const c = spot && chunk(w, actionSec(w, ch, world), n, world, spot, ch); return c && fightPlan(c, 1, fit, any, n); };
+    let f = plan(left);
+    if (!f || !spot) return undefined;
+    let end = f.units >= left, sec = end ? visitSec({ ...ch, ...spot.place } as Character, world) : 0;
+    // the walk to the master stays inside the step's two chunks (a tolled spot's bagful is two): short of it, the task's end
+    // is the next step's
+    if (end && f.hours * 3600 + sec > 2 * CHUNK_SEC) {
+      const g = plan(Math.min(left - 1, Math.floor((2 * CHUNK_SEC - sec) / ((f.hours * 3600) / f.units))));
+      if (g) { f = g; end = false; sec = 0; }
+    }
+    const hours = f.hours + (Number.isFinite(sec) ? sec : 0) / 3600;
+    return cand({ ...f, hours }, `${head}; task: ${taskText(ch)}, ${f.units} kills now${end ? ", turned in at the master" : ""} (${fmt(hours)} h)${f.note}`, end ? { at: "end" } : undefined);
   };
 
   const objectives: Candidate[] = [];
@@ -355,6 +395,11 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (fighter && s.kind !== "src") continue; // task 027: a fighter's supply is a src: kill
     const par = s.parent;
     const t: Target = { key: s.key, points: 0, work: s.work, left: s.short, gates: s.gates, filler: false };
+    if (s.code === "tasks_coin") { // task 027d: coins are a fighter's work — its held task's kills
+      const c = fighter ? coinCand(s.short, par, t) : undefined;
+      if (c) supply.push(c);
+      continue;
+    }
     let p: (Plan & { wear?: Record<string, string> }) | undefined, node = "", note = "";
     if (s.kind === "src") {
       // task 012, settled point 7: the node (or monster) is this character's — the least net seconds an item
@@ -454,7 +499,7 @@ export function rank(name: string, world: World, free = false): Ranking {
   } else if (fighter) {
     // task 027b: what it forges by need (a piece of its craft, the level it asks) goes before its fights — one weapon
     // speeds every fighter; with no admitted fight at all it works by today's rule over the whole list
-    const forge = all.filter((c) => c.step.work.kind !== "kill");
+    const forge = all.filter((c) => c.step.work.kind !== "kill" && c.target.key !== "src:tasks_coin"); // 027d: a coins visit is fight work
     const f = top(forge, "fit") ?? top(forge, "any");
     const s = f ? { ...f.step, why: `${f.step.as}: ${f.step.why}` } : today();
     const x = s.as === "fallback" ? xpPick() : undefined;
@@ -465,6 +510,17 @@ export function rank(name: string, world: World, free = false): Ranking {
     step = { ...(x ?? s) };
     step.why = `fighter${f ? ", forging" : ""}: ${step.why}`;
   } else step = today();
+  // Task 027d: a fighter's kill step starts at the monsters master when it holds no task, a finished one or an items task
+  // (turn in, take a monsters task; an items task cancelled for a coin) — its walk in the step's hours; the filler's task,
+  // worked on purpose, is cancelled there when rule 4 says so (tasks.ts cancelOf). A held task nobody works stays.
+  if (fighter && step.work.kind === "kill" && !step.visit) {
+    const v = startVisit(ch, world), sec = v ? visitSec(ch, world, v.cancel) : Infinity;
+    if (v && Number.isFinite(sec)) step = { ...step, hours: step.hours + sec / 3600, visit: { at: "start", ...v }, why: `${step.why}; task: ${v.cancel ? `cancels ${taskText(ch)} for a coin, then takes` : ch.task ? `turns in ${taskText(ch)}, then takes` : "takes"} a monsters task at the master first` };
+  } else if (step.work.kind === "task" && step.as !== "supply") {
+    const why = cancelOf(ch, world), sec = why ? visitSec(ch, world, ch.task) : Infinity;
+    if (why && Number.isFinite(sec)) step = { ...step, hours: step.hours + sec / 3600, visit: { at: "start", cancel: ch.task }, why: `${step.why}; task: cancels ${taskText(ch)} for a coin first (${why})` };
+  }
+  if (held && step.work.kind === "kill" && step.work.monster === held && step.target !== "src:tasks_coin") step = { ...step, why: `${step.why}; task: ${taskText(ch)}` };
   const wear = step.wear ?? wearOf(step.work, ch, world); // task 014: a kill whose potions could not be stocked wears the set without them
   // task 025, settled point 2: the verdict on the very set the step wears (its wear and its take's potions) — the why states
   // its win rate; the runtime's end record and the forward model's losses read it

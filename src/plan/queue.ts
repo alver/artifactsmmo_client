@@ -68,6 +68,9 @@ export type QueueItem = { id: string; error?: string } & (
   // when a task starts (`geared` remembers which task so a reload doesn't repeat
   // it), then per-round self-heal swaps.
   | { kind: "task-loop"; master: "monsters" | "items"; times: number; done: number; gear?: boolean; geared?: string }
+  // Task 027d (the planner's): one visit to the tasks master — turn a finished task in, cancel `cancel` while it is the
+  // task held (a coin from the bag or the bank; with none, kept), take a monsters task when none is held. `done` 1 at the end.
+  | { kind: "task-visit"; done: number; cancel?: string }
   // Today's seasonal offerings at the Seasonal Altar: accept each category's
   // offering for the character's level bracket first (its favor boosts the
   // farming), then get each requirement (bank → favored target → field) and
@@ -92,7 +95,7 @@ export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "recycle", "train", "gear", "task-loop", "offering",
+  "buy", "sell", "recycle", "train", "gear", "task-loop", "offering", "task-visit",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -127,6 +130,7 @@ export function queueItemText(it: QueueItem): string {
       return it.reset ? `Bank reset + ${what}` : what.charAt(0).toUpperCase() + what.slice(1);
     }
     case "task-loop": return `Complete ${it.times > 0 ? `${it.times}× ` : "(∞) "}tasks (${it.master})`;
+    case "task-visit": return `Tasks master: ${it.cancel ? `cancel ${monsterOf(it.cancel)?.name ?? itemName(it.cancel)}, ` : ""}turn in, take a monsters task`;
     case "offering": return "Today's seasonal offerings";
     case "prepare": return `Prepare to fight ${monsterOf(it.monster)?.name ?? titleCase(it.monster)} (gear, potions, walk, rest — then stop)`;
     case "claim": return "Claim pending rewards";
@@ -138,5 +142,5 @@ export const queueItemIcon: Record<QueueItemKind, string> = {
   "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
   "train": "🎓", "gear": "🧰",
-  "task-loop": "🔁", "offering": "🛐", "prepare": "🛡", "claim": "🎁", "expand": "🏦",
+  "task-loop": "🔁", "task-visit": "📜", "offering": "🛐", "prepare": "🛡", "claim": "🎁", "expand": "🏦",
 };
