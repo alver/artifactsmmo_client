@@ -87,9 +87,10 @@ const NO_EGG = { bank: fixture.bank.filter((b) => b.code !== "golden_egg") };
 
 // ── 4. a src: kill goes to a fighter ─────────────────────────────────────────
 {
-  const w = worldOf([SALE], ALL, {}, NO_EGG);
+  // task 027e: an objective's material is a fighter's fifth tier — taken at the level cap (or with no admitted XP fight)
+  const w = worldOf([SALE], ALL, { First: { level: 50 } }, NO_EGG);
   const f = step(w, "First"), t = step(w, "Third");
-  cases.push(["a src: kill (the golden egg's chicken) goes to the fighter", f.target === "src:golden_egg" && f.work.kind === "kill", `First: ${said(f)}`]);
+  cases.push(["a src: kill (the golden egg's chicken) goes to the fighter (at the level cap: 027e)", f.target === "src:golden_egg" && f.work.kind === "kill", `First: ${said(f)}`]);
   cases.push(["…not to a worker while a fighter that is on is admitted for it", t.target !== "src:golden_egg", `Third: ${said(t)}`]);
   // the fighters off, Third's craft at 30 (else its craft goes first): the worker hunts
   const w2 = worldOf([SALE], ["Second", "Third", "Fourth"], { Third: { gearcrafting_level: 30 } as Record<string, number> }, NO_EGG);
@@ -110,7 +111,7 @@ const NO_EGG = { bank: fixture.bank.filter((b) => b.code !== "golden_egg") };
 // ── 6. the golden egg ────────────────────────────────────────────────────────
 {
   // First alone with the sale: the hunt, then the merchant's calendar (about 43.5 h after the egg is in the bank)
-  const w = worldOf([SALE], ["First"], {}, NO_EGG);
+  const w = worldOf([SALE], ["First"], { First: { level: 50 } }, NO_EGG); // 027e: at the level cap
   const r = forward(w, w.now + 6 * 864e5);
   const hunt = r.played.filter((p) => p.step.target === "src:golden_egg");
   const huntEnd = hunt.length ? Math.max(...hunt.map((p) => p.at + p.step.hours * 3.6e6)) : NaN;

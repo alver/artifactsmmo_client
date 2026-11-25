@@ -235,10 +235,12 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
         const h1 = (r: GearRecommendation): number => {
           if (!admits(r, world)) return Infinity;
           const sec = killSec(ch, world, m, r), wis = setWisdom(ch, r); // task 012: XP with the new set's wisdom
-          let h = 0;
+          let h = 0, pace = Infinity;
           for (let l = L; l < end; l++) {
             const xp = fightXp(mon.level, mon.hp, mon.type, l, wis);
-            h += Math.min(own(l), xp > 0 ? (xpNeeded[l] ?? Infinity) / ((xp / sec) * 3600) : Infinity);
+            const hl = Math.min(own(l), xp > 0 ? (xpNeeded[l] ?? Infinity) / ((xp / sec) * 3600) : Infinity);
+            if (Number.isFinite(hl)) pace = hl;
+            h += Number.isFinite(hl) ? hl : pace; // task 027e (C.2): a walled level at the pace of the last level priced, as `rest`
           }
           return h;
         };
@@ -246,7 +248,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
         if (n && (!best || n.mk.G + n.H1 < best.mk.G + best.H1)) best = { monster: m, ...n };
       }
       if (best) {
-        const s = bundleScore(b, best.mk.G + best.H1 + rest + (unpaced * best.H1) / Math.max(1, end - L), calH);
+        const s = bundleScore(b, best.mk.G + best.H1 + rest + (unpaced ? (unpaced * best.H1) / Math.max(1, end - L) : 0), calH); // 027e: never 0 × ∞
         push({ work: `combat ${L} → ${end}${end < b.next ? ` (of ${b.next})` : ""}`, key: `lvl:combat:${b.next}`, monster: best.monster, pieces: best.pieces, H0, H1: best.H1, G: best.mk.G, parts: best.mk.parts, points: s.points, fit: s.fit, any: s.any, hours: s.hours, offered: best.mk.offered });
       }
     }

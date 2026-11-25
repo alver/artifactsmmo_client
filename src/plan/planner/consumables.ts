@@ -343,24 +343,30 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
     /** The road at a monster, a kill of `sec` in a set of wisdom `wis`: per level (`min`) the better of it and the pool's. */
     const road = (mc: string, sec: number, wis: number, min: boolean): { h: number; kills: number } => {
       const m = monsterOf(mc)!;
-      let h = 0, kills = 0;
+      let h = 0, kills = 0, pace = Infinity;
       for (let l = L; l < end; l++) {
         const xp = fightXp(m.level, m.hp, m.type, l, wis), hl = xp > 0 ? (xpNeeded[l] ?? Infinity) / ((xp / sec) * 3600) : Infinity;
-        if (!min || hl < own0(l)) { h += hl; kills += xp > 0 ? (xpNeeded[l] ?? 0) / xp : 0; } else h += own0(l);
+        const mine = !min || hl < own0(l), x = mine ? hl : own0(l);
+        if (mine) kills += xp > 0 ? (xpNeeded[l] ?? 0) / xp : 0;
+        if (Number.isFinite(x)) pace = x;
+        h += Number.isFinite(x) ? x : pace; // task 027e (C.2): a walled level at the pace of the last level priced, as `rest`
       }
       return { h, kills };
     };
     const w: Work0 = { ch, by: name, monster: "", work: `${ch.name}'s road to combat ${b.next}`, workKey: `lvl:combat:${b.next}@${ch.name}`, points: b.behind.reduce((s, x) => s + x.points, 0), horizon: chunks };
     const score = (n: ConsNeed): ConsNeed => {
-      const s = bundleScore(b, n.G + n.H1 + rest + (unpaced * n.H1) / Math.max(1, end - L), calH);
+      const s = bundleScore(b, n.G + n.H1 + rest + (unpaced ? (unpaced * n.H1) / Math.max(1, end - L) : 0), calH); // 027e: never 0 × ∞
       return { ...n, fit: s.fit, any: s.any, hours: s.hours };
     };
     const ok = (code: string): boolean => { const m = monsterOf(code); return !!m && m.type !== "boss" && m.type !== "raid_boss" && fightXp(m.level, m.hp, m.type, L) > 0 && !!nearestSpot(placeOf(ch), "monster", code, world); };
     const cur = pickMonster(ch, w0, new Set());
     const flips = [...catalog().monsters.values()].filter((m) => m.level <= L + 2 && ok(m.code) && !admitted(ch, w0, m.code))
       .sort((x, y) => fightXp(y.level, y.hp, y.type, L) - fightXp(x.level, x.hp, x.type, L) || (x.code < y.code ? -1 : 1)).slice(0, 2).map((m) => m.code); // the pick and two flips (gear.ts (a) looks at four: a potion solve is dearer)
+    // task 027e (C.1): and the XP pick itself (the pool's potions in) — a pick admitted only with a potion makes it a need
+    // of the road, so somebody brews it when the stock is a sliver
+    const pick = pickMonster(ch, world, new Set());
     let best: ConsNeed[] = [], bestH = Infinity;
-    for (const mc of [...new Set([cur?.monster ?? "", ...flips])].filter(Boolean)) {
+    for (const mc of [...new Set([cur?.monster ?? "", pick?.monster ?? "", ...flips])].filter(Boolean)) {
       const r1 = potionSet(ch, world, mc);
       if (!r1) continue;
       const sec1 = freeSec(r1, ch, world, mc, potionPrice(world, ch.name).food?.(lostOf(r1.forecast), r1.forecast.maxHp));
@@ -371,7 +377,6 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
     }
     out.push(...best);
     // the food of the road at its pick (the pool's set now): eating it against the pool's healing now
-    const pick = pickMonster(ch, world, new Set());
     const base = pick && fightRec(ch, world, pick.monster);
     if (pick && base) {
       const lost = base.forecast.maxHp - base.forecast.hpRemaining, f = foodFor(ch, world, lost, name);
@@ -487,7 +492,7 @@ export function reservable(world: World, name: string, code: string, fit: number
 /** A fight step's consumables (settled point 4). */
 export interface Take {
   kills: number;                     // what the reservable stock covers (the kills asked when no potion is in the set)
-  stock?: number;                    // task 017: the kills the bank's potions cover, the others' running steps off (none: no potion in the set)
+  stocks?: Record<string, number>;   // task 017: the kills each potion's bank stock covers, the others' running steps off (none: no potion in the set)
   sec?: number;                    // a kill's seconds when the set changed (its potions could not be stocked)
   rec?: GearRecommendation;          // that set
   withdraw?: Record<string, number>; // the potions and food the step takes from the bank (its expected units + MARGIN)
@@ -498,22 +503,25 @@ export interface Take {
  * for its kills + MARGIN, out of what a work scoring (fit, any) may reserve; the kills capped at what the potions
  * cover. Nothing covered: the set of the gear alone (gearWorld), when it wins, at its own price; undefined: no set.
  */
-export function fightTake(world: World, ch: Character, monster: string, kills: number, fit: number, any: number): Take | undefined {
+export function fightTake(world: World, ch: Character, monster: string, kills: number, fit: number, any: number, without: string[] = []): Take | undefined {
   if (!cons(world) || consFree(world)) return { kills, note: "" };
-  let w = world;
+  // task 027e (C.1): `without` — the potions the bank holds only a sliver of (decide.ts fightPlan): the set without them,
+  // where it is still admitted; else no candidate
+  let w = without.length ? noStock(world, without) : world;
   let r = fightRec(ch, w, monster);
+  if (without.length && (!r || !admits(r, w) || without.some((c) => (r!.forecast.used[c] ?? 0) > 0))) return undefined;
   if (!r) return { kills, note: "" };
   let used = perWin(r);
-  let K = kills, changed = false;
+  let K = kills, changed = without.length > 0;
   const res = new Map(used.map(([p]) => [p, reservable(world, ch.name, p, fit, any, monster)]));
   // a utility slot holds STACK of a potion (the game's 484): a step carries no more
   for (const [p, u] of used) K = Math.min(K, Math.floor(Math.min(res.get(p)!, STACK) / (u * MARGIN) + 1e-9));
   // task 017, settled point 13: what the bank holds of its potions less the others' running steps (stock.ts available) —
   // the sliver test (decide.ts fightPlan); not what better works' demand leaves, which starves a fighter's road
-  let stock: number | undefined;
-  if (used.length) stock = used.reduce((k, [p, u]) => Math.min(k, Math.floor(Math.min(available(p, world, ch.name), STACK) / (u * MARGIN) + 1e-9)), kills);
+  let stocks: Record<string, number> | undefined;
+  if (used.length) stocks = Object.fromEntries(used.map(([p, u]) => [p, Math.min(kills, Math.floor(Math.min(available(p, world, ch.name), STACK) / (u * MARGIN) + 1e-9))]));
   if (used.length && K < 1) {
-    stock = undefined;
+    stocks = undefined;
     w = gearWorld(world); // the set of the gear alone (one World a decision, shared with the bundles' gates)
     const r2 = fightRec(ch, w, monster);
     if (!r2 || !admits(r2, w)) return undefined;
@@ -546,7 +554,7 @@ export function fightTake(world: World, ch: Character, monster: string, kills: n
   const bagNote = capped && food ? `; the bag caps it at ${K} kills (${n} ${itemName(food.code)} a kill, ${bag} is a third of ${ch.inventory_max_items})` : "";
   const note = took.length ? ` with ${took.join(" and ")} from the bank` + (withdraw[food?.code ?? ""] ? bagNote : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "")
     : lost > 0 ? `; rests (${restWhy(world, ch, lost)})` : "";
-  return { kills: K, stock, ...(changed ? { sec: freeSec(r, ch, w, monster, food), rec: r } : {}), withdraw: took.length ? withdraw : undefined, note };
+  return { kills: K, stocks, ...(changed ? { sec: freeSec(r, ch, w, monster, food), rec: r } : {}), withdraw: took.length ? withdraw : undefined, note };
 }
 /** Task 025: a set's potions per WIN — every attempt drinks its forecast's units and a win takes 1 ÷ p attempts. */
 function perWin(r: GearRecommendation): [string, number][] {

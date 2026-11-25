@@ -112,10 +112,12 @@ const MATS = { steel_bar: 7, pig_skin: 3, spider_leg: 3, astralyte_crystal: 1, t
   const w = worldOf(ROAD, MATS, { First: task("chicken", 45, 50), Fifth: task("chicken", 45, 50) });
   const s = coinStep(w, "First"), a = s && advance(w, s);
   cases.push(["…the step that finishes the task turns it in: its coins in the bank", !!a && s!.visit?.at === "end" && coins(a) === 50 + coinsOf("chicken"), `First: ${s ? said(s) : "none"}; coins after ${a ? coins(a) : "—"}`]);
-  // the road on: the coins come in (the floor and the crystal's 12), the crystal is bought, the pickaxe is made
+  // the road on: the coins come in (the floor and the crystal's 12), the crystal is bought, the pickaxe is made — task 027e: a
+  // tool's coins are a fighter's fifth tier (after its XP pick), so the fighters play it at the level cap
   const order: string[] = [];
+  const cap = worldOf(ROAD, MATS, { First: { ...task("chicken", 45, 50), level: 50 }, Fifth: { ...task("chicken", 45, 50), level: 50 } });
   let atBuy = -1;
-  forward(w, w.now + 36 * 3.6e6, (x, st) => { order.push(st.target); if (st.target === "mat:astralyte_crystal" && atBuy < 0) atBuy = coins(x); });
+  forward(cap, cap.now + 36 * 3.6e6, (x, st) => { order.push(st.target); if (st.target === "mat:astralyte_crystal" && atBuy < 0) atBuy = coins(x); });
   const firstCoin = order.indexOf("src:tasks_coin"), buy = order.indexOf("mat:astralyte_crystal"), make = order.indexOf("gear:steel_pickaxe");
   cases.push(["…the piece bought and made after the coins", firstCoin >= 0 && buy > firstCoin && atBuy >= 62 && make > buy, `steps: src:tasks_coin ×${order.filter((k) => k === "src:tasks_coin").length} (first #${firstCoin}), mat:astralyte_crystal #${buy} with ${atBuy} coins in the bank, gear:steel_pickaxe #${make}`]);
 }

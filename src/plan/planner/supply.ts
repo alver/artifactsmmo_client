@@ -319,7 +319,9 @@ export function saleWait(t: Target): number {
 }
 
 /** A short code as a target for one character: what it is, how much is short, its best parent. */
-export interface SupplyNeed { key: string; kind: "src" | "mat"; code: string; short: number; work: Work; gates: Gate[]; parent: Parent }
+/** `parent`: the best-scoring parent (the leaf's score); `via` (task 027e): every parent it serves — a worker's first tier holds a
+ *  leaf any of whose parents is a need of the fighters' road (an event's reserve sorts first and may share the leaf). */
+export interface SupplyNeed { key: string; kind: "src" | "mat"; code: string; short: number; work: Work; gates: Gate[]; parent: Parent; via: string[] }
 
 /** The short codes of every parent, the bank shared in turn from the best-scoring parent down; `inFlight` = what
  *  the others' current steps of the same key are making (actions for src, products for mat). */
@@ -330,8 +332,8 @@ export function supplyNeeds(world: World, name: string, parents: Parent[], inFli
     for (const l of billOf(world, name, p.demand, vb, false).leaves.values()) {
       const qty = l.kind === "src" ? l.qty * perOf(l.work) : l.qty;
       const s = out.get(l.key);
-      if (s) s.short += qty;
-      else out.set(l.key, { key: l.key, kind: l.kind, code: l.code, short: qty, work: l.work, gates: l.gates, parent: p });
+      if (s) { s.short += qty; s.via.push(p.key); }
+      else out.set(l.key, { key: l.key, kind: l.kind, code: l.code, short: qty, work: l.work, gates: l.gates, parent: p, via: [p.key] });
     }
   }
   return [...out.values()].map((s) => ({ ...s, short: s.short - inFlight(s.key) })).filter((s) => s.short > 1e-6);

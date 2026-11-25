@@ -764,7 +764,8 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   const after = r1.played.find((p) => p.step.character === "Fifth" && made1 && p.at >= made1.at + made1.step.hours * 3.6e6 && p.step.work.kind === "kill");
   const chain = [...new Set(r1.played.filter((p) => p.step.as === "supply" && p.step.parent && (p.step.parent === `gear:${piece1}` || p.step.target === `gear:${piece1}`)).map((p) => `${p.step.target}@${p.step.character}`))];
   cases.push(["a fighter without a safe XP monster: a piece flips one, its chain is worked through the bank", !pick0 && !!need1 && !!made1 && chain.length >= 2]);
-  cases.push(["…the fighter does something else meanwhile, and with the piece in the bank its pick wears it", before.every((p) => p.step.work.kind !== "kill") && !!after && Object.values(after.step.wear ?? {}).includes(piece1)]);
+  // task 027e (A.3): meanwhile its only fights are the kills its own road's pieces ask (a need's kill: their drops)
+  cases.push(["…the fighter does something else meanwhile (its only fights a need's kills for its own pieces), and with the piece in the bank its pick wears it", before.every((p) => p.step.work.kind !== "kill" || (p.step.as === "supply" && p.step.why.startsWith("fighter, a need's kill"))) && !!after && Object.values(after.step.wear ?? {}).includes(piece1)]);
   console.log(`  1. no safe XP monster for Fifth (pick: ${pick0?.monster ?? "none"}); the need: ${need1 ? `${[...need1.pieces.keys()].join(" + ")} — ${need1.work}, H0 ${f1(need1.H0)} h, H1 ${f1(need1.H1)} h, G ${f1(need1.G)} h` : "none"}`);
   console.log(`     made for Fifth: ${piece1}; the chain: ${chain.join(", ")}; Fifth meanwhile: ${[...new Set(before.map((p) => p.step.target))].join(", ")}; after: ${after ? `${after.step.target}, ${(after.step.work as { monster: string }).monster}, wears ${Object.values(after.step.wear ?? {}).join(", ")}` : "—"}`);
 
@@ -1054,8 +1055,9 @@ function killParts(who: string, level: number, monster: string, pieces: Record<s
   const wR: World = { ...w0, current: { Second: res } };
   const nettleOnly = potionPriceOf((c) => (c === "nettle_leaf" ? 300 : 0)).price(MINOR);
   cases.push(["…a stock the others' steps reserved does not count", potionPrice(wR, "First").price(MINOR) === nettleOnly && potionPrice(wR, "Second").price(MINOR) < nettleOnly]);
-  // the forward model drinks: one step of the pick, then the brewed potions are gone and the algae under 100 runs
-  const s0 = decide("First", w0);
+  // the forward model drinks: one step of the pick, then the brewed potions are gone and the algae under 100 runs (task 027e:
+  // the pick's own candidate — First's first step is a need's kill for its road's Battlestaff, the pick comes after it)
+  const s0 = rank("First", w0).levels.find((c) => c.target.key.startsWith("lvl:combat:"))?.step ?? decide("First", w0);
   const w1 = advance(wear({ ...w0, current: { First: s0 } }, s0), s0);
   const drank = drinksOf(w0, s0);
   cases.push(["…a forward run that starts covered ends at the field price once the stock is drunk (the brewed stack down to one unit, then the ingredients)", s0.work.kind === "kill" && coveredIn(w0).includes(`${MINOR}.algae`) && !coveredIn(w1).includes(`${MINOR}.algae`) && Math.abs(stockOf(w1, MINOR) - 1) < 1e-9 && stockOf(w1, "algae") >= -1e-9]);
