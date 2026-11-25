@@ -3,7 +3,24 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-25 (morning). **Reports 027d and 027e read (decision 72): `44bb5f1` on `origin/rework`
+Last updated: 2026-11-25 (midday). **Task 028 is written (decision 76, `tasks/028-one-page.md`): one page instead
+of Roadmap, Fleet and Character, every manual action deleted (Alex). Order: Alex runs 027g; its report is
+discussed in a new chat and a restart follows its acceptance (the food should reach the fighters soon); then 028
+on top of it, its report in a new chat, a restart after its acceptance.** Before that: **027g amended before its start (decision 75): what drops within 25% of the
+pick's rate stays with the fighter; the board's first day on all 50 accounts is its part D. The chat read 17
+accounts by hand: First and Fifth are 4th and 6th of 85 characters by combat XP an hour over 20 h; the others eat
+and hardly drink; the leaders' crafts stand at 30–40. One page instead of Roadmap, Fleet and Character is proposed
+as 028 and waits for Alex's word.** The same midday: **Task 027g is written (decision 74, `tasks/027g-fighters-seconds.md`): Alex
+accepted 027d and 027e as they are and agreed that the workers hunt the materials; on food — nothing is kept in the
+bank for a later fight, whoever fights eats; the cook cooks the by-products, no fishing for food alone (a switch,
+measured on the road). Next: Alex runs 027g in Claude Code; its report is discussed in a new chat; a restart
+follows its acceptance.** Before that, late morning: **Report 027f accepted (decision 73): `2d1dfa8` on `origin/rework`; Alex
+restarted the service on it — run `0n77`, boot 09:42:41 UTC on 11-25, all five steps re-attached, 39 points.
+Fourth works again (iron ore for the Steel Axe; its looping step was dropped by hand at 09:17 UTC). The same loop
+had held Second for 5.6 h on 11-24 (found in the journal). From play: the fighters rest 55% of their day, and 984
+Cooked Trout lie in the bank while their steps say "not in the bank yet". Next: 027g (the fighter's seconds) is
+written in this chat once Alex answers the three questions (accept 027d/027e; a need's kills to the workers; how
+much food).** Before that, the same morning: **Reports 027d and 027e read (decision 72): `44bb5f1` on `origin/rework`
 (027d is `90597fe`); Alex restarted the service on it — run `42oo`, boot 09:11:08 UTC on 11-25, all five steps
 re-attached, 39 points. Fourth has stood in a loop for a day and a half (its train step deposits and withdraws
 the same gear every 22 seconds since 11-23 22:23 UTC; the stall rule never fired): task 027f is written
@@ -2284,6 +2301,100 @@ accepted, Alex restarted the service (run `[yewz]`,
     the cook's hours are a worker's); the take carries every potion its set names and the solve reads the worn
     pinned artifacts; read-only: XP an hour of other accounts' characters at combat 24–30 between board reads.
 
+73. **Report 027f accepted** (2026-11-25, late morning). Checked in the chat: `HEAD` = `origin/rework` = `2d1dfa8`
+    (`027f: the train item's loop`). **Alex restarted the service on it**: run `0n77`, boot 09:42:41 UTC on 11-25,
+    all five steps re-attached, 39 points, the bank 117 of 130, 125,246 gold. The raw log's first minutes show no
+    deposit-withdraw rounds (Second's train step hunts Blue Slime, Fourth gathers iron ore).
+    - **027f** (as built): `exec.ts toWear` — gear a swap has withdrawn to wear is not cargo until the swap
+      converges (`bankOff` and the items' full-bag tests leave it; with nothing else to bank the item ends paused
+      and the step is blocked); held in memory, a restart costs one withdrawal. The stall: a level step's counter
+      is its own work (XP, kill, gather, craft in its meter), its bound `LEVEL_STALL_SEC` 60 min of running; the
+      block's why says what stood still. The other steps keep `max(20 min, 5 × unit)`. The task loop's items task
+      had the same order of tests: repaired. 108/108, three new scenarios. The clock already summed over restarts;
+      the old counter was every XP of the character, and the offerings and an event moved it.
+    - **The report's decisions**: a working level step has no total time bound — kept as built (the chat: no cap
+      until play shows a need); `consumables-supply-chain` blocks its two craft-level steps in `setup`.
+    - **Fourth**: its step was dropped by hand at 09:17:42 UTC (🧭 off and on) after 120,516 s of running; it took
+      `src:iron_ore@Fourth#1` (99 gathers for the Steel Axe).
+    - **Second had the same loop** (found in the chat, `logs/journal/2026-11-25.jsonl`): `lvl:weaponcrafting:25@Second#1`
+      (ended 00:58 UTC on 11-25, braked on the demon) spent 20,136 s of 27,216 at the bank — 404 deposits, 418
+      withdrawals, `iron_shield`, `snakeskin_boots` and `skull_ring` 398 times each, `minor_health_potion` 39,602
+      in and 39,608 out — and came out by itself. The same two paths; the repair covers it.
+    - **From play, 00:00–09:18 UTC on 11-25** (027d's code until 09:11): First — fights 3.09 h, rest 4.92 h of
+      8.9 h, 15,468 combat XP; Fifth — 3.10 h, 5.00 h of 9.15 h, 17,589 XP; each 4.7 h on `src:` kills and 4.1 h
+      on the XP pick. The pick on the Vampire: 2,360–2,780 XP/h, rest 63–66% of the step's seconds.
+    - **The trout is there and nobody eats it**: Third cooked 984 Cooked Trout (done 08:02 UTC, 81 min, for
+      `cons:cooked_trout:ach:the_reaper:2`, ×401) and banked them; First's step of 08:42 and Fifth's of 09:18
+      still say "rests (Cooked Trout is needed for …'s road to combat 50, not in the bank yet)". For 027g to read.
+    - **Trout is a by-product**: Third's algae step at the Trout Spot gives 186 trout and 18–21 algae per 186
+      gathers (1.5 h); the need is 4,400 gathers short. Cooking is 5 s a piece. Food for the fighters costs the
+      cook's seconds, not fishing hours, while the algae is gathered.
+    - `kill:vampire@First` (decision 72): the block of 02:52 UTC names the wooden-club set (24 of 28 won); the XP
+      pick since fought the Vampire in the battlestaff set, 43 of 43 and 45 of 46.
+    Still open with Alex, asked again in this chat: 027d and 027e accepted as they are; a need's kills to the
+    workers; food — what the by-product gives, or more.
+
+74. **Alex's answers; 027g** (2026-11-25, midday, `tasks/027g-fighters-seconds.md`). **Alex**: 027d and 027e are
+    accepted as they are; a need's kills go to the workers; and why is the trout kept in the bank at all? (He took
+    the_reaper for a cooking achievement; it is Death Knight kills, 233 left on 11-25, and the trout was its planned food.) Read
+    in the code: `consumables.ts reservable` holds a food back for every work that scores better than the asking
+    one, and the_reaper outranks a level; `restWhy` says "not in the bank yet" whenever a food need exists; the
+    Death Knight is fought three at a time (its potions, 8 a kill), so the trout lies. 027g as written:
+    - **A**: a `src:` kill is a worker's where a worker that is on is admitted; a fighter's only otherwise (then
+      before its pick); the coins stay a fighter's.
+    - **B**: no food is held, for no work and no event (potions keep their rule); a fight eats when eating is
+      faster than resting in the fighter's own seconds and the bank holds the food; the cook cooks the raw food
+      the bank holds (the by-products) as a first-tier need; no gather or kill step for food alone, behind the
+      switch `FOOD_FISHING` (off); `restWhy` says what is.
+    - **C**: invariant 3 (the take carries its set's potions, the solve reads worn pinned artifacts).
+    - **D**, read-only: the others' combat XP an hour by level band from `logs/board/`.
+    - Three roads (start, final, final with `FOOD_FISHING` on); committed whatever they say.
+
+75. **The board read by hand; 027g amended; one page** (2026-11-25, midday, the same chat; 027g not started yet).
+    **Alex**: concentrating on achievements now instead of levelling may cost time — a levelled hero completes them
+    faster; the Roadmap shows the fleet's steps, plans and decisions too modestly — rework the interface, drop the
+    Fleet and Character tabs, one big page; a day of board reads is there — analyse it and see what to repair.
+    - **The chat's read of the board** (17 of the 50 accounts, 85 characters, the reads of 11-24 12:00 and 11-25
+      08:00 UTC, 20 h; XP summed over level-ups by the `max_xp` table): combat XP an hour — brinko/Ding (42) 2,172,
+      rs_appez/rs_eve (33) 2,097, aropan/Orumine (40) 1,712, **First 1,623**, brinko/Alekhine 1,591, **Fifth
+      1,562**, br_lemes's five at 39 724–1,527; medians by band: 20–29 180, 30–34 415, 35–39 1,126, 40+ 870. The
+      fleet's 84k combat XP is the 4th of the 17. The pace of 11-24/25 is not behind; the gap (27 against 39–44) is
+      the weeks before the roles.
+    - **They eat, they do not drink**: 26 of 85 carried cooked food (rs_eve 39 Cooked Bass, Ding beef and bass,
+      Alekhine 57 Cooked Rat Meat); 10 of 85 wore a potion in a utility slot, two of them Second and Fourth.
+    - **The crafts follow the fighters**: brinko 44 / 39·40·40, aropan 42 / 39·40·40, _zero_ 41 / 35·38·35,
+      Alrick00 42 / 35·35·35, br_lemes 39 / 30·33·32, joamus 36 / 32·34·32; this fleet 27 / 22·25·23. At 1,600 XP/h
+      a fighter is at 30 in about 1.3 days and at 35 in about 4.5; each craft is 30–35 h of training from 30.
+    - **The neighbours at 30–33 mine** (Everywon: five characters, 95–110k mining XP each, 400 combat XP/h;
+      jowrjowr the same): no model. rs_eve at 31–33 fights the Imp in this fleet's tier of gear with a Skull Wand
+      (weaponcrafting 25, what Second trains for) and a Slime Shield; br_lemes's five at 38–39 fight the Imp too.
+    - **027g amended**: A.1 — a road need's monster joins the pick's `bonus`, so what drops within 25% of the
+      pick's rate stays with the fighter and only the rest goes to the workers (their craft hours are the next
+      limit); D — the board's first day on all 50 accounts and every read, into `docs/strategy/board/2026-11-25.md`
+      (XP an hour by band, food and potions, the crafts against combat, where the hours go); the roads' table shows
+      the day each craft reaches 30 and 35 and a worker's hours on an objective's needs.
+    - **On achievements**: since 027e (live 09:11 UTC) a fighter takes an achievement only on `config.first`, with
+      no admitted XP fight, or at the cap; the_reaper's chunks in the journal are of the night before. Nothing more
+      is cut in 027g.
+    - **One page** (proposed, waits for Alex's word on the blocks; the task after 027g, as 028 — the gear road
+      029, group bosses 030): Roadmap, Fleet and Character become one page — a card a hero (role, levels, what it
+      wears, the step with its progress, the reason in parts, the next steps, the last day's hours and XP an hour),
+      the fleet's plan in levels (combat and the gear crafts by day against the gear they open), who supplies whom,
+      the achievements folded below; no manual actions but the 🧭 switch.
+
+76. **One page; no manual play; 028** (Alex, 2026-11-25, midday, `tasks/028-one-page.md`). **Alex**: the blocks are
+    right; every manual action goes — he steers the fleet through the planning chat, and in the coming seasons
+    there is to be no manual work at all. 028 as written: (A) data only — a step's reason in parts beside its
+    `why` (the rule of the role's order that took it, the goal, for whom, why this one, the limits, up to three
+    next candidates), the road's day lines with every character's levels and the gear made, a `needs` line of the
+    outlook's child, a synced 24-hour signal a hero from the journal's records; (B) the page — the season strip,
+    five hero cards, the plan (a chart of levels by day, who supplies whom), blocked, the achievements and the
+    skills grid folded; (C) the Fleet and Character tabs, the action bar, the queue editor, the inventory's
+    buttons, the manual offerings and group-fight sections, the walk mode, and the buy / sell / craft / bank
+    buttons of the other tabs are deleted with the code only they used; the 🧭 switch, the achievement knobs, the
+    fight floor and the two ↻ stay. No decision of the planner changes. It runs on top of 027g. **The manual
+    group-fight panel goes with it: boss fights wait for their task (030).** The gear road is 029.
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -2318,9 +2429,10 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 027c | Gathering tools (Alex, 11-24: the steel tools are to be made, one of each): work (c)'s `NEED_RATIO` can never hold from iron to steel (0.875) — a tool is needed when it pays for itself over the lane's whole known work, one copy a lane holder; read-only: where the fallback hours of 027b's roads come from | done, `9375a24` on `rework`, pushed to `origin/rework`. Accepted 2026-11-24 (decision 70). **Engine change: Alex restarted the service on 2026-11-24 at 16:41:53 UTC** (run `3bd9`); all five steps re-attached. The pickaxe and the axe on day 0.04 of the road (48 coins), the rod never (its score); 45 / 50 / 56 / 91 points, the fighters 50 / 48 / 50 at the deadline, the fallback 526 h; three achievements lost for 1,054 gold of fare; the fallback's two defects found (the NaN score, the sliver rule), not fixed. |
 | 027d | Tasks and coins (Alex, 11-24: its own task, after the tools): a fighter always holds a monsters task (kills count whatever the fight is for); a long draw is cancelled when its hours exceed a fresh draw's plus a coin's price (the reward is fixed, the quantity 50–400); of two near-equal fights the task's monster; coins earned on purpose when a needed piece lacks them. Today: tasks are filler only, always the monsters master, cancelled only at a dead end (`compile.ts`, `queue.ts` task-loop). Taken out of the gear road | done, `90597fe` on `rework`, pushed. Read in the chat on 2026-11-25 (decision 72). 43 / 51 / 56 / 101 points on its road; the rod on day 2.45, the gold tools on day 12.69; 275 tasks on purpose, 64 cancels, the bank's coins 192 → 1,163; the coin steps 18.8% of the fighters' hours. `npm run check -- planner` fails on invariant 3 (older: the insurance potion). Restarted with 027e. |
 | 027e | Level first (decision 71, Alex): a fighter's order — `config.first`, forging by need, a road's need's kill, the XP pick, today's rule only at a wall or the cap; a worker's first tier is the fighters' road, an objective's needs rank in today's rule; the gear craft ahead of the fighters; the wall at 45 (the sliver fights without the potion, no NaN); read-only: where a fighter's seconds go and what food would change; two roads side by side, the combat levels first | done, `44bb5f1` on `rework`, pushed to `origin/rework`. Read in the chat on 2026-11-25 (decision 72). **Engine change: Alex restarted the service on 2026-11-25 at 09:11:08 UTC** (run `42oo`); all five steps re-attached. The fighters are not higher on day 14 (39/33/39 against 39/34/39); First and Fifth at 50 on day 45 (56, never); 106 points against 97; the fighters' hours: the pick 387, a need's kills 2,037; rest is 52–61% of a win's seconds in play. Invariant 3 still fails. |
-| 027f | Fourth's loop (decision 72): the train item deposits and withdraws its gear for ever; the stall counts a level step's own work over restarts | written 2026-11-25, `tasks/027f-train-loop.md`. **Executor change: a restart follows it.** |
-| 027g | The fighter's seconds (decision 72, proposed): a need's kill to a worker where one is admitted; food for a levelling fighter as a first-tier need (eating against resting in the fighter's seconds, the chain being a worker's work); invariant 3 (the take carries its set's potions, the solve reads worn pinned artifacts); read-only: other accounts' XP an hour at combat 24–30. After it: gold kept for the fares before a bank expansion; the fighters at the cap (1,321 h of fallback) | waits for Alex's answers; to write after 027f. |
-| 028… | **Renumbered on 11-24: the roles are 027, the gear road 028, group bosses 029.** As it stood before — 026 the roles (decisions 63, 64, Alex): First and Fifth fighters for good, Second at weaponcrafting 30, Third and Fourth — and Second until then — a lane and a craft each, the crafts to 30; the yardstick 33 → 41 points in four days; the details on the model (decision 62); the leaders' and neighbours' read every four hours if 025 did not take it. 027 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 028 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
+| 027f | Fourth's loop (decision 72): the train item deposits and withdraws its gear for ever; the stall counts a level step's own work over restarts | done, `2d1dfa8` on `rework`, pushed to `origin/rework`; accepted (decision 73). **Alex restarted the service on 2026-11-25 at 09:42:41 UTC** (run `0n77`); all five steps re-attached. `toWear`, `LEVEL_STALL_SEC` 60 min; 108/108. Second's train step of 11-24 held the same loop for 5.6 h. |
+| 027g | The fighter's seconds (decision 74): a need's kill to a worker where one is admitted; no food is held — a fight eats what the bank holds when eating is faster than resting; the cook cooks the by-products, no fishing for food alone (`FOOD_FISHING`, off); invariant 3 (the take carries its set's potions, the solve reads worn pinned artifacts); read-only: the others' XP an hour by level band. After it: gold kept for the fares before a bank expansion; the fighters at the cap (1,321 h of fallback) | written 2026-11-25, `tasks/027g-fighters-seconds.md`. **Engine change: a restart follows its acceptance.** |
+| 028 | One page (decision 76, Alex): Roadmap, Fleet and Character become one page — a season strip, a card a hero (levels, gear, the step, its reason in parts with the role's order, the next steps, the last 24 h), the plan in levels (a chart of combat and the gear crafts by day, who supplies whom), the achievements folded below; every manual action and its code deleted. Data only on the service's side: a step's reason in parts, the road's levels and gear by day, the needs line, the 24-hour signal | written 2026-11-25, `tasks/028-one-page.md`; runs on top of 027g. **A restart follows its acceptance.** |
+| 029… | **Renumbered on 11-25 (decision 76): one page is 028, the gear road 029, group bosses 030.** Before that, renumbered on 11-24: the roles are 027, the gear road 028, group bosses 029. As it stood before — 026 the roles (decisions 63, 64, Alex): First and Fifth fighters for good, Second at weaponcrafting 30, Third and Fourth — and Second until then — a lane and a craft each, the crafts to 30; the yardstick 33 → 41 points in four days; the details on the model (decision 62); the leaders' and neighbours' read every four hours if 025 did not take it. 027 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 028 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
 - **What shape should the fleet have?** Settled (decisions 63, 64): First and Fifth fight; Second wood and
