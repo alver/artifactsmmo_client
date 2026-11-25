@@ -72,7 +72,9 @@ const LEVEL = made("made_up_level", 5, "combat_level", "", 30); // a combat gate
   const unarmed: Patch = { First: { weapon_slot: "" }, Fifth: { weapon_slot: "" }, Second: { weaponcrafting_level: 30 } };
   const wn = worldOf([LEVEL, made("made_up_kill", 50, "combat_kill", "highwayman", 200)], unarmed, {});
   const sn = step(wn, "Second");
-  cases.push(["…a need's kill (a src: kill for the fighters' Battlestaff) → before the pick and a 50-point kill objective", sn.work.kind === "kill" && sn.parent === "gear:battlestaff" && sn.why.startsWith("fighter, a need's kill"), `Second: ${said(sn)}`]);
+  // task 027g (A.2): the Battlestaff's slimeballs are Fourth's now (a worker admitted for them) — Second takes a road kill no
+  // worker is admitted to
+  cases.push(["…a need's kill (a src: kill no worker is admitted to, for the fighters' road) → before the pick and a 50-point kill objective", sn.work.kind === "kill" && sn.target.startsWith("src:") && sn.why.startsWith("fighter, a need's kill"), `Second: ${said(sn)}`]);
   // (e) no admitted fight that gives XP (First stripped, the bank empty) → today's rule (027b's free pass)
   const strip = Object.fromEntries(["weapon", "shield", "helmet", "body_armor", "leg_armor", "boots", "ring1", "ring2", "amulet", "rune", "utility1", "utility2"].map((g) => [`${g}_slot`, ""]));
   const se = step(worldOf([made("made_up_ore", 10, "gathering", "copper_ore", 100)], { First: strip }, {}), "First");

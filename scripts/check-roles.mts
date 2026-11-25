@@ -13,7 +13,7 @@
 // they exist so that the red run runs.
 import { readFile } from "node:fs/promises";
 import { setDataReader } from "../src/catalog/load";
-import { loadCatalog } from "../src/catalog";
+import { catalog, loadCatalog } from "../src/catalog";
 import { rank } from "../src/plan/planner/decide";
 import { achHours } from "../src/plan/planner/bundle";
 import { forward, waitingOf } from "../src/plan/planner/forward";
@@ -65,7 +65,9 @@ const NO_EGG = { bank: fixture.bank.filter((b) => b.code !== "golden_egg") };
 
 // ── 2. a worker with an admitted monster and an open craft level ─────────────
 {
-  const w = worldOf([made("made_up_level", 5, "combat_level", "", 30)]);
+  // task 027g (B.4): the bank's raw food is the cook's first tier — left out here, so the case stays the craft against the fight
+  const raw = new Set([...catalog().items.values()].flatMap((it) => (it.craft?.skill === "cooking" ? it.craft.items.map((g) => g.code) : [])));
+  const w = worldOf([made("made_up_level", 5, "combat_level", "", 30)], ALL, {}, { bank: fixture.bank.filter((b) => !raw.has(b.code)) });
   const third = w.characters.find((c) => c.name === "Third")!;
   const pick = pickMonster(third, w, new Set());
   const s = step(w, "Third");

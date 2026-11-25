@@ -98,6 +98,10 @@ export const GATHER_LOG = 1.05; // 30.6 s against the formula's 30–39 s
 /** Task 014, settled point 3: consumables are made for the next HORIZON chunks of a work, plus MARGIN (a fifth). */
 export const HORIZON = 2;
 export const MARGIN = 1.2;
+/** Task 027g, B.4 (Alex: nothing is fished or hunted for food alone): false — a food need opens no gather or kill step;
+ *  the cook cooks what the bank holds raw (the by-products: the trout of the algae step, the hunts' meat). true — today's
+ *  chain (a need's ingredients from the field). `config.foodFishing` overrides it for the roads and the checks only. */
+export const FOOD_FISHING = false;
 
 /** Task 013: a spawn is seen half a poll late on average (the 2-minute poll while event demand is open, sync.ts). */
 export const EVENT_SEEN_SEC = 60;

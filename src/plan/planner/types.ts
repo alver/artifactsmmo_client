@@ -114,6 +114,7 @@ export interface PlannerConfig {
   tolls: number;                          // task 017: 1 = conditional transitions open, tasks coins spent; 0 = report 016's model whole (the replay's row only)
   goldPerHour: number;                    // task 017: gold a character-hour is worth (design D.2): a fare's price in hours
   sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
+  foodFishing?: boolean;                  // task 027g: overrides config.ts FOOD_FISHING (the roads and the checks only)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;

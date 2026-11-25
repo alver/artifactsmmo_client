@@ -21,14 +21,17 @@
 // Task 027, the roles (roles.ts roleOf; no new scoring term — a candidate the role forbids is simply not one), task 027e
 // (Alex: a fighter's level is a goal in itself; the workers serve its road) — an order of existing candidates:
 //   a fighter: fight work only (no gathering, supply-gather, filler or tidy step), in this order: (1) an achievement on
-//     config.first; (2) forging by need (027b); (3) a kill a need of a fighter's road asks (a src: kill, 027d's coins);
-//     (4) the XP pick; (5) with no admitted fight that gives XP or at the level cap, today's rule over the whole list.
+//     config.first; (2) forging by need (027b); (3) a kill a need of a fighter's road asks (027d's coins; 027g: a src: kill
+//     only when no worker that is on is admitted for it, and not of its pick's monster); (4) the XP pick — 027g: a road
+//     need's src: kill monster joins its ×1.25 bonus, so within 25% of the pick's rate its drops come along; (5) with no
+//     admitted fight that gives XP or at the level cap, today's rule over the whole list.
 //   a worker, in this order: (1) a need of the fighters' road (gear work (a), the craft level such a piece asks, the road's
 //     consumables) or a lane holder's tool, today's scoring among them; (2) an objective whose achievement completes within
 //     WORKER_SHORT_H of its work; (3) its gear craft to the tier the fighters wear next (the highest fighter's level + 5,
 //     down to a multiple of 5, at least WORKER_CRAFT; the train item); (4) today's rule inside its lanes (a work of no lane
 //     — a task, a trade — and a kill objective's needs included). Never a combat level or a kill objective; a src: kill
-//     only when no fighter that is on is admitted for it. Its fallback gathers in its own lanes.
+//     (027g, Alex: the workers hunt the materials) whenever it is admitted for it, but one of a monster a fighter's XP pick
+//     fights (its drops come along). Its fallback gathers in its own lanes.
 // Task 027d (tasks.ts): a fighter's kill step starts with a visit to the tasks master when it holds no task, a finished one
 // or an items task; its held task's monster joins pickMonster's bonus; coins a bill lacks are its src:tasks_coin step (the
 // held task's kills); a task worked on purpose (that step, the filler) is cancelled there when rule 4 says so.
@@ -225,8 +228,8 @@ export function rank(name: string, world: World, free = false): Ranking {
   const cap = atlas()?.xpNeeded.length ?? Infinity; // 027e: the game's level cap (docs/api: a level is at most 50; the atlas's xpNeeded ends there)
   /** A worker's work outside its lanes (a work of no lane is inside; a kill is the admission rule's, below). */
   const outside = (w: Work): boolean => { const l = laneOfWork(w, ch, world); return worker && !!l && l !== "combat" && !lanes.includes(l); };
-  /** A src: kill goes to a fighter: to a worker only when no fighter that is on is admitted for it. */
-  const fighterHunts = (monster: string): boolean => world.characters.some((c) => c.name !== name && isOn(c.name, world) && roleOf(c.name, world) === "fighter" && admitted(c, world, monster));
+  /** Task 027g (A.2): a src: kill goes to a worker that is on and admitted for it (and reaches it): to a fighter only when none is. */
+  const workerHunts = (monster: string): boolean => world.characters.some((c) => c.name !== name && isOn(c.name, world) && roleOf(c.name, world) === "worker" && admitted(c, world, monster) && !!nearestSpot(placeOf(c), "monster", monster, world, c.name));
   // Task 015, settled point 4: while fewer than TIDY_BELOW bank slots are free, a tidy step goes before any other (task
   // 027: not a fighter's — bank.ts tidyStep)
   const tidy = tidyStep(world, name);
@@ -244,7 +247,9 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (!st || typeof st === "string") return inFlight(key);
     return others.reduce((t, s) => t + (s.target === key && s.as !== "level" && s.as !== "fallback" ? (s.units / perOf(s.work)) * perOf(st.work) : 0), 0);
   };
-  const bonus = new Set(targets.flatMap((t) => (t.work.kind === "kill" ? [t.work.monster] : [])));
+  const objMonsters = targets.flatMap((t) => (t.work.kind === "kill" ? [t.work.monster] : []));
+  // task 027g (A.1): a road need's src: kill monster joins it too (the supply loop, before rule 3's pick)
+  const bonus = new Set(objMonsters);
   const held = holder ? monstersTask(ch) : undefined; // task 027d: of near-equal fights, the held task's (its kills count)
   if (held) bonus.add(held);
   const blocked = (key: string): boolean => (world.blocked[`${key}@${name}`]?.until ?? 0) > world.now;
@@ -356,17 +361,6 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (i >= 0) levels.splice(i, 1);
     levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p0.what, p) + p.note), fit: fit * boost(t.key), any: any * boost(t.key), ...(need || had?.need ? { need: true } : {}) });
   };
-  for (const lane of lanes) {
-    const b = bundleOf(lane, name, world);
-    if (!b || !Number.isFinite(b.hGate)) continue; // section 2: no XP source up to the gate — no candidate
-    const s = bundleScore(b, b.hGate, calH);
-    const L = levelOf(ch, lane);
-    const to = b.wall ?? b.next;
-    const road = b.wall ? `its road ends at ${b.wall} (no XP source there; ${fmt(b.hGate)} h to the gate at the pace before it)` : `${fmt(b.hGate)} h to the gate`;
-    // task 013: an event achievement behind the gate says by how many spawns of what, with how many members
-    const evs = b.events.map((e) => `; ${e.code} behind it, by ${e.spawns} spawns of ${e.event}, about ${fmt(e.days)} days with ${e.members} ${e.members === 1 ? "member" : "members"}`).join("");
-    levelCand(lane, to, s.fit, s.any, (what, p) => `${lane} ${L} → ${b.next}: +${s.points} pts behind it (${b.behind.map((x) => x.code).join(", ")}), ${road}${evs}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
-  }
 
   // Gear by need (section 4) and supply through the bank (section 3).
   const parents: Parent[] = objectiveParents(world, name, calH);
@@ -379,7 +373,6 @@ export function rank(name: string, world: World, free = false): Ranking {
   /** A leaf's flags by every parent it serves (supply.ts `via`): a need, the fighters' road. */
   const flags = (via: string[]): Partial<Candidate> => ({ ...(via.some((k) => needs.has(k)) ? { need: true } : {}), ...(via.some((k) => road.has(k)) ? { road: true } : {}) });
   const roadPieces = new Set(gearNeeds(world, name).needs.filter((n) => n.offered && n.key.startsWith("lvl:combat:")).flatMap((n) => [...n.pieces.keys()])); // gear.ts (a)
-  const ownTools = new Set<string>(); // 027c (Alex): the tools of this worker's own lanes — it hunts their materials itself, admitted fights only
   for (const [code, piece] of gearPieces(world, name)) {
     const { copies, works, best: n } = piece;
     const r = item(code)!.craft!;
@@ -391,7 +384,6 @@ export function rank(name: string, world: World, free = false): Ranking {
     const need = tool || [...copies.keys()].some((who) => roleOf(who, world) === "fighter"); // 027c (Alex): a lane holder's tool too
     if (fighter ? need : tool || roadPieces.has(code)) needs.add(par.key);
     if (roadPieces.has(code)) road.add(par.key);
-    if (item(code)!.subtype === "tool" && copies.has(name)) ownTools.add(par.key);
     if (crafterOf(r.skill, world) !== name || (fighter && !need)) continue; // task 027b: a fighter forges only what a fighter needs (027c: or a tool)
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
@@ -413,7 +405,18 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (fighter || r) needs.add(p.key);
     if (r) road.add(p.key);
   }
-  for (const s of supplyNeeds(world, name, parents, srcInFlight)) {
+  const leaves = supplyNeeds(world, name, parents, srcInFlight);
+  /** Task 027g (A.1): the monsters the other fighters' XP picks fight now — each with a road need's src: kill monster in its
+   *  bonus (by its own source), as its own decision has it — what comes along with a pick (its drops) stays a fighter's. */
+  let picks: Set<string> | undefined;
+  const along = (monster: string): boolean => (picks ??= new Set(world.characters.filter((f) => f.name !== name && isOn(f.name, world) && roleOf(f.name, world) === "fighter" && f.level < cap).flatMap((f) => {
+    const b = new Set(objMonsters), task = monstersTask(f);
+    if (task) b.add(task);
+    for (const l of leaves) if (l.kind === "src" && l.code !== "tasks_coin" && l.via.some((k) => road.has(k))) { const s = pickSource(l.code, f, world); if (s?.work.kind === "kill") b.add(s.work.monster); }
+    const p = pickMonster(f, world, b);
+    return p ? [p.monster] : [];
+  }))).has(monster);
+  for (const s of leaves) {
     // task 013, settled point 1: an event-only material is the event interrupt's work, never a step
     if (blocked(s.key) || s.gates.some((g) => g.kind === "event")) continue;
     if (fighter && s.kind !== "src") continue; // task 027: a fighter's supply is a src: kill
@@ -429,7 +432,11 @@ export function rank(name: string, world: World, free = false): Ranking {
       // task 012, settled point 7: the node (or monster) is this character's — the least net seconds an item
       const src = pickSource(s.code, ch, world);
       if (!src) continue;
-      if (fighter ? src.work.kind !== "kill" : worker && src.work.kind === "kill" && fighterHunts(src.work.monster) && !ownTools.has(par.key)) continue; // task 027 (027c: pickSource admits at the floor)
+      // task 027g (A.1): a road need's kill monster joins a fighter's pick bonus — within 25% of the pick's rate it is the pick
+      if (holder && src.work.kind === "kill" && s.via.some((k) => road.has(k))) bonus.add(src.work.monster);
+      // task 027 (pickSource admits at the floor); 027g (A.2): a worker hunts any src: kill it is admitted for, but what comes
+      // along with a fighter's pick
+      if (fighter ? src.work.kind !== "kill" : worker && src.work.kind === "kill" && along(src.work.monster)) continue;
       const items = s.short / perOf(s.work); // short is in actions of the static source (supplyNeeds)
       const acts = Math.ceil(items * src.per - 1e-9);
       const c = chunk(src.work, src.sec, acts, world, src, ch, 1);
@@ -464,6 +471,20 @@ export function rank(name: string, world: World, free = false): Ranking {
   for (const par of parents) for (const g of par.gated ?? []) {
     if (!Number.isFinite(g.hours) || !lanes.includes(g.lane)) continue;
     levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key));
+  }
+
+  // Rule 3: per lane, the next gate behind which open achievements sit, and the bundle up to it (bundle.ts) — task 027g: after
+  // the supply loop, whose road kills join the pick's bonus
+  for (const lane of lanes) {
+    const b = bundleOf(lane, name, world);
+    if (!b || !Number.isFinite(b.hGate)) continue; // section 2: no XP source up to the gate — no candidate
+    const s = bundleScore(b, b.hGate, calH);
+    const L = levelOf(ch, lane);
+    const to = b.wall ?? b.next;
+    const road = b.wall ? `its road ends at ${b.wall} (no XP source there; ${fmt(b.hGate)} h to the gate at the pace before it)` : `${fmt(b.hGate)} h to the gate`;
+    // task 013: an event achievement behind the gate says by how many spawns of what, with how many members
+    const evs = b.events.map((e) => `; ${e.code} behind it, by ${e.spawns} spawns of ${e.event}, about ${fmt(e.days)} days with ${e.members} ${e.members === 1 ? "member" : "members"}`).join("");
+    levelCand(lane, to, s.fit, s.any, (what, p) => `${lane} ${L} → ${b.next}: +${s.points} pts behind it (${b.behind.map((x) => x.code).join(", ")}), ${road}${evs}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
   }
 
   const byScore = (k: "fit" | "any") => (a: Candidate, b: Candidate): number => b[k] - a[k] || (a.target.key < b.target.key ? -1 : a.target.key > b.target.key ? 1 : 0);
@@ -534,10 +555,13 @@ export function rank(name: string, world: World, free = false): Ranking {
     const pick = (pool: Candidate[]): Candidate | undefined => top(pool, "fit") ?? top(pool, "any");
     const first = pick(firsts);
     const forge = pick(all.filter((c) => c.step.work.kind !== "kill" && c.target.key !== "src:tasks_coin")); // 027d: a coins visit is fight work
-    const kill = pick(supply.filter((c) => (c.step.work.kind === "kill" || c.target.key === "src:tasks_coin") && c.road));
     const capped = ch.level >= cap;
+    const x = capped ? undefined : xpPick();
+    // task 027g (A): a road need's kill whose monster is the pick comes along with it (the pick's step); another goes to a
+    // worker that is on and admitted, to this fighter (before its pick) only when none is; 027d's coins stay a fighter's
+    const mine = x?.work.kind === "kill" ? x.work.monster : undefined;
+    const kill = pick(supply.filter((c) => c.road && (c.target.key === "src:tasks_coin" || (c.step.work.kind === "kill" && c.step.work.monster !== mine && !workerHunts(c.step.work.monster)))));
     const c = first ?? forge ?? kill;
-    const x = c || capped ? undefined : xpPick();
     if (!c && !x) {
       const r = rank(name, world, true);
       return { ...r, step: { ...r.step, why: `fighter, ${capped ? "at the level cap" : "no fight admitted"}: ${r.step.why}` } };

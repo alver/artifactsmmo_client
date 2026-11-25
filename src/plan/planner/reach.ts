@@ -341,7 +341,7 @@ function solveKey(ch: Character, monster: string, pools: Record<GearSlot, string
   const rings = pools.ring1.map((c) => Math.min(2, opts.ownedQty?.get(c) ?? 3)).join(",");
   const prices = util ? pools.utility1.map((c) => price(c)).join(",") : "-";
   const pins = [...(opts.extraCandidates ?? [])].sort().join(",");
-  return `${monster}|${statsOf(ch)}|${worn}|${cands}|${rings}|${prices}|${pins}|${opts.minWin ?? MIN_WIN}|${opts.wayBack ?? 0}`;
+  return `${monster}|${statsOf(ch)}|${worn}|${cands}|${rings}|${prices}|${pins}|${opts.minWin ?? MIN_WIN}|${opts.wayBack ?? 0}|${(opts.fixed ?? []).join(",")}`;
 }
 const solveMemo = new Map<string, GearRecommendation | null>();
 /** Counts for the measuring (task 020): asks, asks served within their World, keys looked up, keys served, solves. */
@@ -508,8 +508,10 @@ export function fightRec(ch: Character, world: World, monster: string): GearReco
  *  the planner's solves do not read what is worn (bis.ts `worn`), so a solve serves every worn set. */
 export function fightOptions(ch: Character, world: World, monster?: string): BisOptions {
   const qty = poolOf(ch, world).qty;
-  return { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: freeExtra(ch, world, []), perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world, ch.name).price, worn: false, ...riskOf(ch, world, monster) };
+  return { owned: new Set(qty.keys()), ownedQty: qty, includeCraftable: false, extraCandidates: freeExtra(ch, world, []), perSlotCap: 6, weaponCap: 6, potionPrice: potionPrice(world, ch.name).price, worn: false, fixed: wornPinned(ch), ...riskOf(ch, world, monster) };
 }
+/** Task 027g (C): the pinned artifacts the character wears — play never takes one off, so the step's set is solved with them. */
+const wornPinned = (ch: Character): string[] => ["artifact1", "artifact2", "artifact3"].map((g) => slotCode(ch, g as GearSlot)).filter((c): c is string => !!c && PINNED_ARTIFACTS.has(c));
 /** Task 025: what a solve needs of the verdict — the floor and the way back a lost attempt walks. */
 const riskOf = (ch: Character, world: World, monster?: string): Pick<BisOptions, "minWin" | "wayBack"> =>
   ({ minWin: minWinOf(world), wayBack: monster ? wayBackSec(world, ch.name, monster) : 0 });

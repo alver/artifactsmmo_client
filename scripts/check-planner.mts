@@ -27,7 +27,7 @@ import { itemsOf } from "../src/plan/planner/compile";
 import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, KILL_LOG_013, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
 import { actionSec, bagActions, fareSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec, unitSec } from "../src/plan/planner/cost";
 import { bundleOf, bundleScore } from "../src/plan/planner/bundle";
-import { chainSec, consFree, consParents, consumableNeeds, fightTake, poolFood, poolFoods, reservable } from "../src/plan/planner/consumables";
+import { chainSec, consFree, consParents, consumableNeeds, fightTake, gearWorld, poolFood, poolFoods, reservable } from "../src/plan/planner/consumables";
 import { EXPAND_BELOW, TIDY_BELOW, backText, bankStuck, expansionOk, freeSlots, isGear, newCodes, tidyLeft, tidyStep, tidyVerdicts, usedSlots } from "../src/plan/planner/bank";
 import { SELL_FLOORS, merchantOrder } from "../src/plan/events";
 import { calendar, contentOf, eventDemand, eventMembers, eventOf, eventPlans, gapSec, possibleMembers, spawnOf, usableSec } from "../src/plan/planner/events";
@@ -145,7 +145,9 @@ const check = (k: (typeof INV)[number], ok: boolean, detail: () => string): void
  *  character's pool) is simulated again here — both passes when the row asks for a safe win — and every piece of it
  *  is the character's own or in the bank. (Task 007 re-solved with ownedFightRec; with gear moving at every step that
  *  cost a full solve per decision.) */
-const winsDirect = (ch: Character, w: World, monster: string): boolean => {
+// task 027g (C): the set of the whole pool, else — where the solve got none admitted there — the gear alone (fightTake's fallback)
+const winsDirect = (ch: Character, w: World, monster: string): boolean => winsWith(ch, w, monster) || winsWith(ch, gearWorld(w), monster);
+const winsWith = (ch: Character, w: World, monster: string): boolean => {
   const r = fightRec(ch, w, monster);
   const m = monsterOfCode(monster);
   if (!r || !m) return false;
@@ -1369,7 +1371,8 @@ function consWorld(bank: Record<string, number>, achs: AccountAchievement[], on:
   // 6. no cook at the level: the fights rest and say so
   const w6: World = { ...w5, config: { ...w5.config, on: { ...w5.config.on, First: false } } };
   const st6 = rank("Second", w6).levels.find((c) => c.step.work.kind === "kill") ?? rank("Second", w6).objectives.find((c) => c.step.work.kind === "kill");
-  cases.push(["…no cook that is on: the fights rest and say so", !!st6 && /rests \(no cook is on/.test(st6.step.why) && !consumableNeeds(w6, "Second").some((n) => n.food)]);
+  // task 027g (B.5): the why says what is — no food in the bank, the raw waits and no cook is on
+  cases.push(["…no cook that is on: the fights rest and say so", !!st6 && /rests \(no food in the bank; raw for .+ waits, no cook is on/.test(st6.step.why) && !consumableNeeds(w6, "Second").some((n) => n.food)]);
   console.log(`  6. the cook (First) off: ${st6 ? st6.step.why : "no kill candidate"}`);
 
   // 7. the horizon: the demand stops at two chunks (+ a fifth) of the work
@@ -1486,8 +1489,9 @@ const BANK_NOW = bankWorld();
   // resting — at First's HP neither does (old: chicken ×2 a kill under the bag's cap, trout ×4 while it lasted; new: it rests;
   // the bag's cap is scripts/scenarios/consumables-food-bag.mts's, the food a step takes scripts/check-verdict.mts's)
   void nA; void bag;
-  cases.push(["…a fight that loses 160–224 HP: no food — chicken at its chain costs more than the rest it saves", !!tA && !tA.withdraw?.cooked_chicken && tA.note.includes("rests")]);
-  cases.push(["…a fight that loses 225 HP or more: no food — trout at its chain costs more than the rest it saves at First's HP", !!tB && !tB.withdraw?.cooked_trout && tB.note.includes("rests")]);
+  // task 027g (B.3): a food the bank holds costs nothing to eat — one `use` beats the rest it saves, so both fights eat again
+  cases.push(["…a fight that loses 160–224 HP eats chicken (trout does not fit)", !!tA && (tA.withdraw?.cooked_chicken ?? 0) > 0 && !tA.withdraw?.cooked_trout && !tA.note.includes("rests")]);
+  cases.push(["…a fight that loses 225 HP or more eats (trout or chicken)", !!tB && ((tB.withdraw?.cooked_trout ?? 0) > 0 || (tB.withdraw?.cooked_chicken ?? 0) > 0) && !tB.note.includes("rests")]);
   console.log(`  food: First (combat ${ch.level}, a bag of ${ch.inventory_max_items}) — ${a ? `${a.m} loses ${Math.round(a.lost)} HP: ${tA?.kills} kills${tA?.note}` : "no safe fight loses 160–224 HP"}; ${b ? `${b.m} loses ${Math.round(b.lost)} HP: ${tB?.kills} kills${tB?.note}` : "no safe fight loses 225 HP or more"}; before the repair the plan read the best food in stock (cooked trout, 225 HP): floor(${Math.round(a?.lost ?? 184)} ÷ 225) = 0 a kill — it rested`);
 }
 

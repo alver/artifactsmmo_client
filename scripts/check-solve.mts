@@ -134,7 +134,8 @@ const SAMPLE: [string, string, string, string][] = [
   ["third22", "Third", "ogre", "win safe safe"],
   ["third22", "Third", "bandit_lizard", "win win win"],
   ["w20", "Second", "vampire", "win win win"],
-  ["w20", "Fourth", "vampire", "win win win"],
+  // task 027g (C): the solve reads Fourth's worn Novice Guide — with it the best set known (p 0.20 without) loses at turn 21
+  ["w20", "Fourth", "vampire", "lost lost lost"],
 ];
 interface Entry { character: Character; pool: Record<string, number>; prices: Record<string, number> }
 const fx = JSON.parse(await readFile("scripts/fixtures/solve-sample.json", "utf8")) as { wall: { fighters: Record<string, Entry> }; third22: Entry };

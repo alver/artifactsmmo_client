@@ -253,6 +253,7 @@ export interface Parent {
   demand: [string, number][];
   gated?: Gated[];        // task 012: the chain's crafts whose level nobody that may craft them meets (finite roads)
   reserve?: boolean;      // task 014, settled point 7: an event's consumables — served before every other parent
+  noField?: boolean;      // task 027g (B.4): a food need with FOOD_FISHING off — its bill opens no src: leaf (no gather or kill for food alone)
 }
 
 /** One unit of an objective, with nothing in the bank, is all field work the fleet can do, at most three sources,
@@ -330,6 +331,7 @@ export function supplyNeeds(world: World, name: string, parents: Parent[], inFli
   const out = new Map<string, SupplyNeed>();
   for (const p of [...parents].sort((a, b) => Number(!!b.reserve) - Number(!!a.reserve) || b.fit - a.fit || b.any - a.any || (a.key < b.key ? -1 : 1))) {
     for (const l of billOf(world, name, p.demand, vb, false).leaves.values()) {
+      if (p.noField && l.kind === "src") continue;
       const qty = l.kind === "src" ? l.qty * perOf(l.work) : l.qty;
       const s = out.get(l.key);
       if (s) { s.short += qty; s.via.push(p.key); }

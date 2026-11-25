@@ -95,6 +95,10 @@ export interface BisOptions {
    *  solves (reach.ts), so one pool gives one answer whatever is worn. Default true: the executor keeps what it wears
    *  rather than swap it for an equal piece at the bank. */
   worn?: boolean;
+  /** Task 027g (C): artifacts every set wears, in the first artifact slots — the worn pinned artifacts, which play never takes
+   *  off (jobgear.ts PINNED_ARTIFACTS): the planner's solves (reach.ts fightOptions) read them, so the set a step is solved
+   *  with is the set its verdict judges. The other artifact slots are searched as before. */
+  fixed?: string[];
 }
 
 /** Task 014: a food a fighter eats between fights — its code and the HP one unit heals. */
@@ -470,6 +474,11 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
   // known, else "as many as the group has slots" (craftable candidates).
   const countOf = (code: string): number => opts.ownedQty?.get(code) ?? 3;
   const pinned = new Set(opts.extraCandidates ?? []);
+  const fixed = (opts.fixed ?? []).slice(0, ARTIFACT_SLOTS.length);
+  const arts = ARTIFACT_SLOTS.slice(fixed.length);
+  const artPool = (p: Record<GearSlot, string[]>): string[] => (fixed.length ? p.artifact1.filter((c) => !fixed.includes(c)) : p.artifact1);
+  /** Empty slots but the fixed artifacts. */
+  const start = (): Record<GearSlot, string> => { const s = emptySlots(); fixed.forEach((c, i) => (s[ARTIFACT_SLOTS[i]] = c)); return s; };
   const score = (s: Record<GearSlot, string>): number => evaluate(s).score;
   const upper = evaluate.upper;
 
@@ -483,7 +492,7 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
       for (let i = 0; i < SINGLE_SLOTS.length; i++) pick(slots, SINGLE_SLOTS[i], singles[i], score, upper);
       // Rings may repeat a code (two copper rings) up to the owned count; artifacts must stay distinct.
       chooseGroup(slots, RING_SLOTS, p.ring1, evaluate, countOf);
-      chooseGroup(slots, ARTIFACT_SLOTS, p.artifact1, evaluate);
+      chooseGroup(slots, arts, artPool(p), evaluate);
       if (!opts.noUtilities) chooseGroup(slots, UTILITY_SLOTS, p.utility1, evaluate);
       if (score(slots) === before) return;
     }
@@ -498,16 +507,16 @@ export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions 
     if (lower) ends.push(search(capPools(p, m, pinned, lower[0], lower[1]), lower[0], lower[1])[0]);
     const weapons = [...new Set(["", ...p.weapon, ...(worn.weapon ? [worn.weapon] : [])])];
     for (const wp of weapons) {
-      const slots = emptySlots();
+      const slots = start();
       slots.weapon = wp;
       climb(slots, p);
       ends.push(slots);
     }
     let seed = 1;
     const any = <T,>(o: T[]): T => o[((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 4294967296) * o.length | 0];
-    const groups: [GearSlot[], string[][]][] = [[RING_SLOTS, groupCombos(p.ring1, 2, countOf)], [ARTIFACT_SLOTS, groupCombos(p.artifact1, 3)], [UTILITY_SLOTS, opts.noUtilities ? [[]] : groupCombos(p.utility1, 2)]];
+    const groups: [GearSlot[], string[][]][] = [[RING_SLOTS, groupCombos(p.ring1, 2, countOf)], [arts, groupCombos(artPool(p), arts.length)], [UTILITY_SLOTS, opts.noUtilities ? [[]] : groupCombos(p.utility1, 2)]];
     for (let k = 0; k < STARTS; k++) {
-      const slots = emptySlots();
+      const slots = start();
       slots.weapon = any(weapons);
       for (const g of SINGLE_SLOTS) slots[g] = any(["", ...p[g]]);
       for (const [g, combos] of groups) { const c = any(combos); for (let i = 0; i < g.length; i++) slots[g[i]] = c[i] ?? ""; }
