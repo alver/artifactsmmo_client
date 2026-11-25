@@ -3,6 +3,7 @@
 // The potions' need is a parent of supply: sunflowers are gathered (src:) and brewed by Quinn (mat:), each step's why
 // naming the work it is for; Pia works on something else meanwhile and then kills the slimes with the stock.
 import { achievement, planLines, scenario } from "../harness/index.mts";
+import { T0 } from "../harness/clock.mts";
 import { planner } from "../../src/state/planner";
 
 await scenario(
@@ -14,6 +15,13 @@ await scenario(
     bank: { copper_dagger: 1 },
     achievements: [achievement("made_up_slimes", 5, ["combat_kill", "green_slime", 20]), achievement("made_up_ore", 1, ["gathering", "copper_ore", 400])],
     limits: { actions: 3000, minutes: 900 },
+    // task 027f: the fake has no XP, so a craft level never comes, and a level step that works (gathers its materials) is no
+    // longer stalled — the two craft levels this world asks for gear pieces (Quinn's gearcrafting, Pia's weaponcrafting) are
+    // blocked from the start, as the old stall rule blocked them after ~38 minutes; the potion chain is the subject here
+    setup: () => {
+      const until = T0 + 24 * 3_600_000, why = "the fake has no XP (task 027f)";
+      planner.value = { ...planner.value, blocked: { "lvl:gearcrafting:5@Quinn": { until, why }, "lvl:weaponcrafting:5@Pia": { until, why } } };
+    },
   },
   async (t) => {
     await t.run({ until: () => planner.value.current.Pia?.step.target === "ach:made_up_slimes:0" || t.calls("fight", "Pia").length > 0 });

@@ -59,11 +59,14 @@ export interface StepCtx {
  * leg away takes several calls: each walks one leg, the one that arrives
  * deposits (callers re-check the full bag first thing every tick).
  */
-export async function bankOff(name: string, keep: string[] | undefined, note: StepCtx["note"], gold = 0): Promise<void> {
+export async function bankOff(name: string, keep0: string[] | undefined, note: StepCtx["note"], gold = 0): Promise<void> {
   const ch = characters.value[name];
   const bank = ch && nearestBank(ch);
   // task 017: no bank reachable (behind a transition it cannot pay) ends the item (runLoop skips it), never a pause
   if (!bank) throw new NoRouteError("inventory full and no bank reachable — behind a transition it cannot pass now");
+  // task 027f: the gear a swap has just withdrawn to wear is not cargo — banking it made the train item's loop
+  const soon = toWear.get(name);
+  const keep = soon?.size ? [...new Set([...(keep0 ?? []), ...soon])] : keep0;
   const loose = (ch.inventory || []).filter((it) => it.code && it.quantity > 0 && !keep?.includes(it.code)).map((it) => it.code);
   if (keep?.length && !loose.length) {
     throw new Error("inventory full of protected working stock");
@@ -145,6 +148,14 @@ function foodKeep(ch: Character): string[] {
   return [plan.code, ...plan.recipe.items.map((g) => g.code)];
 }
 
+/** Task 027f: per character, the gear its swap withdrew to wear and has not worn yet (cleared when the swap converges):
+ *  not cargo for a bag-full trip (bankOff, the train item's full-bag check), so the next tick equips it — it never takes
+ *  the same pieces out again. In memory: a restart costs one withdrawal at most. */
+const toWear = new Map<string, Set<string>>();
+/** A full bag's cargo for a bag-full trip: anything but `keep` and the gear the swap is about to wear. */
+export const otherCargo = (name: string, ch: Character, keep: string[] | undefined): boolean =>
+  (ch.inventory ?? []).some((s) => s.code && s.quantity > 0 && !keep?.includes(s.code) && !toWear.get(name)?.has(s.code));
+
 /**
  * One step of the gear-swap ceremony toward `desired`: unequip mismatches →
  * equip from hand → withdraw from bank → stow replaced/junk gear → bag last.
@@ -167,7 +178,7 @@ export async function gearSwapStep(
   const extra = [...brewKeep(ch, desired), ...(ctx.food ? foodKeep(ch) : []), ...noSlotFor((ch.inventory ?? []).filter((s) => s.code && s.quantity > 0 && !ctx.keep?.includes(s.code)).map((s) => s.code))];
   const keep = extra.length ? [...new Set([...(ctx.keep ?? []), ...extra])] : ctx.keep;
   const act = nextGearAction(ch, bankItems.value, desired, { keep, junk: opts?.junk, reset: opts?.reset, utility: opts?.utility, gold: opts?.gold });
-  if (!act) return "done";
+  if (!act) { toWear.delete(name); return "done"; }
 
   const toBank = async (): Promise<boolean> => {
     const bank = nearestBank(ch);
@@ -221,6 +232,7 @@ export async function gearSwapStep(
         }
         throw e;
       }
+      toWear.set(name, new Set([...(toWear.get(name) ?? []), ...act.items.map((i) => i.code)]));
       return "acted";
     }
     case "deposit": {

@@ -31,7 +31,7 @@ import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendin
 import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
-import { bankOff, blockFight, brakeWhy, craftableTimes, desiredForJob, fightBlocked, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gateP, gearSwapStep, goToMaster, invCount, invQty, minWinNow, provisionPotions, recoverFirst, runStep, stackCaps } from "./exec";
+import { bankOff, blockFight, brakeWhy, craftableTimes, desiredForJob, fightBlocked, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gateP, gearSwapStep, goToMaster, invCount, invQty, minWinNow, provisionPotions, recoverFirst, runStep, stackCaps, otherCargo } from "./exec";
 import { categoryLevel, loadOfferings, offeringMayTake, offeringSlots, todayOfferings } from "./offerings";
 import type { FightTally, StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
@@ -927,8 +927,8 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
   // 3. Source a short ingredient — one this character can get itself first (a
   //    full bag of other stuff banks off first; a bag full of our own staged
   //    materials goes on to the sub-craft); helper-only ones are waited for.
-  const keep = new Set(ctx.keep ?? []);
-  if (freeSpace(ch) === 0 && (ch.inventory ?? []).some((s) => s.code && s.quantity > 0 && !keep.has(s.code))) {
+  // task 027f: the gear its hunt's swap just withdrew to wear is not "other stuff" — the swap equips it next (exec.ts toWear)
+  if (freeSpace(ch) === 0 && otherCargo(name, ch, ctx.keep)) {
     await bankOff(name, ctx.keep, ctx.note);
     return false;
   }
@@ -1155,8 +1155,8 @@ async function runWorkTask(
     // A full bag first hands over what it holds, then (all junk) banks off.
     if (freeSpace(ch) === 0) {
       if (held > 0) return handOver(name, ch, it, ctx);
-      await bankOff(name, keepOf(it, ch), ctx.note);
-      return false;
+      // task 027f: a bag full of working stock and the gear its swap just withdrew: the swap (taskGear) equips it next
+      if (otherCargo(name, ch, keepOf(it, ch))) { await bankOff(name, keepOf(it, ch), ctx.note); return false; }
     }
     if (src.how === "gather") {
       const tile = nearest("resource", src.res.code, ch);

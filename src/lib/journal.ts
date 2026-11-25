@@ -278,6 +278,14 @@ function spent(name: string, key: string, action: string, data: ActionResult, pr
   if (action === "bank/buy_expansion") journal("spend", { who: name, what: "expansion", code: "gold", q: d.transaction?.price, for: key || undefined });
 }
 
+/** Task 027f: a bucket's own work so far, for the planner's stall check — its XP, fights, gathers and crafts (recycling too);
+ *  read, not cut. The meter is this process's: a restart starts it again at 0. */
+export function meterWork(name: string, key: string): number {
+  const m = buckets.get(name)?.get(key);
+  if (!m) return 0;
+  return Object.values(m.xp ?? {}).reduce((s, x) => s + x, 0) + (m.won ?? 0) + (m.lost ?? 0) + (m.n.gathering ?? 0) + (m.n.crafting ?? 0) + (m.n.recycling ?? 0);
+}
+
 const r1 = (x: number): number => Math.round(x * 10) / 10;
 /** A bucket's meter, closed: its open slice ends now, `wait` is the slices less the cooldowns. The bucket is forgotten. */
 export function meterCut(name: string, key: string): Meter | undefined {

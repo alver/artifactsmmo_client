@@ -16,7 +16,7 @@
 import { batch, effect, signal } from "@preact/signals";
 import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { RUN, devlog } from "../lib/devlog";
-import { journal, lastRecords, meterCut, runInfo, setMeterKey, writeStatus, writeWorld } from "../lib/journal";
+import { journal, lastRecords, meterCut, meterWork, runInfo, setMeterKey, writeStatus, writeWorld } from "../lib/journal";
 import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn, pushLog } from "./store";
 import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue, setOwnedOfferings } from "./queue";
 import { liveEvents } from "./events";
@@ -166,6 +166,13 @@ const BRAKE_WINDOW = 10 * 60_000;
 const BRAKE_HOLD = 30 * 60_000;
 const BLOCK_MS = 6 * 3_600_000; // guess: long enough for an event, a bank refill or a level to change things
 const STALL_SEC = 20 * 60; // guess: max(20 min, 5 × the unit estimate) of running time without the counter moving
+/** Task 027f: a level step stalls after this much running time without any work of its own (any XP, kill, gather or craft
+ *  its items metered). Fourth's lvl:jewelrycrafting:25 ran 33 h of 5 × 4.6 h's bound without a unit, its counter moved by
+ *  the XP of its interrupts. */
+const LEVEL_STALL_SEC = 60 * 60;
+/** This process's last look at a level step's metered work (the meter starts again at a restart: a boot's first look is a
+ *  baseline, not a move — the clock, `run` and `movedAt`, is the step's own and summed over restarts). */
+const lastWork = new Map<string, { key: string; w: number }>();
 const SPIN_HOLD = 60_000; // task 017: a character whose steps end at once waits this long before the next decision
 const holdUntil = new Map<string, number>();
 
@@ -398,8 +405,15 @@ function observe(name: string, r: Running, now: number): Running {
   lastSeen.set(name, { at: now, counting: !!q?.running && !!head?.id.startsWith(`pl:${r.step.key}:`) && q.note !== OUTAGE_NOTE });
   const dt = seen?.counting ? Math.max(0, (now - seen.at) / 1000) : 0;
   const { counter, units } = measure(r, ch);
+  // task 027f, B.2: a level step's counter is the character's own work — its items' metered XP, kills, gathers, crafts
+  let moved = counter !== r.progress;
+  if (r.step.as === "level") {
+    const w = meterWork(name, `pl:${r.step.key}`), seen = lastWork.get(name);
+    moved = seen?.key === r.step.key && w > seen.w;
+    lastWork.set(name, { key: r.step.key, w });
+  }
   let next = r;
-  if (dt || counter !== r.progress || units !== r.units) next = { ...r, run: r.run + dt, units, ...(counter !== r.progress ? { progress: counter, movedAt: r.run + dt } : {}) };
+  if (dt || moved || counter !== r.progress || units !== r.units) next = { ...r, run: r.run + dt, units, progress: counter, ...(moved ? { movedAt: r.run + dt } : {}) };
   if (next.lv) {
     let lv = dt ? { ...next.lv, run: next.lv.run + dt } : next.lv;
     const L = levelOf(ch, lv.lane);
@@ -513,7 +527,11 @@ async function next(name: string, block?: string): Promise<void> {
   }
 }
 
-const stalled = (r: Running): boolean => r.run - r.movedAt > Math.max(STALL_SEC, (5 * r.step.hours * 3600) / Math.max(1, r.step.units));
+const stallBound = (r: Running): number => (r.step.as === "level" ? LEVEL_STALL_SEC : Math.max(STALL_SEC, (5 * r.step.hours * 3600) / Math.max(1, r.step.units)));
+const stalled = (r: Running): boolean => r.run - r.movedAt > stallBound(r);
+/** Task 027f, B.3: what stood still, and for how long (the block's why: its journal line and its dev-log line). */
+const stallWhy = (r: Running): string =>
+  `stalled: ${r.step.as === "level" ? "no XP, kill, gather or craft of its own" : "its counter still"} for ${Math.round((r.run - r.movedAt) / 60)} min of running (${Math.round(r.run / 60)} min in all)`;
 
 let active = false; // someone is on and the runtime was started
 let ready = false; // free characters may decide: the first achievements read came back, or five minutes passed
@@ -555,7 +573,7 @@ function tick(): void {
       if (o !== r) setRunning(name, o);
       if (!stepItems(name, r.step.key).length) { if (ready) void next(name); }
       else if (q && !q.running && head?.error && head.id.startsWith(`pl:${r.step.key}:`)) void next(name, head.error);
-      else if (stalled(o)) void next(name, "stalled");
+      else if (stalled(o)) void next(name, stallWhy(o));
       continue;
     }
     if (ready) void next(name);
