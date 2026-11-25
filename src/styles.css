@@ -420,34 +420,10 @@ body,
 }
 
 /* ── Character tab: switcher, summary strip, queue | gear/skills/inventory ── */
-.ws-empty {
-  flex: 1;
-  display: grid;
-  place-items: center;
-}
-.ws-body {
-  max-width: 1500px;
-  width: 100%;
-  margin: 0 auto;
-  box-sizing: border-box;
-  padding: 16px 20px 32px;
-}
-.ws-grid {
-  display: grid;
-  grid-template-columns: minmax(420px, 1.5fr) minmax(320px, 1fr);
-  gap: 16px;
-  align-items: start;
-}
 @media (max-width: 1050px) {
   .ws-grid {
     grid-template-columns: 1fr;
   }
-}
-.ws-col {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
 }
 .ws-card {
   background: var(--panel);
@@ -462,20 +438,6 @@ body,
 }
 
 /* Bigger controls in the control column (queue management). */
-.ws-col-control .cp-refine-select,
-.ws-col-control .cat-btn {
-  font-size: 13px;
-  padding: 7px 12px;
-}
-.ws-col-control .q-row {
-  font-size: 13px;
-  padding: 6px 8px;
-}
-.ws-col-control .cat-num {
-  width: 72px;
-  font-size: 13px;
-  padding: 6px 8px;
-}
 
 .map-wrap {
   position: relative;
@@ -548,50 +510,6 @@ body,
   font-variant-numeric: tabular-nums;
 }
 
-/* Scoped under .roster so these outrank the global `button:hover { border-color:
-   accent }` rule — otherwise a hovered card looks identical to the selected one. */
-
-/* Listed after :hover so a selected card keeps the accent ring even while hovered. */
-
-/* ── card foot: read-only status line + cooldown timer ──── */
-
-/* last action's full cooldown, right side of the card foot */
-
-/* current Tasks-Master task, bottom line of the card */
-
-.gather-tag {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 12px;
-  color: #bfe6cf;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.gather-tag.banking {
-  color: var(--gold);
-}
-
-.spinner {
-  flex: 0 0 auto;
-  width: 11px;
-  height: 11px;
-  border: 2px solid rgba(255, 255, 255, 0.22);
-  border-top-color: #7fdca4;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-.gather-tag.banking .spinner {
-  border-top-color: var(--gold);
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 
 /* Pinned crafting specialization badge (only when the user pinned one). */
 
@@ -604,9 +522,6 @@ body,
   cursor: grab;
 }
 /* armed click-to-move — beats the imperatively-set inline grab cursor */
-.map-canvas.moving {
-  cursor: crosshair !important;
-}
 .layer-switch {
   position: absolute;
   top: 12px;
@@ -641,11 +556,6 @@ body,
   border-radius: 6px;
   padding: 4px 8px;
   pointer-events: none;
-}
-.map-hint.armed {
-  color: #dce9ff;
-  border-color: var(--accent);
-  background: rgba(37, 64, 107, 0.92);
 }
 
 /* activity panel — always-on right column outside the tabs (ui/ActivityLog.tsx) */
@@ -1003,11 +913,6 @@ body,
   flex: 0 0 auto;
   align-self: center;
 }
-.cat-trade-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
 .catalog-panel .cat-btn {
   font-size: 12px;
   padding: 5px 10px;
@@ -1036,41 +941,7 @@ body,
 }
 
 /* ── shared action controls (wired buttons across panels) ── */
-.cat-num {
-  width: 56px;
-  flex: 0 0 auto;
-  font: inherit;
-  font-size: 12px;
-  padding: 4px 6px;
-  color: var(--text);
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-variant-numeric: tabular-nums;
-}
-.recipe-actions {
-  flex: 0 0 auto;
-  align-self: center;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  align-items: stretch;
-}
 /* gold transfer + expansion + task-trade row */
-.bank-gold {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px;
-  margin: 6px 0 10px;
-}
-.bank-gold .muted {
-  flex: 1 0 100%;
-  font-size: 11px;
-}
-.catalog-panel .bank-gold + .cat-btn {
-  margin-bottom: 12px;
-}
 
 /* current task summary in the tasks panel */
 .task-current {
@@ -1084,74 +955,6 @@ body,
 }
 
 /* ── inventory rows with per-item actions (character panel) ── */
-.inv-list {
-  margin-top: 8px;
-  display: flex;
-  flex-direction: column;
-}
-.inv-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 7px;
-  padding: 6px 2px;
-  border-bottom: 1px solid var(--line);
-  font-size: 12px;
-}
-.inv-row:last-child {
-  border-bottom: none;
-}
-.inv-row img {
-  width: 24px;
-  height: 24px;
-  image-rendering: pixelated;
-  object-fit: contain;
-}
-.inv-name {
-  flex: 1;
-  min-width: 70px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.inv-qty {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.inv-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-.inv-actions .cat-btn {
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-}
-.inv-actions .cat-btn.buy {
-  background: #1f3a52;
-  border-color: #2f5e86;
-  color: #cfe0f0;
-}
-.inv-actions .cat-btn.sell {
-  background: #4a2326;
-  border-color: #7a3236;
-  color: #f0c9cc;
-}
-.inv-actions .cat-btn:not(:disabled):hover {
-  filter: brightness(1.13);
-}
-.inv-gold {
-  border-top: 1px solid var(--line);
-}
-.inv-gold-icon {
-  width: 24px;
-  text-align: center;
-}
-.inv-gold .inv-qty {
-  color: var(--gold);
-}
 
 .cat-actor {
   display: flex;
@@ -1180,30 +983,7 @@ body,
 }
 
 /* ── character workspace atoms (skills, stats — see ui/CharacterPanel) ── */
-.cp-skills {
-  display: flex;
-  flex-direction: column;
-}
 /* One table row per skill: name, level, xp bar, xp/next (the fifth track held the pin button, deleted in task 018). */
-.cp-skill {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 28px minmax(60px, 1fr) 84px 56px;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 0;
-  border-top: 1px solid var(--line);
-  font-size: 13px;
-}
-.cp-skill-lv {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.cp-skill-xp {
-  text-align: right;
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
 
 /* ── shared select / action-button controls (named for their refine-era origin;
       used across the queue, catalogs and sim playground) ── */
@@ -1219,95 +999,7 @@ body,
 }
 
 /* ── plan queue (read-only action list, ui/QueuePanel.tsx) ── */
-.q-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.q-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.q-head .cat-btn {
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid var(--line);
-}
-.q-count {
-  font-size: 11px;
-  margin-left: auto;
-}
-.q-paused {
-  font-size: 11px;
-  color: #e59a95;
-}
-.q-list {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-}
-.q-row {
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  padding: 3px 6px;
-  font-size: 12px;
-  background: var(--panel-2);
-}
-.q-row.q-running {
-  border-color: #463174;
-}
-.q-row.q-failed {
-  border-color: #7a3b3f;
-}
 /* a queue row is a table row: # · action · progress · controls */
-.q-row-main {
-  display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 150px auto;
-  align-items: center;
-  gap: 8px;
-}
-.q-thead {
-  padding: 0 7px;
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-.q-idx {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.q-prog {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.q-note {
-  display: block;
-  font-size: 11px;
-  color: var(--accent);
-}
-.q-text {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.q-progress {
-  font-size: 11px;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-.q-actions {
-  display: flex;
-  gap: 2px;
-}
-.q-error {
-  font-size: 11px;
-  color: #e59a95;
-  margin-top: 2px;
-}
 .q-field {
   display: inline-flex;
   align-items: center;
@@ -1847,24 +1539,6 @@ body,
   max-height: 45%;
   border-top: 0;
 }
-.map-pick {
-  justify-content: center;
-  align-items: center;
-}
-.map-pick-box {
-  position: relative;
-  width: min(1100px, 92vw);
-  height: min(760px, 86vh);
-  display: flex;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-}
-.map-pick-close {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-}
 /* former drawers rendered as page sections (Achievements tab, Fleet folds) */
 .ach-section .ach-head,
 .fold-body .ach-head {
@@ -2123,65 +1797,9 @@ body,
   color: #9cc3ff;
   background: rgba(110, 168, 254, 0.14);
 }
-.alert-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
-  padding: 8px 0;
-  border-top: 1px solid var(--line);
-}
-.alert-row > .pill {
-  min-width: 64px;
-  text-align: center;
-}
-.alert-text {
-  flex: 1 1 360px;
-  min-width: 0;
-  font-size: 13px;
-}
-.alert-title {
-  font-weight: 600;
-}
-.alert-actions {
-  display: flex;
-  gap: 6px;
-}
-.fleet-who {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
 .fleet-avatar {
   width: 30px;
   height: 30px;
-  image-rendering: pixelated;
-}
-.fleet-name {
-  font-weight: 650;
-  color: var(--text);
-  text-decoration: none;
-}
-.fleet-name:hover {
-  color: var(--accent);
-}
-.fleet-now {
-  font-weight: 600;
-}
-.fleet-prog {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 4px;
-}
-.fleet-task {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.fleet-task img {
-  width: 24px;
-  height: 24px;
   image-rendering: pixelated;
 }
 .skill-grid {
@@ -2217,102 +1835,6 @@ body,
 }
 
 /* ── Character tab (ui/CharacterPanel.tsx) ─────────────────── */
-.char-switch {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.char-switch button {
-  border-radius: 999px;
-  padding: 4px 14px;
-  color: var(--muted);
-  background: transparent;
-}
-.char-switch button.active {
-  color: var(--text);
-  border-color: var(--accent);
-  background: rgba(110, 168, 254, 0.14);
-}
-.char-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 24px;
-  margin-bottom: 16px;
-  padding: 12px 16px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-.char-head > .actions {
-  margin-left: auto;
-}
-.char-avatar {
-  width: 48px;
-  height: 48px;
-  image-rendering: pixelated;
-}
-.char-name {
-  font-size: 20px;
-}
-.char-facts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 24px;
-  margin: 0;
-  font-size: 13px;
-}
-.char-facts dt {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
-}
-.char-facts dd {
-  margin: 0;
-}
-.gear-list {
-  display: flex;
-  flex-direction: column;
-}
-.gear-row {
-  display: grid;
-  grid-template-columns: 76px 24px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 0;
-  border-top: 1px solid var(--line);
-  font-size: 13px;
-}
-.gear-row img {
-  width: 24px;
-  height: 24px;
-  image-rendering: pixelated;
-}
-.gear-slot {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-}
-.gear-empty {
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-}
-.slot-unequip {
-  font-size: 11px;
-  line-height: 1;
-  padding: 2px 6px;
-  border-radius: 5px;
-  color: var(--muted);
-}
-.slot-unequip:hover:not(:disabled) {
-  border-color: #c0504f;
-  background: #5a2a2e;
-  color: var(--text);
-}
 
 /* ── Bank tab: compact tile grid grouped by item type (ui/TableTabs.tsx) ── */
 .bank-group + .bank-group {
@@ -2431,4 +1953,212 @@ body,
 .knob-weight {
   font-size: 12px;
   padding: 2px 4px;
+}
+
+/* ── the one page (ui/RoadmapTab.tsx, HeroCard.tsx, PlanChart.tsx, task 028) ── */
+.season-levels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+}
+.heroes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.hero h4 {
+  margin: 6px 0 0;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+}
+.hero-who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.hero-name {
+  flex: 1;
+  min-width: 0;
+}
+.hero-lv {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 45%;
+  align-items: center;
+  gap: 6px;
+}
+.hero-facts {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+.hero-wears {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.hero-slot {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  background: var(--panel-2);
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+}
+.hero-slot img {
+  width: 26px;
+  height: 26px;
+}
+.hero-qty {
+  position: absolute;
+  right: -2px;
+  bottom: -4px;
+  font-size: 10px;
+  padding: 0 3px;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+.hero-step {
+  font-weight: 600;
+}
+.hero-now .pills {
+  margin-bottom: 2px;
+}
+.hero-order {
+  margin: 0 0 4px 18px;
+  padding: 0;
+  color: var(--muted);
+}
+.hero-order li.on,
+.hero-rule.on {
+  color: var(--text);
+  font-weight: 600;
+}
+.hero-dl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 8px;
+  margin: 0;
+}
+.hero-dl dt {
+  color: var(--muted);
+}
+.hero-dl dd {
+  margin: 0;
+}
+.fold-in summary {
+  cursor: pointer;
+  color: var(--accent);
+  margin-top: 4px;
+}
+.hero-alt {
+  padding: 2px 0 2px 8px;
+  border-left: 2px solid var(--line);
+  margin-top: 2px;
+}
+.hero-day {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.act-bar {
+  display: flex;
+  gap: 2px;
+  height: 12px;
+}
+.act-bar > span {
+  flex-basis: 0;
+  min-width: 2px;
+  border-radius: 3px;
+}
+.act-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+.act-legend i,
+.swatch {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  margin-right: 4px;
+  vertical-align: baseline;
+}
+.act-legend i.sq {
+  background: var(--muted);
+}
+.act-legend i.dia {
+  border: 2px solid var(--muted);
+  transform: rotate(45deg);
+  width: 7px;
+  height: 7px;
+}
+.plan-chart {
+  width: 100%;
+  height: auto;
+  display: block;
+  margin-bottom: 6px;
+}
+.plan-chart .guide {
+  stroke: var(--line);
+  stroke-dasharray: 3 4;
+}
+.plan-chart .axis-line {
+  stroke: var(--line);
+}
+.plan-chart .axis {
+  fill: var(--muted);
+  font-size: 10px;
+}
+.plan-chart .label {
+  fill: var(--text);
+  font-size: 11px;
+}
+.plan-chart .hover-col {
+  fill: transparent;
+}
+.plan-chart .hover-col:hover {
+  fill: rgba(255, 255, 255, 0.04);
+}
+.sub-h {
+  margin-top: 14px;
+  font-size: 13px;
+}
+.need-what {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.need-what img {
+  width: 26px;
+  height: 26px;
+}
+.page-fold {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.cat-here {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: 10px;
 }

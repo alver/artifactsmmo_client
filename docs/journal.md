@@ -63,6 +63,7 @@ The working tree may differ from the commit: the service runs `src/` as it is.
 - `units` and `h`, planned;
 - `score`;
 - `why`;
+- `text` (task 028): the text its queue item carries (`road.ts stepText`: its field item, craft, buy, task or train item), what the page's last steps show;
 - `parent`: a supply step's parent; `for`: a gear step's fighter;
 - `wd`: what the step takes from the bank, by code (potions and food for a kill step);
 - `wear`: the set its job wears, slot → code;

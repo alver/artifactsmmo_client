@@ -7,7 +7,6 @@
 
 import { api } from "../api/client";
 import { catalog, item } from "../catalog";
-import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { RARE_ACTIONS } from "../plan/xp";
 import { placeGates } from "../plan/planner/targets";
 import { offerings } from "./store";
@@ -26,7 +25,6 @@ export function todayOfferings(name: string): CachedOfferings | undefined {
 
 /** One read of the character's offerings for today. */
 export async function loadOfferings(name: string): Promise<CachedOfferings> {
-  if (!IS_SERVER) return rpc("loadOfferings", [name]);
   const st = { ...(await api<CharacterOfferings>(`/my/${name}/offerings`)), fetchedAt: Date.now() };
   offerings.value = { ...offerings.value, [name]: st };
   saveState();
@@ -121,4 +119,3 @@ export function keptFromOfferings(): Map<string, string[]> {
 /** Whether an offering may take `code` from the bank (settled point 3). */
 export const offeringMayTake = (code: string): boolean => !keptFromOfferings().has(code);
 
-expose({ loadOfferings });

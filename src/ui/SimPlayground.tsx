@@ -22,10 +22,20 @@ import { simAccuracy, simDeviations } from "../sim/validate";
 import { bestInSlot } from "../plan/bis";
 import type { BisOptions } from "../plan/bis";
 import { ownedQtyOf } from "../plan/jobgear";
-import { monsterList } from "./QueuePanel";
 import type { TurnEvent } from "../sim/combat";
 import type { Character, GearSlot } from "../types/api";
 import type { Item } from "../types/catalog";
+
+/** Every catalog monster, easiest first. */
+function monsterList(): { code: string; name: string; level: number; type: string }[] {
+  try {
+    return [...catalog().monsters.values()]
+      .map((m) => ({ code: m.code, name: m.name, level: m.level, type: m.type }))
+      .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name));
+  } catch {
+    return [];
+  }
+}
 
 type GearSet = Partial<Record<GearSlot, string>>;
 

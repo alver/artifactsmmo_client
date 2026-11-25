@@ -1,43 +1,16 @@
 import { useEffect, useState } from "preact/hooks";
-import { achievements, achievementsLoading, bankDetails, bankItems, characters, moveMode, panelTarget, selectedCharacter } from "../state/store";
+import { achievements, achievementsLoading, bankDetails, bankItems, characters, panelTarget } from "../state/store";
 import { itemHover } from "./ItemPopup";
 import type { PanelTarget } from "../state/store";
-import { catalog, item, itemName, npc, tileAt } from "../catalog";
+import { catalog, itemName, npc, tileAt } from "../catalog";
 import { tileGate } from "../state/access";
-import { bankQty, nearestBank, placeOf, step, walkTo } from "../state/loopkit";
-import { asset, assetFallback, pct, titleCase } from "../lib/util";
-import { loadAchievements, reconcile } from "../state/sync";
-import * as actions from "../api/actions";
-import { useActionRunner } from "./useAction";
-import type { ActionRunner } from "./useAction";
+import { asset, assetFallback, titleCase } from "../lib/util";
+import { loadAchievements } from "../state/sync";
 import { CooldownRing } from "./Cooldown";
-import { AltarPanel } from "./OfferingsPanel";
 import type { Character } from "../types/api";
 import type { Item, Npc } from "../types/catalog";
 
 const layerOf = (c: Character): string => (c as { layer?: string }).layer ?? "overworld";
-const invQty = (c: Character, code: string): number =>
-  (c.inventory || []).reduce((s, it) => s + (it.code === code ? it.quantity : 0), 0);
-const skillLevel = (c: Character, skill: string): number =>
-  (c as unknown as Record<string, number>)[`${skill}_level`] ?? 0;
-
-/** Small clamped number input shared by the quantity / gold fields below. */
-function NumInput({ value, min, max, onChange }: { value: number; min: number; max?: number; onChange: (n: number) => void }) {
-  return (
-    <input
-      class="cat-num"
-      type="number"
-      min={min}
-      max={max}
-      value={value}
-      onClick={(e) => e.stopPropagation()}
-      onInput={(e) => {
-        const v = parseInt((e.target as HTMLInputElement).value, 10);
-        onChange(Number.isNaN(v) ? min : v);
-      }}
-    />
-  );
-}
 
 // Recipes are static — derive once per skill and cache.
 const recipesBySkill = new Map<string, Item[]>();
@@ -53,11 +26,8 @@ function workshopRecipes(skill: string): Item[] {
 }
 
 /**
- * Right-hand catalog panel. Opens when a workshop, NPC, bank or tasks-master
- * tile is clicked and shows what can be crafted / traded / stored / tasked
- * there. Action buttons appear only when one of your characters is standing on
- * that tile, and are enabled only when the action is actually doable (skill
- * level + materials, enough currency, off cooldown).
+ * The Map tab's drawer: what a workshop, NPC, bank, tasks master or altar tile holds — its recipes, trades, the bank's
+ * stock — and who stands on it. Read-only since task 028: the planner plays every character, nothing here acts.
  */
 export function CatalogPanel() {
   const target = panelTarget.value;
@@ -68,25 +38,15 @@ export function CatalogPanel() {
 }
 
 function CatalogBody({ target }: { target: PanelTarget }) {
-  // Escape closes the drawer — unless an armed map mode wants the key first.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !moveMode.peek()) panelTarget.value = null;
+      if (e.key === "Escape") panelTarget.value = null;
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Character(s) standing on this exact tile — prefer the selected one as actor.
-  const present = Object.values(characters.value).filter(
-    (c) => c.x === target.x && c.y === target.y && layerOf(c) === target.layer,
-  );
-  const actor = present.find((c) => c.name === selectedCharacter.value) ?? present[0];
-  const ctl = useActionRunner(actor); // shared busy + cooldown gate for the whole panel
-
-  // The selected character, for the "Send here" shortcut when nobody's on the tile.
-  const walker = selectedCharacter.value ? characters.value[selectedCharacter.value] : undefined;
-  const walk = useActionRunner(walker);
+  const present = Object.values(characters.value).filter((c) => c.x === target.x && c.y === target.y && layerOf(c) === target.layer);
 
   // Access-gated tile (e.g. the Tasks Trader behind the Tasks Farmer achievement).
   const gate = tileGate(tileAt(target.x, target.y, target.layer));
@@ -101,25 +61,8 @@ function CatalogBody({ target }: { target: PanelTarget }) {
   const isTasks = target.type === "tasks_master";
   const isAltar = target.type === "seasonal_altar";
   const n = isWorkshop || isBank || isTasks || isAltar ? undefined : npc(target.code);
-  const title = isWorkshop
-    ? `${titleCase(target.code)} Workshop`
-    : isBank
-      ? "Bank"
-      : isTasks
-        ? "Tasks Master"
-        : isAltar
-          ? "Seasonal Altar"
-          : (n?.name ?? titleCase(target.code));
-  const sub = isWorkshop
-    ? `Craft items · (${target.x}, ${target.y})`
-    : isBank
-      ? `Account bank · (${target.x}, ${target.y})`
-      : isTasks
-        ? `${titleCase(target.code)} tasks · (${target.x}, ${target.y})`
-        : isAltar
-          ? `Daily offerings · (${target.x}, ${target.y})`
-          : `${titleCase(n?.type ?? "NPC")} · (${target.x}, ${target.y})`;
-  const verb = isWorkshop ? "craft" : isBank ? "deposit or withdraw" : isTasks ? "manage tasks" : isAltar ? "make offerings" : "trade";
+  const title = isWorkshop ? `${titleCase(target.code)} Workshop` : isBank ? "Bank" : isTasks ? "Tasks Master" : isAltar ? "Seasonal Altar" : (n?.name ?? titleCase(target.code));
+  const sub = isWorkshop ? "Recipes" : isBank ? "Account bank" : isTasks ? `${titleCase(target.code)} tasks` : isAltar ? "Daily offerings" : titleCase(n?.type ?? "NPC");
 
   return (
     <aside class="catalog-panel">
@@ -131,7 +74,7 @@ function CatalogBody({ target }: { target: PanelTarget }) {
         )}
         <div class="cat-titles">
           <div class="cat-title">{title}</div>
-          <div class="cat-sub">{sub}</div>
+          <div class="cat-sub">{sub} · ({target.x}, {target.y})</div>
         </div>
         <button class="cat-close" title="Close" onClick={() => (panelTarget.value = null)}>
           ✕
@@ -139,30 +82,14 @@ function CatalogBody({ target }: { target: PanelTarget }) {
       </div>
 
       <div class="cat-actor">
-        {actor ? (
-          <>
-            <CooldownRing ch={actor}>
-              <img src={asset("characters", actor.skin || "men1")} alt="" onError={assetFallback("characters", actor.skin || "men1")} />
+        {present.length ? present.map((c) => (
+          <span key={c.name} class="cat-here">
+            <CooldownRing ch={c}>
+              <img src={asset("characters", c.skin || "men1")} alt="" onError={assetFallback("characters", c.skin || "men1")} />
             </CooldownRing>
-            <span>
-              <b>{actor.name}</b> is here{present.length > 1 ? ` (+${present.length - 1})` : ""}
-            </span>
-          </>
-        ) : (
-          <>
-            <span class="muted">Move a character here to {verb}.</span>
-            {walker && (
-              <button
-                class="cat-btn"
-                disabled={walk.disabled}
-                title={`Move ${walker.name} to (${target.x}, ${target.y})`}
-                onClick={() => void walk.run(() => actions.move(walker.name, target.x, target.y))}
-              >
-                🚶 Send {walker.name}
-              </button>
-            )}
-          </>
-        )}
+            <b>{c.name}</b>
+          </span>
+        )) : <span class="muted">Nobody stands here.</span>}
       </div>
 
       {gate && (
@@ -174,78 +101,41 @@ function CatalogBody({ target }: { target: PanelTarget }) {
 
       <div class="cat-body">
         {isWorkshop ? (
-          <WorkshopList key={target.code} skill={target.code} actor={actor} ctl={ctl} />
+          <WorkshopList key={target.code} skill={target.code} />
         ) : isBank ? (
-          <BankList actor={actor} ctl={ctl} />
+          <BankList />
         ) : isTasks ? (
-          <TasksPanel actor={actor} ctl={ctl} />
+          <TasksList present={present} />
         ) : isAltar ? (
-          <AltarPanel actor={actor} ctl={ctl} />
+          <div class="cat-empty">The planner makes each owned character's offerings once a day (its offering interrupt).</div>
         ) : (
-          <NpcList npc={n} actor={actor} ctl={ctl} />
+          <NpcList npc={n} />
         )}
       </div>
     </aside>
   );
 }
 
-/** Interactive view of the account bank: gold transfers, expansion, withdrawals. */
-function BankList({ actor, ctl }: { actor?: Character; ctl: ActionRunner }) {
+/** The account bank: slots, gold, every stack. */
+function BankList() {
   const details = bankDetails.value;
   const items = [...bankItems.value].sort((a, b) => itemName(a.code).localeCompare(itemName(b.code)));
-  const [gold, setGold] = useState(0);
-
-  const buyExpansion = () =>
-    ctl.run(async () => {
-      await actions.buyExpansion(actor!.name);
-      await reconcile(); // buy_expansion echoes no bank details — refresh slots + cost once
-    });
-
   return (
     <>
       <div class="cat-count">
         {items.length}
-        {details ? `/${details.slots}` : ""} slots{details ? ` · 🪙 ${details.gold.toLocaleString()}` : ""}
+        {details ? `/${details.slots}` : ""} slots{details ? ` · 🪙 ${details.gold.toLocaleString()} · the next expansion ${details.next_expansion_cost.toLocaleString()}g` : ""}
       </div>
-
-      {actor && details && (
-        <div class="bank-gold">
-          <NumInput value={gold} min={0} onChange={setGold} />
-          <button
-            class="cat-btn"
-            disabled={ctl.disabled || gold < 1 || gold > actor.gold}
-            title={gold > actor.gold ? "Not enough gold on hand" : `Deposit ${gold}g`}
-            onClick={() => ctl.run(() => actions.depositGold(actor.name, gold))}
-          >
-            Deposit
-          </button>
-          <button
-            class="cat-btn"
-            disabled={ctl.disabled || gold < 1 || gold > details.gold}
-            title={gold > details.gold ? "Not enough gold in bank" : `Withdraw ${gold}g`}
-            onClick={() => ctl.run(() => actions.withdrawGold(actor.name, gold))}
-          >
-            Withdraw
-          </button>
-        </div>
-      )}
-      {actor && details && (
-        <button
-          class="cat-btn"
-          disabled={ctl.disabled || actor.gold < details.next_expansion_cost}
-          title={`Buy a bank expansion for ${details.next_expansion_cost.toLocaleString()}g`}
-          onClick={buyExpansion}
-        >
-          Buy expansion · {details.next_expansion_cost.toLocaleString()}g
-        </button>
-      )}
-
       {items.length === 0 ? (
         <div class="cat-empty">The bank is empty.</div>
       ) : (
         <div class="bank-list">
           {items.map((b) => (
-            <BankRow key={b.code} code={b.code} qty={b.quantity} actor={actor} ctl={ctl} />
+            <div key={b.code} class="bank-row" title={itemName(b.code)}>
+              <img class="info-hover" src={asset("items", b.code)} alt="" onError={assetFallback("items", b.code)} {...itemHover(b.code)} />
+              <span class="bank-name info-hover" {...itemHover(b.code)}>{itemName(b.code)}</span>
+              <span class="bank-qty">×{b.quantity.toLocaleString()}</span>
+            </div>
           ))}
         </div>
       )}
@@ -253,31 +143,7 @@ function BankList({ actor, ctl }: { actor?: Character; ctl: ActionRunner }) {
   );
 }
 
-function BankRow({ code, qty, actor, ctl }: { code: string; qty: number; actor?: Character; ctl: ActionRunner }) {
-  const [n, setN] = useState(1);
-  return (
-    <div class="bank-row" title={itemName(code)}>
-      <img class="info-hover" src={asset("items", code)} alt="" onError={assetFallback("items", code)} {...itemHover(code)} />
-      <span class="bank-name info-hover" {...itemHover(code)}>{itemName(code)}</span>
-      <span class="bank-qty">×{qty.toLocaleString()}</span>
-      {actor && (
-        <>
-          <NumInput value={n} min={1} max={qty} onChange={setN} />
-          <button
-            class="cat-btn"
-            disabled={ctl.disabled || n < 1 || n > qty}
-            title={`Withdraw ${n} with ${actor.name}`}
-            onClick={() => ctl.run(() => actions.withdrawItems(actor.name, [{ code, quantity: n }]))}
-          >
-            Withdraw
-          </button>
-        </>
-      )}
-    </div>
-  );
-}
-
-function WorkshopList({ skill, actor, ctl }: { skill: string; actor?: Character; ctl: ActionRunner }) {
+function WorkshopList({ skill }: { skill: string }) {
   const recipes = workshopRecipes(skill);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("");
@@ -285,20 +151,12 @@ function WorkshopList({ skill, actor, ctl }: { skill: string; actor?: Character;
 
   const types = [...new Set(recipes.map((r) => r.type))].sort();
   const q = query.trim().toLowerCase();
-  const filtered = recipes.filter(
-    (it) => (!type || it.type === type) && (!q || `${it.name} ${it.code}`.toLowerCase().includes(q)),
-  );
+  const filtered = recipes.filter((it) => (!type || it.type === type) && (!q || `${it.name} ${it.code}`.toLowerCase().includes(q)));
 
   return (
     <>
       <div class="recipe-filters">
-        <input
-          class="recipe-search"
-          type="search"
-          placeholder="Search recipes…"
-          value={query}
-          onInput={(e) => setQuery((e.target as HTMLInputElement).value)}
-        />
+        <input class="recipe-search" type="search" placeholder="Search recipes…" value={query} onInput={(e) => setQuery((e.target as HTMLInputElement).value)} />
         {types.length > 1 && (
           <select class="cp-refine-select" value={type} onChange={(e) => setType((e.target as HTMLSelectElement).value)}>
             <option value="">All types</option>
@@ -310,15 +168,29 @@ function WorkshopList({ skill, actor, ctl }: { skill: string; actor?: Character;
           </select>
         )}
       </div>
-      <div class="cat-count">
-        {filtered.length === recipes.length ? `${recipes.length} recipes` : `${filtered.length} of ${recipes.length} recipes`}
-      </div>
+      <div class="cat-count">{filtered.length === recipes.length ? `${recipes.length} recipes` : `${filtered.length} of ${recipes.length} recipes`}</div>
       {filtered.length === 0 ? (
         <div class="cat-empty">No recipes match.</div>
       ) : (
         <div class="recipe-list">
           {filtered.map((it) => (
-            <RecipeCard key={it.code} it={it} actor={actor} ctl={ctl} />
+            <div key={it.code} class="recipe-row">
+              <img class="recipe-icon info-hover" src={asset("items", it.code)} alt="" onError={assetFallback("items", it.code)} {...itemHover(it.code)} />
+              <div class="recipe-main">
+                <div class="recipe-name info-hover" {...itemHover(it.code)}>{it.name}</div>
+                <div class="recipe-level">
+                  {titleCase(it.craft!.skill)} Lv {it.craft!.level}
+                  {it.craft!.quantity > 1 ? ` · makes ×${it.craft!.quantity}` : ""}
+                </div>
+                <div class="recipe-ings">
+                  {it.craft!.items.map((ing) => (
+                    <span key={ing.code} class="recipe-pill info-hover" {...itemHover(ing.code)}>
+                      {itemName(ing.code)}: {ing.quantity}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -326,82 +198,9 @@ function WorkshopList({ skill, actor, ctl }: { skill: string; actor?: Character;
   );
 }
 
-function RecipeCard({ it, actor, ctl }: { it: Item; actor?: Character; ctl: ActionRunner }) {
-  const craft = it.craft!;
-  const [qty, setQty] = useState(1);
-  const levelOk = actor ? skillLevel(actor, craft.skill) >= craft.level : false;
-  // How many full batches the carried materials allow.
-  const maxCraft = actor
-    ? Math.min(...craft.items.map((ing) => Math.floor(invQty(actor, ing.code) / ing.quantity)))
-    : 0;
-  const hasMats = maxCraft >= qty;
-  const canCraft = levelOk && hasMats && qty >= 1;
-  const held = actor ? invQty(actor, it.code) : 0;
-  const reason = !actor
-    ? ""
-    : !levelOk
-      ? `Requires ${titleCase(craft.skill)} Lv ${craft.level}`
-      : !hasMats
-        ? "Not enough materials"
-        : `Craft with ${actor.name}`;
-
-  return (
-    <div class="recipe-row">
-      <img
-        class="recipe-icon info-hover"
-        src={asset("items", it.code)}
-        alt=""
-        onError={assetFallback("items", it.code)}
-        {...itemHover(it.code)}
-      />
-      <div class="recipe-main">
-        <div class="recipe-name info-hover" {...itemHover(it.code)}>
-          {it.name}
-        </div>
-        <div class={`recipe-level${actor && !levelOk ? " short" : ""}`}>
-          {titleCase(craft.skill)} Lv {craft.level}
-          {actor && !levelOk ? ` · you ${skillLevel(actor, craft.skill)}` : ""}
-          {craft.quantity > 1 ? ` · makes ×${craft.quantity}` : ""}
-        </div>
-        <div class="recipe-ings">
-          {craft.items.map((ing) => {
-            const need = ing.quantity * qty;
-            const have = actor ? invQty(actor, ing.code) : null;
-            const short = have != null && have < need;
-            return (
-              <span key={ing.code} class={`recipe-pill info-hover${short ? " short" : ""}`} {...itemHover(ing.code)}>
-                {itemName(ing.code)}: {have != null ? `${have}/${need}` : need}
-              </span>
-            );
-          })}
-        </div>
-      </div>
-      {actor && (
-        <div class="recipe-actions">
-          <NumInput value={qty} min={1} max={Math.max(1, maxCraft)} onChange={setQty} />
-          <button class="cat-btn craft" disabled={ctl.disabled || !canCraft} title={reason} onClick={() => ctl.run(() => actions.craft(actor.name, it.code, qty))}>
-            Craft
-          </button>
-          {held > 0 && it.recyclable !== false && (
-            <button
-              class="cat-btn"
-              disabled={ctl.disabled}
-              title={`Recycle ${Math.min(qty, held)} ${it.name}`}
-              onClick={() => ctl.run(() => actions.recycle(actor.name, it.code, Math.min(qty, held)))}
-            >
-              Recycle ×{Math.min(qty, held)}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function NpcList({ npc: n, actor, ctl }: { npc?: Npc; actor?: Character; ctl: ActionRunner }) {
+function NpcList({ npc: n }: { npc?: Npc }) {
   const trades = n?.items ?? [];
-  const curLabel = (c: string) => (c === "gold" ? "gold" : itemName(c));
-
+  const cur = (c: string): string => (c === "gold" ? "gold" : itemName(c));
   return (
     <>
       {n?.description && <p class="cat-desc">{n.description}</p>}
@@ -412,7 +211,19 @@ function NpcList({ npc: n, actor, ctl }: { npc?: Npc; actor?: Character; ctl: Ac
           <div class="cat-count">{trades.length} offers</div>
           <div class="npc-list">
             {trades.map((t) => (
-              <NpcRow key={`${t.code}:${t.currency}`} trade={t} curLabel={curLabel(t.currency)} actor={actor} ctl={ctl} />
+              <div key={`${t.code}:${t.currency}`} class="cat-item">
+                <div class="cat-item-head info-hover" {...itemHover(t.code)}>
+                  <img src={asset("items", t.code)} alt="" onError={assetFallback("items", t.code)} />
+                  <div class="cat-item-id">
+                    <span class="cat-item-name">{itemName(t.code)}</span>
+                    <span class="cat-item-sub">
+                      {t.buy_price != null ? `buy ${t.buy_price} ${cur(t.currency)}` : ""}
+                      {t.buy_price != null && t.sell_price != null ? " · " : ""}
+                      {t.sell_price != null ? `sell ${t.sell_price} ${cur(t.currency)}` : ""}
+                    </span>
+                  </div>
+                </div>
+              </div>
             ))}
           </div>
         </>
@@ -421,152 +232,18 @@ function NpcList({ npc: n, actor, ctl }: { npc?: Npc; actor?: Character; ctl: Ac
   );
 }
 
-type NpcTrade = NonNullable<Npc["items"]>[number];
-
-function NpcRow({ trade: t, curLabel, actor, ctl }: { trade: NpcTrade; curLabel: string; actor?: Character; ctl: ActionRunner }) {
-  const [qty, setQty] = useState(1);
-  const name = item(t.code)?.name ?? titleCase(t.code);
-  const hasCurrency = (c: string, price: number) =>
-    actor != null && (c === "gold" ? actor.gold >= price : invQty(actor, c) >= price);
-  const canBuy = t.buy_price != null && hasCurrency(t.currency, t.buy_price * qty);
-  const sellQty = actor ? invQty(actor, t.code) : 0;
-  const canSell = t.sell_price != null && qty <= sellQty;
-
-  return (
-    <div class="cat-item">
-      <div class="cat-item-head info-hover" {...itemHover(t.code)}>
-        <img src={asset("items", t.code)} alt="" onError={assetFallback("items", t.code)} />
-        <div class="cat-item-id">
-          <span class="cat-item-name">{name}</span>
-          <span class="cat-item-sub">paid in {titleCase(curLabel)}</span>
-        </div>
-      </div>
-      {actor && (t.buy_price != null || t.sell_price != null) && (
-        <div class="cat-trade-actions">
-          <NumInput value={qty} min={1} max={t.sell_price != null ? Math.max(1, sellQty) : undefined} onChange={setQty} />
-          {t.buy_price != null && (
-            <button
-              class="cat-btn buy"
-              disabled={ctl.disabled || !canBuy || qty < 1}
-              title={canBuy ? `Buy ${qty} with ${actor.name}` : `Need ${t.buy_price * qty} ${curLabel}`}
-              onClick={() => ctl.run(() => actions.npcBuy(actor.name, t.code, qty))}
-            >
-              Buy · {t.buy_price} {curLabel}
-            </button>
-          )}
-          {t.sell_price != null && (
-            <button
-              class="cat-btn sell"
-              disabled={ctl.disabled || !canSell}
-              title={canSell ? `Sell ${qty} with ${actor.name}` : `No ${name} to sell`}
-              onClick={() => ctl.run(() => actions.npcSell(actor.name, t.code, qty))}
-            >
-              Sell · {t.sell_price} {curLabel}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Tasks master: show the active task + accept / complete / cancel / exchange,
- *  plus a trade row for item-type tasks. */
-/**
- * Cancel the current task, fetching the 1-tasks_coin fee from the bank first
- * when the character isn't holding one: nearest bank → withdraw 1 → walk back
- * → cancel. Each hop waits out its own cooldown (loopkit primitives).
- */
-async function cancelTaskWithFee(actor: Character): Promise<void> {
-  const name = actor.name;
-  if (invQty(actor, "tasks_coin") < 1) {
-    const home = placeOf(actor);
-    const bank = nearestBank(actor);
-    if (!bank) return;
-    await walkTo(name, bank);
-    await step(name, () => actions.withdrawItems(name, [{ code: "tasks_coin", quantity: 1 }]));
-    await walkTo(name, home);
-  }
-  await actions.taskCancel(name);
-}
-
-function TasksPanel({ actor, ctl }: { actor?: Character; ctl: ActionRunner }) {
-  const [qty, setQty] = useState(1);
-  if (!actor) return <div class="cat-empty">Move a character here to manage tasks.</div>;
-
-  const hasTask = !!actor.task;
-  const done = hasTask && actor.task_progress >= actor.task_total;
-  const isItemTask = actor.task_type === "items";
-  const held = hasTask ? invQty(actor, actor.task) : 0;
-  const coinsInHand = invQty(actor, "tasks_coin");
-  const canPayCancel = coinsInHand >= 1 || bankQty("tasks_coin") >= 1;
-
+/** The tasks master: the tasks of whoever stands here (the planner turns in and takes tasks by itself, task 027d). */
+function TasksList({ present }: { present: Character[] }) {
+  if (!present.length) return <div class="cat-empty">The planner's fighters visit the master by themselves (a task visit).</div>;
   return (
     <>
-      {hasTask ? (
-        <div class="task-current">
+      {present.map((c) => (
+        <div key={c.name} class="task-current">
           <div class="task-name">
-            <b>{titleCase(actor.task)}</b> <span class="muted">· {titleCase(actor.task_type)}</span>
-          </div>
-          <div class="bar">
-            <div class="fill xp" style={{ width: pct(actor.task_progress, actor.task_total) + "%" }} />
-          </div>
-          <div class="muted">
-            {actor.task_progress}/{actor.task_total}
-            {done ? " · ready to complete" : ""}
+            <b>{c.name}</b>: {c.task ? <>{titleCase(c.task)} <span class="muted">· {titleCase(c.task_type)} · {c.task_progress}/{c.task_total}</span></> : <span class="muted">no task</span>}
           </div>
         </div>
-      ) : (
-        <div class="cat-empty">No active task.</div>
-      )}
-
-      <div class="cat-trade-actions">
-        {!hasTask && (
-          <button class="cat-btn buy" disabled={ctl.disabled} onClick={() => ctl.run(() => actions.taskNew(actor.name))}>
-            Accept new task
-          </button>
-        )}
-        {done && (
-          <button class="cat-btn craft" disabled={ctl.disabled} onClick={() => ctl.run(() => actions.taskComplete(actor.name))}>
-            Complete task
-          </button>
-        )}
-        {hasTask && !done && (
-          <button
-            class="cat-btn sell"
-            disabled={ctl.disabled || !canPayCancel}
-            title={
-              canPayCancel
-                ? `Cancel the current task (costs 1 tasks coin${coinsInHand < 1 ? " — fetched from the bank" : ""})`
-                : "Needs 1 tasks coin — none in bag or bank"
-            }
-            onClick={() => {
-              if (confirm(`Cancel ${actor.name}'s current task? This costs 1 tasks coin.`)) {
-                void ctl.run(() => cancelTaskWithFee(actor));
-              }
-            }}
-          >
-            Cancel task
-          </button>
-        )}
-        <button class="cat-btn" disabled={ctl.disabled} title="Exchange tasks coins for a reward" onClick={() => ctl.run(() => actions.taskExchange(actor.name))}>
-          Exchange coins
-        </button>
-      </div>
-
-      {hasTask && !done && isItemTask && (
-        <div class="bank-gold">
-          <span class="muted info-hover" {...itemHover(actor.task)}>Trade {itemName(actor.task)} ({held} held)</span>
-          <NumInput value={qty} min={1} max={Math.max(1, held)} onChange={setQty} />
-          <button
-            class="cat-btn"
-            disabled={ctl.disabled || held < 1 || qty > held}
-            onClick={() => ctl.run(() => actions.taskTrade(actor.name, actor.task, qty))}
-          >
-            Trade
-          </button>
-        </div>
-      )}
+      ))}
     </>
   );
 }

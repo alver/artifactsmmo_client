@@ -18,7 +18,7 @@ import { IS_SERVER, expose, rpc } from "../lib/remote";
 import { RUN, devlog } from "../lib/devlog";
 import { journal, lastRecords, meterCut, meterWork, runInfo, setMeterKey, writeStatus, writeWorld } from "../lib/journal";
 import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn, pushLog } from "./store";
-import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue, setOwnedOfferings } from "./queue";
+import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue } from "./queue";
 import { liveEvents } from "./events";
 import { invCount, setFightBlocks, setMinWin } from "./exec";
 import { noSlotFor, setNoSlotHook } from "./loopkit";
@@ -30,6 +30,7 @@ import { item as itemOf, itemName } from "../catalog";
 import { costKey, levelHoursEstimate, levelOf, perOf, sample, unitSec } from "../plan/planner/cost";
 import { decide, rank } from "../plan/planner/decide";
 import { itemsOf } from "../plan/planner/compile";
+import { stepText } from "../plan/planner/road";
 import { isDone, targetsOf } from "../plan/planner/targets";
 import { queueItemText } from "../plan/queue";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
@@ -247,7 +248,7 @@ function start(name: string): void {
   plog(name, `${step.key} (${step.as}, ${step.units} units, ${fmtH(step.hours)} h) — ${step.why}`);
   journal("step", {
     who: name, key: step.key, target: step.target, as: step.as, work: step.work, units: step.units, h: Math.round(step.hours * 1000) / 1000,
-    score: Number(step.score.toPrecision(4)), why: step.why, parent: step.parent, for: step.for, wd: some(step.withdraw), wear: some(step.wear), until: step.until && iso(step.until),
+    score: Number(step.score.toPrecision(4)), why: step.why, text: stepText(step, items), parent: step.parent, for: step.for, wd: some(step.withdraw), wear: some(step.wear), until: step.until && iso(step.until),
   });
   statusNow();
 }
@@ -809,15 +810,14 @@ const AGAIN_MAX = 3;
 const offerDay = (now: number): string => new Date(now - 5 * 60_000).toISOString().slice(0, 10);
 const putOffered = (name: string, o: { day: string; n: number; again?: number }): void => put({ offered: { ...planner.value.offered, [name]: o } });
 
-/** One offering interrupt for this character and today's offerings day, recorded: the catch-up and the panel's
- *  buttons (queue.ts queueOfferings). False when one is already queued or the character is not owned. */
+/** One offering interrupt for this character and today's offerings day, recorded: the catch-up (task 028: the panel's
+ *  buttons are gone). False when one is already queued or the character is not owned. */
 export function offeringsDue(name: string): boolean {
   if (!IS_SERVER || !isOwned(name) || !characters.value[name]) return false;
   const day = offerDay(Date.now());
   if (planner.value.offered?.[name]?.day !== day) putOffered(name, { day, n: 0 });
   return interrupt(name, "offering", [{ kind: "offering" }], day);
 }
-setOwnedOfferings(offeringsDue);
 
 /** Every owned character without an offering interrupt for today gets one; a removed one is issued again when due. */
 function catchUpOfferings(): void {

@@ -1,38 +1,52 @@
-// The Roadmap tab (task 019, settled points 9 and 10) — the home: the season, what each character does and why and what
-// it does next, the road the model expects, every open achievement with what it waits for, what is blocked, Alex's
-// priorities. Drawn only from synced signals (planner, outlook, achievements, characters, queues): nothing is planned or
-// played here — the outlook is the service's child process (state/outlook.ts). The knobs (⭐ first, ⛔ exclude, weight)
-// are one setPlannerConfig each, with the whole new list; they act on the live planner at its next decisions.
+// The one page (task 019's Roadmap, task 028) — the home and the only view of the fleet at play: the season strip, the five
+// heroes (what each does, why, what comes next, its last 24 hours), the plan in levels with who supplies whom, what is
+// blocked, then folded: the achievements with Alex's knobs and priorities, and the fleet's skills. Drawn only from synced
+// signals (planner, outlook, last24, achievements, characters, queues, bank, events, service): nothing is planned or
+// played here — the outlook is the service's child process (state/outlook.ts). No control makes a character act (task 028,
+// C): the 🧭 switch a hero, the knobs (⭐ first, ⛔ exclude, weight — one setPlannerConfig each, with the whole new list),
+// the fight floor and the two ↻ are what is left.
 //
-// Per the cooldown-clock rule, nothing here reads the 4 Hz `now`: ages and days left are taken at render (the planner
-// signal changes with every action, so they stay fresh).
+// Per the cooldown-clock rule, nothing here reads the 4 Hz `now` but <CooldownRing> and <EventTimer>: ages and days left
+// are taken at render (the planner signal changes with every action, so they stay fresh).
 
 import { useEffect } from "preact/hooks";
 import { signal, useSignal } from "@preact/signals";
-import { achievements, characterList, isOwned } from "../state/store";
+import type { Signal } from "@preact/signals";
+import type { ComponentChildren } from "preact";
+import { PIN_SKILLS, achievements, bankDetails, bankItems, characterList, focusTile, go, isOwned, service, skillKey } from "../state/store";
 import { configOf, planner, refreshAchievements, setPlannerConfig } from "../state/planner";
 import { outlook, refreshOutlook } from "../state/outlook";
+import { eventKey, liveEvents } from "../state/events";
+import { eventPlans } from "../state/eventorders";
 import { roleOfCh } from "../plan/planner/roles";
-import { queues } from "../state/queue";
+import { LEVEL_KEYS } from "../plan/planner/road";
 import { loadOptionalFile } from "../catalog/load";
 import { pct } from "../lib/util";
 import { Bar, DataTable } from "./DataTable";
 import type { Col } from "./DataTable";
-import { FleetWho, Fold } from "./FleetView";
+import { EventTimer, eventLabel } from "./EventsPanel";
+import { HeroCard } from "./HeroCard";
+import { Plan } from "./PlanChart";
+import { DAY, ago, date, skillShort, when } from "./text";
 import type { AccountAchievement, Character } from "../types/api";
 
-const DAY = 864e5;
-const when = (t: number): string => new Date(t).toISOString().slice(5, 16).replace("T", " ") + "Z";
-const date = (t: number): string => new Date(t).toISOString().slice(0, 10);
-const hrs = (h: number): string => (h < 10 ? h.toFixed(1) : String(Math.round(h)));
-function ago(t: number): string {
-  const m = Math.max(0, (Date.now() - t) / 60_000);
-  return m < 90 ? `${Math.round(m)} min ago` : m < 48 * 60 ? `${hrs(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
-}
 const isDone = (a: AccountAchievement): boolean => !!a.completed_at || a.objectives.every((o) => o.progress >= o.total);
 const nameOf = (code: string): string => achievements.value?.find((a) => a.code === code)?.name ?? code;
 /** The achievement of a step's target (`ach:<code>:<i>`), else none. */
 const achOf = (target: string): string | undefined => (target.startsWith("ach:") ? target.split(":")[1] : undefined);
+const stat = (c: Character, k: string): number => (c as unknown as Record<string, number>)[k] ?? 0;
+
+/** A section that mounts its body only while expanded (a body isn't free). */
+export function Fold({ open, title, children }: { open: Signal<boolean>; title: string; children: ComponentChildren }) {
+  return (
+    <section class="ws-card">
+      <button class="fold-toggle" aria-expanded={open.value} onClick={() => (open.value = !open.value)}>
+        {open.value ? "▾" : "▸"} {title}
+      </button>
+      {open.value && <div class="fold-body">{children}</div>}
+    </section>
+  );
+}
 
 /** The season's badges — bronze, silver, gold and the points each needs — from public/data/manifest.json, loaded once. */
 type Reward = { code: string; type: string; required_points: number; first_only?: boolean };
@@ -49,6 +63,44 @@ function useTiers(): [string, number][] {
   return tiers.value;
 }
 
+/** The fighters' and the gear crafts' levels now → at the road's end. */
+function Levels() {
+  const road = outlook.value.road, cfg = configOf(planner.value.config);
+  const end = road?.byDay[road.byDay.length - 1]?.levels;
+  const chars = characterList();
+  const rows: [string, number, number | undefined][] = [
+    ...chars.filter((c) => roleOfCh(c, cfg) === "fighter").map((c): [string, number, number | undefined] => [`${c.name} combat`, c.level, end?.[c.name]?.[0]]),
+    ...Object.entries(road?.crafters ?? {}).map(([skill, n]): [string, number, number | undefined] => {
+      const c = chars.find((x) => x.name === n);
+      return [`${skillShort(skill)} (${n})`, c ? stat(c, skillKey(skill, "level")) : 0, end?.[n]?.[LEVEL_KEYS.indexOf(skill as never)]];
+    }),
+  ];
+  return (
+    <div class="season-levels small">
+      {rows.map(([label, now, at]) => <span key={label}>{label} <b>{now}</b>{at != null ? <> → <b>{at}</b></> : null}</span>)}
+      <span class="muted">{end ? `→ at the road's end, ${date(road!.until)}` : "(no road with levels yet)"}</span>
+    </div>
+  );
+}
+
+/** Live events with what the planner does about each (Fleet's "Needs you", without its buttons). */
+function Events() {
+  const evs = liveEvents();
+  if (!evs.length) return <div class="small muted">No live event.</div>;
+  return (
+    <div class="small">
+      {evs.map((e) => (
+        <div key={`${e.code}:${e.map.x},${e.map.y}`}>
+          <span class="pill info">event</span>{" "}
+          <a href="#/map" onClick={(ev) => { ev.preventDefault(); focusTile(e.map.x, e.map.y, e.map.layer ?? "overworld"); go("map"); }}>{e.name}</a>{" "}
+          <span class="muted">({e.map.x}, {e.map.y}) · {eventLabel(e)} · ends in <EventTimer until={Date.parse(e.expiration)} /></span>
+          <div class="muted">→ {eventPlans.value[eventKey(e)] ?? "the planner has not looked at it yet"}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function Season() {
   const list = achievements.value;
   const st = planner.value;
@@ -59,6 +111,7 @@ function Season() {
   const pts = list?.filter(isDone).reduce((s, a) => s + a.points, 0) ?? 0;
   const next = t.find(([, p]) => p > pts);
   const deadline = Date.parse(cfg.deadline);
+  const bank = bankDetails.value, svc = service.value;
   return (
     <section class="ws-card">
       <h3>Season</h3>
@@ -89,83 +142,20 @@ function Season() {
           <button class="cat-btn" title="Read the achievements now (at most once a minute); a completion is claimed" onClick={() => void refreshAchievements()}>↻</button>
         </span>
       </div>
+      <Levels />
+      <div class="season-facts small">
+        <span>bank: {bankItems.value.length}{bank ? ` of ${bank.slots}` : ""} slots · {bank ? `${bank.gold.toLocaleString()} gold · the next expansion ${bank.next_expansion_cost.toLocaleString()} gold` : "not read yet"}</span>
+        <span>service: {svc ? <>run {svc.run} · {svc.commit ? svc.commit.slice(0, 7) : "no commit"}{svc.dev ? " (dev)" : ""} · up since {when(Date.parse(svc.up))}</> : "not told yet"}</span>
+      </div>
+      <Events />
     </section>
   );
 }
 
-const ANSWER: Record<string, string> = { objective: "ok", level: "info", supply: "warn", filler: "", fallback: "bad", tidy: "gold" };
-
-/** Task 027: the character's role as the config gives it (roles.ts roleOfCh) — Second's until its craft says otherwise. */
-function roleText(c: Character): string {
-  const cfg = configOf(planner.value.config), r = cfg.roles[c.name], now = roleOfCh(c, cfg);
-  return r?.fighterFrom && now === "worker" ? `worker → fighter at ${r.fighterFrom.skill} ${r.fighterFrom.level}` : now ?? "";
-}
-
-function nowCols(): Col<Character>[] {
-  const st = planner.value, qs = queues.value, next = outlook.value.next;
-  return [
-    { label: "Character", width: "170px", cell: (c) => <div><FleetWho c={c} /><div class="small muted">{roleText(c)}</div></div> },
-    {
-      label: "Doing", width: "130px",
-      cell: (c) => {
-        if (!isOwned(c.name)) return <span class="pill">off</span>;
-        const q = qs[c.name], head = q?.items[0], r = st.current[c.name];
-        return (
-          <div class="pills">
-            {head?.id.startsWith("pl:int:") && <span class="pill info">interrupt: {head.id.split(":")[2]}</span>}
-            {r && !r.over ? <span class={`pill ${ANSWER[r.step.as] ?? ""}`}>{r.step.as}</span> : <span class="pill">deciding</span>}
-            {head?.error && !q.running && <div class="small bad-text">⏸ {head.error}</div>}
-          </div>
-        );
-      },
-    },
-    {
-      label: "Why", width: "minmax(300px, 2.4fr)",
-      cell: (c) => {
-        const r = st.current[c.name];
-        return <div class="small">{isOwned(c.name) && r && !r.over ? r.step.why : <span class="muted">—</span>}</div>;
-      },
-    },
-    {
-      label: "Progress", width: "130px",
-      cell: (c) => {
-        const r = st.current[c.name];
-        if (!isOwned(c.name) || !r || r.over) return null;
-        // Running.units counts the step's last counting item (a field item counts actions): its planned count is that item's
-        const it = (qs[c.name]?.items ?? []).filter((x) => x.id.startsWith(`pl:${r.step.key}:`) && x.kind !== "deposit-all").pop();
-        const of = it && "times" in it ? it.times : it && "quantity" in it ? it.quantity : r.step.units;
-        return (
-          <div class="small">
-            <div>{r.units} of {of}</div>
-            <Bar pct={pct(r.run, r.step.hours * 3600)} />
-            <div class="muted">{hrs(r.run / 3600)} of {hrs(r.step.hours)} h</div>
-          </div>
-        );
-      },
-    },
-    {
-      label: "Next (the outlook)", width: "minmax(220px, 1.4fr)",
-      cell: (c) => (
-        <div class="small">
-          {(next?.[c.name] ?? []).slice(0, 2).map((s) => (
-            <div key={s.key} title={s.why}>
-              <span class="muted">{when(s.at)}</span> {s.text}
-            </div>
-          ))}
-        </div>
-      ),
-    },
-  ];
-}
-
-function Now() {
+function Heroes() {
   const chars = characterList();
-  return (
-    <section class="ws-card">
-      <h3>Now</h3>
-      <DataTable rows={chars} cols={nowCols()} rowKey={(c) => c.name} />
-    </section>
-  );
+  if (!chars.length) return <section class="ws-card muted">No character yet: the service has not synced.</section>;
+  return <div class="heroes">{chars.map((c) => <HeroCard key={c.name} c={c} />)}</div>;
 }
 
 interface RoadRow { i: number; code: string; points: number; at: number; total: number; crossed: string[] }
@@ -313,15 +303,48 @@ function Priorities() {
   );
 }
 
+/** Every skill level across the fleet (Fleet's grid). */
+function SkillGrid() {
+  const chars = characterList();
+  return (
+    <div class="dt-scroll">
+      <div class="skill-grid" style={{ gridTemplateColumns: `110px repeat(${PIN_SKILLS.length}, minmax(64px, 1fr))` }}>
+        <span />
+        {PIN_SKILLS.map(([k, label]) => <span key={k} class="skill-head">{label.replace("crafting", "")}</span>)}
+        {chars.map((c) => [
+          <span key={`${c.name}:n`} class="skill-char">{c.name}</span>,
+          ...PIN_SKILLS.map(([k]) => (
+            <span key={`${c.name}:${k}`} class="skill-cell">
+              <b>{stat(c, skillKey(k, "level"))}</b>
+              <Bar pct={pct(stat(c, skillKey(k, "xp")), stat(c, skillKey(k, "max_xp")))} />
+            </span>
+          )),
+        ])}
+      </div>
+    </div>
+  );
+}
+
+const achOpen = signal(false);
+const skillsOpen = signal(false);
+
 export function RoadmapTab() {
   return (
     <div class="page">
       <Season />
-      <Now />
-      <Road />
-      <OpenAchievements />
+      <Heroes />
+      <Plan />
       <Blocked />
-      <Priorities />
+      <Fold open={achOpen} title="🏆 Achievements — the road's completions, the open ones with their knobs, the priorities">
+        <div class="page-fold">
+          <Road />
+          <OpenAchievements />
+          <Priorities />
+        </div>
+      </Fold>
+      <Fold open={skillsOpen} title="📊 The fleet's skills">
+        <SkillGrid />
+      </Fold>
     </div>
   );
 }

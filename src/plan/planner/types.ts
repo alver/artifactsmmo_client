@@ -77,6 +77,22 @@ export interface Step {
   /** Task 027d: a visit to the tasks master (tasks.ts) — `start`: before the work, turn a finished task in, cancel `cancel`
    *  (a coin from the bank), take a monsters task; `end`: after the fights, turn the finished task in and take the next. */
   visit?: { at: "start" | "end"; cancel?: string };
+  /** Task 028 (A.1): the why in parts, built where the why is (decide.ts) — the why stays the one string of record. */
+  reason?: Reason;
+}
+
+/** Task 028: the rule of a role's order that took a step (decide.ts ORDER): a fighter's first · forging · a need's kill ·
+ *  the XP pick · the free pass; a worker's need · short · craft ahead · today · fallback; anyone's tidy. */
+export type Rule = "first" | "forging" | "need-kill" | "xp-pick" | "free" | "need" | "short" | "craft-ahead" | "today" | "fallback" | "tidy";
+/** Task 028 (A.1): a step's reason in parts. */
+export interface Reason {
+  role?: "fighter" | "worker";
+  rule: Rule;
+  goal: string;           // "combat 27 → 50", "Skull Wand ×1"
+  for?: string;           // whom it is for (a fighter, a parent's label); none: the account
+  because: string[];      // why this one: the rate, the win rate, the seconds a win, the points, what it saves
+  limits: string[];       // rests and why, the potions and food it takes, a bag cap, a toll
+  next?: { text: string; score: number; fits: boolean }[]; // up to three candidates that ranked next (fits: by the deadline's score)
 }
 
 /** Task 025, settled point 2: what the verdict says of a kill step's set — p, the rolled win rate; `sec`, the expected seconds

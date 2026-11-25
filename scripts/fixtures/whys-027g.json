@@ -1,0 +1,422 @@
+[
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#1",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 265 h to the gate at the pace before it); Rat at 0.96 XP/s, 20 now (0.4 h) with 49 Cooked Trout from the bank; the bag caps it at 20 kills (2.02 Cooked Trout a kill, 49 is a third of 148); task: cancels 222 of 386 gudgeon (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 64 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:ogre_eye@Second#1",
+  "why": "worker, a need: supply: Ogre Eye: 32 actions short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~608 h); Ogre: 36 combat XP a kill, 77% of the lane's best; 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 50 is a third of 150); wins 100% of fights, 51 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:ogre_eye@Third#1",
+  "why": "worker, a need: supply: Ogre Eye: 12 actions short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~608 h); Ogre: 50 combat XP a kill, 52% of the lane's best; 12 kills now (0.4 h) with 29 Cooked Trout from the bank; wins 100% of fights, 50 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, craft to 30: jewelrycrafting 23 → 30: one level of jewelrycrafting training, 1 now (5.7 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#1",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 262 h to the gate at the pace before it); Wolf at 0.82 XP/s, 184 now (1.5 h); rests (the bank's food heals more than a fight loses); task: cancels 0 of 120 spruce_wood (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 29 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:cooked_trout@Third#1",
+  "why": "worker, a need: supply: Cooked Trout: 4404 short for Cooked Trout ×5409 for Fifth's road to combat 50 (Rat, the raw in the bank) (+3 pts, chain ~282 h); 1080 made now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#2",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 265 h to the gate at the pace before it); Rat at 0.92 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:weaponcrafting:30@Second#1",
+  "why": "worker, craft to 30: weaponcrafting 20 → 30: one level of weaponcrafting training, 1 now (3.3 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#3",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 265 h to the gate at the pace before it); Rat at 0.92 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#4",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 265 h to the gate at the pace before it); Rat at 0.92 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#5",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 265 h to the gate at the pace before it); Rat at 0.92 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#2",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:cooked_trout@Third#2",
+  "why": "worker, a need: supply: Cooked Trout: 3324 short for Cooked Trout ×5206 for Fifth's road to combat 50 (Rat, the raw in the bank) (+3 pts, chain ~282 h); 1080 made now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#6",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#3",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#7",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#4",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#8",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#5",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#9",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#6",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#10",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:cooked_trout@Third#3",
+  "why": "worker, a need: supply: Cooked Trout: 2244 short for Cooked Trout ×4839 for Fifth's road to combat 50 (Rat, the raw in the bank) (+3 pts, chain ~280 h); 1080 made now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#7",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#11",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#8",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:weaponcrafting:30@Second#2",
+  "why": "worker, craft to 30: weaponcrafting 21 → 30: one level of weaponcrafting training, 1 now (3.7 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#12",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#9",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#13",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#10",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#14",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:cooked_trout@Third#4",
+  "why": "worker, a need: supply: Cooked Trout: 1164 short for Cooked Trout ×4509 for Fifth's road to combat 50 (Rat, the raw in the bank) (+3 pts, chain ~280 h); 1080 made now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#11",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 288 h to the gate at the pace before it); Rat at 0.94 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 69 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#15",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Fifth#1",
+  "why": "fighter, a need's kill: supply: coins: 108 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~609 h); cancels task 0 of 225 Skeleton for a coin (3.0 h left, a fresh draw 1.8 h + a coin 0.5 h), takes a monsters task at the master (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Fifth#2",
+  "why": "fighter, a need's kill: supply: coins: 93 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~609 h); task: 0 of 225 Blue Slime, 225 kills now, turned in at the master (1.3 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#16",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:25@Fourth#1",
+  "why": "worker, a need: level: jewelrycrafting 24 → 25 for gear: Sapphire Amulet ×1 for Fifth (cultist_purifier (cultist_acolyte); the_reaper (death_knight)) — the best: Fifth, the_reaper (death_knight): H0 105 h, with it 3.5 h + 31 h to make; +3 pts behind it; one level of jewelrycrafting training, 1 now (6.2 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#17",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 261 h to the gate at the pace before it); Rat at 0.91 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#1",
+  "why": "fighter, a need's kill: supply: coins: 138 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~609 h); task: 0 of 225 Chicken, 225 kills now, turned in at the master (0.3 h); wins 100% of fights, 5 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:emerald@Third#1",
+  "why": "worker, a need: supply: Emerald: 1.0 short for Emerald Amulet for First (the_reaper (death_knight)) (+3 pts, chain ~36 h); 1 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:small_health_potion@Third#1",
+  "why": "worker, a need: supply: Small Health Potion: 4886 short for Small Health Potion ×100 for event full_moon (Full Moon Vampire, one spawn) (+3 pts, chain ~13 h); 78 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "gear:piggy_pants@Third#1",
+  "why": "worker, a need: supply: gear: Piggy Pants ×2 for First (combat 27 → 37 (of 50); the_reaper (death_knight)), Fifth (combat 27 → 37 (of 50); closing_the_gate (demon); closing_the_gate (imp)) — the best: First, the_reaper (death_knight): H0 105 h, with it 5.1 h + 30 h to make; +3 pts behind it; 1 now"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cyclops_eye@Third#1",
+  "why": "worker, a need: supply: Cyclops Eye: 96 actions short for Piggy Helmet for First (the_reaper (death_knight)) (+3 pts, chain ~34 h); Cyclops: 64 combat XP a kill, 4% of the lane's best; 1 kills now (0.5 h) with 11 Minor Health Potion and 3 Cooked Trout from the bank; wins 95% of fights, 1685 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#2",
+  "why": "fighter, a need's kill: supply: coins: 175 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~608 h); task: 0 of 225 Vampire, 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 50 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Fifth#3",
+  "why": "fighter, a need's kill: supply: coins: 175 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~606 h); task: 0 of 225 Flying Snake, 115 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 28 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:snakeskin@Third#1",
+  "why": "worker, a need: supply: Snakeskin: 11 short for Piggy Pants for First (the_reaper (death_knight)) (+3 pts, chain ~35 h); 9 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:snake_hide@Third#1",
+  "why": "worker, a need: supply: Snake Hide: 84 actions short for Emerald Amulet for First (the_reaper (death_knight)) (+3 pts, chain ~34 h); Flying Snake: 0 combat XP a kill; 84 kills now (1.1 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 28 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#3",
+  "why": "fighter, a need's kill: supply: coins: 175 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~606 h); task: 20 of 225 Vampire, 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 50 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:sunflower@Second#1",
+  "why": "worker, a need: supply: Sunflower: 5090 actions short for Small Health Potion ×200 for event full_moon (Full Moon Vampire, one spawn) (+3 pts, chain ~13 h); Sunflower Field: 0 alchemy XP a gather; 212 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#4",
+  "why": "fighter, a need's kill: supply: coins: 175 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~606 h); task: 40 of 225 Vampire, 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 50 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "gear:piggy_pants@Third#1",
+  "why": "worker, a need: supply: gear: Piggy Pants ×2 for Fifth (combat 27 → 37 (of 50); closing_the_gate (demon); closing_the_gate (imp)), First (the_reaper (death_knight)) — the best: First, the_reaper (death_knight): H0 104 h, with it 5.2 h + 27 h to make; +3 pts behind it; 2 now"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:sunflower@Third#1",
+  "why": "worker, a need: supply: Sunflower: 4152 actions short for Small Health Potion ×100 for event full_moon (Full Moon Vampire, one spawn) (+3 pts, chain ~11 h); Sunflower Field: 0 alchemy XP a gather; 212 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Fifth#4",
+  "why": "fighter, a need's kill: supply: coins: 175 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~606 h); task: 115 of 225 Flying Snake, 110 kills now, turned in at the master (1.4 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 28 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#5",
+  "why": "fighter, a need's kill: supply: coins: 172 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~606 h); task: 60 of 225 Vampire, 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 51 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#6",
+  "why": "fighter, a need's kill: supply: coins: 172 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~606 h); task: 80 of 225 Vampire, 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 51 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:small_health_potion@Second#1",
+  "why": "worker, a need: supply: Small Health Potion: 3010 short for Small Health Potion ×200 for event full_moon (Full Moon Vampire, one spawn) (+3 pts, chain ~12 h); 142 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:dead_wood_plank@Second#1",
+  "why": "worker, a need: supply: Dead Wood Plank: 10 short for Lizard Skin Armor for Fifth (combat 27 → 37 (of 50)) (+3 pts, chain ~292 h); 10 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:jasper_crystal@Second#1",
+  "why": "worker, a need: supply: Jasper Crystal: 10 short for Dreadful Ring for Fifth (combat 27 → 37 (of 50)) (+3 pts, chain ~292 h); 1 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#1",
+  "why": "worker, a need: supply: Iron Ore: 33 actions short for Steel Fishing Rod for Third (fishing 20 → 50 and 3 gathering objectives (tool: 90.6 h saved)) (+1 pts, chain ~709 h); Iron Rocks: 0 mining XP a gather; 33 gathers now (0.3 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:cooked_trout@Third#1",
+  "why": "worker, a need: supply: Cooked Trout: 84 short for Cooked Trout ×4135 for Fifth's road to combat 50 (Rat, the raw in the bank) (+3 pts, chain ~260 h); 84 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Second#1",
+  "why": "worker, a need: supply: Steel Bar: 11 short for Steel Fishing Rod for Third (fishing 20 → 50 and 3 gathering objectives (tool: 90.6 h saved)) (+1 pts, chain ~708 h); 11 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#7",
+  "why": "fighter, a need's kill: supply: coins: 140 short for Lizard Skin Armor for Fifth (combat 27 → 37 (of 50)) (+3 pts, chain ~292 h); task: 100 of 225 Vampire, 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 51 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:small_health_potion@Second#1",
+  "why": "worker, a need: supply: Small Health Potion: 2768 short for Small Health Potion ×1444 for closing_the_gate (Imp, 2 chunks) (+4 pts, chain ~554 h); 140 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "gear:lizard_skin_armor@Third#1",
+  "why": "worker, a need: supply: gear: Lizard Skin Armor ×1 for Fifth (combat 27 → 37 (of 50); cultist_purifier (cultist_acolyte)) — the best: Fifth, combat 27 → 37 (of 50): H0 ∞ h, with it 94 h + 22 h to make; +3 pts behind it; 1 now"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Fifth#5",
+  "why": "fighter, a need's kill: supply: coins: 140 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~609 h); task: 0 of 225 Yellow Slime, 225 kills now, turned in at the master (0.6 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, craft to 30: gearcrafting 25 → 30: one level of gearcrafting training, 1 now (6.3 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:weaponcrafting:30@Second#1",
+  "why": "worker, craft to 30: weaponcrafting 22 → 30: one level of weaponcrafting training, 1 now (4.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@First#1",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 423 h to the gate at the pace before it); Rat at 0.90 XP/s, 20 now (0.4 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 68 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Fifth#6",
+  "why": "fighter, a need's kill: supply: coins: 129 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~607 h); task: 0 of 225 Pig, 75 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#1",
+  "why": "fighter, a need's kill: supply: coins: 129 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~607 h); task: 120 of 225 Vampire, 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@First#1",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 361 h to the gate at the pace before it); Imp at 0.65 XP/s, 11 now (0.5 h) with 46 Cooked Trout from the bank; the bag caps it at 11 kills (3.43 Cooked Trout a kill, 49 is a third of 148); wins 88% of fights, 165 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@First#1",
+  "why": "fighter, a need's kill: supply: coins: 129 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~607 h); task: 140 of 225 Vampire, 20 kills now (0.6 h) with 48 Cooked Trout from the bank; the bag caps it at 20 kills (2 Cooked Trout a kill, 49 is a third of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@First#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Second#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Third#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Fourth#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Fifth#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:golden_egg@First#1",
+  "why": "fighter, no fight admitted: supply: Golden Egg: 2000 actions short for turning_treasures_to_gold (+2 pts, chain ~5.1 h); Chicken: 0 combat XP a kill; 119 kills now (1.5 h); rests (no food heals so little); wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:cowhide@Second#1",
+  "why": "fighter, a need's kill: supply: Cowhide: 464 actions short for Hard Leather Pants for Fifth (arachnophobia_conquered (spider)) (+2 pts, chain ~67 h); Cow: 0 combat XP a kill; 242 kills now (1.5 h); rests (no food heals so little); wins 100% of fights, 22 s a win"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:ash_wood@Third#1",
+  "why": "worker, a need: supply: Ash Wood: 280 actions short for Battlestaff for Fifth (arachnophobia_conquered (spider)) (+2 pts, chain ~67 h); Ash Tree: 0 woodcutting XP a gather; 205 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:ash_wood@Fourth#1",
+  "why": "worker, a need: supply: Ash Wood: 280 actions short for Battlestaff for Fifth (arachnophobia_conquered (spider)) (+2 pts, chain ~67 h); Ash Tree: 0 woodcutting XP a gather; 205 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:golden_egg@Fifth#1",
+  "why": "fighter, no fight admitted: supply: Golden Egg: 2000 actions short for turning_treasures_to_gold (+2 pts, chain ~5.1 h); Chicken: 0 combat XP a kill; 119 kills now (1.5 h); rests (no food heals so little); wins 100% of fights, 45 s a win"
+ }
+]

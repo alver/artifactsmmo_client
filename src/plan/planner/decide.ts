@@ -58,7 +58,7 @@ import { sourceFor, targetsOf } from "./targets";
 import { GEAR_SLOTS, slotCode } from "../../types/api";
 import type { Parent } from "./supply";
 import type { Character, GearSlot } from "../../types/api";
-import type { Answer, Input, Lane, Place, Source, Step, Target, Toll, Work, World } from "./types";
+import type { Answer, Input, Lane, Place, Reason, Rule, Source, Step, Target, Toll, Work, World } from "./types";
 
 export { met } from "./gates";
 
@@ -83,6 +83,31 @@ function laneOfWork(w: Work, ch: Character, world: World): Lane | undefined {
 }
 
 const fmt = (h: number): string => (!Number.isFinite(h) ? "∞" : h < 10 ? h.toFixed(1) : String(Math.round(h)));
+
+/** Task 028 (A.1): each role's order of rules, as the page lists it (rank() below is the order itself). */
+export const ORDER: Record<"fighter" | "worker" | "none", [Rule, string][]> = {
+  fighter: [["first", "an achievement on ⭐ first"], ["forging", "forging by need"], ["need-kill", "a kill a need of the road asks"], ["xp-pick", "the XP pick"], ["free", "no fight admitted, or the level cap: today's rule"]],
+  worker: [["need", "a need of the fighters' road, or a tool"], ["short", `an objective done within ${WORKER_SHORT_H} h`], ["craft-ahead", "its gear craft ahead of the fighters"], ["today", "today's rule in its lanes"], ["fallback", "the fallback: gather in its lanes"]],
+  none: [["first", "an achievement on ⭐ first"], ["today", "today's rule"], ["fallback", "the fallback: gather"]],
+};
+/** Task 028: a candidate's reason before the rule that takes it is known. */
+type Parts = Omit<Reason, "rule" | "role" | "next">;
+/** The why's own clauses of a note (fightTake's), cut at "; " outside parentheses. */
+function clauses(note: string): string[] {
+  const out: string[] = [];
+  let d = 0, cur = "";
+  for (let i = 0; i < note.length; i++) {
+    const c = note[i];
+    if (c === "(") d++;
+    else if (c === ")") d--;
+    if (d === 0 && note.startsWith("; ", i)) { out.push(cur); cur = ""; i++; continue; }
+    cur += c;
+  }
+  out.push(cur);
+  return out.map((x) => x.trim()).filter(Boolean);
+}
+const parts = (goal: string, forWho: string | undefined, because: (string | false | undefined)[], note = ""): Parts =>
+  ({ goal, ...(forWho ? { for: forWho } : {}), because: because.filter((x): x is string => !!x), limits: clauses(note) });
 
 interface Plan { work: Work; units: number; hours: number; place?: Place; until?: number; sources?: Source[]; withdraw?: Record<string, number>; toll?: Toll }
 
@@ -233,7 +258,8 @@ export function rank(name: string, world: World, free = false): Ranking {
   // Task 015, settled point 4: while fewer than TIDY_BELOW bank slots are free, a tidy step goes before any other (task
   // 027: not a fighter's — bank.ts tidyStep)
   const tidy = tidyStep(world, name);
-  if (tidy) return { step: tidy, objectives: [], levels: [], supply: [], fillers: [], lanes };
+  const realRole = roleOf(name, world) as Reason["role"];
+  if (tidy) return { step: { ...tidy, reason: { ...(realRole ? { role: realRole } : {}), rule: "tidy", goal: "free bank slots", because: [tidy.why.replace(/^tidy: /, "")], limits: [] } }, objectives: [], levels: [], supply: [], fillers: [], lanes };
   const targets = targetsOf(world);
   const calH = Math.max(0, (Date.parse(cfg.deadline) - world.now) / 3.6e6);
   const last = world.current[name];
@@ -255,11 +281,12 @@ export function rank(name: string, world: World, free = false): Ranking {
   const blocked = (key: string): boolean => (world.blocked[`${key}@${name}`]?.until ?? 0) > world.now;
   const pts = (code: string, p: number): number => p * (cfg.weight[code] ?? 1);
   const boost = (key: string): number => (last?.target === key ? 1.1 : 1);
-  const stepOf = (t: Target, p: Plan & { wear?: Record<string, string> }, as: Answer, score: number, why: string, extra: Partial<Step> = {}): Step => {
+  const stepOf = (t: Target, p: Plan & { wear?: Record<string, string> }, as: Answer, score: number, why: string, extra: Partial<Step> = {}, pt?: Parts): Step => {
     const n = last?.target === t.key ? Number(last.key.split("#").pop()) + 1 : 1;
     // task 017, settled point 2: the toll of the round trip (fares, keys, the carried item) is withdrawn — and reserved — by the step
     const tw = p.toll ? ` — the round trip through ${p.toll.via.length} conditional transition${p.toll.via.length === 1 ? "" : "s"} takes ${[...(p.toll.gold ? [`${p.toll.gold} gold`] : []), ...Object.entries({ ...p.toll.keys, ...p.toll.carried }).map(([c, q]) => `${q} ${itemName(c)}`)].join(" and ")}` : "";
-    return { key: `${t.key}@${name}#${n}`, target: t.key, character: name, as, work: p.work, units: p.units, hours: p.hours, score, why: why + tw, place: p.place, sources: p.sources, withdraw: withToll(p.withdraw, p.toll), until: p.until, ...(p.wear ? { wear: p.wear } : {}), ...(p.toll ? { toll: p.toll } : {}), ...extra };
+    const reason: Reason | undefined = pt && { rule: "today", ...pt, limits: tw ? [...pt.limits, tw.slice(3)] : pt.limits };
+    return { key: `${t.key}@${name}#${n}`, target: t.key, character: name, as, work: p.work, units: p.units, hours: p.hours, score, why: why + tw, place: p.place, sources: p.sources, withdraw: withToll(p.withdraw, p.toll), until: p.until, ...(p.wear ? { wear: p.wear } : {}), ...(p.toll ? { toll: p.toll } : {}), ...extra, ...(reason ? { reason } : {}) };
   };
   /** Task 014, settled point 4: a kill plan's consumables — its `withdraw`, its kills capped at what the stock a work of
    *  this score may reserve covers (`per` kills a unit); a set without potions when they cannot be stocked; undefined: no
@@ -295,8 +322,9 @@ export function rank(name: string, world: World, free = false): Ranking {
   const coinCand = (short: number, par: Parent, t: Target, via: string[]): Candidate | undefined => {
     const fit = par.fit * boost(t.key), any = par.any * boost(t.key);
     const head = `coins: ${fmt(short)} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h)`;
-    const cand = (p: Plan & { wear?: Record<string, string> }, why: string, visit?: Step["visit"]): Candidate =>
-      ({ target: t, step: stepOf(t, p, "supply", fit, why, { parent: par.key, ...(visit ? { visit } : {}) }), fit, any, ...flags(via) });
+    const cand = (p: Plan & { wear?: Record<string, string> }, why: string, pt: Parts, visit?: Step["visit"]): Candidate =>
+      ({ target: t, step: stepOf(t, p, "supply", fit, why, { parent: par.key, ...(visit ? { visit } : {}) }, pt), fit, any, ...flags(via) });
+    const goal = `tasks coins: ${fmt(short)} short`, chain = `+${par.points} pts, chain ~${fmt(par.hours)} h`;
     const cancel = cancelOf(ch, world);
     const tk = cancel ? undefined : monstersTask(ch);
     if (!tk) {
@@ -304,7 +332,7 @@ export function rank(name: string, world: World, free = false): Ranking {
       const sec = v ? visitSec(ch, world, v.cancel) : Infinity;
       if (!v || !Number.isFinite(sec)) return undefined;
       const what = v.cancel ? `cancels task ${taskText(ch)} for a coin (${cancel ?? "a fighter's items task"})` : ch.task ? `turns in task ${taskText(ch)}` : "holds no task";
-      return cand({ work: { kind: "task" }, units: 1, hours: sec / 3600 }, `${head}; ${what}, takes a monsters task at the master (${fmt(sec / 3600)} h)`, { at: "start", ...v });
+      return cand({ work: { kind: "task" }, units: 1, hours: sec / 3600 }, `${head}; ${what}, takes a monsters task at the master (${fmt(sec / 3600)} h)`, parts(goal, par.label, [chain, `${what}, takes a monsters task at the master`]), { at: "start", ...v });
     }
     const left = ch.task_total - ch.task_progress, w: Work = { kind: "kill", monster: tk };
     const spot = nearestSpot(placeOf(ch), "monster", tk, world, name);
@@ -319,7 +347,7 @@ export function rank(name: string, world: World, free = false): Ranking {
       if (g) { f = g; end = false; sec = 0; }
     }
     const hours = f.hours + (Number.isFinite(sec) ? sec : 0) / 3600;
-    return cand({ ...f, hours }, `${head}; task: ${taskText(ch)}, ${f.units} kills now${end ? ", turned in at the master" : ""} (${fmt(hours)} h)${f.note}`, end ? { at: "end" } : undefined);
+    return cand({ ...f, hours }, `${head}; task: ${taskText(ch)}, ${f.units} kills now${end ? ", turned in at the master" : ""} (${fmt(hours)} h)${f.note}`, parts(goal, par.label, [chain, `task: ${taskText(ch)}, ${f.units} kills now${end ? ", turned in at the master" : ""}`], f.note), end ? { at: "end" } : undefined);
   };
 
   const objectives: Candidate[] = [];
@@ -340,12 +368,13 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (!p) continue;
     const what = p.work.kind === "train" ? "recycled" : unitWord(t.work);
     const why = `${achievementOf(t.achievement)?.name ?? t.achievement}: ${left} ${what} left, +${t.points} pts in ~${fmt(h)} h; ${p.units} now (${fmt(p.hours)} h)${p.note}`;
-    (t.filler ? fillers : objectives).push({ target: t, step: stepOf(t, p, t.filler ? "filler" : "objective", any * fit, why), fit: any * fit, any, ...(outside(t.work) ? { out: true } : {}) });
+    const pt = parts(`${achievementOf(t.achievement)?.name ?? t.achievement}: ${left} ${what} left`, undefined, [`+${t.points} pts in ~${fmt(h)} h`, `${p.units} now (${fmt(p.hours)} h)`], p.note);
+    (t.filler ? fillers : objectives).push({ target: t, step: stepOf(t, p, t.filler ? "filler" : "objective", any * fit, why, {}, pt), fit: any * fit, any, ...(outside(t.work) ? { out: true } : {}) });
   }
 
   // Rule 3: per lane, the next gate behind which open achievements sit, and the bundle up to it (bundle.ts).
   const levels: Candidate[] = [];
-  const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string, need = false): void => {
+  const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string, need: boolean, pt: (what: string) => Omit<Parts, "limits">): void => {
     // task 027: a fighter's level is combat, a worker's never; 027b: and a fighter's own gear craft where a needed piece asks it
     if (fighter ? lane !== "combat" && !(need && GEAR_CRAFT.includes(lane)) : worker && lane === "combat") return;
     const t = targets.find((x) => x.key === `lvl:${lane}:${to}`) ?? { key: `lvl:${lane}:${to}`, points: 0, work: { kind: "level", lane, to }, left: 1, gates: [], filler: false };
@@ -359,7 +388,8 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (!p0 || !p) return;
     const i = levels.findIndex((c) => c.target.key === t.key);
     if (i >= 0) levels.splice(i, 1);
-    levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p0.what, p) + p.note), fit: fit * boost(t.key), any: any * boost(t.key), ...(need || had?.need ? { need: true } : {}) });
+    const lp = pt(p0.what);
+    levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p0.what, p) + p.note, {}, { ...lp, because: [...lp.because, `${p.units} now (${fmt(p.hours)} h)`], limits: clauses(p.note) }), fit: fit * boost(t.key), any: any * boost(t.key), ...(need || had?.need ? { need: true } : {}) });
   };
 
   // Gear by need (section 4) and supply through the bank (section 3).
@@ -387,7 +417,8 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (crafterOf(r.skill, world) !== name || (fighter && !need)) continue; // task 027b: a fighter forges only what a fighter needs (027c: or a tool)
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
-      levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key));
+      levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key),
+        (what) => ({ goal: `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level}`, for: n.for, because: [`for ${itemName(code)} ×${qty} (${n.work}): H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`, what] }));
       continue;
     }
     const key = `gear:${code}`;
@@ -396,7 +427,8 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (blocked(key) || !spot || runs < 1) continue;
     const t: Target = { key, points: 0, work: { kind: "craft", code }, left: qty, gates: [], filler: false };
     const p: Plan = { work: t.work, units: runs, hours: (runs * CRAFT_SEC + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(code, runs)) };
-    supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }), fit: n.fit * boost(key), any: n.any * boost(key), ...(needs.has(par.key) ? { need: true } : {}) });
+    const pt = parts(`${itemName(code)} ×${qty}`, [...works.keys()].join(", "), [`the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make`, `+${n.points} pts behind it`, `${runs} now`]);
+    supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }, pt), fit: n.fit * boost(key), any: n.any * boost(key), ...(needs.has(par.key) ? { need: true } : {}) });
   }
   // task 014, settled point 3: potions and food by need, parents of supply with the score of the work they are for
   for (const p of consParents(world, name)) {
@@ -464,13 +496,15 @@ export function rank(name: string, world: World, free = false): Ranking {
     const unit = s.kind === "src" ? (p.work.kind === "kill" ? "kills" : "gathers") : "made";
     const why = `${itemName(s.code)}: ${fmt(s.short)} ${s.kind === "src" ? "actions" : ""} short for ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h)${node}; ${p.units} ${unit} now (${fmt(p.hours)} h)${note}`;
     // task 013, settled point 9: the answer is prefixed once, where the chosen step's why is made ("supply: supply:")
-    supply.push({ target: t, step: stepOf(t, p, "supply", par.fit * boost(s.key), why.replace("  ", " "), { parent: par.key }), fit: par.fit * boost(s.key), any: par.any * boost(s.key), ...flags(s.via), ...(outside(p.work) ? { out: true } : {}) });
+    const pt = parts(`${itemName(s.code)}: ${fmt(s.short)}${s.kind === "src" ? " actions" : ""} short`, par.label, [`+${par.points} pts, chain ~${fmt(par.hours)} h`, node.slice(2), `${p.units} ${unit} now (${fmt(p.hours)} h)`], note);
+    supply.push({ target: t, step: stepOf(t, p, "supply", par.fit * boost(s.key), why.replace("  ", " "), { parent: par.key }, pt), fit: par.fit * boost(s.key), any: par.any * boost(s.key), ...flags(s.via), ...(outside(p.work) ? { out: true } : {}) });
   }
   // Task 012, settled point 8: a craft of a parent's chain gated at a level nobody that may craft it has — the level is
   // a candidate for this lane's role holders, carrying the parent's score (as a crafter's missing level for gear).
   for (const par of parents) for (const g of par.gated ?? []) {
     if (!Number.isFinite(g.hours) || !lanes.includes(g.lane)) continue;
-    levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key));
+    levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key),
+      (what) => ({ goal: `${g.lane} ${levelOf(ch, g.lane)} → ${g.level}`, for: par.label, because: [`for ${itemName(g.code)} in its chain: +${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}`, what] }));
   }
 
   // Rule 3: per lane, the next gate behind which open achievements sit, and the bundle up to it (bundle.ts) — task 027g: after
@@ -484,7 +518,8 @@ export function rank(name: string, world: World, free = false): Ranking {
     const road = b.wall ? `its road ends at ${b.wall} (no XP source there; ${fmt(b.hGate)} h to the gate at the pace before it)` : `${fmt(b.hGate)} h to the gate`;
     // task 013: an event achievement behind the gate says by how many spawns of what, with how many members
     const evs = b.events.map((e) => `; ${e.code} behind it, by ${e.spawns} spawns of ${e.event}, about ${fmt(e.days)} days with ${e.members} ${e.members === 1 ? "member" : "members"}`).join("");
-    levelCand(lane, to, s.fit, s.any, (what, p) => `${lane} ${L} → ${b.next}: +${s.points} pts behind it (${b.behind.map((x) => x.code).join(", ")}), ${road}${evs}; ${what}, ${p.units} now (${fmt(p.hours)} h)`);
+    levelCand(lane, to, s.fit, s.any, (what, p) => `${lane} ${L} → ${b.next}: +${s.points} pts behind it (${b.behind.map((x) => x.code).join(", ")}), ${road}${evs}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, false,
+      (what) => ({ goal: `${lane} ${L} → ${b.next}`, because: [`+${s.points} pts behind it (${b.behind.length} achievement${b.behind.length === 1 ? "" : "s"}), ${road}${evs}`, what] }));
   }
 
   const byScore = (k: "fit" | "any") => (a: Candidate, b: Candidate): number => b[k] - a[k] || (a.target.key < b.target.key ? -1 : a.target.key > b.target.key ? 1 : 0);
@@ -510,6 +545,7 @@ export function rank(name: string, world: World, free = false): Ranking {
     : fill ? { ...fill.step, why: `filler (${realAny ? "nothing else fits the deadline" : "nothing else scores"}): ${fill.step.why}` }
     : fillAny ? { ...fillAny.step, why: `filler (nothing else scores): ${fillAny.step.why}` }
     : fallback(ch, world, last, worker ? lanes : undefined);
+  const todayRule = (): Rule => chosen ? (firsts.some((c) => c.target.key === chosen.target.key) ? "first" : "today") : fill || fillAny ? "today" : "fallback";
 
   // Task 027: a worker's tiers before today's rule; a fighter's XP pick where nothing ranks
   const tier = (pool: Candidate[], label: string): Step | undefined => {
@@ -526,12 +562,14 @@ export function rank(name: string, world: World, free = false): Ranking {
     const p = lane && !blocked(key) ? planLevel(lane, ch, world, bonus) : undefined;
     if (!lane || !p) return undefined;
     const t: Target = targets.find((x) => x.key === key) ?? { key, points: 0, work: { kind: "level", lane, to: craftLevel }, left: 1, gates: [], filler: false };
-    const s = stepOf(t, p, "level", 0, `worker, craft to ${craftLevel}: ${lane} ${levelOf(ch, lane)} → ${craftLevel}: ${p.what}, ${p.units} now (${fmt(p.hours)} h)`);
+    const s = stepOf(t, p, "level", 0, `worker, craft to ${craftLevel}: ${lane} ${levelOf(ch, lane)} → ${craftLevel}: ${p.what}, ${p.units} now (${fmt(p.hours)} h)`, {},
+      parts(`${lane} ${levelOf(ch, lane)} → ${craftLevel}`, "the fighters' next tier", [`the top fighter's combat ${fighterTop} + 5`, p.what, `${p.units} now (${fmt(p.hours)} h)`]));
     return !stuck || !newCodes(s, world).length ? s : undefined;
   };
   const xpPick = (): Step | undefined => {
     const c = levels.find((x) => x.target.key.startsWith("lvl:combat:")); // the combat level's candidate: the same pick
-    if (c) return { ...c.step, why: `the XP pick: ${c.step.why}` };
+    const goal = `combat ${levelOf(ch, "combat")} → ${Number.isFinite(cap) ? cap : levelOf(ch, "combat") + 1}`; // 027e: a fighter's level is a goal in itself
+    if (c) return { ...c.step, why: `the XP pick: ${c.step.why}`, ...(c.step.reason ? { reason: { ...c.step.reason, goal, for: name } } : {}) };
     const L = levelOf(ch, "combat"), key = `lvl:combat:${L + 1}`;
     if (blocked(key)) return undefined;
     let p0 = planLevel("combat", ch, world, bonus);
@@ -539,12 +577,16 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (p0 && !p) p = (p0 = planLevel("combat", ch, gearWorld(world), bonus)) && fightPlan(p0, 1, 0, 0, Infinity);
     if (!p0 || !p) return undefined;
     const t: Target = { key, points: 0, work: { kind: "level", lane: "combat", to: L + 1 }, left: 1, gates: [], filler: false };
-    return stepOf(t, p, "level", 0, `the XP pick: combat ${L}: ${p0.what}, ${p.units} now (${fmt(p.hours)} h)${p.note}`);
+    return stepOf(t, p, "level", 0, `the XP pick: combat ${L}: ${p0.what}, ${p.units} now (${fmt(p.hours)} h)${p.note}`, {}, parts(goal, name, [p0.what, `${p.units} now (${fmt(p.hours)} h)`], p.note));
   };
-  let step: Step;
+  let step: Step, rule: Rule;
   if (worker) {
     const short = objectives.filter((c) => fresh(c) && achHours(c.target.achievement!, name, world) <= WORKER_SHORT_H);
-    step = tier(all.filter((c) => c.need), "a need") ?? tier(short, `done within ${WORKER_SHORT_H} h`) ?? craftTo() ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
+    const need = tier(all.filter((c) => c.need), "a need");
+    const sh = need ? undefined : tier(short, `done within ${WORKER_SHORT_H} h`);
+    const ca = need || sh ? undefined : craftTo();
+    step = need ?? sh ?? ca ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
+    rule = need ? "need" : sh ? "short" : ca ? "craft-ahead" : todayRule();
   } else if (fighter) {
     // task 027e (Alex: a fighter's level is a goal in itself), an order of work: (1) an achievement on config.first; (2)
     // forging by need (027b: one weapon speeds every fighter); (3) a kill a need of a fighter's road asks (a src: kill or
@@ -564,21 +606,24 @@ export function rank(name: string, world: World, free = false): Ranking {
     const c = first ?? forge ?? kill;
     if (!c && !x) {
       const r = rank(name, world, true);
-      return { ...r, step: { ...r.step, why: `fighter, ${capped ? "at the level cap" : "no fight admitted"}: ${r.step.why}` } };
+      return { ...r, step: { ...r.step, why: `fighter, ${capped ? "at the level cap" : "no fight admitted"}: ${r.step.why}`, ...(r.step.reason ? { reason: { ...r.step.reason, role: "fighter", rule: "free" } } : {}) } };
     }
     step = c ? { ...c.step, why: `fighter, ${c === first ? "first" : c === forge ? "forging" : "a need's kill"}: ${c.step.as}: ${c.step.why}` } : { ...x!, why: `fighter: ${x!.why}` };
-  } else step = today();
+    rule = c ? (c === first ? "first" : c === forge ? "forging" : "need-kill") : "xp-pick";
+  } else { step = today(); rule = todayRule(); }
+  const because: string[] = [], limits: string[] = []; // task 028: the clauses added below, beside the why's
   // Task 027d: a fighter's kill step starts at the monsters master when it holds no task, a finished one or an items task
   // (turn in, take a monsters task; an items task cancelled for a coin) — its walk in the step's hours; the filler's task,
   // worked on purpose, is cancelled there when rule 4 says so (tasks.ts cancelOf). A held task nobody works stays.
   if (holder && step.work.kind === "kill" && !step.visit) {
     const v = startVisit(ch, world), sec = v ? visitSec(ch, world, v.cancel) : Infinity;
-    if (v && Number.isFinite(sec)) step = { ...step, hours: step.hours + sec / 3600, visit: { at: "start", ...v }, why: `${step.why}; task: ${v.cancel ? `cancels ${taskText(ch)} for a coin, then takes` : ch.task ? `turns in ${taskText(ch)}, then takes` : "takes"} a monsters task at the master first` };
+    const said = `task: ${v?.cancel ? `cancels ${taskText(ch)} for a coin, then takes` : ch.task ? `turns in ${taskText(ch)}, then takes` : "takes"} a monsters task at the master first`;
+    if (v && Number.isFinite(sec)) { step = { ...step, hours: step.hours + sec / 3600, visit: { at: "start", ...v }, why: `${step.why}; ${said}` }; limits.push(said); }
   } else if (step.work.kind === "task" && step.as !== "supply") {
     const why = cancelOf(ch, world), sec = why ? visitSec(ch, world, ch.task) : Infinity;
-    if (why && Number.isFinite(sec)) step = { ...step, hours: step.hours + sec / 3600, visit: { at: "start", cancel: ch.task }, why: `${step.why}; task: cancels ${taskText(ch)} for a coin first (${why})` };
+    if (why && Number.isFinite(sec)) { step = { ...step, hours: step.hours + sec / 3600, visit: { at: "start", cancel: ch.task }, why: `${step.why}; task: cancels ${taskText(ch)} for a coin first (${why})` }; limits.push(`task: cancels ${taskText(ch)} for a coin first (${why})`); }
   }
-  if (held && step.work.kind === "kill" && step.work.monster === held && step.target !== "src:tasks_coin") step = { ...step, why: `${step.why}; task: ${taskText(ch)}` };
+  if (held && step.work.kind === "kill" && step.work.monster === held && step.target !== "src:tasks_coin") { step = { ...step, why: `${step.why}; task: ${taskText(ch)}` }; because.push(`task: ${taskText(ch)}`); }
   // task 027e (C.2): a candidate dropped for its score (0 or NaN: no tier takes it) is said — in the why, so in the journal
   const dropped = [...objectives, ...levels, ...supply, ...fillers].filter((c) => !(c.any > 0));
   if (dropped.length) step = { ...step, why: `${step.why}; dropped for its score: ${dropped.slice(0, 3).map((c) => `${c.target.key} (${c.any})`).join(", ")}${dropped.length > 3 ? ` and ${dropped.length - 3} more` : ""}` };
@@ -593,7 +638,14 @@ export function rank(name: string, world: World, free = false): Ranking {
     : Object.keys(step.withdraw ?? {}).filter((c) => item(c)?.type === "utility");
   const fight = step.work.kind === "kill" ? verdictOf(ch, world, step.work.monster, [...Object.values(wear ?? {}), ...pinned, ...pots]) : undefined;
   const why = fight ? `${step.why}; wins ${Math.round(fight.p * 100)}% of fights, ${Math.round(fight.sec)} s a win` : step.why;
-  return { step: { ...step, why, ...(wear ? { wear } : {}), ...(fight ? { fight } : {}) }, objectives, levels, supply, fillers, lanes };
+  if (fight) because.push(`wins ${Math.round(fight.p * 100)}% of fights, ${Math.round(fight.sec)} s a win`);
+  // task 028 (A.1): the reason in parts — the rule that took it, and the three candidates ranked next by today's scoring
+  const base = step.reason ?? { goal: step.target, because: [], limits: [] };
+  const next = [...objectives, ...levels, ...supply, ...fillers].filter((c) => c.any > 0 && c.target.key !== step.target)
+    .sort((a, b) => Number(b.fit > 0) - Number(a.fit > 0) || (b.fit > 0 ? b.fit - a.fit : b.any - a.any) || (a.target.key < b.target.key ? -1 : 1))
+    .slice(0, 3).map((c) => ({ text: `${c.step.as}: ${c.step.reason?.goal ?? c.target.key}`, score: c.fit > 0 ? c.fit : c.any, fits: c.fit > 0 }));
+  const reason: Reason = { ...base, ...(realRole ? { role: realRole } : {}), rule, because: [...base.because, ...because], limits: [...base.limits, ...limits], ...(next.length ? { next } : {}) };
+  return { step: { ...step, why, ...(wear ? { wear } : {}), ...(fight ? { fight } : {}), reason }, objectives, levels, supply, fillers, lanes };
 }
 
 /** C.4: a gather chunk on the best node of the character's highest gathering skill — always possible. Task 009:
@@ -621,6 +673,7 @@ function fallback(ch: Character, world: World, last: Step | undefined, lanes?: L
     key: `${key}@${ch.name}#${n}`, target: key, character: ch.name, as: "fallback", work: o.c.work, units: o.c.units, hours: o.c.hours, score: 0,
     why: `fallback (nothing else is open to ${ch.name}${o.until ? "; every fallback is blocked, this one ends first" : ""}): ${itemName(o.p.drop)} at ${o.skill} ${levelOf(ch, o.skill)}, ${o.c.units} now`, place: o.c.place, until: o.c.until,
     ...(o.c.toll ? { toll: o.c.toll, withdraw: withToll(undefined, o.c.toll) } : {}),
+    reason: { rule: "fallback", goal: `${o.skill} ${levelOf(ch, o.skill)}`, because: [`nothing else is open to ${ch.name}${o.until ? "; every fallback is blocked, this one ends first" : ""}`, `${itemName(o.p.drop)}, ${o.c.units} now (${fmt(o.c.hours)} h)`], limits: [] },
   };
 }
 

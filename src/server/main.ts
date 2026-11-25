@@ -17,8 +17,8 @@ import { constants, setPriority } from "node:os";
 import path from "node:path";
 import { effect } from "@preact/signals";
 import { expose, handlerFor } from "../lib/remote";
-import { devlog, setDevlogSink } from "../lib/devlog";
-import { fileSinks, journal, setRunInfo } from "../lib/journal";
+import { RUN, devlog, setDevlogSink } from "../lib/devlog";
+import { fileSinks, journal, runInfo, setRunInfo } from "../lib/journal";
 import { setDataReader } from "../catalog/load";
 import { hasToken, setToken } from "../api/client";
 import { SYNCED } from "../state/synced";
@@ -26,6 +26,8 @@ import { boot } from "../state/sync";
 import { queues } from "../state/queue";
 import { setOutlookRunner } from "../state/outlook";
 import { startLeaders } from "../state/leaders";
+import { hydrateLast24 } from "../state/last24";
+import { service } from "../state/store";
 
 const PORT = Number(process.env.PORT) || 5173;
 const DEV = process.argv.includes("--dev");
@@ -58,6 +60,7 @@ setDevlogSink(fileSinks({
   replace: (p, s) => (dirOf(p), writeFileSync(`${p}.tmp`, s), renameSync(`${p}.tmp`, p)),
   exists: (p) => existsSync(p),
   list: (p) => (existsSync(p) ? readdirSync(p) : []),
+  read: (p) => (existsSync(p) ? readFileSync(p, "utf8") : undefined),
 }, LOGS));
 
 /** The commit the checkout stood on at boot, read from .git (no child process): HEAD, its ref or packed-refs. */
@@ -77,6 +80,8 @@ function commitOf(): { commit?: string; branch?: string } {
   }
 }
 setRunInfo({ dev: DEV, ...commitOf() });
+hydrateLast24(); // task 028: the 24 hours a hero, from the journal files (before any record of this run)
+{ const i = runInfo(); service.value = { run: RUN, commit: i.commit, branch: i.branch, up: i.up, dev: !!i.dev }; }
 setDataReader(async (name) => JSON.parse(await readFile(path.join(ROOT, "public/data", `${name}.json`), "utf8")));
 try {
   process.loadEnvFile(path.join(ROOT, ".env"));

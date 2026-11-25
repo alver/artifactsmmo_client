@@ -1,26 +1,23 @@
-import { authed, catalogReady, lastError, moveMode, pendingRewards, route, syncedAt, syncing } from "./state/store";
+import { authed, catalogReady, lastError, pendingRewards, route, syncedAt, syncing } from "./state/store";
 import { logout, reconcile } from "./state/sync";
 import { clockTime } from "./lib/util";
 import { liveEvents } from "./state/events";
 import { TokenGate } from "./ui/Token";
 import { MapView } from "./ui/MapView";
-import { CharacterPanel } from "./ui/CharacterPanel";
 import { CatalogPanel } from "./ui/CatalogPanel";
 import { ItemPopup } from "./ui/ItemPopup";
 import { AchievementsTab } from "./ui/AchievementsPanel";
 import { SimPlayground } from "./ui/SimPlayground";
 import { ActivityPanel } from "./ui/ActivityLog";
 import { EventsPanel } from "./ui/EventsPanel";
-import { FleetView } from "./ui/FleetView";
 import { RoadmapTab } from "./ui/RoadmapTab";
 import { BankTab, ItemsTab, MonstersTab } from "./ui/TableTabs";
 import type { JSX } from "preact";
 
-/** Top-bar tabs: hash route → label + page. An empty or unknown route opens the Roadmap (task 019). */
+/** Top-bar tabs: hash route → label + page. An empty or unknown route opens the Roadmap (task 019) — task 028: an old
+ *  #/fleet or #/char too; the Roadmap is the one page of the fleet, the rest are read-only. */
 const TABS: [string, string, () => JSX.Element | null][] = [
   ["roadmap", "Roadmap", RoadmapTab],
-  ["fleet", "Fleet", FleetView],
-  ["char", "Character", CharacterPanel],
   ["bank", "Bank", BankTab],
   ["items", "Items", ItemsTab],
   ["monsters", "Monsters", MonstersTab],
@@ -40,26 +37,6 @@ function MapTab() {
         </aside>
       )}
       <CatalogPanel />
-    </div>
-  );
-}
-
-/**
- * Walk arms a map click; off the Map tab that click happens in this pop-up map.
- */
-function MapPickOverlay() {
-  if (route.value === "map" || !moveMode.value) return null;
-  const cancel = () => {
-    moveMode.value = null;
-  };
-  return (
-    <div class="ach-backdrop map-pick" onClick={cancel}>
-      <div class="map-pick-box" onClick={(e) => e.stopPropagation()}>
-        <MapView />
-        <button class="cat-close map-pick-close" title="Cancel" onClick={cancel}>
-          ✕
-        </button>
-      </div>
     </div>
   );
 }
@@ -102,7 +79,6 @@ export function App() {
         </div>
         <ActivityPanel />
       </div>
-      <MapPickOverlay />
       <ItemPopup />
     </div>
   );

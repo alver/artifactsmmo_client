@@ -2,7 +2,7 @@
 // read these directly and re-render automatically when they change — no manual
 // "renderCard()" calls (the maintainability pain of the old client).
 
-import { computed, effect, signal, type ReadonlySignal } from "@preact/signals";
+import { computed, signal, type ReadonlySignal } from "@preact/signals";
 import type { Account, AccountAchievement, ActiveEvent, BankDetails, BankItem, Character, CharacterOfferings, PendingItem } from "../types/api";
 import type { GameMap } from "../types/catalog";
 import { cooldownRemaining } from "../lib/util";
@@ -49,6 +49,8 @@ export const syncedAt = signal<number | null>(null);
 /** True while a reconcile sync is in flight. */
 export const syncing = signal(false);
 export const lastError = signal<string | null>(null);
+/** Task 028: the service this tab is a view of — its run id, commit and start (src/server/main.ts; synced). */
+export const service = signal<{ run: string; commit?: string; branch?: string; up: string; dev: boolean } | null>(null);
 
 /** Name of the currently selected character (highlights its card + map marker). */
 export const selectedCharacter = signal<string | null>(null);
@@ -133,21 +135,12 @@ export const route = computed(() => routeHash.value.replace(/^#\/?/, "").split(/
 export function go(tab: string): void {
   location.hash = `#/${tab}`;
 }
-/** Open a character's page (selects it, and the map centers on it when shown). */
+/** Show a hero (selects it — the map centers on it when shown): its card on the one page (task 028). */
 export function openCharacter(name: string): void {
   focusCharacter(name);
-  go("char");
+  go("roadmap");
+  setTimeout(() => document.getElementById(`hero-${name}`)?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
 }
-
-/**
- * When set to a character name, the next map-tile click moves that character
- * there instead of selecting the tile (armed by the Move button, cleared after
- * the click or on Escape). Auto-disarms below if the selection moves elsewhere.
- */
-export const moveMode = signal<string | null>(null);
-effect(() => {
-  if (moveMode.value && moveMode.value !== selectedCharacter.value) moveMode.value = null;
-});
 
 /**
  * Achievements tab state. Fetched on demand — when the tab is first shown and on
@@ -173,12 +166,6 @@ export const isOwned = (name: string): boolean => !!plannerOn.value[name];
  */
 export type CachedOfferings = CharacterOfferings & { fetchedAt: number };
 export const offerings = signal<Record<string, CachedOfferings>>({});
-
-/** Whether the Fleet tab's 🛐 seasonal-offerings section is expanded. */
-export const offeringsOpen = signal(false);
-
-/** Whether the Fleet tab's ⚔ group-fight (boss) section is expanded. */
-export const groupFightOpen = signal(false);
 
 /**
  * Unclaimed account rewards (GET /my/pending_items — achievement payouts wait

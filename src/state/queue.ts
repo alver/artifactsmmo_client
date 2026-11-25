@@ -1,8 +1,8 @@
 // The plan queue: a per-character list of actions (fight ×N / gather ×N /
 // craft ×N / withdraw / …) executed one item after another, top to bottom.
-// Task 018: its writers are the planner (state/planner.ts: a step appended to an
-// empty queue, and interrupt()) and the Group fight fold's `prepare`
-// (queuePrepare); the tab edits nothing.
+// Task 018: its writer is the planner (state/planner.ts: a step appended to an
+// empty queue, and interrupt()); task 028 deleted the Group fight fold's `prepare`
+// (queuePrepare). The tab edits nothing.
 //
 // PRESENCE in the signal does NOT mean running — the queue is a persistent
 // document; a `running` flag inside the entry marks execution.
@@ -18,13 +18,13 @@
 // Same no-poll contract as every runner: paced purely by action-echo cooldowns.
 
 import { effect, signal } from "@preact/signals";
-import { IS_SERVER, expose, rpc } from "../lib/remote";
+import { IS_SERVER } from "../lib/remote";
 import * as actions from "../api/actions";
 import { ApiError, api } from "../api/client";
 import { catalog, item as itemOf, itemName, monster as monsterOf, resource as resourceOf } from "../catalog";
 import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, ownedFightForecast, stripAllMap } from "../plan/jobgear";
-import { QUEUE_KINDS, queueItemText, withId } from "../plan/queue";
+import { QUEUE_KINDS, queueItemText } from "../plan/queue";
 import { CRAFT_SEC, FIGHT_SEC, autoRecyclable, craftXp, gatherSec, recycleReturn } from "../plan/xp";
 import { titleCase } from "../lib/util";
 import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendingRewards, pushLog, skillKey } from "./store";
@@ -51,7 +51,7 @@ export interface QueueState {
 const STORE_KEY = "ammo:v1:queue";
 // Task 018, settled point 9: what only the deleted writers wrote — these kinds, a `train` of combat or a gathering skill
 // or with `for`, the 🔁 flag — is dropped at load; sync.ts boot() writes one raw line for each (the log has no sink yet).
-const GONE_KINDS = ["move", "rest", "accept-task", "work-task", "deliver", "turn-in"];
+const GONE_KINDS = ["move", "rest", "accept-task", "work-task", "deliver", "turn-in", "prepare"]; // task 028: prepare
 const goneTrain = (it: QueueItem): boolean => it.kind === "train" && (!!it.for || !CRAFT_TRAIN_SKILLS.some(([k]) => k === it.skill));
 export const droppedAtLoad: string[] = [];
 function loadStored(): Record<string, QueueState> {
@@ -110,14 +110,14 @@ function patchItem(name: string, id: string, patch: Partial<QueueItem>): void {
 }
 
 /** The ops below refuse a character the planner owns; the planner writes through insertItem, dropItem,
- *  runQueue, haltQueue and resetQueue. Task 018: none of them is exposed to the tab but queuePrepare. */
+ *  runQueue, haltQueue and resetQueue. None of them is exposed to the tab (task 028: queuePrepare is gone). */
 function refused(name: string): boolean {
   if (!isOwned(name)) return false;
   pushLog({ ts: Date.now(), character: name, action: "queue", text: "the planner owns this queue — not changed", kind: "bad" });
   return true;
 }
 
-/** Append (or insert at `index`) an item; creates the character's queue lazily. The harness's and queuePrepare's. */
+/** Append (or insert at `index`) an item; creates the character's queue lazily. The harness's. */
 export function addItem(name: string, item: QueueItem, index?: number): void {
   if (refused(name)) return;
   const cur = queues.value[name] ?? { items: [], running: false };
@@ -527,32 +527,6 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       }
       if (!desired) return true; // no set for this job (unknown monster / job "none") — keep current
       return (await gearSwapStep(name, ch, desired, ctx)) === "done";
-    }
-    case "prepare": {
-      const m = monsterOf(it.monster);
-      const tile = m ? nearest("monster", it.monster, ch) : undefined;
-      if (!m || !tile) return skipItem(name, it, missingText("monster", it.monster, ch));
-      const desired = desiredForJob(name, ch, { kind: "fight", monster: it.monster });
-      if (!desired) throw new Error(`can't plan gear vs ${m.name}`);
-      if (!it.geared) {
-        // One full reset (the differ then only tops up — a second reset would walk back to bank).
-        if ((await gearSwapStep(name, ch, { ...RESET_UTILITY_STRIP, ...desired }, ctx, { reset: true })) === "acted") return false;
-        patchItem(name, it.id, { geared: true });
-        return false;
-      }
-      if ((await provisionPotions(name, ch, desired, ctx)) === "acted") return false;
-      if ((await gearSwapStep(name, ch, desired, ctx)) === "acted") return false; // equips what was just brewed
-      if (!isAt(ch, tile)) {
-        ctx.note(`→ ${m.name}`);
-        await moveTo(name, tile);
-        return false;
-      }
-      if (ch.hp < ch.max_hp) {
-        ctx.note("resting");
-        await step(name, () => actions.rest(name));
-        return false;
-      }
-      return true;
     }
     case "claim": {
       // A reward that does not fit the bag answers 497: runLoop's full-bag path banks the bag, then this goes on.
@@ -1492,11 +1466,7 @@ async function runLoop(name: string): Promise<void> {
       const finish = (): void => {
         const cur = queues.value[name];
         if (cur?.items[0]?.id === item.id) {
-          const rest = cur.items.slice(1);
-          // A finished `prepare` stops the queue: the character holds on the boss tile for the group fight.
-          const ready = item.kind === "prepare";
-          setQueue(name, { items: rest, note: undefined, ...(ready ? { running: false } : {}) });
-          if (ready) log(name, `ready to fight ${monsterOf(item.monster)?.name ?? item.monster} — queue stopped`, "ok");
+          setQueue(name, { items: cur.items.slice(1), note: undefined });
         }
         tallies.delete(name);
       };
@@ -1565,17 +1535,6 @@ export function startQueue(name: string): void {
   if (!refused(name)) runQueue(name);
 }
 
-/** The Group fight fold's 🛡 Prepare (ui/GroupFight.tsx), one character: a `prepare` item at the front of its queue —
- *  a stopped or paused prepare for the same monster at the head is just restarted, never duplicated — and the queue
- *  started. Refuses a character the planner owns. */
-export function queuePrepare(name: string, monster: string): void {
-  if (!IS_SERVER) return rpc("queuePrepare", [name, monster]);
-  if (refused(name)) return;
-  const head = queues.value[name]?.items[0];
-  if (!(head?.kind === "prepare" && head.monster === monster)) addItem(name, withId({ kind: "prepare", monster }), 0);
-  runQueue(name);
-}
-
 /** startQueue without the owned-queue guard: the planner's own start (state/planner.ts). Not exposed. */
 export function runQueue(name: string): void {
   const q = queues.value[name];
@@ -1632,23 +1591,9 @@ export function resumeQueue(): void {
   }
 }
 
-// Offerings: a character the planner owns gets the planner's `offering` interrupt (set by state/planner.ts, which
-// queue.ts must not import); the planner keeps its own day per character and catches up by itself (boot, switch-on,
-// its five-minute tick). Task 018: the old daily trigger (00:05 UTC, every running queue) is gone.
-let ownedOfferings: ((name: string) => void) | undefined;
-export const setOwnedOfferings = (fn: (name: string) => void): void => void (ownedOfferings = fn);
-
-/** The panel's buttons (task 010): a character the planner owns gets the planner's offering interrupt. Task 018: a
- *  character whose planner is off gets nothing. */
-export function queueOfferings(name: string): void {
-  if (!IS_SERVER) return rpc("queueOfferings", [name]);
-  if (isOwned(name)) return void ownedOfferings?.(name);
-}
-
 // Dev-only: this module owns long-lived async runners. A hot swap would
 // re-create the module state (queues signal, stopFlags, liveLoops) while the
 // OLD runLoop kept executing against the old objects — a zombie runner the ⏹
 // button can no longer reach. Force a full page reload instead.
 if (import.meta.hot) import.meta.hot.accept(() => location.reload());
 
-expose({ queueOfferings, queuePrepare });

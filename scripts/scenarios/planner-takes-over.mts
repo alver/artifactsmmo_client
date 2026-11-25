@@ -1,11 +1,11 @@
 // Task 008, section 7: switching a character on through setPlannerConfig. Its queue — a reset, a crafting level, an
 // infinite item and an item of another writer — is logged item by item and dropped, and the first step runs. Then
-// every writer that is not the planner's leaves the owned queue as it is (task 018: the harness's addItem and the
-// Group fight fold's queuePrepare are what is left of them).
+// every writer that is not the planner's leaves the owned queue as it is (task 018: the harness's addItem is what is
+// left of them; task 028 deleted the Group fight fold's queuePrepare).
 import { achievement, planLines, scenario } from "../harness/index.mts";
 import { withId } from "../../src/plan/queue";
 import { planner, setPlannerConfig } from "../../src/state/planner";
-import { addItem, insertItem, queuePrepare } from "../../src/state/queue";
+import { addItem, insertItem } from "../../src/state/queue";
 import { log } from "../../src/state/store";
 
 await scenario(
@@ -43,9 +43,8 @@ await scenario(
     const snap = JSON.stringify(t.q("Ivy").items.map((it) => it.id));
     const mark = log.value[0]?.id ?? 0;
     addItem("Ivy", withId({ kind: "deposit-all" }));
-    queuePrepare("Ivy", "chicken");
     const lines = log.value.filter((e) => e.id > mark && /planner owns/.test(e.text));
-    t.eq(lines.length, 2, "one refusal line each: add, prepare");
+    t.eq(lines.length, 1, "one refusal line: add");
     t.eq(JSON.stringify(t.q("Ivy").items.map((it) => it.id)), snap, "the owned queue is as it was");
     t.ok(t.q("Ivy").running, "still running");
     await t.run({ minutes: 5 });

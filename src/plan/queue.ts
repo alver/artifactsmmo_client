@@ -81,7 +81,6 @@ export type QueueItem = { id: string; error?: string } & (
   // monster (`geared` remembers it; utility potions included, brewed when the
   // bank has none), walk to it, rest to full — then the queue STOPS so the
   // character waits on the tile for the group fight.
-  | { kind: "prepare"; monster: string; geared?: boolean }
   // Claim every pending reward (achievement payouts) at the bank, then deposit what was claimed (`got`: the
   // codes, "gold" for pocket gold). The planner's `claim` interrupt; done when no row and nothing claimed is left.
   | { kind: "claim"; got?: string[] }
@@ -132,7 +131,6 @@ export function queueItemText(it: QueueItem): string {
     case "task-loop": return `Complete ${it.times > 0 ? `${it.times}× ` : "(∞) "}tasks (${it.master})`;
     case "task-visit": return `Tasks master: ${it.cancel ? `cancel ${monsterOf(it.cancel)?.name ?? itemName(it.cancel)}, ` : ""}turn in, take a monsters task`;
     case "offering": return "Today's seasonal offerings";
-    case "prepare": return `Prepare to fight ${monsterOf(it.monster)?.name ?? titleCase(it.monster)} (gear, potions, walk, rest — then stop)`;
     case "claim": return "Claim pending rewards";
     case "expand": return `Buy a bank expansion (${it.price.toLocaleString("en-US")} gold)`;
   }
@@ -142,5 +140,5 @@ export const queueItemIcon: Record<QueueItemKind, string> = {
   "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
   "train": "🎓", "gear": "🧰",
-  "task-loop": "🔁", "task-visit": "📜", "offering": "🛐", "prepare": "🛡", "claim": "🎁", "expand": "🏦",
+  "task-loop": "🔁", "task-visit": "📜", "offering": "🛐", "claim": "🎁", "expand": "🏦",
 };

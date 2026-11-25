@@ -27,8 +27,26 @@ interface Sinks {
   market?: (line: string, t: number) => void;
   leaders?: (rel: string, data: string | Uint8Array) => void;
   leadersDir?: () => string[];
+  day?: (day: string) => string | undefined;
 }
 let sinks: Sinks = {};
+const listeners: ((rec: Rec) => void)[] = [];
+/** Task 028: hear every record as it is written (src/state/last24.ts), sinks or not — the harness's too. */
+export const onRecord = (fn: (rec: Rec) => void): void => void listeners.push(fn);
+/** Task 028: a day's journal file, its records (none without a disk that reads, or no file). */
+export function journalDay(day: string): Rec[] {
+  try {
+    return (sinks.day?.(day) ?? "").split("\n").flatMap((l) => {
+      try {
+        return l ? [JSON.parse(l) as Rec] : [];
+      } catch {
+        return []; // a line cut by a crash
+      }
+    });
+  } catch {
+    return [];
+  }
+}
 const last: Rec = {}; // the last `pause` and `server` record (the status shows them)
 let info: { dev?: boolean; commit?: string; branch?: string; up: string } = { up: new Date().toISOString() };
 
@@ -45,6 +63,13 @@ export function journal(k: string, fields: Rec): void {
   const t = Date.now();
   const rec = { t: new Date(t).toISOString(), run: RUN, k, ...fields };
   if (k === "pause" || k === "server") last[k] = rec;
+  for (const fn of listeners) {
+    try {
+      fn(rec);
+    } catch {
+      /* a listener's trouble is its own */
+    }
+  }
   if (!sinks.record) return;
   try {
     const line = JSON.stringify(rec);
@@ -116,6 +141,8 @@ export interface Disk {
   exists(path: string): boolean;
   /** Task 025: the names in a directory ([] when there is none). */
   list?(dir: string): string[];
+  /** Task 028: a file's text (undefined when there is none). */
+  read?(path: string): string | undefined;
 }
 
 const dayOf = (t: number): string => new Date(t).toISOString().slice(0, 10);
@@ -136,6 +163,7 @@ export function fileSinks(disk: Disk, root: string): (lines: string) => void {
     market: (line, t) => disk.append(`${root}/market/${dayOf(t)}.jsonl`, line + "\n"),
     leaders: (rel, data) => (typeof data === "string" ? disk.append(`${root}/leaders/${rel}`, data) : disk.replace(`${root}/leaders/${rel}`, data)),
     leadersDir: disk.list && (() => disk.list!(`${root}/leaders`)),
+    day: disk.read && ((day) => disk.read!(`${root}/journal/${day}.jsonl`)),
   };
   return (lines) => {
     const byHour = new Map<string, string[]>();

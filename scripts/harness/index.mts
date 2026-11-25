@@ -83,6 +83,7 @@ const rawSink = fileSinks({
   exists: (p) => files.has(p),
   // task 025: the names under a directory, from the paths held
   list: (dir) => [...new Set([...files.keys()].filter((p) => p.startsWith(`${dir}/`)).map((p) => p.slice(dir.length + 1).split("/")[0]))],
+  read: (p) => files.get(p),
 }, "logs");
 /** The journal's records so far (this process's), every day's file in order; one kind or every kind. */
 export type Rec = { t: string; run: string; k: string } & Record<string, any>;

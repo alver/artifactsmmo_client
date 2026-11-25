@@ -17,7 +17,8 @@ import { devlog } from "../lib/devlog";
 import { journal, runInfo, statusField } from "../lib/journal";
 import { achievements, characters, isOwned } from "./store";
 import { planner, worldOf } from "./planner";
-import type { Completion, NextStep, RoadLine, Waiting } from "../plan/planner/road";
+import type { Completion, Levels, Made, NextStep, PickChange, RoadDay, RoadLine, Waiting } from "../plan/planner/road";
+import type { NeedRow } from "../plan/planner/needs";
 
 export interface OutlookRoad {
   from: number;     // the World's time it was played from
@@ -26,10 +27,14 @@ export interface OutlookRoad {
   points: number;   // the points at the start
   expected: number; // the points at `until`, by the model
   completed: Completion[];
-  byDay: { day: string; points: number }[];
+  byDay: RoadDay[]; // task 028: with each character's levels at the day's end (road.ts LEVEL_KEYS)
   sec: number;      // the run's seconds
   steps: number;
   commit?: string;  // the service's commit
+  start?: Levels;   // task 028: the levels at the start
+  made?: Made[];    // the gear pieces and tools the road makes
+  picks?: PickChange[]; // the fighters' XP picks, each change of monster
+  crafters?: Record<string, string>; // the gear crafts' crafters
 }
 export interface OutlookState {
   state: "idle" | "running" | "failed";
@@ -39,6 +44,8 @@ export interface OutlookState {
   from?: number;                                                // the World's time `waiting` and `next` came from
   waiting?: Waiting[];
   next?: Record<string, NextStep[]>;
+  needs?: NeedRow[];                                            // task 028: the road's needs and the tools of the start World
+  needsError?: string;
   road?: OutlookRoad;                                           // the last whole road (replaced only when a run ends)
 }
 
@@ -154,6 +161,7 @@ function begin(restart: boolean): void {
         return fail(`a line that is not the road's: ${line.slice(0, 80)}`, now);
       }
       if (l.k === "waiting") put({ from: l.from, waiting: l.waiting });
+      else if (l.k === "needs") put({ from: l.from, needs: l.needs, needsError: l.error });
       else if (l.k === "next") put({ from: l.from, next: l.next });
       else if (l.k === "day") put({ day: { at: l.at, n: l.n, of: l.of, points: l.points } });
       else if (l.k === "done") {
@@ -161,7 +169,7 @@ function begin(restart: boolean): void {
         clearTimeout(killTimer);
         live?.kill(); // its work is done: it exits by itself, and must never hold the next run back
         live = undefined;
-        put({ state: "idle", startedAt: undefined, day: undefined, road: { from: l.from, until: l.until, at: Date.now(), points: l.points, expected: l.expected, completed: l.completed, byDay: l.byDay, sec: l.sec, steps: l.steps, commit: runInfo().commit } });
+        put({ state: "idle", startedAt: undefined, day: undefined, road: { from: l.from, until: l.until, at: Date.now(), points: l.points, expected: l.expected, completed: l.completed, byDay: l.byDay, sec: l.sec, steps: l.steps, commit: runInfo().commit, start: l.start, made: l.made, picks: l.picks, crafters: l.crafters } });
         journal("outlook", { from: iso(l.from), until: iso(l.until), sec: l.sec, points: l.points, expected: l.expected, next: l.completed.slice(0, 10).map((c) => ({ code: c.code, at: iso(c.at) })) });
         plan(EVERY_MS, false);
       }

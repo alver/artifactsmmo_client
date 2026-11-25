@@ -1,28 +1,14 @@
-// On-demand viewer for the account's unclaimed rewards (/my/pending_items).
-// Achievement payouts land in this pool and stay there invisibly — nothing
-// moves them to the bank — so the Achievements tab shows a badge and this
-// section lets the SELECTED character claim each one (the items drop into its
-// inventory). A claim's echo carries the character, so the row is simply
-// removed locally. Reuses the achievements styles (.ach-*).
+// The account's unclaimed rewards (/my/pending_items), read-only (task 028): achievement payouts wait here until the
+// planner's `claim` interrupt claims them at a bank — it claims by itself after every completion it reads (state/planner.ts).
+// Reuses the achievements styles (.ach-*).
 
-import { characters, pendingRewards, selectedCharacter } from "../state/store";
+import { pendingRewards } from "../state/store";
 import { loadPendingRewards } from "../state/sync";
-import * as actions from "../api/actions";
 import { itemName } from "../catalog";
 import { itemHover } from "./ItemPopup";
-import { useActionRunner } from "./useAction";
-import type { PendingItem } from "../types/api";
 
 export function PendingRewardsView() {
-  const actor = selectedCharacter.value ? characters.value[selectedCharacter.value] : undefined;
-  const ctl = useActionRunner(actor);
   const list = pendingRewards.value;
-
-  const claim = (p: PendingItem) =>
-    void ctl.run(async () => {
-      if (!actor) return;
-      await actions.claimItem(actor.name, p.id); // the server drops the claimed row (apply.ts)
-    });
 
   return (
     <section class="ws-card ach-section">
@@ -30,9 +16,7 @@ export function PendingRewardsView() {
           <div class="ach-titles">
             <div class="ach-title">🎁 Pending rewards</div>
             <div class="ach-sub">
-              {list.length
-                ? `${list.length} unclaimed · claims land in ${actor?.name ?? "?"}'s bag`
-                : "nothing to claim"}
+              {list.length ? `${list.length} unclaimed · the planner claims them at a bank` : "nothing to claim"}
             </div>
           </div>
           <button class="ach-btn" title="Refresh the list" onClick={() => void loadPendingRewards()}>
@@ -60,17 +44,6 @@ export function PendingRewardsView() {
                   </span>
                 ))}
               </div>
-              <button
-                class="cat-btn buy"
-                // Gate on busy only, not the cooldown flag: a running queue keeps
-                // the character cooling near-constantly, and the client's 499
-                // retry slips the claim into the next gap by itself.
-                disabled={ctl.busy || !actor}
-                title={actor ? `Claim with ${actor.name} (waits out a cooldown if needed)` : "Select a character first"}
-                onClick={() => claim(p)}
-              >
-                {ctl.busy ? "claiming…" : `Claim with ${actor?.name ?? "…"}`}
-              </button>
             </div>
           ))}
         </div>

@@ -6,21 +6,41 @@
 //   day     — once a simulated UTC day, the points so far;
 //   done    — every completion, the points at the end and at each day's end, the seconds, the steps played.
 
+// Task 028 (A.2, A.3): the day lines and `done` carry each character's levels at the day's end (LEVEL_KEYS' order), `done`
+// the levels at the start, the gear pieces and tools made, the day each fighter's XP pick changes monster and the gear
+// crafts' crafters; `needs` (after `waiting`) the road's needs and the tools of the start World (needs.ts).
+
 import { itemsOf } from "./compile";
-import { perOf } from "./cost";
+import { levelOf, perOf } from "./cost";
 import { bankPlus, forward, pointsOf, waitingOf } from "./forward";
 import { isOn } from "./gates";
+import { GEAR_CRAFT } from "./config";
+import { crafterOf } from "./roles";
+import { needsOf } from "./needs";
 import { queueItemText } from "../queue";
-import type { Answer, Running, Step, World } from "./types";
+import type { NeedRow } from "./needs";
+import type { QueueItem } from "../queue";
+import type { Answer, Lane, Running, Step, World } from "./types";
 
 export type Waiting = ReturnType<typeof waitingOf>[number];
 export interface NextStep { key: string; as: Answer; text: string; why: string; hours: number; at: number }
 export interface Completion { code: string; points: number; at: number }
+/** Task 028: the order of a character's levels in a day line: combat, then the eight skills. */
+export const LEVEL_KEYS: Lane[] = ["combat", "mining", "woodcutting", "fishing", "weaponcrafting", "gearcrafting", "jewelrycrafting", "cooking", "alchemy"];
+export type Levels = Record<string, number[]>;
+/** A gear piece or tool the road makes: when (the step's end), what, how many, for whom, by whom. */
+export interface Made { at: number; code: string; n: number; for?: string; by: string }
+/** A fighter's XP pick changes monster (the first pick has no `from`). */
+export interface PickChange { at: number; who: string; from?: string; to: string }
+export interface RoadDay { day: string; points: number; levels: Levels }
 export type RoadLine =
   | { k: "waiting"; from: number; waiting: Waiting[] }
+  | { k: "needs"; from: number; needs: NeedRow[]; error?: string }
   | { k: "next"; from: number; next: Record<string, NextStep[]> }
-  | { k: "day"; at: number; n: number; of: number; points: number }
-  | { k: "done"; from: number; until: number; points: number; expected: number; completed: Completion[]; byDay: { day: string; points: number }[]; sec: number; steps: number };
+  | { k: "day"; at: number; n: number; of: number; points: number; levels: Levels }
+  | { k: "done"; from: number; until: number; points: number; expected: number; completed: Completion[]; byDay: RoadDay[]; sec: number; steps: number; start: Levels; made: Made[]; picks: PickChange[]; crafters: Record<string, string> };
+
+const levelsOf = (w: World): Levels => Object.fromEntries(w.characters.map((c) => [c.name, LEVEL_KEYS.map((k) => levelOf(c, k))]));
 
 const DAY = 864e5;
 
@@ -33,13 +53,17 @@ export function leftOf(r: Running): Step {
   return { ...s, units, hours: s.units > 0 ? (s.hours * units) / s.units : 0 };
 }
 
-/** The text a step would carry in a queue: its field item, craft, buy, task or train item (a tidy step's first recycle). */
+/** The text a step carries in a queue: its field item, craft, buy, task or train item (a tidy step's first recycle) —
+ *  task 028: the runtime's `step` record too (state/planner.ts). */
+export function stepText(step: Step, items: QueueItem[]): string {
+  const its = items.filter((it) => it.kind !== "deposit-all");
+  const it = step.work.kind === "recycle" ? its[0] : its[its.length - 1];
+  return it ? queueItemText(it) : step.target;
+}
 function textOf(step: Step, w: World): string {
   const ch = w.characters.find((c) => c.name === step.character);
   try {
-    const items = ch ? itemsOf(step, ch).filter((it) => it.kind !== "deposit-all") : [];
-    const it = step.work.kind === "recycle" ? items[0] : items[items.length - 1];
-    return it ? queueItemText(it) : step.target;
+    return ch ? stepText(step, itemsOf(step, ch)) : step.target;
   } catch {
     return step.target;
   }
@@ -54,6 +78,16 @@ export function road(live: World, running: Record<string, Running | undefined>, 
   const names = world.characters.map((c) => c.name);
   const on = names.filter((name) => isOn(name, world)); // task 020: a character that is off is not played (forward), so it gets no next step
   emit({ k: "waiting", from: world.now, waiting: waitingOf(world) });
+  // task 028 (A.3): a need the page cannot read is no reason to lose the road
+  try {
+    emit({ k: "needs", from: world.now, needs: needsOf(world) });
+  } catch (e) {
+    emit({ k: "needs", from: world.now, needs: [], error: (e as Error).message });
+  }
+  const start = levelsOf(world);
+  let cur = world; // the World of the last step that ended: its levels are the day's when a midnight passes
+  const made: Made[] = [], picks: PickChange[] = [];
+  const pick: Record<string, string> = {};
   const seed: Record<string, Step> = {};
   for (const [name, r] of Object.entries(running)) if (r && !r.over && names.includes(name)) seed[name] = leftOf(r);
   const next: Record<string, NextStep[]> = Object.fromEntries(names.map((name) => [name, []]));
@@ -64,24 +98,38 @@ export function road(live: World, running: Record<string, Running | undefined>, 
   let midnight = first, day = 0;
   // the points at the last decision: a completion happens only where a step ends, and a decision follows at that moment
   let pts = pointsOf(world);
-  const byDay: { day: string; points: number }[] = [];
-  /** Every midnight before `t` (up to `t` with `upTo`) has passed: its day ended with `pts`. */
+  const byDay: RoadDay[] = [];
+  /** Every midnight before `t` (up to `t` with `upTo`) has passed: its day ended with `pts` and the levels of `cur`. */
   const pass = (t: number, upTo: boolean): void => {
     for (; upTo ? midnight <= t : midnight < t; midnight += DAY) {
-      byDay.push({ day: new Date(midnight - DAY).toISOString().slice(0, 10), points: pts });
-      emit({ k: "day", at: midnight, n: ++day, of, points: pts });
+      const levels = levelsOf(cur);
+      byDay.push({ day: new Date(midnight - DAY).toISOString().slice(0, 10), points: pts, levels });
+      emit({ k: "day", at: midnight, n: ++day, of, points: pts, levels });
     }
   };
   const r = forward(world, until, (w, step) => {
     pass(w.now, false);
     pts = pointsOf(w);
+    // task 028: the day a fighter's XP pick changes monster
+    if (step.reason?.rule === "xp-pick" && step.work.kind === "kill" && pick[step.character] !== step.work.monster) {
+      picks.push({ at: w.now, who: step.character, ...(pick[step.character] ? { from: pick[step.character] } : {}), to: step.work.monster });
+      pick[step.character] = step.work.monster;
+    }
     const mine = next[step.character];
     if (sent || !mine || mine.length >= n) return;
     mine.push({ key: step.key, as: step.as, text: textOf(step, w), why: step.why, hours: step.hours, at: w.now });
     if (on.every((name) => next[name].length >= n)) sendNext();
-  }, undefined, seed, false);
+  }, (w, step) => {
+    // the step ends at its character's clock (forward.ts advance): a midnight before it ended with the World before it
+    const end = w.clock?.[step.character] ?? w.now;
+    pass(end, false);
+    cur = w;
+    if (step.target.startsWith("gear:") && step.work.kind === "craft" && end <= until) made.push({ at: end, code: step.work.code, n: step.units, ...(step.for ? { for: step.for } : {}), by: step.character });
+  }, seed, false);
   pts = pointsOf(r.world);
+  cur = r.world;
   pass(until, true);
   if (!sent) sendNext();
-  emit({ k: "done", from: world.now, until, points: pointsOf(world), expected: pts, completed: r.completed, byDay, sec: Math.round((performance.now() - t0) / 100) / 10, steps: r.steps });
+  const crafters = Object.fromEntries(GEAR_CRAFT.flatMap((l) => { const c = crafterOf(l, world); return c ? [[l, c]] : []; }));
+  emit({ k: "done", from: world.now, until, points: pointsOf(world), expected: pts, completed: r.completed, byDay, sec: Math.round((performance.now() - t0) / 100) / 10, steps: r.steps, start, made, picks, crafters });
 }

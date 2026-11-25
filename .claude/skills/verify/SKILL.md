@@ -28,20 +28,19 @@ this recipe drives the REAL service against the REAL game API.
 
 ## The handle
 
-- Boot is done when `.fleet-name` appears (the Roadmap's Now card, the home since
-  task 019, and the Fleet tab) — the tab waits for the service's first snapshot +
-  the catalog before rendering anything.
+- Boot is done when `.hero` appears (a hero card of the one page, the home since
+  task 028) — the tab waits for the service's first snapshot + the catalog before
+  rendering anything.
 - Tabs are hash routes — switch with `location.hash = "#/items"` (no reload,
-  no extra reads): roadmap · fleet · char · bank · items · monsters · achievements · map · sim.
+  no extra reads): roadmap · bank · items · monsters · achievements · map · sim (an old #/fleet or #/char opens the roadmap).
 - The outlook (task 019): two minutes after its first achievements read, with a
   character owned, a smoke-test service starts the outlook's child process too
   (`src/server/outlook-run.ts`, a few minutes of one core below normal priority);
   watch it in `/events` → `outlook` (`state`, `day`, `road`) or `refreshOutlook` by rpc.
 - Drive the engine without the UI: `curl -X POST -H 'Content-Type: application/json'
   -d '{"fn":"setPlannerConfig","args":[{"on":{"Third":true}}]}' http://localhost:5199/rpc`
-  — any exposed function (grep `expose(`) by name. Since task 018 nothing the tab
-  can call writes a queue: a queue is the planner's (switch a character on) or the
-  Group fight's `queuePrepare`.
+  — any exposed function (grep `expose(`) by name. Since task 028 nothing the tab
+  can call makes a character act: a queue is the planner's (switch a character on).
 - `confirm()` dialogs (the 🧭 planner switch): `page.on("dialog", d => d.accept())`.
 
 ## Zero-call mode: the mock-API preload
@@ -55,6 +54,10 @@ boots with ZERO game calls — ideal for UI checks. Capture a snapshot with
 then:
 `PORT=5199 MOCK_SNAPSHOT=<snap.json> node --import file:///<abs>/mock-api.mjs --import tsx --experimental-webstorage --localstorage-file=<scratch>/test.db --disable-warning=ExperimentalWarning src/server/main.ts`.
 A started queue pauses on its first action ("mock API: actions refused").
+A service on another port writes under `logs/port-<N>/` of its working directory (`ROOT` is the cwd): to write nothing
+under the project's `logs/`, run it from a scratch copy (`src/`, `public/data/`, the built `dist/`, `package.json`,
+`tsconfig.json`, a junction to `node_modules` — unlink it with `cmd //c rmdir` before deleting the copy), with `TOKEN=mock`
+in the environment; copy `logs/journal/<day>.jsonl` into its `logs/port-<N>/journal/` to see real 24-hour cards.
 
 ## Observe through the service's state stream (authoritative, no DOM scraping)
 
@@ -72,20 +75,18 @@ A started queue pauses on its first action ("mock API: actions refused").
 
 ## Useful selectors
 
-- Fleet table: `.fleet-name` links (click = select + open Character tab); Character
-  tab header `.char-name`, switcher `.char-switch button`. Tables: `.dt-row`, sortable
+- The one page (task 028): `.hero` cards (id `hero-<name>`), each with its 🧭 switch
+  (`.hero-who .cat-btn`), `.hero-order li.on` (the rule that took the step), `.act-bar`
+  (the last 24 h); the plan's chart `svg.plan-chart`. Tables: `.dt-row`, sortable
   headers `.dt-sort`.
 - Selects are `.cp-refine-select` (find the right one by which option values it
   contains, then set value + dispatch `change`).
-- Queue (read-only since task 018): rows `.q-row .q-text`; the 🧭 planner switch is
-  the `.q-head .cat-btn`.
-- Skills: `.cp-skill` rows.
 
 ## Flows worth driving
 
 - Switch one character on (🧭, or the `setPlannerConfig` rpc): expect its queue
   to get the first step's items (`pl:<key>:<i>`: a gear reset, then the field item
-  or the craft) and the Character tab's planner line to show the step's why.
+  or the craft) and its hero card's Why to mark the rule and show the goal.
 - Restart mid-anything (kill the service; the supervisor restarts it): queues must resume (running persisted)
   and the step re-attach (`plan <name>: re-attached …` in the raw log).
 

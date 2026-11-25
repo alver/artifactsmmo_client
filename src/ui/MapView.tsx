@@ -2,8 +2,7 @@ import { useEffect, useRef } from "preact/hooks";
 import { useSignal } from "@preact/signals";
 import { effect } from "@preact/signals";
 import { catalog } from "../catalog";
-import { activeEvents, characters, focusRequest, mapHover, moveMode, panelTarget, selectedCharacter, tileFocus } from "../state/store";
-import * as actions from "../api/actions";
+import { activeEvents, characters, focusRequest, mapHover, panelTarget, selectedCharacter, tileFocus } from "../state/store";
 import type { GameMap } from "../types/catalog";
 import type { Character } from "../types/api";
 import { MapInspector } from "./MapInspector";
@@ -347,13 +346,6 @@ export function MapView() {
     const handleTileClick = (sx: number, sy: number) => {
       const hx = Math.floor((cam.x + sx) / tile);
       const hy = Math.floor((cam.y + sy) / tile);
-      // Armed click-to-move: send the character here and disarm; ignore tile content.
-      const mover = moveMode.value;
-      if (mover) {
-        moveMode.value = null;
-        actions.move(mover, hx, hy).catch(() => {}); // failures land in the activity log
-        return;
-      }
       const content = index.get(`${hx},${hy}`)?.interactions?.content;
       if (
         content &&
@@ -426,9 +418,6 @@ export function MapView() {
       schedule();
     };
     const onResize = () => schedule();
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && moveMode.value) moveMode.value = null;
-    };
 
     cv.style.cursor = "grab";
     cv.addEventListener("pointerdown", onDown);
@@ -438,7 +427,6 @@ export function MapView() {
     cv.addEventListener("pointerleave", onLeave);
     cv.addEventListener("wheel", onWheel, { passive: false });
     window.addEventListener("resize", onResize);
-    window.addEventListener("keydown", onKey);
     // Redraw when the canvas itself changes size (e.g. the catalog panel docking
     // /undocking shrinks the map), which window 'resize' alone doesn't catch.
     const ro = new ResizeObserver(() => schedule());
@@ -456,13 +444,12 @@ export function MapView() {
       cv.removeEventListener("pointerleave", onLeave);
       cv.removeEventListener("wheel", onWheel);
       window.removeEventListener("resize", onResize);
-      window.removeEventListener("keydown", onKey);
     };
   }, []);
 
   return (
     <div class="map-wrap">
-      <canvas ref={canvasRef} class={"map-canvas" + (moveMode.value ? " moving" : "")} />
+      <canvas ref={canvasRef} class="map-canvas" />
       <MapInspector />
       <div class="layer-switch">
         {LAYERS.map((l) => (
@@ -471,11 +458,7 @@ export function MapView() {
           </button>
         ))}
       </div>
-      <div class={"map-hint" + (moveMode.value ? " armed" : "")}>
-        {moveMode.value
-          ? `Click a tile to move ${moveMode.value} · Esc to cancel`
-          : "drag to pan · scroll to zoom · click a building to interact"}
-      </div>
+      <div class="map-hint">drag to pan · scroll to zoom · click a building to see it</div>
     </div>
   );
 }
