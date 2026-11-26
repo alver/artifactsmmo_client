@@ -576,13 +576,14 @@ export function fightTake(world: World, ch: Character, monster: string, kills: n
     for (const c of spare) delete insure[c];
   }
   // Task 015, settled point 7: the food is the best-healing one of the stock a work of this score may reserve that the
-  // fight's loss covers at least once; at most a third of the bag, and the kills are capped by it as by a potion stack
+  // fight's loss covers at least once; at most half the bag (task 029, B.3; a third before), and the kills are capped by it as
+  // by a potion stack
   const lost = lostOf(r.forecast);
   // task 025, settled point 5: the food the price chooses (eating beats resting at its chain), when this work may reserve it
   const pick0 = potionPrice(world, ch.name).food?.(lost, r.forecast.maxHp);
   const food = pick0 && reservable(world, ch.name, pick0.code, fit, any, monster) >= 1 ? pick0 : undefined;
   const n = food ? foodPerWin(r, food) : 0;
-  const bag = Math.floor(ch.inventory_max_items / 3);
+  const bag = Math.floor(ch.inventory_max_items / 2);
   let capped = false;
   if (food && n > 0 && Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(reservable(world, ch.name, food.code, fit, any, monster))) > bag) {
     const Kf = Math.floor(bag / (n * MARGIN) + 1e-9);
@@ -595,7 +596,7 @@ export function fightTake(world: World, ch: Character, monster: string, kills: n
     if (q > 0) withdraw[food.code] = q;
   }
   const took = Object.entries(withdraw).map(([c, q]) => `${q} ${itemName(c)}`);
-  const bagNote = capped && food ? `; the bag caps it at ${K} kills (${+n.toFixed(2)} ${itemName(food.code)} a kill, ${bag} is a third of ${ch.inventory_max_items})` : "";
+  const bagNote = capped && food ? `; the bag caps it at ${K} kills (${+n.toFixed(2)} ${itemName(food.code)} a kill, ${bag} is half of ${ch.inventory_max_items})` : "";
   const why = (): string => `; rests (${restWhy(world, ch, lost, r.forecast.maxHp)})`;
   const note = took.length ? ` with ${took.join(" and ")} from the bank` + (withdraw[food?.code ?? ""] ? bagNote : lost > 0 ? why() : "")
     : lost > 0 ? why() : "";

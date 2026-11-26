@@ -236,7 +236,7 @@ function keepOf(it: QueueItem, ch: Character): string[] | undefined {
   const withToll = (k: string[] | undefined): string[] | undefined => (toll.length ? [...(k ?? []), ...toll] : k);
   // Carried between-fight food is working stock too — a loot bank-off or the
   // job-start gear reset must not stash the fighter's rations.
-  if (it.kind === "fight" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight") || (it.kind === "train" && it.skill === "combat")) {
+  if (it.kind === "fight" || it.kind === "task-loop" || it.kind === "offering" || (it.kind === "gear" && it.job?.kind === "fight") || (it.kind === "train" && (it.skill === "combat" || isOwned(ch.name)))) {
     const food = foodInHand(ch)?.code;
     if (food) return withToll([...(base ?? []), food]);
   }
@@ -249,8 +249,12 @@ function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
   // task 014: an owned step's fight item (`take`) eats what its reset took and never provisions more
   // task 023: an owned character's offering and task fights eat what is in hand and rest — nothing is cooked or gathered
   // inside a fight its step did not plan (task 014's rule)
-  const fed = it.kind === "fight" ? !it.take && it.food !== false : it.kind === "task-loop" || it.kind === "offering" ? !isOwned(name) : it.kind === "train" && it.skill === "combat" ? true : undefined;
+  // task 029 (A.4): an owned character's train loop hunts eat what the bank holds (exec.ts provisionFood: the bank only) — and
+  // (B.1) its potions and food never take more than the bag holds beside its batch (`room`)
+  const ownTrain = it.kind === "train" && isCraftSkill(it.skill) && isOwned(name);
+  const fed = it.kind === "fight" ? !it.take && it.food !== false : it.kind === "task-loop" || it.kind === "offering" ? !isOwned(name) : it.kind === "train" && (it.skill === "combat" || ownTrain) ? true : undefined;
   return {
+    ...(ownTrain ? { room: trainRoom(ch, it as Extract<QueueItem, { kind: "train" }>) } : {}),
     keep: keepOf(it, ch),
     gold: (it.kind === "fight" || it.kind === "gather") ? it.take?.gold : undefined, // task 017: the fares stay in the pocket
     food: fed,
@@ -258,7 +262,7 @@ function ctxOf(name: string, ch: Character, it: QueueItem): StepCtx {
       it.kind === "fight" ? (it.times > 0 ? Math.max(1, it.times - it.done) : 50)
       : it.kind === "task-loop" ? Math.max(1, ch.task_total - ch.task_progress)
       : it.kind === "offering" ? 20 // a handful of drops — sizes one food restock
-      : it.kind === "train" && it.skill === "combat" ? 50
+      : it.kind === "train" && (it.skill === "combat" || ownTrain) ? 50 // task 029: sizes a train hunt's food (the room caps it)
       : undefined,
     note: (text) => setQueue(name, { note: text }),
   };
@@ -442,6 +446,8 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       if (!who) return skipItem(name, it, `no character ${it.for}`);
       const lv = skillLevel(who, it.skill);
       if (it.levels && it.from == null) { patchItem(name, it.id, { from: lv }); return false; }
+      // task 029: the planner's runs are made — the last batch's products recycled first (runTrainCraft's first move)
+      if (it.runs && (it.done ?? 0) >= it.runs) return !(it.code && invQty(ch, it.code) > 0) || runTrainCraft(name, ch, it, ctx);
       const target = it.levels ? (it.from ?? lv) + it.levels : it.toLevel;
       if (target > 0 && lv >= target) return true;
       return runTrainCraft(name, ch, it, ctx);
@@ -503,6 +509,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         if ((await gearSwapStep(name, ch, total, ctx, { reset: true, utility: take, gold: take?.gold })) === "acted") return false;
         // task 014, settled point 4: an owned step's reset puts exactly its planned potions on (utility, above) and its
         // planned food into the bag — task 015, settled point 7: never more than a third of the bag, whatever the item says
+        // (task 029, B.3: half)
         for (const [code, q] of Object.entries(take ?? {})) {
           if (code === "gold") {
             // task 017, settled point 6: the trip's fares into the pocket (the swap above left them there); a bank that
@@ -517,7 +524,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
             continue;
           }
           if (itemOf(code)?.type === "utility") continue;
-          const short = Math.min(q, Math.floor(ch.inventory_max_items / 3)) - invQty(ch, code), banked = bankQty(code), bank = nearestBank(ch);
+          const short = Math.min(q, Math.floor(ch.inventory_max_items / 2)) - invQty(ch, code), banked = bankQty(code), bank = nearestBank(ch);
           if (short > 0 && banked > 0 && freeSpace(ch) > 0 && bank) {
             await runStep(name, ch, { kind: "withdraw", code, quantity: Math.min(short, banked, freeSpace(ch)), at: bank }, ctx);
             return false;
@@ -698,7 +705,11 @@ async function craftGear(name: string, ch: Character, it: Extract<QueueItem, { k
 async function fightGear(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, monster: string, ctx: StepCtx): Promise<boolean> {
   if (!it.gear) return false;
   const desired = desiredForJob(name, ch, { kind: "fight", monster });
-  return !!desired && (await gearSwapStep(name, ch, desired, ctx, { utility: stackCaps(name, ch, desired) })) === "acted";
+  // task 029 (B.1): never more than the bag holds beside the batch (Fourth's 100 + 18 potions and 16 bars of 11-25: "inventory
+  // full of protected working stock")
+  const caps = stackCaps(name, ch, desired), room = ctx.room;
+  const utility = caps && room != null ? Object.fromEntries(Object.entries(caps).map(([c, q]) => [c, Math.min(q, room)])) : caps;
+  return !!desired && (await gearSwapStep(name, ch, desired, ctx, { utility })) === "acted";
 }
 
 /** The forecast of the bank's best set vs the monster — a BIS solve, memoized per bank reference (a character the planner
@@ -806,6 +817,21 @@ function trainRecipe(ch: Character, skill: string, by: Character[] = [ch]): { co
   return best;
 }
 
+/** Task 029 (A.2): the recipe the loop crafts — the planner's (`code`: the one picker's, plan/planner/train.ts), else its own. */
+function loopPick(ch: Character, it: Extract<QueueItem, { kind: "train" }>, by: Character[]): { code: string; recipe: CraftRecipe; xp: number } | undefined {
+  const r = it.code ? itemOf(it.code)?.craft : undefined;
+  if (it.code && r) return { code: it.code, recipe: r, xp: craftXp(r.level, skillLevel(ch, it.skill), r.items.reduce((s, g) => s + g.quantity, 0)) };
+  return trainRecipe(ch, it.skill, by);
+}
+
+/** Task 029 (B.1): what a train loop's hunt may put in the bag of each of its potions and of its food — a third each of the
+ *  bag less the batch's direct materials and a set's pieces (12). */
+function trainRoom(ch: Character, it: Extract<QueueItem, { kind: "train" }>): number {
+  const pick = loopPick(ch, it, [ch]);
+  const batch = pick ? batchRuns(ch, pick.recipe, [ch]) * Math.max(1, pick.recipe.items.reduce((s, g) => s + g.quantity, 0)) : 0;
+  return Math.max(0, Math.floor((ch.inventory_max_items - batch - 12) / 3));
+}
+
 /** Characters whose RUNNING queue head is "help `crafter` train `skill`". */
 const helpersOf = (crafter: string, skill: string): Character[] =>
   Object.entries(queues.value).flatMap(([n, q]) => {
@@ -833,7 +859,7 @@ function batchRuns(ch: Character, recipe: CraftRecipe, by: Character[]): number 
 function trainKeep(ch: Character, it: Extract<QueueItem, { kind: "train" }>): string[] | undefined {
   if (!isCraftSkill(it.skill)) return undefined;
   const by = [ch, ...helpersOf(ch.name, it.skill)];
-  const pick = it.for ? undefined : trainRecipe(ch, it.skill, by);
+  const pick = it.for ? undefined : loopPick(ch, it, by);
   const runs = pick ? batchRuns(ch, pick.recipe, by) : 0;
   // Spare tools ride in the bag (never the product itself — it must recycle/bank)
   // so the gather ↔ craft tool swap never costs a bank trip.
@@ -871,7 +897,7 @@ function trainKeep(ch: Character, it: Extract<QueueItem, { kind: "train" }>): st
  */
 async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem, { kind: "train" }>, ctx: StepCtx): Promise<boolean> {
   const by = [ch, ...helpersOf(name, it.skill)];
-  const pick = trainRecipe(ch, it.skill, by);
+  const pick = loopPick(ch, it, by);
   if (!pick) throw new Error(`no ${titleCase(it.skill)} recipe this character can feed at Lv ${skillLevel(ch, it.skill)}`);
   const { code, recipe, xp } = pick;
   // 1. Product in hand → recycle it (materials come back), else bank it (not
@@ -888,14 +914,15 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
   }
   // 2. The batch's materials in hand (or a full bag with at least one run) → craft.
   const per = Math.max(1, recipe.quantity);
-  const runs = batchRuns(ch, recipe, by);
+  const runs = Math.max(1, Math.min(batchRuns(ch, recipe, by), it.runs ? it.runs - (it.done ?? 0) : Infinity)); // task 029: the step's runs
   const can = craftableTimes(ch, code, runs * per);
   if (can >= runs || (can > 0 && freeSpace(ch) === 0)) {
     const t = nearest("workshop", recipe.skill, ch);
     if (!t) throw new Error(`no ${recipe.skill} workshop on the map`);
     if (await craftGear(name, ch, it, recipe.skill, ctx)) return false;
     ctx.note(`train ${titleCase(it.skill)}: craft ${itemName(code)} ×${can} (+${xp} xp each)`);
-    await runStep(name, ch, { kind: "craft", code, quantity: can * per, skill: recipe.skill, level: 0, at: t }, ctx);
+    const r = await runStep(name, ch, { kind: "craft", code, quantity: can * per, skill: recipe.skill, level: 0, at: t }, ctx);
+    if (it.runs && r.did === "crafted") patchItem(name, it.id, { done: (it.done ?? 0) + Math.round(r.produced / per) });
     return false;
   }
   // 3. Source a short ingredient — one this character can get itself first (a
@@ -913,6 +940,9 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
     for (let i = 0; i < 15 && !stopFlags.has(name); i++) await sleep(1000);
     return false;
   }
+  // task 029 (A.4): the planner's recipe — an ingredient the bank lacks and the crafter cannot get itself is the fleet's work: the
+  // item ends (the planner decides again; the fleet supplies it), never a pause
+  if (!own && it.code) return skipItem(name, it, `${itemName(shorts[0].code)}: none in the bank, and ${name} cannot get it itself — the fleet supplies it`);
   const short = own ?? shorts[0];
   return sourceOne(name, ch, it, short.code, short.quantity * runs - invQty(ch, short.code), ctx, true);
 }

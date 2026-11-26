@@ -71,7 +71,7 @@ const NO_EGG = { bank: fixture.bank.filter((b) => b.code !== "golden_egg") };
   const third = w.characters.find((c) => c.name === "Third")!;
   const pick = pickMonster(third, w, new Set());
   const s = step(w, "Third");
-  cases.push(["a worker with an admitted monster and an open craft level trains the craft", !!pick && s.work.kind === "train" && (s.work as { lane: string }).lane === "gearcrafting" && s.why.startsWith("worker, craft to 30"), `XP pick ${pick?.monster ?? "none"}; Third (gearcrafting ${third.gearcrafting_level}): ${said(s)}`]);
+  cases.push(["a worker with an admitted monster and an open craft level trains the craft", !!pick && s.work.kind === "train" && (s.work as { lane: string }).lane === "gearcrafting" && /^worker, (craft to 30|a batch from the bank)/.test(s.why), `XP pick ${pick?.monster ?? "none"}; Third (gearcrafting ${third.gearcrafting_level}): ${said(s)}`]);
 }
 
 // ── 3. a 3-hour objective before the craft, not a 10-hour one ────────────────
@@ -142,7 +142,8 @@ const NO_EGG = { bank: fixture.bank.filter((b) => b.code !== "golden_egg") };
   const lvl = made("made_up_level", 5, "combat_level", "", 30);
   const fw = (bank: Record<string, number>, patch: Record<string, Record<string, unknown>>, roles: object = ROLES, achs = [lvl]): World => ({
     ...worldOf(achs, ALL), bank: Object.entries(bank).map(([code, quantity]) => ({ code, quantity })),
-    characters: fixture.characters.map((c) => ({ ...c, ...(c.name === "Second" ? { weaponcrafting_level: 30 } : {}), ...patch[c.name] }) as Character),
+    // task 029: the workers' crafts at their target (30), so no training is a need here — 027b's forging alone
+    characters: fixture.characters.map((c) => ({ ...c, ...(c.name === "Second" ? { weaponcrafting_level: 30 } : c.name === "Third" ? { gearcrafting_level: 30 } : c.name === "Fourth" ? { jewelrycrafting_level: 30 } : {}), ...patch[c.name] }) as Character),
     config: { ...fixture.config, roles, on: Object.fromEntries(ALL.map((n) => [n, true])) } as unknown as World["config"],
   });
   // First and Fifth without a weapon, the bank empty: both need a Battlestaff (weaponcrafting 20)

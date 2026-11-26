@@ -142,9 +142,10 @@ export function priceOf(code: string, qty: number): string {
 /**
  * Open `demand` ([code, qty]) against the bank this character may plan with: stock first, then the field source,
  * else the recipe, as deep as the recipes go. `vb` is the virtual bank (shared when several parents are opened in
- * turn); fresh when omitted.
+ * turn); fresh when omitted. `sec0` (task 029): the seconds of a field action as this bill prices it — fleetSec, or a
+ * training's suppliers (train.ts).
  */
-export function billOf(world: World, name: string, demand: [string, number][], vb = new Map<string, number>(), price = true): Bill {
+export function billOf(world: World, name: string, demand: [string, number][], vb = new Map<string, number>(), price = true, sec0: (w: Work, gates: Gate[], world: World) => number = fleetSec): Bill {
   const bill: Bill = { leaves: new Map(), out: [], hours: 0, crafts: 0, gated: [], events: [] };
   const laneTop = new Map<Lane, { code: string; level: number }>(); // settled point 8: per lane the highest craft level of the chain
   const evQty = new Map<string, number>(); // task 013: an event-only material's quantity, priced by its calendar at the end
@@ -174,7 +175,7 @@ export function billOf(world: World, name: string, demand: [string, number][], v
       leaf(`src:${code}`, code, "src", s.work, s.gates, q);
       if (ev) evQty.set(code, (evQty.get(code) ?? 0) + q);
       else if (price) {
-        let sec = fleetSec(s.work, s.gates, world);
+        let sec = sec0(s.work, s.gates, world);
         // task 014, settled point 2: a gathering source at a level nobody that is on meets (the nettle of a minor health
         // potion: alchemy 20) is a road like a gated craft's — its level goes to the lane's roads, its gathers are priced
         // at the node; consumables 1 only (report 013's bill reads ∞ there)

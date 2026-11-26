@@ -24,6 +24,7 @@ import { STAT_CODES } from "../src/sim/types";
 import { GEAR_SLOTS } from "../src/types/api";
 import type { GearRecommendation } from "../src/plan/types";
 import { itemsOf } from "../src/plan/planner/compile";
+import { trainParents } from "../src/plan/planner/train";
 import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, KILL_LOG_013, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
 import { actionSec, bagActions, fareSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec, unitSec } from "../src/plan/planner/cost";
 import { bundleOf, bundleScore } from "../src/plan/planner/bundle";
@@ -306,6 +307,7 @@ function verify(w: World, step: Step, run: Run): void {
       par.startsWith("lvl:") ? levelOf(forCh, par.split(":")[1] as Lane) < Number(par.split(":")[2])
       : par.startsWith("gear:") ? gearNeeds(w, ch.name).needs.some((n) => n.offered && n.pieces.has(par.slice(5)))
       : par.startsWith("cons:") ? consumableNeeds(w, ch.name).some((n) => n.key === par) // task 014: a potion or a food by need
+      : par.startsWith("train:") ? trainParents(w, ch.name, Infinity).some((p) => p.key === par) // task 029: a craft's training
       : targetsOf(w).some((x) => x.key === par);
     const crafterOn = step.target.startsWith("gear:") ? crafterOf(item(step.target.slice(5))!.craft!.skill, w) === ch.name && isOn(ch.name, w) : isOn(ch.name, w);
     check(INV[13], open && crafterOn, () => `${tag()}: parent ${par}`);
@@ -588,13 +590,14 @@ const rows: Promise<[number, string][]> = !VERBOSE ? Promise.resolve([]) : Promi
 
 // ── 1. roles ─────────────────────────────────────────────────────────────────
 {
-  // Task 027 (decisions 63, 64): two fighters with no lane, three workers — one owner a gathering skill, no craft moved
-  const table: Record<string, string[]> = { First: ["combat"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "cooking", "alchemy", "fishing"], Fourth: ["combat", "jewelrycrafting", "mining"], Fifth: ["combat"] };
+  // Task 027 (decisions 63, 64): two fighters with no lane, three workers — one owner a gathering skill, no craft moved; task 029
+  // (B.2): cooking is Fourth's
+  const table: Record<string, string[]> = { First: ["combat"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "alchemy", "fishing"], Fourth: ["combat", "jewelrycrafting", "cooking", "mining"], Fifth: ["combat"] };
   const pinned = rolesFor(base);
   const same = NAMES.every((n) => [...table[n]].sort().join() === [...pinned[n]].sort().join());
   console.log(`## Roles (DEFAULTS.roles, task 027's table: ${same ? "the same" : "DIFFERENT"})`);
   for (const n of NAMES) console.log(`  ${pad(n, 7)} ${pad(roleOf(n, base) ?? "—", 7)} ${pad(pinned[n].length, 2)} lanes: ${pinned[n].join(", ")}`);
-  cases.push(["the roles are task 027's table (fighters First and Fifth, workers Second, Third and Fourth)", same]);
+  cases.push(["the roles are task 027's table (fighters First and Fifth, workers Second, Third and Fourth; 029: Fourth cooks)", same]);
 }
 
 // ── 2. unhandled; the nine of report 007 ─────────────────────────────────────
@@ -775,7 +778,9 @@ const steps1 = (w: World, n: string): Step => { const s = decide(n, w); verify(w
   const lv = piece ? item(piece)!.craft!.level : 10;
   const w2 = flipWorld(lv - 2, ["Second", "Fifth"]);
   const s2 = steps1(w2, "Second");
-  cases.push(["the crafter two levels short: its level target carries the piece's points", s2.as === "level" && s2.target === `lvl:weaponcrafting:${lv}` && s2.why.includes("for gear")]);
+  // task 029: a worker's craft under its target is a training — the piece's points ride it (train.ts trainScore), its leaves
+  // first, the train step once the bank covers a batch
+  cases.push(["the crafter two levels short: its level target (029: its craft's training) carries the piece's points", (s2.as === "level" && s2.target === `lvl:weaponcrafting:${lv}` && s2.why.includes("for gear")) || (s2.parent === "train:weaponcrafting" || (s2.as === "level" && s2.target.startsWith("lvl:weaponcrafting:")))]);
   console.log(`  2. weaponcrafting ${lv - 2} (the recipe wants ${lv}): Second — ${s2.why}`);
 
   // 3. two fighters (the same fighter twice) and one piece in the bank: once one wears it, the other asks for a
@@ -1168,7 +1173,8 @@ const bars = (n: number): AccountAchievement => ({ code: "made_up_bars", name: "
   const smith = { ...chars.find((c) => c.name === "Second")!, weaponcrafting_level: 30 } as Character;
   const ore: AccountAchievement = { code: "made_up_gold", name: "made up", description: "", points: 3, completed_at: null, objectives: [{ type: "gathering", target: "gold_ore", total: 20_000, progress: 0 }] } as AccountAchievement;
   // the pickaxe's other materials in the bank (its magical cure costs tasks coins: stock counts, a bill takes it)
-  const wG: World = { ...base, characters: [miner40, smith], bank: [...bankOf(LIZARD_SET), ...bankOf({ magical_cure: 2, gold_bar: 7, dead_wood_plank: 2, topaz: 1 })], achievements: [...only([]), ore], config: { ...ALL_ON, on: { First: true, Second: true } } };
+  // (Second a fighter at weaponcrafting 30, as 027's table had it — task 029 took its fighterFrom; the mining lane is First's then)
+  const wG: World = { ...base, characters: [miner40, smith], bank: [...bankOf(LIZARD_SET), ...bankOf({ magical_cure: 2, gold_bar: 7, dead_wood_plank: 2, topaz: 1 })], achievements: [...only([]), ore], config: { ...ALL_ON, on: { First: true, Second: true }, roles: { ...ALL_ON.roles, Second: { ...ALL_ON.roles.Second, fighterFrom: { skill: "weaponcrafting", level: 30 } } } } };
   const toolNeed = gearNeeds(wG).needs.find((n) => n.pieces.has("gold_pickaxe"));
   const dG = eventDemand(eventOf("portal_demon")!, wG);
   cases.push(["task 013: a material of a gear need (demon horns for First's gold pickaxe) is the Portal (Demon)'s demand", !!toolNeed && dG.items.some((i) => i.key === "gear:gold_pickaxe" && i.what.includes("Demon Horn"))]);

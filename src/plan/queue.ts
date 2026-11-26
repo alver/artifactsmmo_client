@@ -53,7 +53,8 @@ export type QueueItem = { id: string; error?: string } & (
   // planner writes only this form (a crafting level); a combat or gathering
   // skill and `for` (a helper) had their writers and handlers deleted — the
   // fields stay for the branches that still read them (`resource`, x, y, `for`).
-  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; layer?: string; gear?: boolean; for?: string }
+  // task 029: `code` and `runs` — the planner's recipe and how many runs (`done` counts them); the item ends at either
+  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; layer?: string; gear?: boolean; for?: string; code?: string; runs?: number; done?: number }
   // Swap to the best job gear from the bank (see plan/jobgear.ts): `desired` =
   // slot map frozen at compile; `job` = live spec recomputed from the bank at
   // run time (hand-added). `reset` ⇒ full bank reset first: deposit EVERYTHING
@@ -115,7 +116,7 @@ export function queueItemText(it: QueueItem): string {
     case "buy": return `Buy ${it.quantity}× ${itemName(it.code)}`;
     case "sell": return `Sell ${it.quantity}× ${itemName(it.code)}`;
     case "recycle": return `Recycle ${it.quantity}× ${itemName(it.code)}`;
-    case "train": return `${it.for ? `Help ${it.for} train` : "Train"} ${titleCase(it.skill)} ${it.levels ? `+${it.levels} level${it.levels === 1 ? "" : "s"}` : it.toLevel > 0 ? `to Lv ${it.toLevel}` : "(∞)"}`;
+    case "train": return it.code && it.runs ? `Train ${titleCase(it.skill)}: ${itemName(it.code)} ×${it.runs}` : `${it.for ? `Help ${it.for} train` : "Train"} ${titleCase(it.skill)} ${it.levels ? `+${it.levels} level${it.levels === 1 ? "" : "s"}` : it.toLevel > 0 ? `to Lv ${it.toLevel}` : "(∞)"}`;
     case "gear": {
       const what = it.job
         ? it.job.kind === "fight"

@@ -6,7 +6,8 @@
 // and crafts is in the bank when it ends, at the expected quantities (fractions kept); a craft takes its materials
 // from the bank, a buy its currency; a crafted gear piece is bank stock.
 // Left out, on purpose: the XP of offerings and of an active favor (conservative; the favors are dropped from the
-// World); what a `train` step sources and recycles inside its item; utility potions, runes,
+// World); what a `train` step sources inside its item (task 029: a train step of a named recipe takes its batch from the
+// bank and puts back what recycling returns — A.5); utility potions, runes,
 // artifacts and bags (not worn by the model). Task 012: a kill step's potions leave the bank when it ends (drinksOf:
 // the brewed potion first, then its ingredients), so a covered ingredient's stock runs out as in play; a combat XP gain
 // counts the worn set's wisdom. A level-up adds 5 max HP (the atlas's 115 + 5·L). Task 013, settled point 8: events
@@ -21,7 +22,7 @@ import { atlas } from "../../catalog/atlas";
 import { item, itemName, monster as monsterOf, resource as resourceOf } from "../../catalog";
 import { STAT_CODES } from "../../sim/types";
 import { GEAR_SLOTS, slotCode } from "../../types/api";
-import { fightXp } from "../xp";
+import { autoRecyclable, fightXp, recycleReturn } from "../xp";
 import { craftsPerLevel, hoursToLevel, levelOf, perOf } from "./cost";
 import { decide, met } from "./decide";
 import { isOn } from "./gates";
@@ -197,6 +198,19 @@ export function advance(world: World, step: Step): World {
     }
   }
   if (w.kind === "buy") { add(`npc_buy:${w.code}`, step.units); put(w.code, step.units); put(w.currency, -w.price * step.units); }
+  // Task 029 (A.5): a train step of a named recipe takes its batch from the bank — what the bank lacks the crafter sourced
+  // inside the step — and puts back what recycling returns (by expectation: the share recycleReturn ÷ the materials); its
+  // runs give their XP and count as crafts and recycles
+  if (w.kind === "train" && w.code && w.runs) {
+    const r = item(w.code)?.craft;
+    if (r) {
+      const n = r.items.reduce((t, g) => t + g.quantity, 0), back = autoRecyclable(w.code) ? recycleReturn(n) / n : 0;
+      for (const g of r.items) put(g.code, -Math.min(g.quantity * w.runs * (1 - back), available(g.code, world, ch.name)));
+      add(`crafting:${w.code}`, w.runs);
+      if (back) add("recycling:", w.runs);
+      gain(w.lane, w.runs * craftXpOf(w.code, levelOf(ch, w.lane)));
+    }
+  }
   if (step.visit?.at === "end") visit();
   if (w.kind === "task" && step.as !== "supply") { // the filler's task-loop: the task held (else a draw) worked and turned in
     if (!ch.task) visit();
@@ -216,7 +230,7 @@ export function advance(world: World, step: Step): World {
       if (lane === "combat") ch.max_hp += 5;
     }
   }
-  if (w.kind === "train") {
+  if (w.kind === "train" && !w.code) {
     add("recycling:", craftsPerLevel(w.lane, levelOf(ch, w.lane)).recycled);
     ch[`${w.lane}_level`] = Math.min(50, levelOf(ch, w.lane) + 1);
     ch[`${w.lane}_xp`] = 0;

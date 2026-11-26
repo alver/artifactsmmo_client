@@ -47,6 +47,7 @@ export interface StepCtx {
   keep?: string[]; // never auto-deposited when banking off overflow
   food?: boolean; // keep the fighter fed: eat before resting, provision when out (bank → cook → gather)
   fightsLeft?: number; // fights the current item still owes — sizes the food restock
+  room?: number; // task 029 (B.1): a train loop's hunt — the most of each potion stack and of the food it may bag beside its batch
   gold?: number; // task 017: a trip's fares — pocket gold no bank-off sweeps
   bought?: () => void; // called the moment an npc/buy succeeds, before its cooldown is waited out
   note: (text: string) => void; // short human status shown on the card
@@ -453,13 +454,15 @@ const BREW_MAX = 45;
  */
 export async function provisionFood(name: string, ch: Character, m: Monster, ctx: StepCtx): Promise<"acted" | "none"> {
   const plan = foodPlan(ch, bankItems.value, foodExclude(ch));
-  if (!plan) return "none";
+  // task 029 (A.4): an owned character's train hunt eats what the bank holds — nothing is cooked or gathered (task 014's rule)
+  if (!plan || (isOwned(name) && plan.source !== "bank")) return "none";
   // Size the batch by the forecast's expected HP loss over the fights left.
   const f = simulate(currentFighter(ch), m);
   const perFight = Math.max(1, f.maxHp - f.hpRemaining);
   const fights = Math.min(ctx.fightsLeft ?? 1, FOOD_HORIZON);
   const stock = plan.source === "bank" ? plan.stock : Number.MAX_SAFE_INTEGER;
-  const want = foodQuantity({ code: plan.code, heal: plan.heal, stock }, perFight, fights, ch);
+  const want = Math.min(foodQuantity({ code: plan.code, heal: plan.heal, stock }, perFight, fights, ch), ctx.room ?? Infinity);
+  if (want < 1) return "none";
 
   if (plan.source === "bank") {
     const bank = nearestBank(ch);

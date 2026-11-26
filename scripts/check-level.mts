@@ -34,12 +34,15 @@ const ALL = ["First", "Second", "Third", "Fourth", "Fifth"];
 const made = (code: string, points: number, type: string, target: string, total: number): AccountAchievement =>
   ({ code, name: code, description: "", points, completed_at: null, objectives: [{ type, target, total, progress: 0 }] }) as unknown as AccountAchievement;
 type Patch = Record<string, Record<string, unknown>>;
+/** Task 029: Third's and Fourth's crafts at their target (30), so no training is a need of these worlds unless a case lowers them
+ *  — 027e's order alone (Second keeps the fixture's weaponcrafting: at 30 it is a fighter here). */
+const AT_TARGET: Patch = { Third: { gearcrafting_level: 30 }, Fourth: { jewelrycrafting_level: 30 } };
 /** The fixture with these achievements, every character on, the characters patched, the bank replaced when given. */
 function worldOf(achievements: AccountAchievement[], patch: Patch = {}, bank?: Record<string, number>, config: object = {}): World {
   return {
     ...fixture, achievements, current: {}, blocked: {}, bags: {}, bankSlots: undefined, nextExpansion: undefined, favors: undefined,
     bank: bank ? Object.entries(bank).map(([code, quantity]) => ({ code, quantity })) : fixture.bank,
-    characters: fixture.characters.map((c) => ({ ...c, ...patch[c.name] }) as Character),
+    characters: fixture.characters.map((c) => ({ ...c, ...AT_TARGET[c.name], ...patch[c.name] }) as Character),
     config: { ...fixture.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])), ...config } as unknown as World["config"],
   };
 }

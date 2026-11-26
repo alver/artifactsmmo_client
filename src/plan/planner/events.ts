@@ -470,10 +470,10 @@ function membersOf(e: ActiveEvent, world: World, busy: Record<string, string>, d
       // task 014, settled point 7: the trip's reset takes what the hour drinks and eats (its set's potions, its pool's food)
       const perKill = content.type === "monster" ? useOf(wm, x.ch, content.code) : undefined;
       // task 017, settled point 13: what the trip plans is what the bank holds for it — the stock this member may take (the
-      // others' running steps and the members before it off), a potion one stack, the food at most a third of the bag (the
+      // others' running steps and the members before it off), a potion one stack, the food at most half the bag (task 029; the
       // reset's cap); the full moon trip of 01:12 UTC on 11-21 planned 100 + 100 potions and 72 trout of a bank that held 54, 0 and 9
       const stock = (c: string): number => available(c, wm, x.ch.name);
-      const cap = (c: string): number => Math.floor(Math.min(stock(c), item(c)?.type === "utility" ? STACK : x.ch.inventory_max_items / 3) + 1e-9);
+      const cap = (c: string): number => Math.floor(Math.min(stock(c), item(c)?.type === "utility" ? STACK : x.ch.inventory_max_items / 2) + 1e-9);
       // task 023 (c): its kills are what the spawn's time gives and its take pays for, the lesser (consumables.ts fightTake)
       const paid = capOn ? paidKills(perKill, cap) : Infinity;
       const n = Math.min(time, paid);

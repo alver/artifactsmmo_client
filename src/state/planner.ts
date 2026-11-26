@@ -111,7 +111,9 @@ export function worldOf(now: number): World {
   const current: World["current"] = {};
   // task 013, settled point 9: a running ach: step is in flight only for what it still has to do — the achievements read
   // already counts what it did (its counter is actions: a drop's fights, a gather's gathers)
-  const left = (r: Running): Step => (r.step.target.startsWith("ach:") ? { ...r.step, units: Math.max(0, r.step.units - r.units / perOf(r.step.work)) } : r.step);
+  // task 029: a train step of a named recipe likewise (its runs: the fleet supplies what is left of the level after them)
+  const left = (r: Running): Step => (r.step.target.startsWith("ach:") ? { ...r.step, units: Math.max(0, r.step.units - r.units / perOf(r.step.work)) }
+    : r.step.work.kind === "train" && r.step.work.runs ? { ...r.step, units: Math.max(0, r.step.units - r.units) } : r.step);
   for (const [n, r] of Object.entries(st.current)) if (config.on[n] && r) current[n] = left(r);
   return {
     now, characters: characterList(), bank: bankItems.value, bankGold: bankDetails.value?.gold ?? 0,
@@ -133,6 +135,7 @@ function bagsOf(config: PlannerConfig): Record<string, number> {
     const r = planner.value.current[ch.name], s = r && !r.over ? r.step : undefined;
     const inputs = new Set<string>([...Object.keys(s?.withdraw ?? {}), ...(s?.sources ?? []).map((x) => x.code)]);
     if (s?.work.kind === "craft") for (const g of itemOf(s.work.code)?.craft?.items ?? []) inputs.add(g.code);
+    if (s?.work.kind === "train" && s.work.code) for (const g of itemOf(s.work.code)?.craft?.items ?? []) inputs.add(g.code); // task 029: its batch
     if (s?.work.kind === "buy") inputs.add(s.work.currency);
     for (const it of ch.inventory ?? []) if (it.code && it.quantity > 0 && !inputs.has(it.code)) out[it.code] = (out[it.code] ?? 0) + it.quantity;
   }
@@ -373,7 +376,7 @@ function measure(r: Running, ch: Character): { counter: number; units: number } 
   const mine = stepItems(ch.name, r.step.key);
   const w = r.step.work;
   let counter = (r.n - mine.length) * 1e6; // a finished item is progress
-  for (const it of mine) counter += ("done" in it ? it.done : 0) + (it.kind === "buy" && it.bought ? 1 : 0);
+  for (const it of mine) counter += ("done" in it ? it.done ?? 0 : 0) + (it.kind === "buy" && it.bought ? 1 : 0);
   // A train step: every XP of the character, not only the lane's — sourcing a batch's materials gathers or hunts first.
   if (w.kind === "train") for (const [k, v] of Object.entries(ch)) if (k.endsWith("xp") && !k.endsWith("max_xp") && typeof v === "number") counter += v;
   // the step's last item that counts: a supply step ends in a deposit-all, which has none (task 009); task 027d: a visit to
@@ -388,11 +391,11 @@ function measure(r: Running, ch: Character): { counter: number; units: number } 
     return s + (live?.kind === "recycle" ? live.done : it.quantity);
   }, 0) : undefined;
   const units =
-    w.kind === "train" ? (levelOf(ch, w.lane) > (r.from ?? Infinity) ? 1 : 0)
+    w.kind === "train" && !w.runs ? (levelOf(ch, w.lane) > (r.from ?? Infinity) ? 1 : 0) // task 029: a named recipe's step counts its runs
     : tidy != null ? tidy
     : !last ? r.units
     : last.kind === "buy" ? (last.bought ? last.quantity : 0)
-    : "done" in last ? last.done : 0;
+    : "done" in last ? last.done ?? 0 : 0;
   return { counter, units: Math.max(r.units, units) };
 }
 

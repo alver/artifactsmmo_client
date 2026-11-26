@@ -42,11 +42,13 @@ const WORKERS = ["Third", "Fourth"];
 const made = (code: string, points: number, type: string, target: string, total: number): AccountAchievement =>
   ({ code, name: code, description: "", points, completed_at: null, objectives: [{ type, target, total, progress: 0 }] }) as unknown as AccountAchievement;
 type Patch = Record<string, Record<string, unknown>>;
+/** Task 029: Third's and Fourth's crafts at their target (30), so no training is a need of these worlds — 027g's rules alone. */
+const AT_TARGET: Patch = { Third: { gearcrafting_level: 30 }, Fourth: { jewelrycrafting_level: 30 } };
 function worldOf(achievements: AccountAchievement[], patch: Patch = {}, bank?: Record<string, number>): World {
   return {
     ...fixture, achievements, current: {}, blocked: {}, bags: {}, bankSlots: undefined, nextExpansion: undefined, favors: undefined,
     bank: bank ? Object.entries(bank).map(([code, quantity]) => ({ code, quantity })) : fixture.bank,
-    characters: fixture.characters.map((c) => ({ ...c, ...patch[c.name] }) as Character),
+    characters: fixture.characters.map((c) => ({ ...c, ...AT_TARGET[c.name], ...patch[c.name] }) as Character),
     config: { ...fixture.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])) } as unknown as World["config"],
   };
 }
@@ -88,7 +90,8 @@ const workerAdmitted = (w: World, m: string): boolean => WORKERS.some((n) => adm
 // ── B. food ──────────────────────────────────────────────────────────────────
 {
   const w25 = (await read("scripts/fixtures/world-2026-11-25.json")).world as World;
-  const base: World = { ...w25, current: {} };
+  // task 029: no craft in training here (Third's and Fourth's at the target, Second, the weaponcrafter, off) — 027g's food alone
+  const base: World = { ...w25, current: {}, characters: w25.characters.map((c) => ({ ...c, ...AT_TARGET[c.name] }) as Character), config: { ...w25.config, on: { ...w25.config.on, Second: false } } };
   // (a) the bank holds cooked trout that the_reaper's need (a better work) asked on 2d1dfa8 → the pick's step takes it and eats
   const r = rank("First", base), s = r.step;
   const all = available("cooked_trout", base, "First");

@@ -24,7 +24,7 @@ export type Work =
   | { kind: "recycle"; codes?: Record<string, number> } // the recycling objective; task 015: a tidy step's codes and copies
   | { kind: "use"; code: string }
   | { kind: "level"; lane: Lane; to: number }
-  | { kind: "train"; lane: Lane };                     // one level of a workshop skill through the `train` item
+  | { kind: "train"; lane: Lane; code?: string; runs?: number }; // a workshop skill through the `train` item: one level, or (task 029) `runs` of the recipe `code` the picker named (train.ts)
 
 /** A material of a craft or the currency of a buy: `per` units for one unit of the target, and where more comes from. */
 export interface Input {
@@ -82,8 +82,9 @@ export interface Step {
 }
 
 /** Task 028: the rule of a role's order that took a step (decide.ts ORDER): a fighter's first · forging · a need's kill ·
- *  the XP pick · the free pass; a worker's need · short · craft ahead · today · fallback; anyone's tidy. */
-export type Rule = "first" | "forging" | "need-kill" | "xp-pick" | "free" | "need" | "short" | "craft-ahead" | "today" | "fallback" | "tidy";
+ *  the XP pick · the free pass; a worker's need · short · craft ahead · today · fallback; anyone's tidy. Task 029: a fighter's
+ *  training's kill (`train-kill`), a worker's batch from the bank (`train`). */
+export type Rule = "first" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "short" | "craft-ahead" | "today" | "fallback" | "tidy";
 /** Task 028 (A.1): a step's reason in parts. */
 export interface Reason {
   role?: "fighter" | "worker";
@@ -131,6 +132,7 @@ export interface PlannerConfig {
   goldPerHour: number;                    // task 017: gold a character-hour is worth (design D.2): a fare's price in hours
   sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
   foodFishing?: boolean;                  // task 027g: overrides config.ts FOOD_FISHING (the roads and the checks only)
+  trainHunt?: boolean;                    // task 029: overrides config.ts TRAIN_HUNT (the roads and the checks only)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;

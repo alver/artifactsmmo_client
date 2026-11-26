@@ -22,13 +22,14 @@ export const DEFAULTS: PlannerConfig = {
   weight: {},
   filler: FILLER,
   // Task 009: every role pinned, so roles never follow levels. Task 027 (Alex, decisions 63, 64): two fighters, three
-  // workers — one owner a gathering skill, no craft changes hands. Second is the third fighter from weaponcrafting 30; its
-  // woodcutting then goes to Fourth, the next character that pins it (roles.ts).
+  // workers — one owner a gathering skill, no craft changes hands. Task 029 (B.2, B.4): Second stays a worker (its
+  // `fighterFrom` went: two fighters until the planning chat says otherwise); cooking is Fourth's (027g: Third cooked 328 h
+  // and the fighters waited for its potions).
   roles: {
     First: { role: "fighter" },
-    Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"], fighterFrom: { skill: "weaponcrafting", level: 30 } },
-    Third: { role: "worker", craft: ["gearcrafting", "cooking"], gather: ["alchemy", "fishing"] },
-    Fourth: { role: "worker", craft: ["jewelrycrafting"], gather: ["mining", "woodcutting"] },
+    Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] },
+    Third: { role: "worker", craft: ["gearcrafting"], gather: ["alchemy", "fishing"] },
+    Fourth: { role: "worker", craft: ["jewelrycrafting", "cooking"], gather: ["mining", "woodcutting"] },
     Fifth: { role: "fighter" },
   },
   on: { Fifth: true }, // task 008: one character for a day of real play; 010 turns the other four on
@@ -102,6 +103,10 @@ export const MARGIN = 1.2;
  *  the cook cooks what the bank holds raw (the by-products: the trout of the algae step, the hunts' meat). true — today's
  *  chain (a need's ingredients from the field). `config.foodFishing` overrides it for the roads and the checks only. */
 export const FOOD_FISHING = false;
+/** Task 029, A.3 (Alex: the crafts first now): true — a training's src: kill is a fighter's work before its XP pick, whoever
+ *  else is admitted and whether or not it gives the fighter XP (the workers are the crafters); false — such a kill follows
+ *  task 027g's rule (a worker that is on and admitted hunts it). `config.trainHunt` overrides it for the roads and checks only. */
+export const TRAIN_HUNT = true;
 
 /** Task 013: a spawn is seen half a poll late on average (the 2-minute poll while event demand is open, sync.ts). */
 export const EVENT_SEEN_SEC = 60;

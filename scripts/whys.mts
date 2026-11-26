@@ -1,8 +1,10 @@
 // Task 028 (D.1): every step's why on three fixture Worlds — the World of 11-25 played forward `hours` (the road's World:
 // bags banked, no bank slots), each character's decision on the World of 11-24, and on the made-up World of check-seconds A
-// (11-21, the fighters unarmed). Run against a tree (its src/ and public/data/) to record what that tree says:
+// (11-21, the fighters unarmed); task 029: and on the 11-21 fixture with no open achievement. Run against a tree (its src/
+// and public/data/) to record what that tree says:
 //   node --import tsx scripts/whys.mts <tree> <out.json> [hours]
-// check-onepage compares this tree's whys with the record of 027g's tree (scripts/fixtures/whys-027g.json).
+// check-onepage compares this tree's whys with the record of 029's tree (scripts/fixtures/whys-029.json; 028 compared
+// 027g's, whys-027g.json, recorded on c03bff4: the planner did not change there).
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
@@ -48,6 +50,10 @@ export async function whysOf(tree: string, hours: number, onStep?: (w: string, s
     config: { ...f21.config, roles: ROLES, on: Object.fromEntries(Object.keys(ROLES).map((n) => [n, true])) },
   };
   for (const c of w21.characters) see("11-21 unarmed", decide(c.name, w21));
+  // task 029: the fixture of 11-21 with no open achievement — no road, no training a need: the fighters' XP pick, a worker's
+  // craft ahead
+  const w0 = { ...w21, bank: f21.bank, achievements: [], characters: f21.characters };
+  for (const c of w0.characters) see("11-21 no achievement", decide(c.name, w0));
   return out;
 }
 
