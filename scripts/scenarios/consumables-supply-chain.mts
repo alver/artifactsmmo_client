@@ -10,7 +10,7 @@ await scenario(
   {
     // task 025: at the floor 0.75 Pia wins 77% of her slime fights without a potion (admitted, no need for one); at 0.9 she
     // needs them, as the scenario was written
-    planner: { on: { Pia: true, Quinn: true }, risk: { minWin: 0.9 } },
+    planner: { on: { Pia: true, Quinn: true }, risk: { minWin: 0.9 }, potions: true }, // task 031: the potion mechanism
     characters: [{ name: "Pia", level: 10, x: 4, y: 1 }, { name: "Quinn", level: 3, x: 4, y: 1, alchemy_level: 5 }],
     bank: { copper_dagger: 1 },
     achievements: [achievement("made_up_slimes", 5, ["combat_kill", "green_slime", 20]), achievement("made_up_ore", 1, ["gathering", "copper_ore", 400])],

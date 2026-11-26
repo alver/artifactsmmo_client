@@ -142,7 +142,9 @@ function makeHours(pieces: Map<string, number>, ch: Character, world: World): { 
 function newPieces(r: GearRecommendation, ch: Character, world: World): Map<string, number> {
   const pool = ownedQtyOf(ch, poolBank(world, ch.name));
   const used = new Map<string, number>();
-  for (const c of r.codes) used.set(c, (used.get(c) ?? 0) + 1);
+  // task 031: a potion is no piece (candidatesOf leaves utilities out; row B's free potions are at hand, not made — with alchemy
+  // nobody's lane its crafter is nobody)
+  for (const c of r.codes) if (item(c)?.type !== "utility") used.set(c, (used.get(c) ?? 0) + 1);
   const out = new Map<string, number>();
   for (const [c, n] of used) if (n > (pool.get(c) ?? 0)) out.set(c, n - (pool.get(c) ?? 0));
   return [...out.keys()].every((c) => item(c)?.craft) ? out : new Map(); // a copy short that no recipe makes: no set

@@ -49,7 +49,7 @@ function worldOf(achievements: AccountAchievement[], patch: Patch = {}, bank?: R
     ...fixture, achievements, current: {}, blocked: {}, bags: {}, bankSlots: undefined, nextExpansion: undefined, favors: undefined,
     bank: bank ? Object.entries(bank).map(([code, quantity]) => ({ code, quantity })) : fixture.bank,
     characters: fixture.characters.map((c) => ({ ...c, ...AT_TARGET[c.name], ...patch[c.name] }) as Character),
-    config: { ...fixture.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])) } as unknown as World["config"],
+    config: { ...fixture.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])), potions: true, kitchen: false } as unknown as World["config"], // task 031: 030's potions and tiers
   };
 }
 const said = (s: Step): string => `${s.target} (${s.work.kind}${s.work.kind === "kill" ? ` ${s.work.monster}` : ""}) — ${s.why.slice(0, 190)}`;
@@ -91,7 +91,7 @@ const workerAdmitted = (w: World, m: string): boolean => WORKERS.some((n) => adm
 {
   const w25 = (await read("scripts/fixtures/world-2026-11-25.json")).world as World;
   // task 029: no craft in training here (Third's and Fourth's at the target, Second, the weaponcrafter, off) — 027g's food alone
-  const base: World = { ...w25, current: {}, characters: w25.characters.map((c) => ({ ...c, ...AT_TARGET[c.name] }) as Character), config: { ...w25.config, on: { ...w25.config.on, Second: false } } };
+  const base: World = { ...w25, current: {}, characters: w25.characters.map((c) => ({ ...c, ...AT_TARGET[c.name] }) as Character), config: { ...w25.config, on: { ...w25.config.on, Second: false }, potions: true, kitchen: false } as World["config"] };
   // (a) the bank holds cooked trout that the_reaper's need (a better work) asked on 2d1dfa8 → the pick's step takes it and eats
   const r = rank("First", base), s = r.step;
   const all = available("cooked_trout", base, "First");

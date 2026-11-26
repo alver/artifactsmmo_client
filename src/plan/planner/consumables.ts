@@ -34,16 +34,16 @@ import { winRate } from "../../sim/monte";
 import { restSeconds } from "../../sim/cost";
 import type { Food } from "../bis";
 import { gearMaterial, healingFoods } from "../consumables";
-import { fightXp, potionSec } from "../xp";
-import { CHUNK_SEC, FOOD_FISHING, HORIZON, MARGIN, NEED_RATIO } from "./config";
-import { actionSec, killWalk, levelHoursEstimate, perOf } from "./cost";
+import { CRAFT_SEC, fightXp, potionSec } from "../xp";
+import { CHUNK_SEC, FOOD_FISHING, HORIZON, KITCHEN, MARGIN, NEED_RATIO, POTIONS } from "./config";
+import { actionSec, killWalk, levelHoursEstimate, levelOf, perOf } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { eventDemand, usableSec } from "./events";
 import { isOn, met } from "./gates";
 import { gearPieces, pieceParent } from "./gear";
 import { pickMonster } from "./pick";
 import { fightRec, nearestSpot, placeOf, potionPrice, potionRec, admitted, setWisdom, admits, minWinOf, winSecOf } from "./reach";
-import { crafterOf, fights } from "./roles";
+import { crafterOf, fights, roleOf } from "./roles";
 import { available } from "./stock";
 import { billOf, feedable, mayCraft, objectiveParents, supplyNeeds } from "./supply";
 import type { Gated, Parent } from "./supply";
@@ -62,6 +62,10 @@ const cons = (world: World): boolean => !!(world.config.consumables ?? 1);
 export const consFree = (world: World): boolean => cons(world) && (world.config.potionK ?? 1) === 0;
 /** Task 027g, B.4: whether a food need may fish or hunt for its ingredients (config.ts FOOD_FISHING; the roads' override). */
 const fishing = (world: World): boolean => world.config.foodFishing ?? FOOD_FISHING;
+/** Task 031, A: whether a potion may be a need (config.ts POTIONS; the roads' override). */
+export const potionsOn = (world: World): boolean => world.config.potions ?? POTIONS;
+/** Task 031, B: whether Third is the kitchen (config.ts KITCHEN; the roads' override). */
+export const kitchenOn = (world: World): boolean => world.config.kitchen ?? KITCHEN;
 const calHOf = (world: World): number => Math.max(0, (Date.parse(world.config.deadline) - world.now) / 3.6e6);
 
 // ── the candidates ───────────────────────────────────────────────────────────
@@ -234,6 +238,7 @@ export const POTION_REACH = 3;
 /** The set of the pool's gear with every potion the character may drink a candidate at the chain's price, the stock left
  *  out (reach.ts potionRec): what wins once the potions are made — their making is the need's G. */
 export function potionSet(ch: Character, world: World, monster: string, fleet = false): GearRecommendation | undefined {
+  if (!potionsOn(world)) return undefined; // task 031 (A.1): no potion set is solved for a need
   // shortcut: a potion is asked to flip a fight up to POTION_REACH levels above the character; upgrade if one ever flips
   // a monster further up (the gear's ten-level look, reach.ts winLevel, is unchanged)
   if ((monsterOf(monster)?.level ?? Infinity) > ch.level + POTION_REACH) return undefined;
@@ -369,14 +374,15 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
       return { ...n, fit: s.fit, any: s.any, hours: s.hours };
     };
     const ok = (code: string): boolean => { const m = monsterOf(code); return !!m && m.type !== "boss" && m.type !== "raid_boss" && fightXp(m.level, m.hp, m.type, L) > 0 && !!nearestSpot(placeOf(ch), "monster", code, world); };
-    const cur = pickMonster(ch, w0, new Set());
-    const flips = [...catalog().monsters.values()].filter((m) => m.level <= L + 2 && ok(m.code) && !admitted(ch, w0, m.code))
+    const pots = potionsOn(world); // task 031 (A.1): no potion is a need of the road
+    const cur = pots ? pickMonster(ch, w0, new Set()) : undefined;
+    const flips = !pots ? [] : [...catalog().monsters.values()].filter((m) => m.level <= L + 2 && ok(m.code) && !admitted(ch, w0, m.code))
       .sort((x, y) => fightXp(y.level, y.hp, y.type, L) - fightXp(x.level, x.hp, x.type, L) || (x.code < y.code ? -1 : 1)).slice(0, 2).map((m) => m.code); // the pick and two flips (gear.ts (a) looks at four: a potion solve is dearer)
     // task 027e (C.1): and the XP pick itself (the pool's potions in) — a pick admitted only with a potion makes it a need
     // of the road, so somebody brews it when the stock is a sliver
     const pick = pickMonster(ch, world, new Set());
     let best: ConsNeed[] = [], bestH = Infinity;
-    for (const mc of [...new Set([cur?.monster ?? "", pick?.monster ?? "", ...flips])].filter(Boolean)) {
+    for (const mc of !pots ? [] : [...new Set([cur?.monster ?? "", pick?.monster ?? "", ...flips])].filter(Boolean)) {
       const r1 = potionSet(ch, world, mc);
       if (!r1) continue;
       const sec1 = freeSec(r1, ch, world, mc, potionPrice(world, ch.name).food?.(lostOf(r1.forecast), r1.forecast.maxHp));
@@ -403,7 +409,8 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
       // consParents), the raw going to one fighter's road
       const q = (code: string): number => Math.max(1, item(code)?.craft?.quantity ?? 1);
       const makes = (code: string): number => Math.max(0, feedable(code, world, name) * q(code) - (rawTaken.get(code) ?? 0));
-      const raw = foodCands(ch).filter((x) => makes(x.code) >= 1);
+      // task 031 (B.4): with the kitchen, a food the kitchen can make at its levels (a cook that is on, at the recipe's level)
+      const raw = foodCands(ch).filter((x) => makes(x.code) >= 1 && (!kitchenOn(world) || cookable(world, x.code)));
       const fed: World = raw.length ? { ...world, bank: [...world.bank, ...raw.map((x) => ({ code: x.code, quantity: makes(x.code) }))] } : world;
       const p1 = raw.length ? pickMonster(ch, fed, new Set()) : undefined, b1 = p1 && fightRec(ch, fed, p1.monster);
       const f = b1 && foodFor(ch, world, lostOf(b1.forecast), name);
@@ -424,7 +431,8 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
   // character that wins it with a potion
   const others = Object.entries(world.current).filter(([n, s]) => n !== name && s).map(([, s]) => s!);
   const inFlight = (key: string): number => others.reduce((t, s) => t + (s.target === key && s.as !== "level" && s.as !== "fallback" ? s.units : 0), 0);
-  for (const t of targetsOf(world)) {
+  // task 031 (A.1): nothing but a potion admits such a monster — none with potions off
+  if (potionsOn(world)) for (const t of targetsOf(world)) {
     if (t.work.kind !== "kill" || !t.achievement || t.filler || t.gates.some((g) => g.kind === "event")) continue;
     const m = monsterOf(t.work.monster), left = t.left - inFlight(t.key);
     if (!m || left <= 0 || m.type === "boss" || m.type === "raid_boss") continue;
@@ -442,7 +450,7 @@ export function consumableNeeds(world: World, name = ""): ConsNeed[] {
   }
 
   // (c) the hunt of an open parent's src: leaf whose source is a monster nobody that is on is admitted now
-  for (const s of supplyNeeds(world, name, baseParents(world, name), () => 0)) {
+  if (potionsOn(world)) for (const s of supplyNeeds(world, name, baseParents(world, name), () => 0)) {
     const src = sourceFor(s.code);
     if (s.kind !== "src" || typeof src === "string" || src.work.kind !== "kill" || src.gates.some((g) => g.kind === "event")) continue;
     const m = monsterOf(src.work.monster);
@@ -635,6 +643,74 @@ function restWhy(world: World, ch: Character, lost: number, maxHp: number): stri
   const cook = crafterOf("cooking", world);
   if (!raw) return "no food in the bank, nor raw food to cook";
   return !cook || !isOn(cook, world) ? `no food in the bank; raw for ${itemName(raw.code)} waits, no cook is on` : `no food in the bank; raw for ${itemName(raw.code)} waits for the cook`;
+}
+
+// ── task 031, B: the kitchen ─────────────────────────────────────────────────
+
+/** B.4: whether a cook that is on may make `code` at its level now (supply.ts mayCraft: the lane's holder, the recipe's level). */
+export function cookable(world: World, code: string): boolean {
+  const r = item(code)?.craft;
+  return !!r && world.characters.some((c) => isOn(c.name, world) && mayCraft(r.skill as Lane, r.level, c.name, world));
+}
+let tiers: number[] | undefined;
+/** B.4: the food tiers — the levels at which a fish and its cooked food open together (the fishing node's level and the
+ *  recipe's, the higher): from the catalog, trout 20, bass 30, salmon 40, swordfish 50. */
+export function foodTiers(): number[] {
+  if (!tiers) {
+    const out = new Set<number>();
+    for (const r of catalog().resources.values()) if (r.skill === "fishing") for (const d of r.drops) for (const it of catalog().items.values()) {
+      const c = it.craft;
+      if (it.type === "consumable" && c?.skill === "cooking" && c.items.some((g) => g.code === d.code) && (it.effects ?? []).some((e) => e.code === "heal")) out.add(Math.max(r.level, c.level));
+    }
+    tiers = [...out].sort((a, b) => a - b);
+  }
+  return tiers;
+}
+/** B.4: the next food tier of a holder of fishing and cooking — the first above the lower of the two it holds. */
+export const nextFoodTier = (ch: Character, lanes: Lane[]): number | undefined => {
+  const held = (["fishing", "cooking"] as Lane[]).filter((l) => lanes.includes(l));
+  const low = Math.min(...held.map((l) => levelOf(ch, l)));
+  return held.length ? foodTiers().find((t) => t > low) : undefined;
+};
+/**
+ * B.3: the foods the fighters' running fight steps lack — a fighter's kill step that rests (its take holds no food while its
+ * fight, on the set it wears, loses HP a food heals faster than resting) or whose food take is short of what its kills eat
+ * (consumables per win, MARGIN, half the bag), while the bank does not hold that much of what it would eat (in HP of the most
+ * healing) — each food such a fight would eat, the most healing first, with the fighters.
+ */
+export function hungry(world: World): { code: string; hp: number; for: string[] }[] {
+  const out = new Map<string, { code: string; hp: number; for: string[] }>();
+  for (const ch of world.characters) {
+    const s = world.current[ch.name], m = s?.work.kind === "kill" ? monsterOf(s.work.monster) : undefined;
+    if (!s || !m || !isOn(ch.name, world) || roleOf(ch.name, world) !== "fighter") continue;
+    const codes = [...Object.values(s.wear ?? {}), ...Object.keys(s.withdraw ?? {}).filter((c) => item(c)?.type === "utility")];
+    const fo = simulate(applyGear(baseStats(ch), codes), m);
+    const lost = lostOf(fo), p = s.fight?.p ?? (fo.win ? 1 : 0);
+    if (!(lost > 0) || !(p > 0)) continue;
+    const eat = foodCands(ch).filter((f) => f.hp <= lost && healSeconds(lost, fo.maxHp, () => 0, f) < restSeconds(lost, fo.maxHp));
+    if (!eat.length) continue;
+    const took = Object.entries(s.withdraw ?? {}).find(([c]) => isFood(c));
+    const kills = s.as === "supply" ? s.units : s.units * perOf(s.work);
+    const want = (f: Food): number => Math.min(Math.ceil(foodPerWin({ forecast: fo, p } as GearRecommendation, f) * kills * MARGIN - 1e-9), Math.floor(ch.inventory_max_items / 2));
+    const hp = took && healingFoods(ch).find((f) => f.it.code === took[0])?.heal;
+    if (took && hp && took[1] >= want({ code: took[0], hp })) continue;
+    // what it would eat already waits in the bank (its next step takes it): no cook step for it
+    if (eat.reduce((t, f) => t + available(f.code, world, ch.name) * f.hp, 0) >= want(eat[0]) * eat[0].hp) continue;
+    for (const f of eat) { const e = out.get(f.code); if (e) e.for.push(ch.name); else out.set(f.code, { ...f, for: [ch.name] }); }
+  }
+  return [...out.values()].sort((a, b) => b.hp - a.hp || (a.code < b.code ? -1 : 1));
+}
+/** B.3: the stock first — the food a hungry fighter would eat that the bank's raw feeds and this worker may cook, the most
+ *  healing first, a chunk of runs (CHUNK_SEC of crafts) at a time; never of an open parent's own material (foodFor's rule). */
+export function stockCook(world: World, name: string): { code: string; runs: number; for: string[] } | undefined {
+  const mats = parentMats(world, name);
+  for (const f of hungry(world)) {
+    const r = item(f.code)?.craft;
+    if (!r || !mayCraft(r.skill as Lane, r.level, name, world) || r.items.some((g) => mats.has(g.code))) continue;
+    const runs = Math.min(feedable(f.code, world, name), Math.floor(CHUNK_SEC / CRAFT_SEC));
+    if (runs >= 1) return { code: f.code, runs, for: f.for };
+  }
+  return undefined;
 }
 
 /** Settled point 8: what a step's fights drink and eat in the forward model — its consumables (a kill step's `withdraw`,

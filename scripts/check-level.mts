@@ -43,7 +43,7 @@ function worldOf(achievements: AccountAchievement[], patch: Patch = {}, bank?: R
     ...fixture, achievements, current: {}, blocked: {}, bags: {}, bankSlots: undefined, nextExpansion: undefined, favors: undefined,
     bank: bank ? Object.entries(bank).map(([code, quantity]) => ({ code, quantity })) : fixture.bank,
     characters: fixture.characters.map((c) => ({ ...c, ...AT_TARGET[c.name], ...patch[c.name] }) as Character),
-    config: { ...fixture.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])), ...config } as unknown as World["config"],
+    config: { ...fixture.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])), potions: true, kitchen: false, ...config } as unknown as World["config"], // task 031: 030's potions and tiers
   };
 }
 const withBank = (codes: Record<string, number>): Record<string, number> => ({ ...Object.fromEntries(fixture.bank.map((b) => [b.code, b.quantity])), ...codes });

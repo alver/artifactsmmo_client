@@ -15,6 +15,20 @@ export const TRAIN_LANES: Lane[] = CRAFT_LANES;
 /** The three skills whose atlas hours are a model artefact (design A.5). */
 export const GEAR_CRAFT: Lane[] = ["weaponcrafting", "gearcrafting", "jewelrycrafting"];
 
+/** Task 031, A (Alex: the other players get next to nothing from potions — do not make them): false — no potion is a need
+ *  (consumables.ts consumableNeeds names none, so none is a parent of supply, and no potion set is solved for a need); a fight
+ *  is admitted on the gear, the rune and food, and the potions the bank holds are drunk at today's price until they are gone.
+ *  true — 030's. `config.potions` overrides it for the roads and the checks only. */
+export const POTIONS = false;
+/** Task 031, B (Alex: Third is the kitchen instead of the alchemist): true — the roles of DEFAULTS.roles' kitchen (Third cooks
+ *  and fishes, alchemy is nobody's lane); a food need of the fighters' road is a worker's (1a); while a fighter's fight step rests
+ *  or its food take is short, the bank's raw food is the cook's step before the rest of (1a) (decide.ts rule `cook`); the
+ *  kitchen's fishing and cooking rise to the next food tier in its tier (3). false — 030's. `config.kitchen` overrides it for
+ *  the roads and the checks only (the roles stay DEFAULTS.roles': a road with the other value passes its roles in its patch).
+ *  False by task 031's rule (D.3): from the World of 11-26 the later fighter reaches combat 50 on road day 34 with it, 33
+ *  without (report 031). */
+export const KITCHEN = false;
+
 export const DEFAULTS: PlannerConfig = {
   deadline: "2027-02-24T00:00:00Z",
   exclude: [],
@@ -25,11 +39,13 @@ export const DEFAULTS: PlannerConfig = {
   // workers — one owner a gathering skill, no craft changes hands. Task 029 (B.2, B.4): Second stays a worker (its
   // `fighterFrom` went: two fighters until the planning chat says otherwise); cooking is Fourth's (027g: Third cooked 328 h
   // and the fighters waited for its potions).
+  // Task 031 (B.1, KITCHEN): Third is the kitchen — gearcrafting and cooking, fishing; Fourth keeps jewelrycrafting, mining and
+  // woodcutting; alchemy is nobody's lane (roles.ts rolesOf). Without the kitchen, 030's.
   roles: {
     First: { role: "fighter" },
     Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] },
-    Third: { role: "worker", craft: ["gearcrafting"], gather: ["alchemy", "fishing"] },
-    Fourth: { role: "worker", craft: ["jewelrycrafting", "cooking"], gather: ["mining", "woodcutting"] },
+    Third: KITCHEN ? { role: "worker", craft: ["gearcrafting", "cooking"], gather: ["fishing"] } : { role: "worker", craft: ["gearcrafting"], gather: ["alchemy", "fishing"] },
+    Fourth: KITCHEN ? { role: "worker", craft: ["jewelrycrafting"], gather: ["mining", "woodcutting"] } : { role: "worker", craft: ["jewelrycrafting", "cooking"], gather: ["mining", "woodcutting"] },
     Fifth: { role: "fighter" },
   },
   on: { Fifth: true }, // task 008: one character for a day of real play; 010 turns the other four on

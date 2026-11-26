@@ -9,7 +9,7 @@ import { planner } from "../../src/state/planner";
 
 await scenario(
   {
-    planner: { on: { Pia: true } },
+    planner: { on: { Pia: true }, potions: true }, // task 031: the potion mechanism (POTIONS off: no potion is a need)
     characters: [{ name: "Pia", level: 10, x: 4, y: 1, alchemy_level: 5 }], // on the bank
     bank: { copper_dagger: 1, sunflower: 300 },
     achievements: [achievement("made_up_slimes", 5, ["combat_kill", "green_slime", 20])],

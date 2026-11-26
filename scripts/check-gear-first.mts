@@ -20,7 +20,7 @@ await loadCatalog();
 
 const fx = JSON.parse(await readFile("scripts/fixtures/world-gear-first.json", "utf8")) as { world: World };
 const of = (gearFirst: string, blocks: string[] = []): World => ({
-  ...fx.world, config: { ...fx.world.config, gearFirst } as World["config"],
+  ...fx.world, config: { ...fx.world.config, gearFirst, potions: true, kitchen: false } as World["config"], // task 031: 030's potions and roles
   blocked: { ...fx.world.blocked, ...Object.fromEntries(blocks.map((k) => [k, { until: fx.world.now + 3.6e6, why: "check" }])) },
 });
 const cands = (r: ReturnType<typeof rank>): Candidate[] => [...r.objectives, ...r.levels, ...r.supply];

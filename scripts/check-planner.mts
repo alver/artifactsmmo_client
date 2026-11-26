@@ -25,10 +25,10 @@ import { GEAR_SLOTS } from "../src/types/api";
 import type { GearRecommendation } from "../src/plan/types";
 import { itemsOf } from "../src/plan/planner/compile";
 import { trainParents } from "../src/plan/planner/train";
-import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, KILL_LOG_013, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
+import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, KILL_LOG_013, KITCHEN, POTIONS, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
 import { actionSec, bagActions, fareSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec, unitSec } from "../src/plan/planner/cost";
 import { bundleOf, bundleScore } from "../src/plan/planner/bundle";
-import { chainSec, consFree, consParents, consumableNeeds, fightTake, gearWorld, poolFood, poolFoods, reservable } from "../src/plan/planner/consumables";
+import { chainSec, consFree, consParents, consumableNeeds, fightTake, gearWorld, hungry, poolFood, poolFoods, reservable } from "../src/plan/planner/consumables";
 import { EXPAND_BELOW, TIDY_BELOW, backText, bankStuck, expansionOk, freeSlots, isGear, newCodes, tidyLeft, tidyStep, tidyVerdicts, usedSlots } from "../src/plan/planner/bank";
 import { SELL_FLOORS, merchantOrder } from "../src/plan/events";
 import { calendar, contentOf, eventDemand, eventMembers, eventOf, eventPlans, gapSec, possibleMembers, spawnOf, usableSec } from "../src/plan/planner/events";
@@ -127,7 +127,7 @@ const INV = [
   "11 the roles are the same as at the start (task 027: until a character's role changes — Second at weaponcrafting 30)",
   "12 no piece in two sets, no stock another reserved",
   "13 no step over 2 chunks but a train level, a task, one item of a drop or one kill",
-  "14 a supply step has an open parent, its crafter on",
+  "14 a supply step has an open parent, its crafter on (task 031: the stock's cook step, a fighter that still rests)",
   "15 bank stock never below zero or a floor",
   "16 a piece made is worn by its fighter within a day",
   "17 a craft, trade or gear step costs its fixed seconds",
@@ -304,7 +304,8 @@ function verify(w: World, step: Step, run: Run): void {
     const par = step.parent ?? "";
     const forCh = w.characters.find((c) => c.name === (step.for ?? step.character))!;
     const open =
-      par.startsWith("lvl:") ? levelOf(forCh, par.split(":")[1] as Lane) < Number(par.split(":")[2])
+      step.reason?.rule === "cook" ? hungry(w).some((f) => f.code === step.target.slice(4)) // task 031 (B.3): the stock first — a fighter still rests
+      : par.startsWith("lvl:") ? levelOf(forCh, par.split(":")[1] as Lane) < Number(par.split(":")[2])
       : par.startsWith("gear:") ? gearNeeds(w, ch.name).needs.some((n) => n.offered && n.pieces.has(par.slice(5)))
       : par.startsWith("cons:") ? consumableNeeds(w, ch.name).some((n) => n.key === par) // task 014: a potion or a food by need
       : par.startsWith("train:") ? trainParents(w, ch.name, Infinity).some((p) => p.key === par) // task 029: a craft's training
@@ -591,13 +592,14 @@ const rows: Promise<[number, string][]> = !VERBOSE ? Promise.resolve([]) : Promi
 // ── 1. roles ─────────────────────────────────────────────────────────────────
 {
   // Task 027 (decisions 63, 64): two fighters with no lane, three workers — one owner a gathering skill, no craft moved; task 029
-  // (B.2): cooking is Fourth's
-  const table: Record<string, string[]> = { First: ["combat"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "alchemy", "fishing"], Fourth: ["combat", "jewelrycrafting", "cooking", "mining"], Fifth: ["combat"] };
+  // (B.2): cooking is Fourth's; task 031 (B.1, KITCHEN): Third is the kitchen — cooking and fishing — and alchemy is nobody's lane
+  const table: Record<string, string[]> = KITCHEN ? { First: ["combat"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "cooking", "fishing"], Fourth: ["combat", "jewelrycrafting", "mining"], Fifth: ["combat"] }
+    : { First: ["combat"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "alchemy", "fishing"], Fourth: ["combat", "jewelrycrafting", "cooking", "mining"], Fifth: ["combat"] };
   const pinned = rolesFor(base);
   const same = NAMES.every((n) => [...table[n]].sort().join() === [...pinned[n]].sort().join());
-  console.log(`## Roles (DEFAULTS.roles, task 027's table: ${same ? "the same" : "DIFFERENT"})`);
+  console.log(`## Roles (DEFAULTS.roles, task ${KITCHEN ? "031's kitchen" : "027's"} table: ${same ? "the same" : "DIFFERENT"})`);
   for (const n of NAMES) console.log(`  ${pad(n, 7)} ${pad(roleOf(n, base) ?? "—", 7)} ${pad(pinned[n].length, 2)} lanes: ${pinned[n].join(", ")}`);
-  cases.push(["the roles are task 027's table (fighters First and Fifth, workers Second, Third and Fourth; 029: Fourth cooks)", same]);
+  cases.push([`the roles are task 027's table (fighters First and Fifth, workers Second, Third and Fourth; ${KITCHEN ? "031: Third cooks, alchemy nobody's" : "029: Fourth cooks"})`, same]);
 }
 
 // ── 2. unhandled; the nine of report 007 ─────────────────────────────────────
@@ -1309,12 +1311,13 @@ function gainTable(w: World, label: string): void {
 const made = (code: string, points: number, type: string, target: string, total: number): AccountAchievement =>
   ({ code, name: "made up", description: "", points, completed_at: null, objectives: [{ type, target, total, progress: 0 }] }) as AccountAchievement;
 /** Task 014: a made-up world — the characters of `who` stripped to their level (their skills overridden), only `on` on, the
- *  bank `bank` (+ `keep` of the snapshot's), the achievements `achs` open and every other done. */
+ *  bank `bank` (+ `keep` of the snapshot's), the achievements `achs` open and every other done. Task 031: potions on (the
+ *  mechanism these cases test; POTIONS is off). */
 function consWorld(bank: Record<string, number>, achs: AccountAchievement[], on: string[], who: Record<string, Record<string, number>>, extra: Partial<PlannerConfig> = {}): World {
   return {
     ...base, characters: chars.map((c) => (who[c.name] ? ({ ...stripped(c, who[c.name].level ?? c.level), ...who[c.name] } as Character) : c)),
     bank: Object.entries(bank).map(([code, quantity]) => ({ code, quantity })), achievements: [...only([]), ...achs],
-    config: { ...EVEN, on: Object.fromEntries(on.map((n) => [n, true])), ...extra },
+    config: { ...EVEN, on: Object.fromEntries(on.map((n) => [n, true])), potions: true, ...extra },
   };
 }
 {
@@ -2348,7 +2351,7 @@ let bad = 0, n = 0;
 for (const [k, r] of inv) {
   n += r.n;
   console.log(`  ${r.fails ? "FAIL" : "ok  "} ${pad(k, 52)} ${r.n} checks${r.fails ? `, ${r.fails} failed: ${r.bad.join(" | ")}` : ""}`);
-  if (r.fails || (!r.n && k !== INV[15])) bad++;
+  if (r.fails || (!r.n && k !== INV[15] && !(k === INV[19] && !(base.config.potions ?? POTIONS)))) bad++; // task 031: with potions off a week may make no consumable by need
 }
 for (const [why, ok] of cases) { n++; if (!ok) { bad++; console.log(`MISMATCH ${why}`); } }
 console.log(`\nMemo: ${JSON.stringify(memoSizes())}. ${((performance.now() - T0) / 1000).toFixed(1)} s in all`);

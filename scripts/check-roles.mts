@@ -43,7 +43,7 @@ function worldOf(achievements: AccountAchievement[], on = ALL, levels: Record<st
   return {
     ...fixture, achievements, current: {}, blocked: {}, bags: {}, bankSlots: undefined, nextExpansion: undefined, favors: undefined,
     characters: fixture.characters.map((c) => ({ ...c, ...levels[c.name] }) as Character),
-    config: { ...fixture.config, roles: ROLES, on: Object.fromEntries(on.map((n) => [n, true])) } as unknown as World["config"], ...extra,
+    config: { ...fixture.config, roles: ROLES, on: Object.fromEntries(on.map((n) => [n, true])), potions: true, kitchen: false } as unknown as World["config"], ...extra, // task 031: 030's potions and tiers
   };
 }
 const step = (w: World, name: string): Step => rank(name, w).step;
@@ -144,7 +144,7 @@ const NO_EGG = { bank: fixture.bank.filter((b) => b.code !== "golden_egg") };
     ...worldOf(achs, ALL), bank: Object.entries(bank).map(([code, quantity]) => ({ code, quantity })),
     // task 029: the workers' crafts at their target (30), so no training is a need here — 027b's forging alone
     characters: fixture.characters.map((c) => ({ ...c, ...(c.name === "Second" ? { weaponcrafting_level: 30 } : c.name === "Third" ? { gearcrafting_level: 30 } : c.name === "Fourth" ? { jewelrycrafting_level: 30 } : {}), ...patch[c.name] }) as Character),
-    config: { ...fixture.config, roles, on: Object.fromEntries(ALL.map((n) => [n, true])) } as unknown as World["config"],
+    config: { ...fixture.config, roles, on: Object.fromEntries(ALL.map((n) => [n, true])), potions: true, kitchen: false } as unknown as World["config"],
   });
   // First and Fifth without a weapon, the bank empty: both need a Battlestaff (weaponcrafting 20)
   const unarmed = { First: { weapon_slot: "" }, Fifth: { weapon_slot: "" } };

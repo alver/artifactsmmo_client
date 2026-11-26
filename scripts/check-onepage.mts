@@ -1,6 +1,6 @@
 // Task 028 (D.1): the data of the one page.
-//   A.1 the reason in parts — every step's why on the fixture Worlds is 030's to the letter (scripts/whys.mts against
-//       scripts/fixtures/whys-030.json; 029 held whys-029.json, 028 027g's, whys-027g.json, recorded on c03bff4), and its rule is the one the why's
+//   A.1 the reason in parts — every step's why on the fixture Worlds is 031's to the letter (scripts/whys.mts against
+//       scripts/fixtures/whys-031.json; 030 held whys-030.json, 029 whys-029.json, 028 027g's, whys-027g.json, recorded on c03bff4), and its rule is the one the why's
 //       head names; a fighter's XP
 //       pick, a worker's need and a craft-ahead step carry the rule, the goal and the limits;
 //   A.2 the road's lines carry the levels and the gear made, and two cold runs (two processes) give the same lines;
@@ -26,7 +26,7 @@ async function roadLines(): Promise<string[]> {
   const world = { ...live, now: Date.parse("2026-11-24T20:00:00Z") };
   const out: string[] = [];
   // task 029: 36 hours — the fleet trains its crafts first, the first gear piece of this road is made at 31.7 h; task 030
-  // (GEAR_FIRST all): 48 hours — the first piece at 41.6 h
+  // (GEAR_FIRST all): 48 hours — the first piece at 41.6 h (task 031, potions off: the same; with the kitchen 83.0 h)
   road(world, {}, world.now + 48 * 3.6e6, (l) => out.push(JSON.stringify({ ...l, ...("sec" in l ? { sec: 0 } : {}) })));
   return out;
 }
@@ -48,18 +48,18 @@ const runs = Promise.all([cold(), cold()]);
 // ── A.1 ──
 const steps: { w: string; step: any }[] = [];
 const whys = await whysOf(".", 12, (w, step) => steps.push({ w, step }));
-const gold = JSON.parse(await readFile("scripts/fixtures/whys-030.json", "utf8")) as typeof whys;
+const gold = JSON.parse(await readFile("scripts/fixtures/whys-031.json", "utf8")) as typeof whys;
 const differ = whys.map((x, i) => (JSON.stringify(x) === JSON.stringify(gold[i]) ? -1 : i)).filter((i) => i >= 0);
-ok("A.1 every why is 030's to the letter", whys.length === gold.length && !differ.length, `${whys.length} whys, ${gold.length} recorded; differ: ${differ.slice(0, 3).map((i) => `${whys[i]?.key}: ${whys[i]?.why.slice(0, 80)}`).join(" | ")}`);
+ok("A.1 every why is 031's to the letter", whys.length === gold.length && !differ.length, `${whys.length} whys, ${gold.length} recorded; differ: ${differ.slice(0, 3).map((i) => `${whys[i]?.key}: ${whys[i]?.why.slice(0, 80)}`).join(" | ")}`);
 const HEAD: [RegExp, string][] = [[/^fighter: the XP pick/, "xp-pick"], [/^fighter, first/, "first"], [/^fighter, forging/, "forging"], [/^fighter, a need's kill/, "need-kill"], [/^fighter, a training's kill/, "train-kill"], [/^fighter, (no fight admitted|at the level cap)/, "free"],
-  [/^worker, a batch from the bank/, "train"], [/^worker, a need \(consumables or a tool\)/, "need-cons"], [/^worker, a need/, "need"], [/^worker, done within/, "short"], [/^worker, craft to/, "craft-ahead"], [/^worker: fallback/, "fallback"], [/^worker: /, "today"], [/^tidy:/, "tidy"], [/^fallback/, "fallback"]];
+  [/^worker, a batch from the bank/, "train"], [/^worker, the stock first/, "cook"], [/^worker, the kitchen to/, "craft-ahead"], [/^worker, a need \(consumables or a tool\)/, "need-cons"], [/^worker, a need/, "need"], [/^worker, done within/, "short"], [/^worker, craft to/, "craft-ahead"], [/^worker: fallback/, "fallback"], [/^worker: /, "today"], [/^tidy:/, "tidy"], [/^fallback/, "fallback"]];
 const wrong = steps.filter(({ step }) => {
   const want = HEAD.find(([re]) => re.test(step.why))?.[1];
   return !step.reason || (want ? step.reason.rule !== want : !["today", "first"].includes(step.reason.rule));
 });
 ok("A.1 every step has a reason, its rule the one its why's head names", !wrong.length, wrong.slice(0, 3).map(({ step }) => `${step.key}: ${step.reason?.rule} — ${step.why.slice(0, 60)}`).join(" | "));
 const first = (rule: string): any => steps.find(({ step }) => step.reason?.rule === rule)?.step;
-const pick = first("xp-pick"), need = first("need"), ahead = first("craft-ahead");
+const pick = first("xp-pick"), need = first("need"), ahead = steps.find(({ step }) => step.reason?.rule === "craft-ahead" && step.why.startsWith("worker, craft to"))?.step; // task 031: not the kitchen's level
 ok("A.1 a fighter's XP pick: role, goal to the cap, for itself, the rate and the verdict", !!pick && pick.reason.role === "fighter" && /^combat \d+ → 50$/.test(pick.reason.goal) && pick.reason.for === pick.character
   && pick.reason.because.some((b: string) => /XP\/s/.test(b)) && pick.reason.because.some((b: string) => /^wins \d+% of fights, \d+ s a win$/.test(b)), JSON.stringify(pick?.reason));
 ok("A.1 a worker's need: role, rule, goal, for whom", !!need && need.reason.role === "worker" && !!need.reason.goal && !!need.reason.for, JSON.stringify(need?.reason));

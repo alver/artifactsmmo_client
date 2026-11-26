@@ -41,12 +41,12 @@
 import { achievement as achievementOf, item, itemName, resource as resourceOf } from "../../catalog";
 import { CRAFT_SEC } from "../xp";
 import { PINNED_ARTIFACTS, jobGear } from "../jobgear";
-import { CHUNK_SEC, GATHER_LANES, GEAR_CRAFT, GEAR_FIRST, TRAIN_HUNT, TRAIN_LANES } from "./config";
+import { CHUNK_SEC, GATHER_LANES, GEAR_CRAFT, GEAR_FIRST, KITCHEN, TRAIN_HUNT, TRAIN_LANES } from "./config";
 import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { bankStuck, newCodes, tidyStep } from "./bank";
 import { isOn, met } from "./gates";
-import { consFree, consParents, consumableNeeds, fightTake, gearWorld } from "./consumables";
+import { consFree, consParents, consumableNeeds, fightTake, gearWorld, kitchenOn, nextFoodTier, stockCook } from "./consumables";
 import type { Take } from "./consumables";
 import { gearNeeds, gearPieces, pieceParent } from "./gear";
 import { atlas } from "../../catalog/atlas";
@@ -91,8 +91,9 @@ const fmt = (h: number): string => (!Number.isFinite(h) ? "∞" : h < 10 ? h.toF
 export const ORDER: Record<"fighter" | "worker" | "none", [Rule, string][]> = {
   fighter: [["first", "an achievement on ⭐ first"], ["forging", "forging by need"], ["need-kill", "a kill a need of the road asks"], ["train-kill", "a kill a craft's training asks"], ["xp-pick", "the XP pick"], ["free", "no fight admitted, or the level cap: today's rule"]],
   // task 030: GEAR_FIRST on — tier (1) in two halves, weapons and armour first
-  worker: [["train", "its gear craft: a batch from the bank"], ...(GEAR_FIRST === "off" ? [["need", "a need of the fighters' road, or a tool"]] as [Rule, string][]
-    : [["need", `weapons and armour for the fighters' road${GEAR_FIRST === "pick" ? ", the XP pick's consumables" : ""}`], ["need-cons", `the road's ${GEAR_FIRST === "pick" ? "other " : ""}consumables, or a tool`]] as [Rule, string][]), ["short", `an objective done within ${WORKER_SHORT_H} h`], ["craft-ahead", "its gear craft ahead of the fighters"], ["today", "today's rule in its lanes"], ["fallback", "the fallback: gather in its lanes"]],
+  // task 031 (KITCHEN): the stock's cook step before the rest of (1a); the road's food in (1a); the kitchen's levels in (3)
+  worker: [["train", "its gear craft: a batch from the bank"], ...(KITCHEN ? [["cook", "the bank's raw food, while a fighter rests"]] as [Rule, string][] : []), ...(GEAR_FIRST === "off" ? [["need", "a need of the fighters' road, or a tool"]] as [Rule, string][]
+    : [["need", `weapons and armour for the fighters' road${KITCHEN ? ", its food" : ""}${GEAR_FIRST === "pick" ? ", the XP pick's consumables" : ""}`], ["need-cons", `the road's ${GEAR_FIRST === "pick" || KITCHEN ? "other " : ""}consumables, or a tool`]] as [Rule, string][]), ["short", `an objective done within ${WORKER_SHORT_H} h`], ["craft-ahead", KITCHEN ? "its gear craft ahead of the fighters, the kitchen's next food tier" : "its gear craft ahead of the fighters"], ["today", "today's rule in its lanes"], ["fallback", "the fallback: gather in its lanes"]],
   none: [["first", "an achievement on ⭐ first"], ["today", "today's rule"], ["fallback", "the fallback: gather"]],
 };
 /** Task 028: a candidate's reason before the rule that takes it is known. */
@@ -269,6 +270,7 @@ export function rank(name: string, world: World, free = false): Ranking {
   const workerHunts = (monster: string): boolean => world.characters.some((c) => c.name !== name && isOn(c.name, world) && roleOf(c.name, world) === "worker" && admitted(c, world, monster) && !!nearestSpot(placeOf(c), "monster", monster, world, c.name));
   /** Task 029 (A.3): a training's src: kill is the fighters' while one that is on is admitted for it and reaches it (TRAIN_HUNT). */
   const trainHunt = cfg.trainHunt ?? TRAIN_HUNT;
+  const kitchen = kitchenOn(world); // task 031, B
   const fighterHunts = (monster: string): boolean => world.characters.some((c) => isOn(c.name, world) && roleOf(c.name, world) === "fighter" && admitted(c, world, monster) && !!nearestSpot(placeOf(c), "monster", monster, world, c.name));
   // Task 015, settled point 4: while fewer than TIDY_BELOW bank slots are free, a tidy step goes before any other (task
   // 027: not a fighter's — bank.ts tidyStep)
@@ -459,6 +461,7 @@ export function rank(name: string, world: World, free = false): Ranking {
     const r = p.key.includes(":lvl:combat:"); // consumables.ts work (a): a fighter's road (027e: the consumables of the XP pick)
     if (fighter || r) needs.add(p.key);
     if (r) road.add(p.key);
+    if (r && kitchen && item(p.key.split(":")[1])?.type === "consumable") gearSide.add(p.key); // task 031 (B.2): the road's food is (1a)
   }
   for (const p of trains) { parents.push(p); needs.add(p.key); road.add(p.key); gearSide.add(p.key); }
   const leaves = supplyNeeds(world, name, parents, srcInFlight);
@@ -596,6 +599,45 @@ export function rank(name: string, world: World, free = false): Ranking {
       parts(`${lane} ${levelOf(ch, lane)} → ${craftLevel}`, "the fighters' next tier", [`the top fighter's combat ${fighterTop} + 5`, p.what, `${p.units} now (${fmt(p.hours)} h)`]));
     return !stuck || !newCodes(s, world).length ? s : undefined;
   };
+  // task 031 (B.4): the kitchen's fishing and cooking to the next food tier (consumables.ts nextFoodTier), beside its gear craft
+  // in tier (3) — today's scoring among them (each lane's best level candidate of rule 3, fit then points per hour; none
+  // scores: the gear craft first, as before)
+  const tier3 = (): Step | undefined => {
+    const lane0 = lanes.find((l) => GEAR_CRAFT.includes(l) && levelOf(ch, l) < craftLevel);
+    const cands: { step: Step; lane: Lane }[] = [];
+    const g = craftTo();
+    if (g && lane0) cands.push({ step: g, lane: lane0 });
+    const T = kitchen && lanes.includes("cooking") ? nextFoodTier(ch, lanes) : undefined;
+    if (T != null) for (const lane of ["fishing", "cooking"] as Lane[]) {
+      const key = `lvl:${lane}:${T}`;
+      if (!lanes.includes(lane) || levelOf(ch, lane) >= T || blocked(key)) continue;
+      const p = planLevel(lane, ch, world, bonus);
+      if (!p) continue;
+      const t: Target = targets.find((x) => x.key === key) ?? { key, points: 0, work: { kind: "level", lane, to: T }, left: 1, gates: [], filler: false };
+      const s = stepOf(t, p, "level", 0, `worker, the kitchen to ${T}: ${lane} ${levelOf(ch, lane)} → ${T}: ${p.what}, ${p.units} now (${fmt(p.hours)} h)`, {},
+        parts(`${lane} ${levelOf(ch, lane)} → ${T}`, "the kitchen's next food tier", [`fishing and cooking ${T}: a fish and its food open there`, p.what, `${p.units} now (${fmt(p.hours)} h)`]));
+      if (!stuck || !newCodes(s, world).length) cands.push({ step: s, lane });
+    }
+    const score = (lane: Lane): [number, number] => levels.filter((c) => c.target.key.startsWith(`lvl:${lane}:`)).reduce(([f, a], c) => [Math.max(f, c.fit), Math.max(a, c.any)], [0, 0]);
+    const ranked = cands.map((c, i) => ({ ...c, i, s: score(c.lane) })).sort((a, b) => b.s[0] - a.s[0] || b.s[1] - a.s[1] || a.i - b.i);
+    return ranked[0]?.step;
+  };
+  // task 031 (B.3): the stock first — the bank's raw food that a hungry fighter would eat and this worker may cook, the most
+  // healing first, a chunk at a time (consumables.ts stockCook)
+  const cookStep = (): Step | undefined => {
+    const c = stockCook(world, name);
+    const r = c && item(c.code)?.craft;
+    const spot = r && nearestSpot(placeOf(ch), "workshop", r.skill, world);
+    const key = c && `mat:${c.code}`;
+    if (!c || !r || !spot || !key || blocked(key)) return undefined;
+    const n = c.runs * Math.max(1, r.quantity);
+    const t: Target = { key, points: 0, work: { kind: "craft", code: c.code }, left: n, gates: [], filler: false };
+    const p: Plan = { work: t.work, units: n, hours: (c.runs * CRAFT_SEC + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(c.code, c.runs)) };
+    // no parent: it serves the fighters' running steps, not a need's demand (a chunk, whatever the horizon)
+    const s = stepOf(t, p, "supply", 0, `${itemName(c.code)} ×${n} from the bank's raw for ${c.for.join(", ")}: their fight steps rest or take too little food; ${n} made now (${fmt(p.hours)} h)`, {},
+      parts(`${itemName(c.code)} ×${n}`, c.for.join(", "), ["the bank's raw food first: their fight steps rest or take too little food", `${n} made now (${fmt(p.hours)} h)`]));
+    return !stuck || !newCodes(s, world).length ? { ...s, why: `worker, the stock first: supply: ${s.why}` } : undefined;
+  };
   const xpPick = (): Step | undefined => {
     const c = levels.find((x) => x.target.key.startsWith("lvl:combat:")); // the combat level's candidate: the same pick
     const goal = `combat ${levelOf(ch, "combat")} → ${Number.isFinite(cap) ? cap : levelOf(ch, "combat") + 1}`; // 027e: a fighter's level is a goal in itself
@@ -628,14 +670,15 @@ export function rank(name: string, world: World, free = false): Ranking {
     }
     const short = objectives.filter((c) => fresh(c) && achHours(c.target.achievement!, name, world) <= WORKER_SHORT_H);
     const batch = tier(trainC.filter((c) => c.covered), "a batch from the bank");
+    const cook = batch || !kitchen ? undefined : cookStep(); // task 031 (B.3)
     // task 030 (A): GEAR_FIRST on — (1a) weapons and armour, its own train step last; (1b) the rest only when (1a) has none
     const needC = all.filter((c) => c.need), off = gearFirst === "off";
-    const need = batch ? undefined : tier(off ? needC : needC.filter((c) => c.gear), "a need") ?? tier(trainC, "a need");
-    const cons = batch || need || off ? undefined : tier(needC.filter((c) => !c.gear), "a need (consumables or a tool)");
-    const sh = batch || need || cons ? undefined : tier(short, `done within ${WORKER_SHORT_H} h`);
-    const ca = batch || need || cons || sh ? undefined : craftTo();
-    step = batch ?? need ?? cons ?? sh ?? ca ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
-    rule = batch ? "train" : need ? "need" : cons ? "need-cons" : sh ? "short" : ca ? "craft-ahead" : todayRule();
+    const need = batch || cook ? undefined : tier(off ? needC : needC.filter((c) => c.gear), "a need") ?? tier(trainC, "a need");
+    const cons = batch || cook || need || off ? undefined : tier(needC.filter((c) => !c.gear), "a need (consumables or a tool)");
+    const sh = batch || cook || need || cons ? undefined : tier(short, `done within ${WORKER_SHORT_H} h`);
+    const ca = batch || cook || need || cons || sh ? undefined : tier3();
+    step = batch ?? cook ?? need ?? cons ?? sh ?? ca ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
+    rule = batch ? "train" : cook ? "cook" : need ? "need" : cons ? "need-cons" : sh ? "short" : ca ? "craft-ahead" : todayRule();
   } else if (fighter) {
     // task 027e (Alex: a fighter's level is a goal in itself), an order of work: (1) an achievement on config.first; (2)
     // forging by need (027b: one weapon speeds every fighter); (3) a kill a need of a fighter's road asks (a src: kill or

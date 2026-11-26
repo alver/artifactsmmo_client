@@ -6,7 +6,8 @@
 //   A.4 the bank covers a batch → the crafter's train step, first, its hours the crafting's, not the atlas's;
 //   A.5 the forward model: a train step takes its batch from the bank (recycling's return back) and gives its XP; the level
 //       comes sooner when a fighter banked the drops first;
-//   B   cooking is Fourth's; a step's food takes up to half the bag; Second at weaponcrafting 30 is a worker.
+//   B   cooking is Fourth's (task 031: the kitchen's, Third's, with KITCHEN); a step's food takes up to half the bag; Second at
+//       weaponcrafting 30 is a worker.
 // The scenarios train-from-bank, train-hunt-eats and train-bag-room run the loop. On 6867428 (028) every case fails (the
 // script reads the new names where they exist so that the red run runs). node --import tsx scripts/check-train.mts
 import { readFile } from "node:fs/promises";
@@ -17,7 +18,7 @@ import { advance, forward } from "../src/plan/planner/forward";
 import { pickMonster } from "../src/plan/planner/pick";
 import { admitted } from "../src/plan/planner/reach";
 import { levelHoursEstimate } from "../src/plan/planner/cost";
-import { DEFAULTS } from "../src/plan/planner/config";
+import { DEFAULTS, KITCHEN } from "../src/plan/planner/config";
 import { crafterOf, roleOfCh } from "../src/plan/planner/roles";
 import { available } from "../src/plan/planner/stock";
 import { craftXpOf } from "../src/plan/planner/xp";
@@ -117,7 +118,7 @@ function levelOf2(w: World, n: string): number { return (w.characters.find((c) =
 // ── B ──
 {
   const roles = { ...w25.config, roles: DEFAULTS.roles } as World["config"];
-  cases.push(["B.2 cooking is Fourth's", crafterOf("cooking", { ...worldOf(), config: roles }) === "Fourth", `the cook: ${crafterOf("cooking", { ...worldOf(), config: roles })}`]);
+  cases.push([`B.2 cooking is ${KITCHEN ? "the kitchen's, Third's (task 031)" : "Fourth's"}`, crafterOf("cooking", { ...worldOf(), config: roles }) === (KITCHEN ? "Third" : "Fourth"), `the cook: ${crafterOf("cooking", { ...worldOf(), config: roles })}`]);
   const sec = { ...ch(w25, "Second"), weaponcrafting_level: 30 } as Character;
   cases.push(["B.4 Second at weaponcrafting 30 is a worker", roleOfCh(sec, roles) === "worker", `Second at 30: ${roleOfCh(sec, roles)}`]);
   // no craft in training (each at its target, Second off): First's pick at the rat eats two trout a kill — the bag caps it

@@ -12,8 +12,9 @@
 //   - Task 027: a fighter holds no gathering lane, and a gathering lane pinned to several workers is the first one's (one
 //     owner a gathering skill) — so Second's woodcutting is Fourth's from the moment Second is a fighter. A craft stays
 //     where it is pinned (no craft changes hands): Second keeps weaponcrafting as a fighter, and takes no craft step.
+//   - Task 031 (B.1, KITCHEN): alchemy that nobody pins is nobody's lane.
 
-import { CRAFT_LANES, GATHER_LANES } from "./config";
+import { CRAFT_LANES, GATHER_LANES, KITCHEN } from "./config";
 import { levelOf } from "./cost";
 import { targetsOf } from "./targets";
 import type { Character } from "../../types/api";
@@ -68,9 +69,12 @@ export function rolesOf(characters: Character[], config: PlannerConfig, targets:
     if (pins.length) pins.forEach((n) => add(n, lane));
     else if (pool.length) add(rank(lane, pool)[0].name, lane);
   }
+  // task 031 (B.1): with the kitchen, alchemy nobody pins is nobody's lane (no potion is made)
+  const none = (lane: Lane): boolean => lane === "alchemy" && (config.kitchen ?? KITCHEN) && !pinned(lane).length;
   for (const lane of GATHER_LANES) {
     const pins = pinned(lane);
     if (pins.length) { pins.forEach((n) => add(n, lane)); continue; }
+    if (none(lane)) continue;
     const free = pool.filter((c) => !hasGather(c));
     const pick = rank(lane, free.length ? free : pool)[0];
     if (pick) add(pick.name, lane);
@@ -81,7 +85,7 @@ export function rolesOf(characters: Character[], config: PlannerConfig, targets:
     for (const g of t.gates) if (g.kind === "level" && GATHER_LANES.includes(g.lane)) eventLanes.add(g.lane);
   }
   for (const lane of GATHER_LANES) {
-    if (!eventLanes.has(lane) || pinned(lane).length) continue;
+    if (!eventLanes.has(lane) || pinned(lane).length || none(lane)) continue;
     for (const c of rank(lane, pool.filter((x) => !out[x.name].includes(lane))).slice(0, 2)) add(c.name, lane);
   }
   return out;

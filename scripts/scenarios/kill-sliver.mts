@@ -6,7 +6,7 @@ import { achievement, scenario } from "../harness/index.mts";
 
 await scenario(
   {
-    planner: { on: { Pia: true } },
+    planner: { on: { Pia: true }, potions: true }, // task 031: the potion mechanism (its supply first)
     characters: [{ name: "Pia", level: 10, x: 4, y: 1, alchemy_level: 5 }], // on the bank
     bank: { copper_dagger: 1, small_health_potion: 10 },
     achievements: [achievement("made_up_slimes", 5, ["combat_kill", "green_slime", 30])],
