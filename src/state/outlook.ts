@@ -9,7 +9,7 @@
 // When a run starts (only while a character is owned and the achievements are read): two minutes after the first
 // achievements read of a boot; three hours after the last run ended; 30 s after a change of the planner's config; on the
 // Roadmap's ↻, at most once a minute. One child at a time: the config's change and ↻ kill a running one and start anew,
-// the three-hour timer skips while one runs. A run not ended after 30 minutes is killed and counts as failed.
+// the three-hour timer skips while one runs. A run not ended after 90 minutes (task 030; 30 before) is killed and counts as failed.
 
 import { effect, signal } from "@preact/signals";
 import { IS_SERVER, expose, rpc } from "../lib/remote";
@@ -59,7 +59,7 @@ const BOOT_MS = 2 * 60_000;
 const EVERY_MS = 3 * 3_600_000;
 const CONFIG_MS = 30_000;
 const ASK_MS = 60_000;
-const KILL_MS = 30 * 60_000;
+const KILL_MS = 90 * 60_000; // task 030: 30 → 90 — 029's tree took 3,326 s for its 21 days (report 029)
 /** Settled point 8: the service's horizon in days (0 = to the deadline). Task 020, settled point 6: a whole run from the
  *  World of 2026-11-21 takes 420 s and 683 MB at its peak alone (report 020; it took 36 minutes and 2.1 GB, report 019, when
  *  this was 21), so the service plays to the deadline and the Season card shows what is expected there. Task 021: back to

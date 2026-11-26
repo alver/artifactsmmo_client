@@ -84,7 +84,7 @@ export interface Step {
 /** Task 028: the rule of a role's order that took a step (decide.ts ORDER): a fighter's first · forging · a need's kill ·
  *  the XP pick · the free pass; a worker's need · short · craft ahead · today · fallback; anyone's tidy. Task 029: a fighter's
  *  training's kill (`train-kill`), a worker's batch from the bank (`train`). */
-export type Rule = "first" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "short" | "craft-ahead" | "today" | "fallback" | "tidy";
+export type Rule = "first" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy";
 /** Task 028 (A.1): a step's reason in parts. */
 export interface Reason {
   role?: "fighter" | "worker";
@@ -133,6 +133,7 @@ export interface PlannerConfig {
   sliver?: number;                        // task 017: a kill step the potion stock caps below this many kills (and a third of its chunk) is no candidate; 0 = off (the replay only)
   foodFishing?: boolean;                  // task 027g: overrides config.ts FOOD_FISHING (the roads and the checks only)
   trainHunt?: boolean;                    // task 029: overrides config.ts TRAIN_HUNT (the roads and the checks only)
+  gearFirst?: "off" | "all" | "pick";    // task 030: overrides config.ts GEAR_FIRST (the roads and the checks only)
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;

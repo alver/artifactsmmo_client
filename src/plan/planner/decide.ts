@@ -26,7 +26,9 @@
 //     need's src: kill monster joins its ×1.25 bonus, so within 25% of the pick's rate its drops come along; (5) with no
 //     admitted fight that gives XP or at the level cap, today's rule over the whole list.
 //   a worker, in this order: (1) a need of the fighters' road (gear work (a), the craft level such a piece asks, the road's
-//     consumables) or a lane holder's tool, today's scoring among them; (2) an objective whose achievement completes within
+//     consumables) or a lane holder's tool, today's scoring among them — task 030 (GEAR_FIRST on): in two halves, (1a) weapons
+//     and armour (gear work (a), the level such a piece asks, a craft's training; `pick`: the XP pick's consumables too), its
+//     own train step last, then (1b) the rest; (2) an objective whose achievement completes within
 //     WORKER_SHORT_H of its work; (3) its gear craft to the tier the fighters wear next (the highest fighter's level + 5,
 //     down to a multiple of 5, at least WORKER_CRAFT; the train item); (4) today's rule inside its lanes (a work of no lane
 //     — a task, a trade — and a kill objective's needs included). Never a combat level or a kill objective; a src: kill
@@ -39,12 +41,12 @@
 import { achievement as achievementOf, item, itemName, resource as resourceOf } from "../../catalog";
 import { CRAFT_SEC } from "../xp";
 import { PINNED_ARTIFACTS, jobGear } from "../jobgear";
-import { CHUNK_SEC, GATHER_LANES, GEAR_CRAFT, TRAIN_HUNT, TRAIN_LANES } from "./config";
+import { CHUNK_SEC, GATHER_LANES, GEAR_CRAFT, GEAR_FIRST, TRAIN_HUNT, TRAIN_LANES } from "./config";
 import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { bankStuck, newCodes, tidyStep } from "./bank";
 import { isOn, met } from "./gates";
-import { consFree, consParents, fightTake, gearWorld } from "./consumables";
+import { consFree, consParents, consumableNeeds, fightTake, gearWorld } from "./consumables";
 import type { Take } from "./consumables";
 import { gearNeeds, gearPieces, pieceParent } from "./gear";
 import { atlas } from "../../catalog/atlas";
@@ -88,7 +90,9 @@ const fmt = (h: number): string => (!Number.isFinite(h) ? "∞" : h < 10 ? h.toF
 /** Task 028 (A.1): each role's order of rules, as the page lists it (rank() below is the order itself). */
 export const ORDER: Record<"fighter" | "worker" | "none", [Rule, string][]> = {
   fighter: [["first", "an achievement on ⭐ first"], ["forging", "forging by need"], ["need-kill", "a kill a need of the road asks"], ["train-kill", "a kill a craft's training asks"], ["xp-pick", "the XP pick"], ["free", "no fight admitted, or the level cap: today's rule"]],
-  worker: [["train", "its gear craft: a batch from the bank"], ["need", "a need of the fighters' road, or a tool"], ["short", `an objective done within ${WORKER_SHORT_H} h`], ["craft-ahead", "its gear craft ahead of the fighters"], ["today", "today's rule in its lanes"], ["fallback", "the fallback: gather in its lanes"]],
+  // task 030: GEAR_FIRST on — tier (1) in two halves, weapons and armour first
+  worker: [["train", "its gear craft: a batch from the bank"], ...(GEAR_FIRST === "off" ? [["need", "a need of the fighters' road, or a tool"]] as [Rule, string][]
+    : [["need", `weapons and armour for the fighters' road${GEAR_FIRST === "pick" ? ", the XP pick's consumables" : ""}`], ["need-cons", `the road's ${GEAR_FIRST === "pick" ? "other " : ""}consumables, or a tool`]] as [Rule, string][]), ["short", `an objective done within ${WORKER_SHORT_H} h`], ["craft-ahead", "its gear craft ahead of the fighters"], ["today", "today's rule in its lanes"], ["fallback", "the fallback: gather in its lanes"]],
   none: [["first", "an achievement on ⭐ first"], ["today", "today's rule"], ["fallback", "the fallback: gather"]],
 };
 /** Task 028: a candidate's reason before the rule that takes it is known. */
@@ -243,7 +247,8 @@ function wearOf(w: Work, ch: Character, world: World): Record<string, string> | 
 /** `need` (task 027): for a fighter's gear by need, a lane holder's tool (027c) or a consumable need — a worker's first tier. `out`: a worker's objective
  *  outside its lanes — its second tier only. */
 /** Task 029: `train` — a leaf of a craft's training (train.ts); `covered` — a worker's train step whose batch the bank covers. */
-export interface Candidate { target: Target; step: Step; fit: number; any: number; need?: boolean; out?: boolean; road?: boolean; train?: boolean; covered?: boolean }
+/** Task 030: `gear` — a need of weapons and armour (a worker's tier (1a), GEAR_FIRST): a piece of gear work (a), a craft's training. */
+export interface Candidate { target: Target; step: Step; fit: number; any: number; need?: boolean; out?: boolean; road?: boolean; train?: boolean; covered?: boolean; gear?: boolean }
 export interface Ranking { step: Step; objectives: Candidate[]; levels: Candidate[]; supply: Candidate[]; fillers: Candidate[]; lanes: Lane[] }
 
 /** Every candidate this character has now, scored, and the step decide() returns. */
@@ -384,12 +389,13 @@ export function rank(name: string, world: World, free = false): Ranking {
 
   // Rule 3: per lane, the next gate behind which open achievements sit, and the bundle up to it (bundle.ts).
   const levels: Candidate[] = [];
-  const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string, need: boolean, pt: (what: string) => Omit<Parts, "limits">): void => {
+  const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string, need: boolean, pt: (what: string) => Omit<Parts, "limits">, gear = false): void => {
     // task 027: a fighter's level is combat, a worker's never; 027b: and a fighter's own gear craft where a needed piece asks it
     if (fighter ? lane !== "combat" && !(need && GEAR_CRAFT.includes(lane)) : worker && lane === "combat") return;
     const t = targets.find((x) => x.key === `lvl:${lane}:${to}`) ?? { key: `lvl:${lane}:${to}`, points: 0, work: { kind: "level", lane, to }, left: 1, gates: [], filler: false };
     const had = levels.find((c) => c.target.key === t.key);
     if (had && need) had.need = true;
+    if (had && gear) had.gear = true;
     if (blocked(t.key) || (had && had.fit >= fit * boost(t.key))) return;
     let p0 = planLevel(lane, ch, world, bonus);
     let p = p0 && fightPlan(p0, 1, fit * boost(t.key), any * boost(t.key), Infinity);
@@ -399,7 +405,7 @@ export function rank(name: string, world: World, free = false): Ranking {
     const i = levels.findIndex((c) => c.target.key === t.key);
     if (i >= 0) levels.splice(i, 1);
     const lp = pt(p0.what);
-    levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p0.what, p) + p.note, {}, { ...lp, because: [...lp.because, `${p.units} now (${fmt(p.hours)} h)`], limits: clauses(p.note) }), fit: fit * boost(t.key), any: any * boost(t.key), ...(need || had?.need ? { need: true } : {}) });
+    levels.push({ target: t, step: stepOf(t, p, "level", fit * boost(t.key), why(p0.what, p) + p.note, {}, { ...lp, because: [...lp.because, `${p.units} now (${fmt(p.hours)} h)`], limits: clauses(p.note) }), fit: fit * boost(t.key), any: any * boost(t.key), ...(need || had?.need ? { need: true } : {}), ...(gear || had?.gear ? { gear: true } : {}) });
   };
 
   // Gear by need (section 4) and supply through the bank (section 3).
@@ -410,8 +416,9 @@ export function rank(name: string, world: World, free = false): Ranking {
   // a lane holder's tool; a kill objective's piece or consumables (work (b)) rank in its fourth tier
   const needs = new Set<string>();
   const road = new Set<string>(); // task 027e: the parents of the fighters' road (A.3: a fighter's kill for one goes before its XP pick)
-  /** A leaf's flags by every parent it serves (supply.ts `via`): a need, the fighters' road. */
-  const flags = (via: string[]): Partial<Candidate> => ({ ...(via.some((k) => needs.has(k)) ? { need: true } : {}), ...(via.some((k) => road.has(k)) ? { road: true } : {}) });
+  const gearSide = new Set<string>(); // task 030: the parents of weapons and armour (a worker's tier (1a))
+  /** A leaf's flags by every parent it serves (supply.ts `via`): a need, the fighters' road, weapons and armour. */
+  const flags = (via: string[]): Partial<Candidate> => ({ ...(via.some((k) => needs.has(k)) ? { need: true } : {}), ...(via.some((k) => road.has(k)) ? { road: true } : {}), ...(via.some((k) => gearSide.has(k)) ? { gear: true } : {}) });
   const roadPieces = new Set(gearNeeds(world, name).needs.filter((n) => n.offered && n.key.startsWith("lvl:combat:")).flatMap((n) => [...n.pieces.keys()])); // gear.ts (a)
   // Task 029 (A.1): a gear craft's next level under the target is a parent of supply, a need of the fighters' road (train.ts);
   // a worker's own craft in training has one train step (below): a piece's or a chain's level of it up to the target is that one
@@ -429,11 +436,12 @@ export function rank(name: string, world: World, free = false): Ranking {
     const need = tool || [...copies.keys()].some((who) => roleOf(who, world) === "fighter"); // 027c (Alex): a lane holder's tool too
     if (fighter ? need : tool || roadPieces.has(code)) needs.add(par.key);
     if (roadPieces.has(code)) road.add(par.key);
+    if (roadPieces.has(code) && !tool) gearSide.add(par.key);
     if (crafterOf(r.skill, world) !== name || (fighter && !need)) continue; // task 027b: a fighter forges only what a fighter needs (027c: or a tool)
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
       if (!(ownTrain.has(r.skill as Lane) && r.level <= target)) levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key),
-        (what) => ({ goal: `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level}`, for: n.for, because: [`for ${itemName(code)} ×${qty} (${n.work}): H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`, what] }));
+        (what) => ({ goal: `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level}`, for: n.for, because: [`for ${itemName(code)} ×${qty} (${n.work}): H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`, what] }), gearSide.has(par.key));
       continue;
     }
     const key = `gear:${code}`;
@@ -443,7 +451,7 @@ export function rank(name: string, world: World, free = false): Ranking {
     const t: Target = { key, points: 0, work: { kind: "craft", code }, left: qty, gates: [], filler: false };
     const p: Plan = { work: t.work, units: runs, hours: (runs * CRAFT_SEC + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(code, runs)) };
     const pt = parts(`${itemName(code)} ×${qty}`, [...works.keys()].join(", "), [`the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make`, `+${n.points} pts behind it`, `${runs} now`]);
-    supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }, pt), fit: n.fit * boost(key), any: n.any * boost(key), ...(needs.has(par.key) ? { need: true } : {}) });
+    supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }, pt), fit: n.fit * boost(key), any: n.any * boost(key), ...(needs.has(par.key) ? { need: true } : {}), ...(gearSide.has(par.key) ? { gear: true } : {}) });
   }
   // task 014, settled point 3: potions and food by need, parents of supply with the score of the work they are for
   for (const p of consParents(world, name)) {
@@ -452,18 +460,22 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (fighter || r) needs.add(p.key);
     if (r) road.add(p.key);
   }
-  for (const p of trains) { parents.push(p); needs.add(p.key); road.add(p.key); }
+  for (const p of trains) { parents.push(p); needs.add(p.key); road.add(p.key); gearSide.add(p.key); }
   const leaves = supplyNeeds(world, name, parents, srcInFlight);
   /** Task 027g (A.1): the monsters the other fighters' XP picks fight now — each with a road need's src: kill monster in its
    *  bonus (by its own source), as its own decision has it — what comes along with a pick (its drops) stays a fighter's. */
-  let picks: Set<string> | undefined;
-  const along = (monster: string): boolean => (picks ??= new Set(world.characters.filter((f) => f.name !== name && isOn(f.name, world) && roleOf(f.name, world) === "fighter" && f.level < cap).flatMap((f) => {
+  let picks: Map<string, string> | undefined; // fighter → the monster of its XP pick now
+  const picksNow = (): Map<string, string> => (picks ??= new Map(world.characters.filter((f) => f.name !== name && isOn(f.name, world) && roleOf(f.name, world) === "fighter" && f.level < cap).flatMap((f) => {
     const b = new Set(objMonsters), task = monstersTask(f);
     if (task) b.add(task);
     for (const l of leaves) if (l.kind === "src" && l.code !== "tasks_coin" && l.via.some((k) => road.has(k))) { const s = pickSource(l.code, f, world); if (s?.work.kind === "kill") b.add(s.work.monster); }
     const p = pickMonster(f, world, b);
-    return p ? [p.monster] : [];
-  }))).has(monster);
+    return p ? [[f.name, p.monster] as [string, string]] : [];
+  })));
+  const along = (monster: string): boolean => [...picksNow().values()].includes(monster);
+  // task 030 (A, `pick`): the consumables of a fighter's XP pick of today rank with the weapons and armour (tier (1a))
+  const gearFirst = cfg.gearFirst ?? GEAR_FIRST;
+  if (worker && gearFirst === "pick") for (const n of consumableNeeds(world, name)) if (road.has(n.key) && picksNow().get(n.for[0]) === n.monster) gearSide.add(n.key);
   for (const s of leaves) {
     // task 013, settled point 1: an event-only material is the event interrupt's work, never a step
     if (blocked(s.key) || s.gates.some((g) => g.kind === "event")) continue;
@@ -522,7 +534,7 @@ export function rank(name: string, world: World, free = false): Ranking {
   for (const par of parents) for (const g of par.gated ?? []) {
     if (!Number.isFinite(g.hours) || !lanes.includes(g.lane) || (ownTrain.has(g.lane) && g.level <= target)) continue;
     levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key),
-      (what) => ({ goal: `${g.lane} ${levelOf(ch, g.lane)} → ${g.level}`, for: par.label, because: [`for ${itemName(g.code)} in its chain: +${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}`, what] }));
+      (what) => ({ goal: `${g.lane} ${levelOf(ch, g.lane)} → ${g.level}`, for: par.label, because: [`for ${itemName(g.code)} in its chain: +${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}`, what] }), gearSide.has(par.key));
   }
 
   // Rule 3: per lane, the next gate behind which open achievements sit, and the bundle up to it (bundle.ts) — task 027g: after
@@ -616,11 +628,14 @@ export function rank(name: string, world: World, free = false): Ranking {
     }
     const short = objectives.filter((c) => fresh(c) && achHours(c.target.achievement!, name, world) <= WORKER_SHORT_H);
     const batch = tier(trainC.filter((c) => c.covered), "a batch from the bank");
-    const need = batch ? undefined : tier(all.filter((c) => c.need), "a need") ?? tier(trainC, "a need");
-    const sh = batch || need ? undefined : tier(short, `done within ${WORKER_SHORT_H} h`);
-    const ca = batch || need || sh ? undefined : craftTo();
-    step = batch ?? need ?? sh ?? ca ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
-    rule = batch ? "train" : need ? "need" : sh ? "short" : ca ? "craft-ahead" : todayRule();
+    // task 030 (A): GEAR_FIRST on — (1a) weapons and armour, its own train step last; (1b) the rest only when (1a) has none
+    const needC = all.filter((c) => c.need), off = gearFirst === "off";
+    const need = batch ? undefined : tier(off ? needC : needC.filter((c) => c.gear), "a need") ?? tier(trainC, "a need");
+    const cons = batch || need || off ? undefined : tier(needC.filter((c) => !c.gear), "a need (consumables or a tool)");
+    const sh = batch || need || cons ? undefined : tier(short, `done within ${WORKER_SHORT_H} h`);
+    const ca = batch || need || cons || sh ? undefined : craftTo();
+    step = batch ?? need ?? cons ?? sh ?? ca ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
+    rule = batch ? "train" : need ? "need" : cons ? "need-cons" : sh ? "short" : ca ? "craft-ahead" : todayRule();
   } else if (fighter) {
     // task 027e (Alex: a fighter's level is a goal in itself), an order of work: (1) an achievement on config.first; (2)
     // forging by need (027b: one weapon speeds every fighter); (3) a kill a need of a fighter's road asks (a src: kill or

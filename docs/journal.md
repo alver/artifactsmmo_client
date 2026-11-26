@@ -202,7 +202,7 @@ run killed because a newer one started (a config change, ↻).
 - a whole road: `until` (played to: the service's horizon — the deadline since task 020, 21 days before; `HORIZON_DAYS` in `src/state/outlook.ts`), `sec` (the child's seconds), `points` (the account's
   then), `expected` (at `until`, by the model), `next` (the next ten completions: `code`, `at`);
 - a failed run: `failed`, the reason (the child exited early, printed a line that is not the road's, could not start, or
-  was killed after 30 minutes). A raw line `outlook: failed — <reason>` goes with it.
+  was killed after 90 minutes — 30 before task 030). A raw line `outlook: failed — <reason>` goes with it.
 ```json
 {"t":"2026-01-15T12:07:00.000Z","run":"7wu9","k":"outlook","from":"2026-01-15T12:02:00.000Z","until":"2026-02-05T12:02:00.000Z","sec":300,"points":0,"expected":5,"next":[{"code":"chicken_hunt","at":"2026-01-15T14:02:00.000Z"}]}
 {"t":"2026-01-15T12:15:12.000Z","run":"7wu9","k":"outlook","from":"2026-01-15T12:14:12.000Z","failed":"the child exited with 1 before the road was whole: made up: it died"}

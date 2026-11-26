@@ -135,7 +135,8 @@ const MATS = { steel_bar: 7, pig_skin: 3, spider_leg: 3, astralyte_crystal: 2 };
   const w: World = {
     ...live, bank: [...bank].map(([code, quantity]) => ({ code, quantity })), bags: {}, current: {}, blocked: {}, favors: undefined, bankSlots: undefined, nextExpansion: undefined,
     characters: live.characters.map((c) => ({ ...c, ...({ Third: { fishing_level: 20 }, Fourth: { weapon_slot: "steel_pickaxe" }, Second: { weapon_slot: "steel_axe" } } as Record<string, object>)[c.name] }) as Character),
-    config: { ...live.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])) } as unknown as World["config"],
+    // task 030: the payback ranks a tool inside one tier — GEAR_FIRST off (on, a tool's leaf is tier (1b): check-gear-first)
+    config: { ...live.config, roles: ROLES, on: Object.fromEntries(ALL.map((n) => [n, true])), gearFirst: "off" } as unknown as World["config"],
   };
   const r = rank("Third", w), all = [...r.objectives, ...r.levels, ...r.supply];
   const skin = all.find((c) => c.target.key === "src:ogre_skin");

@@ -107,6 +107,12 @@ export const FOOD_FISHING = false;
  *  else is admitted and whether or not it gives the fighter XP (the workers are the crafters); false — such a kill follows
  *  task 027g's rule (a worker that is on and admitted hunts it). `config.trainHunt` overrides it for the roads and checks only. */
 export const TRAIN_HUNT = true;
+/** Task 030, A (Alex: weapons and armour before potions): a worker's tier (1) — "off": one tier, as 2d3f66e ranks it; "all":
+ *  two halves, (1a) weapons and armour (gear work (a), the craft level such a piece asks, a craft's training's leaves; last its
+ *  own craft's train step the bank does not cover), (1b) the road's consumables and a lane holder's tool, only when (1a) has
+ *  no candidate; "pick": as "all", the consumables of a fighter's XP pick of today in (1a). `config.gearFirst` overrides it
+ *  for the roads and the checks only. */
+export const GEAR_FIRST: "off" | "all" | "pick" = "all";
 
 /** Task 013: a spawn is seen half a poll late on average (the 2-minute poll while event demand is open, sync.ts). */
 export const EVENT_SEEN_SEC = 60;
