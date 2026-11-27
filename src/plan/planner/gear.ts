@@ -17,7 +17,8 @@
 // Task 027: (a) and (b) are the fighters' (roles.ts fights: a character with no role too) — a worker has no combat road
 // and takes no kill objective. The same in consumables.ts consumableNeeds.
 // Candidates: pieces with a recipe the character can equip now (a piece its pool already holds is simply not new),
-// no rune, artifact, utility or bag, at most ten levels below it, whose bill of materials is in reach (bank stock
+// no rune, artifact, utility or bag, at most ten levels below it (task 032b: or below, where its slot has none inside the ten
+// levels and it beats the piece worn there), whose bill of materials is in reach (bank stock
 // counts), that someone who is on can source and that have a crafter; the rest are listed as rejected, with why.
 //
 // Restated from the hive (src/plan/hive/gear.ts, which the core may not import; it is deleted in the clean-up):
@@ -49,7 +50,7 @@ import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
 import type { Parent } from "./supply";
 import { targetsOf } from "./targets";
-import { SLOTS_FOR_TYPE } from "../../types/api";
+import { SLOTS_FOR_TYPE, slotCode } from "../../types/api";
 import type { Character } from "../../types/api";
 import type { GearRecommendation } from "../types";
 import type { Lane, World } from "./types";
@@ -90,24 +91,34 @@ export function candidatesOf(ch: Character, world: World): Cands {
   const bySlot = new Map<string, string[]>();
   const tools: string[] = [];
   const rejected: Rejected[] = [];
+  // task 032b: more than ten levels below the character, a piece is a candidate only where its slot has none inside the ten
+  // levels and it beats the piece worn there (the slime shield at combat 31: no shield of 21–31 in reach, an iron shield worn);
+  // an empty slot takes none, as before
+  const worn = (type: string): number => Math.min(...(SLOTS_FOR_TYPE[type] ?? []).map((s) => item(slotCode(ch, s) ?? "")?.level ?? 0));
+  const low = new Map<string, string[]>(), lowRejected = new Map<string, Rejected[]>();
   for (const it of catalog().items.values()) {
     if (!it.craft || !SLOTS_FOR_TYPE[it.type] || ["utility", "bag", "rune", "artifact"].includes(it.type)) continue;
-    if (!canEquip(ch, it) || it.level < ch.level - 10) continue;
+    const below = it.level < ch.level - 10;
+    if (!canEquip(ch, it) || (below && (it.subtype === "tool" || !(it.level > worn(it.type)) || !(worn(it.type) > 0)))) continue;
+    const reject = (why: string): void => void (below ? lowRejected.set(it.type, [...(lowRejected.get(it.type) ?? []), { for: ch.name, piece: it.code, why }]) : rejected.push({ for: ch.name, piece: it.code, why }));
     const crafter = crafterOf(it.craft.skill, world);
-    if (!crafter) { rejected.push({ for: ch.name, piece: it.code, why: `no crafter of ${it.craft.skill}` }); continue; }
+    if (!crafter) { reject(`no crafter of ${it.craft.skill}`); continue; }
     // in reach = nothing in its tree out of reach (bank stock counts), and someone that is on can source every leaf
     const bill = billOf(world, ch.name, recipeDemand(it.code, 1));
-    if (bill.out.length) { rejected.push({ for: ch.name, piece: it.code, why: bill.out.join("; ") }); continue; }
+    if (bill.out.length) { reject(bill.out.join("; ")); continue; }
     if (!Number.isFinite(bill.hours)) {
       const who = [...bill.leaves.values()].filter((l) => l.kind === "src" && !l.gates.some((g) => g.kind === "event") && !Number.isFinite(fleetSec(l.work, l.gates, world))).map((l) => itemName(l.code));
       const road = bill.gated.filter((g) => !Number.isFinite(g.hours)).map((g) => `${g.lane} ${g.level} for ${itemName(g.code)}`); // task 012
       const ev = bill.events.filter((e) => !Number.isFinite(e.hours)).map((e) => `${itemName(e.code)} (${e.event})`); // task 013
-      rejected.push({ for: ch.name, piece: it.code, why: [who.length ? `nobody that is on sources ${who.join(", ")} yet` : "", road.length ? `no XP source on the way to ${road.join(", ")}` : "", ev.length ? `nobody can ever be a member of the event for ${ev.join(", ")}` : ""].filter(Boolean).join("; ") });
+      reject([who.length ? `nobody that is on sources ${who.join(", ")} yet` : "", road.length ? `no XP source on the way to ${road.join(", ")}` : "", ev.length ? `nobody can ever be a member of the event for ${ev.join(", ")}` : ""].filter(Boolean).join("; "));
       continue;
     }
     if (it.subtype === "tool") tools.push(it.code);
-    else bySlot.set(it.type, [...(bySlot.get(it.type) ?? []), it.code]);
+    else (below ? low : bySlot).set(it.type, [...((below ? low : bySlot).get(it.type) ?? []), it.code]);
   }
+  const inside = new Set(bySlot.keys());
+  for (const [type, cs] of low) if (!inside.has(type)) bySlot.set(type, cs);
+  for (const [type, rs] of lowRejected) if (!inside.has(type)) rejected.push(...rs);
   const fight = [...bySlot.values()].flatMap((cs) => cs.sort((a, b) => (item(b)!.level - item(a)!.level) || (a < b ? -1 : 1)).slice(0, PER_SLOT));
   const out = { fight, tools, rejected };
   byName.set(ch.name, out);

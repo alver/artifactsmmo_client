@@ -48,11 +48,11 @@ import { bankStuck, newCodes, tidyStep } from "./bank";
 import { isOn, met } from "./gates";
 import { consFree, consParents, consumableNeeds, fightTake, gearWorld, kitchenOn, nextFoodTier, stockCook } from "./consumables";
 import type { Take } from "./consumables";
-import { gearNeeds, gearPieces, pieceParent } from "./gear";
+import { candidatesOf, gearNeeds, gearPieces, pieceParent } from "./gear";
 import { atlas } from "../../catalog/atlas";
 import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
 import { admitted, fightRec, nearestSpot, placeOf, withToll, verdictOf } from "./reach";
-import { crafterOf, roleOf, rolesFor } from "./roles";
+import { crafterOf, fights, roleOf, rolesFor } from "./roles";
 import { cancelOf, coinsInFlight, monstersTask, startVisit, taskText, visitSec } from "./tasks";
 import { available, poolBank } from "./stock";
 import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
@@ -746,8 +746,20 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (why && Number.isFinite(sec)) { step = { ...step, hours: step.hours + sec / 3600, visit: { at: "start", cancel: ch.task }, why: `${step.why}; task: cancels ${taskText(ch)} for a coin first (${why})` }; limits.push(`task: cancels ${taskText(ch)} for a coin first (${why})`); }
   }
   if (held && step.work.kind === "kill" && step.work.monster === held && step.target !== "src:tasks_coin") { step = { ...step, why: `${step.why}; task: ${taskText(ch)}` }; because.push(`task: ${taskText(ch)}`); }
-  // task 032 (B.6): a need the market refused for its price or its purse says so in its own step's why
-  for (const o of offers) if ((o.rule === 3 || o.rule === 4) && o.key === step.target) { step = { ...step, why: `${step.why}; market: ${o.why}` }; limits.push(`market: ${o.why}`); }
+  // task 032 (B.6): a need the market refused for its price or its purse says so in its own step's why; task 032b (B.1): one it
+  // refused because the step's own way is cheaper (rule 2) too — the why names both
+  for (const o of offers) if (o.rule >= 2 && o.key === step.target) { step = { ...step, why: `${step.why}; market: ${o.why}` }; limits.push(`market: ${o.why}`); }
+  // task 032b (B.2): the pieces this fighter would wear whose material has no source of ours and that the market refuses (or
+  // does not sell) — no need, no leaf: its why says the market's answer, once a material, with the pieces it stops
+  if (world.market && fights(name, world)) {
+    const by = new Map<string, string[]>();
+    for (const r of candidatesOf(ch, world).rejected) if (r.why.includes(": no source of ours; market: ")) by.set(r.why, [...(by.get(r.why) ?? []), itemName(r.piece)]);
+    if (by.size) {
+      const said = `market, no source of ours: ${[...by].map(([w, ps]) => `${w.replace(": no source of ours; market: ", " — ")} (for ${ps.slice(0, 3).join(", ")}${ps.length > 3 ? ` and ${ps.length - 3} more` : ""})`).join("; ")}`;
+      step = { ...step, why: `${step.why}; ${said}` };
+      limits.push(said);
+    }
+  }
   // task 027e (C.2): a candidate dropped for its score (0 or NaN: no tier takes it) is said — in the why, so in the journal
   const dropped = [...objectives, ...levels, ...supply, ...fillers].filter((c) => !(c.any > 0));
   if (dropped.length) step = { ...step, why: `${step.why}; dropped for its score: ${dropped.slice(0, 3).map((c) => `${c.target.key} (${c.any})`).join(", ")}${dropped.length > 3 ? ` and ${dropped.length - 3} more` : ""}` };

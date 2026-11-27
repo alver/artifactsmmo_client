@@ -208,6 +208,9 @@ export interface ConsNeed {
  *  a bundle's win gates and win levels (bundle.ts), the needs' "nobody wins it safely" (the stock comes and goes). */
 export const gearWorld = (world: World): World =>
   (world.config.consumables ?? 1) && (world.config.potionK ?? 1) !== 0 ? noStock(world, world.bank.filter((b) => item(b.code)?.type === "utility").map((b) => b.code)) : world;
+/** Task 032b (A.1): the World a boss is judged on as a source of its drops — with POTIONS off (task 031), the pool without its
+ *  potions, as its kill step would be planned (fightTake: the gear, the rune and food); else the World. */
+export const bossWorld = (world: World, monster: string): World => (monsterOf(monster)?.type === "boss" && !potionsOn(world) ? gearWorld(world) : world);
 const stockMemo = new WeakMap<World, Map<string, World>>();
 /** The World with none of `codes` in the bank: the pool "without the consumable" of H0. */
 export function noStock(world: World, codes: string[]): World {

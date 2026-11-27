@@ -47,13 +47,15 @@ export function atlasSafeLevel(code: string): number {
 /** Atlas seconds per kill of a just-strong-enough fighter (an estimate for monsters the bank cannot beat yet). */
 export const atlasKillSec = (code: string): number => atlasMonster(code)?.kill?.sec ?? GUESS_KILL;
 
-function killGates(code: string): Gate[] | string {
+/** Task 032b (A.1): as the source of a drop (`solo`), a boss is a monster like any other — an admitted win of one character
+ *  alone (no group fight is planned); a kill objective on a boss keeps its `group` gate. */
+function killGates(code: string, solo = false): Gate[] | string {
   const m = monsterOf(code);
   if (!m) return `unknown monster ${code}`;
   if (m.type === "raid_boss") return `${code} is a raid boss (raids are out of scope)`;
   const g = placeGates("monster", code);
   if (typeof g === "string") return g;
-  return [...g, m.type === "boss" ? { kind: "group" } : { kind: "win", monster: code, level: atlasSafeLevel(code) }];
+  return [...g, m.type === "boss" && !solo ? { kind: "group" } : { kind: "win", monster: code, level: atlasSafeLevel(code) }];
 }
 
 const staticOnly = (g: Gate[]): boolean => g.every((x) => x.kind === "level" || x.kind === "win");
@@ -76,7 +78,7 @@ function fieldSource(code: string): { work: Work; gates: Gate[] } | string {
   }
   for (const m of catalog().monsters.values()) {
     if (!m.drops.some((d) => d.code === code)) continue;
-    const g = killGates(m.code);
+    const g = killGates(m.code, true);
     if (typeof g === "string") continue;
     opts.push({ work: { kind: "kill", monster: m.code, drop: code }, gates: g, est: atlasKillSec(m.code) * perUnit(m.drops, code) });
   }

@@ -1,6 +1,6 @@
 // Task 028 (D.1): the data of the one page.
-//   A.1 the reason in parts — every step's why on the fixture Worlds is 031b's to the letter (scripts/whys.mts against
-//       scripts/fixtures/whys-031b.json — the kitchen on; 031 held whys-031.json, 030 whys-030.json, 029 whys-029.json, 028 027g's, whys-027g.json, recorded on c03bff4), and its rule is the one the why's
+//   A.1 the reason in parts — every step's why on the fixture Worlds is 032b's to the letter (scripts/whys.mts against
+//       scripts/fixtures/whys-032b.json — task 032b: a boss admitted alone a source of its drops; 031b held whys-031b.json, the kitchen on; 031 held whys-031.json, 030 whys-030.json, 029 whys-029.json, 028 027g's, whys-027g.json, recorded on c03bff4), and its rule is the one the why's
 //       head names; a fighter's XP
 //       pick, a worker's need and a craft-ahead step carry the rule, the goal and the limits;
 //   A.2 the road's lines carry the levels and the gear made, and two cold runs (two processes) give the same lines;
@@ -49,9 +49,9 @@ const runs = Promise.all([cold(), cold()]);
 // ── A.1 ──
 const steps: { w: string; step: any }[] = [];
 const whys = await whysOf(".", 12, (w, step) => steps.push({ w, step }));
-const gold = JSON.parse(await readFile("scripts/fixtures/whys-031b.json", "utf8")) as typeof whys;
+const gold = JSON.parse(await readFile("scripts/fixtures/whys-032b.json", "utf8")) as typeof whys;
 const differ = whys.map((x, i) => (JSON.stringify(x) === JSON.stringify(gold[i]) ? -1 : i)).filter((i) => i >= 0);
-ok("A.1 every why is 031b's to the letter", whys.length === gold.length && !differ.length, `${whys.length} whys, ${gold.length} recorded; differ: ${differ.slice(0, 3).map((i) => `${whys[i]?.key}: ${whys[i]?.why.slice(0, 80)}`).join(" | ")}`);
+ok("A.1 every why is 032b's to the letter", whys.length === gold.length && !differ.length, `${whys.length} whys, ${gold.length} recorded; differ: ${differ.slice(0, 3).map((i) => `${whys[i]?.key}: ${whys[i]?.why.slice(0, 80)}`).join(" | ")}`);
 const HEAD: [RegExp, string][] = [[/^fighter: the XP pick/, "xp-pick"], [/^fighter, first/, "first"], [/^fighter, forging/, "forging"], [/^fighter, a need's kill/, "need-kill"], [/^fighter, a training's kill/, "train-kill"], [/^fighter, (no fight admitted|at the level cap)/, "free"],
   [/^worker, a batch from the bank/, "train"], [/^worker, the stock first/, "cook"], [/^worker, the kitchen to/, "craft-ahead"], [/^worker, a need \(consumables or a tool\)/, "need-cons"], [/^worker, a need/, "need"], [/^worker, done within/, "short"], [/^worker, craft to/, "craft-ahead"], [/^worker: fallback/, "fallback"], [/^worker: /, "today"], [/^tidy:/, "tidy"], [/^fallback/, "fallback"]];
 const wrong = steps.filter(({ step }) => {
@@ -89,8 +89,9 @@ ok("A.2 two cold runs give the same lines", r1 === r2 && lines.length > 3, `${li
   setDataReader(async (name) => JSON.parse(await readFile(`public/data/${name}.json`, "utf8")));
   await loadCatalog();
   const live = JSON.parse(await readFile("scripts/fixtures/world-2026-11-25.json", "utf8")).world;
-  // the World of 11-25 with Second's weaponcrafting 15: the tools ask 20, the Steel Axe's Ogre Eyes are short
-  const w = { ...live, characters: live.characters.map((c: any) => (c.name === "Second" ? { ...c, weaponcrafting_level: 15 } : c)) };
+  // the World of 11-25 with Second's weaponcrafting 15: the tools ask 20, the Steel Axe's Ogre Eyes are short (task 032b: none in
+  // the bank — with a boss a source of its drops the fighters' sets moved, and the bank's eyes reached the axe)
+  const w = { ...live, bank: live.bank.filter((b: { code: string }) => b.code !== "ogre_eye"), characters: live.characters.map((c: any) => (c.name === "Second" ? { ...c, weaponcrafting_level: 15 } : c)) };
   const rows = needsOf(w);
   const lv = rows.find((r) => r.craft && r.craft.level < r.craft.asked);
   const mat = rows.find((r) => r.short.some((x) => x.source === "kill" && x.who.length > 0 && x.qty > 0));

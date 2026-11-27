@@ -26,6 +26,8 @@ import { cachesOn, fightSecOf, planRec, admits } from "./reach";
 import { crafterOf, roleOf } from "./roles";
 import { available } from "./stock";
 import { eventOf, gapSec, materialCal } from "./events";
+import { marketQuote } from "./market";
+import { bossWorld } from "./consumables";
 import { placeGates, sourceFor, targetsOf } from "./targets";
 import type { Gate, Lane, Target, Work, World } from "./types";
 
@@ -94,8 +96,9 @@ export function fleetSec(work: Work, gates: Gate[], world: World): number {
     for (const c of by) {
       if (!isOn(c.name, world) || !gates.every((g) => (g.kind === "win" ? true : met(g, c, world)))) continue;
       if (work.kind !== "kill") { s = Math.min(s, actionSec(work, c, world)); continue; }
-      const r = planRec(c, world, work.monster);
-      if (admits(r, world)) { s = fightSecOf(r!, world, c.name, work.monster) + killWalk(c, world, work.monster); break; }
+      const w = bossWorld(world, work.monster); // task 032b: a boss as a step would fight it
+      const r = planRec(c, w, work.monster);
+      if (admits(r, w)) { s = fightSecOf(r!, w, c.name, work.monster) + killWalk(c, w, work.monster); break; }
     }
     m.set(k, s);
   }
@@ -143,9 +146,11 @@ export function priceOf(code: string, qty: number): string {
  * Open `demand` ([code, qty]) against the bank this character may plan with: stock first, then the field source,
  * else the recipe, as deep as the recipes go. `vb` is the virtual bank (shared when several parents are opened in
  * turn); fresh when omitted. `sec0` (task 029): the seconds of a field action as this bill prices it — fleetSec, or a
- * training's suppliers (train.ts).
+ * training's suppliers (train.ts). `market` (task 032b, B.2): a material with no source of ours (no character that is on
+ * sources it; not an event's) is priced by the market (market.ts marketQuote) — else it is out with the market's answer;
+ * false: the own chain alone (market.ts ownHours).
  */
-export function billOf(world: World, name: string, demand: [string, number][], vb = new Map<string, number>(), price = true, sec0: (w: Work, gates: Gate[], world: World) => number = fleetSec): Bill {
+export function billOf(world: World, name: string, demand: [string, number][], vb = new Map<string, number>(), price = true, sec0: (w: Work, gates: Gate[], world: World) => number = fleetSec, market = true): Bill {
   const bill: Bill = { leaves: new Map(), out: [], hours: 0, crafts: 0, gated: [], events: [] };
   const laneTop = new Map<Lane, { code: string; level: number }>(); // settled point 8: per lane the highest craft level of the chain
   const evQty = new Map<string, number>(); // task 013: an event-only material's quantity, priced by its calendar at the end
@@ -185,6 +190,9 @@ export function billOf(world: World, name: string, demand: [string, number][], v
           sec = actionSec(s.work, by, world);
           if ((laneTop.get(lv.lane)?.level ?? 0) < lv.level) laneTop.set(lv.lane, { code, level: lv.level });
         }
+        // task 032b (B.2): no source of ours — the market's price, or out with its answer (no market: ∞, as before)
+        const mq = !Number.isFinite(sec) && market ? marketQuote(world, name, code, q) : undefined;
+        if (mq) return mq.hours != null ? void (bill.hours += mq.hours) : void bill.out.push(`${itemName(code)}: ${mq.why}`);
         bill.hours += (q * perOf(s.work) * sec) / 3600;
       }
       return;

@@ -96,10 +96,12 @@ const workerAdmitted = (w: World, m: string): boolean => WORKERS.some((n) => adm
   const r = rank("First", base), s = r.step;
   const all = available("cooked_trout", base, "First");
   cases.push(["a cooked food a better work's need asks → the pick's step withdraws it and plans eating", s.as === "level" && (s.withdraw?.cooked_trout ?? 0) > 0 && reservable(base, "First", "cooked_trout", 0, 0) === all && / with \d+ Cooked Trout from the bank/.test(s.why), `First: ${said(s)}; withdraw ${JSON.stringify(s.withdraw ?? {})}; the stock a work of no score may take ${reservable(base, "First", "cooked_trout", 0, 0)} of ${all}`]);
-  // (b) a potion under an event's reserve is still held
-  const ev = consumableNeeds(base, "First").find((n) => n.reserve && !n.food);
-  const held = ev ? available(ev.code, base, "First") - reservable(base, "First", ev.code, 0, 0) : 0;
-  cases.push(["…a potion under an event's reserve is still held", !!ev && held >= Math.min(available(ev.code, base, "First"), ev.demand) - 1e-6, ev ? `${ev.key}: ${Math.ceil(ev.demand)} reserved; ${held.toFixed(0)} of ${available(ev.code, base, "First")} held back` : "no event reserve of a potion"]);
+  // (b) a potion under an event's reserve is still held — task 032b: the full moon's demand given by an objective (it came from a
+  // Vampire Bow need's cape; with a boss admitted alone a source of its drops, the slime shield moves that gear set)
+  const evW: World = { ...base, achievements: [...base.achievements, made("made_up_moon", 5, "combat_kill", "full_moon_vampire", 20)] };
+  const ev = consumableNeeds(evW, "First").find((n) => n.reserve && !n.food);
+  const held = ev ? available(ev.code, evW, "First") - reservable(evW, "First", ev.code, 0, 0) : 0;
+  cases.push(["…a potion under an event's reserve is still held", !!ev && held >= Math.min(available(ev.code, evW, "First"), ev.demand) - 1e-6, ev ? `${ev.key}: ${Math.ceil(ev.demand)} reserved; ${held.toFixed(0)} of ${available(ev.code, evW, "First")} held back` : "no event reserve of a potion"]);
   // (c) raw food in the bank, none cooked → the cook's first-tier candidate cooks a food the raw makes, a chunk of it (not a
   // horizon's demand)
   const noCooked: World = { ...base, bank: base.bank.filter((b) => item(b.code)?.subtype !== "food" || !item(b.code)?.craft) };

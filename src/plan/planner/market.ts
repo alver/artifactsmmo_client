@@ -10,12 +10,16 @@
 //   (4) it costs at most config.market.piece, the day's purchases (the steps in flight counted) at most config.market.day,
 //       and the bank's gold after it covers what runePays asks (the floor, the fares, a due expansion) — a need that passes
 //       1–3 and fails only here is wanted: shown, never bought.
-// A purchase larger than (4) allows is cut to the units that fit (and judged on (2) again). Pure.
+// A purchase larger than (4) allows is cut to the units that fit (and judged on (2) again).
+// Task 032b (B.2): a material with no source of ours (a drop of a monster or a boss nobody that is on is admitted against
+// alone; not an event's) is priced in a bill by the market (`marketQuote`: its fair asks hold the units and the purse takes
+// one), else it is out with the market's answer; its purchase skips rule 2 ("no source of ours": no chain to compare with).
+// Pure.
 
 import { item, itemName } from "../../catalog";
 import { MARKET_DAY_GOLD, MARKET_FAIR, MARKET_PAYS, MARKET_PIECE_GOLD } from "./config";
 import { stepSec } from "./cost";
-import { nearestSpot, placeOf } from "./reach";
+import { CITY, nearestSpot, placeOf } from "./reach";
 import { available } from "./stock";
 import { billOf } from "./supply";
 import type { MarketOrder, MarketRef, Place, World } from "./types";
@@ -35,7 +39,7 @@ export const refText = (r: MarketRef): string => `${g(r.price)} (the median of $
 /** Hours the plan's own chain takes for `units` of a code from here: billOf as it prices today, the code itself opened (not
  *  taken from the bank), a level road left out; ∞ when it cannot be had or a road is all it lacks. */
 export function ownHours(world: World, name: string, code: string, units: number): number {
-  const b = billOf(world, name, [[code, units]], new Map([[code, 0]]));
+  const b = billOf(world, name, [[code, units]], new Map([[code, 0]]), true, undefined, false); // the own chain: no market in it
   if (b.out.length) return Infinity;
   const h = b.hours - b.gated.reduce((s, x) => s + x.hours, 0);
   return Number.isFinite(h) ? h : Infinity;
@@ -48,20 +52,47 @@ export function bestOrder(world: World, code: string): MarketOrder | undefined {
     .sort((a, b) => a.price - b.price || b.quantity - a.quantity || (a.id < b.id ? -1 : 1))[0];
 }
 
+/** Rule 4's numbers: the gold a purchase may cost, what is left of the day (the others' purchases in flight counted as
+ *  spent) and the bank's gold after the floor, the fares and a due expansion. */
+function purseOf(world: World, name: string): { day: number; piece: number; left: number; purse: number } {
+  const m = world.market!, cfg = world.config;
+  const day = cfg.market?.day ?? MARKET_DAY_GOLD, piece = cfg.market?.piece ?? MARKET_PIECE_GOLD;
+  const flying = Object.entries(world.current).reduce((s, [n, x]) => s + (n !== name && x?.target.startsWith("buy:") ? x.withdraw?.gold ?? 0 : 0), 0);
+  const due = (world.nextExpansion ?? Infinity) <= cfg.expansionCap ? world.nextExpansion! : 0;
+  return { day, piece, left: day - m.spent - flying, purse: available("gold", world, name) - due };
+}
+
+/** Task 032b (B.2): `q` units of a code with no source of ours, as a bill prices them — the fair sell orders (not this
+ *  account's, at most MARKET_FAIR × the reference; one unread yet counts as fair here, the purchase itself waits for it) hold
+ *  them, cheapest first, and the purse takes one today: their gold at goldPerHour plus the trip (`hours`); else only the
+ *  market's answer. Undefined without a market (the forward model) or with config.market.day 0: no source, as before. */
+export function marketQuote(world: World, name: string, code: string, q: number): { hours?: number; why: string } | undefined {
+  const m = world.market;
+  if (!m || !((world.config.market?.day ?? MARKET_DAY_GOLD) > 0)) return undefined;
+  const ref = m.refs[code], low = bestOrder(world, code), n = Math.ceil(q - 1e-9);
+  const no = (why: string): { why: string } => ({ why: `no source of ours; market: ${why}` });
+  if (!low) return no("none on sale");
+  if (ref === null) return no(`ask ${g(low.price)}, no reference (no trade in 7 days, under 24 h on sale)`);
+  if (ref && low.price > MARKET_FAIR * ref.price) return no(`ask ${g(low.price)} above ${MARKET_FAIR} × ${refText(ref)}`);
+  const fair = m.orders.filter((o) => o.code === code && o.quantity > 0 && (!m.account || o.account !== m.account) && (!ref || o.price <= MARKET_FAIR * ref.price)).sort((a, b) => a.price - b.price);
+  let gold = 0, got = 0;
+  for (const o of fair) { const k = Math.min(n - got, o.quantity); gold += k * o.price; got += k; if (got >= n) break; }
+  if (got < n) return no(`only ${got} of ${n} on sale at a fair price`);
+  const p = purseOf(world, name);
+  if (low.price > Math.min(p.piece, p.left, p.purse)) return no(`${itemName(code)} at ${g(low.price)}: ${low.price > p.piece ? `a purchase at most ${g(p.piece)}` : low.price > p.left ? `${g(Math.max(0, p.left))} of today's ${g(p.day)} left` : "the bank's gold after it would not cover the floor, the fares and the next expansion"}`);
+  const spot = nearestSpot(CITY, GE, GE, world);
+  return { hours: gold / world.config.goldPerHour + (spot ? stepSec(spot.place) / 3600 : 0), why: `no source of ours: bought, ${n} for ${g(gold)}` };
+}
+
 /** Every need of `needs` with a sell order, with the market's verdict (rules 1–4 above). Empty without a market or with
  *  config.market.day 0. */
 export function marketOffers(world: World, name: string, needs: MarketNeed[]): Offer[] {
   const m = world.market, cfg = world.config;
-  const day = cfg.market?.day ?? MARKET_DAY_GOLD, piece = cfg.market?.piece ?? MARKET_PIECE_GOLD;
   const ch = world.characters.find((c) => c.name === name);
-  if (!m || !ch || !(day > 0)) return [];
+  if (!m || !ch || !((cfg.market?.day ?? MARKET_DAY_GOLD) > 0)) return [];
   const spot = nearestSpot(placeOf(ch), GE, GE, world);
   const trip = spot ? stepSec(spot.place) / 3600 : Infinity;
-  // the others' purchases in flight count against the day as if spent
-  const flying = Object.entries(world.current).reduce((s, [n, x]) => s + (n !== name && x?.target.startsWith("buy:") ? x.withdraw?.gold ?? 0 : 0), 0);
-  const left = day - m.spent - flying;
-  const due = (world.nextExpansion ?? Infinity) <= cfg.expansionCap ? world.nextExpansion! : 0;
-  const purse = available("gold", world, name) - due;
+  const { day, piece, left, purse } = purseOf(world, name);
   const out: Offer[] = [];
   for (const n of needs) {
     const order = bestOrder(world, n.code);
@@ -79,7 +110,8 @@ export function marketOffers(world: World, name: string, needs: MarketNeed[]): O
     }
     const units0 = Math.min(n.units, order.quantity, 100); // the GE's 100 a buy
     const j0 = judge(units0);
-    const hours = (j: typeof j0): string => `${g(j.gold)} gold is ${fmtH(j.buyH)} h with the trip against ${fmtH(j.ownH)} h to make`;
+    // task 032b (B.2): no chain of ours to compare with — rule 2 has nothing to say (∞ passes it), the why says so
+    const hours = (j: typeof j0): string => `${g(j.gold)} gold is ${fmtH(j.buyH)} h with the trip ${Number.isFinite(j.ownH) ? `against ${fmtH(j.ownH)} h to make` : "— no source of ours"}`;
     if (!j0.pays) { out.push({ ...base, ...j0, rule: 2, why: `${at(units0)}: ${hours(j0)} — more than half` }); continue; }
     const ref = base.ref;
     if (!ref) { out.push({ ...base, ...j0, rule: 3, why: `${at(units0)}: ${ref === null ? "no reference — no trade in 7 days and under 24 h on sale" : "no reference read yet"}` }); continue; }

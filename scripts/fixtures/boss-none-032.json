@@ -1,0 +1,32 @@
+[
+ {
+  "who": "First",
+  "target": "src:blue_slimeball",
+  "units": 284,
+  "why": "fighter, a training's kill: supply: Blue Slimeball: 490 actions short for weaponcrafting 24 → 25 (Battlestaff ×19) (+4 pts, chain ~8.9 h); Blue Slime: 0 combat XP a kill; 284 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "who": "Second",
+  "target": "mat:dead_wood_plank",
+  "units": 10,
+  "why": "worker, a need: supply: Dead Wood Plank: 10 short for Piggy Armor for Fifth (closing_the_gate (imp)) (+4 pts, chain ~129 h); 10 made now (0.1 h)"
+ },
+ {
+  "who": "Third",
+  "target": "mat:cooked_gudgeon",
+  "units": 1080,
+  "why": "worker, the stock first: supply: Cooked Gudgeon ×1080 from the bank's raw for Fifth: their fight steps rest or take too little food; 1080 made now (1.5 h)"
+ },
+ {
+  "who": "Fourth",
+  "target": "src:iron_ore",
+  "units": 190,
+  "why": "worker, a need: supply: Iron Ore: 845 actions short for gearcrafting 26 → 27 (Steel Armor ×25) (+4 pts, chain ~10 h); Iron Rocks: 0 mining XP a gather; 190 gathers now (1.5 h)"
+ },
+ {
+  "who": "Fifth",
+  "target": "src:blue_slimeball",
+  "units": 284,
+  "why": "fighter, a training's kill: supply: Blue Slimeball: 490 actions short for weaponcrafting 24 → 25 (Battlestaff ×19) (+4 pts, chain ~8.9 h); Blue Slime: 0 combat XP a kill; 284 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ }
+]

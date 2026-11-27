@@ -7,7 +7,7 @@
 //      blue slimeball kills, their slimeballs at 2 against a reference of 1: "market: ask 2 above 1.25 × 1 …");
 //   3. no trade and under 24 h on sale (no reference) → not bought;
 //   4. steel bars at 250 for a training batch → not bought (rule 2: 25,000 gold is 83 h against 2.5 h of its own chain);
-//   5. an ask above a purchase's cap (an Obsidian Helmet at 12,000) → wanted, not bought; the day's budget spent (24,000 of
+//   5. an ask above a purchase's cap (an Obsidian Battleaxe at 12,000) → wanted, not bought; the day's budget spent (24,000 of
 //      25,000) → the staff wanted; the next UTC day (nothing spent) → bought;
 //   6. a food's or a potion's ingredient on sale (bass for catch_and_cook, glowstem leaf for potion_brewer) → not bought (rule 1);
 //      config.market.day 0 → no verdict at all, every step as without a market.
@@ -77,8 +77,8 @@ const cases: [string, boolean, string][] = [];
 
 // ── 5. the purse ──
 {
-  const wCap = of([["obsidian_helmet", 12_000, 1]], { obsidian_helmet: trades(12_000, 3) });
-  const vCap = (rank("Second", wCap).market ?? []).find((o) => o.code === "obsidian_helmet");
+  const wCap = of([["obsidian_battleaxe", 12_000, 1]], { obsidian_battleaxe: trades(12_000, 3) });
+  const vCap = (rank("Second", wCap).market ?? []).find((o) => o.code === "obsidian_battleaxe");
   const day = (spent: number): World => of([["elderwood_staff", 1495, 3]], { elderwood_staff: trades(1700) }, { spent });
   const vDay = (rank("Second", day(24_000)).market ?? []).find((o) => o.code === "elderwood_staff");
   const next = rank("Second", day(0)).step;

@@ -12,6 +12,7 @@ import { CHUNK_SEC } from "./config";
 import { fightRec, nearestSpot, placeOf, admitted, setWisdom } from "./reach";
 import { available } from "./stock";
 import { inputsOf, placeGates } from "./targets";
+import { bossWorld } from "./consumables";
 import { met } from "./gates";
 import { craftXpOf, gatherXp } from "./xp";
 import type { Character } from "../../types/api";
@@ -126,7 +127,7 @@ const NO_BONUS = new Set<string>();
 /**
  * Task 012, settled point 7: where this character gets more of `code` — among the nodes and monsters that drop it, that
  * exist now (static or a live event's), that it reaches by a free route and whose gates it meets (the skill level; a
- * admitted win; no boss): the least NET seconds an item, the action's seconds × actions an item × (1 − the XP share). The
+ * admitted win — task 032b: a boss too, admitted against alone; no raid boss): the least NET seconds an item, the action's seconds × actions an item × (1 − the XP share). The
  * XP share is the source's XP per second over that of the character's best XP source of the lane (pickNode;
  * pickMonster without the objective bonus), at most 1, and counts only when the character holds that lane's role
  * (combat is everyone's): a specialist's level is wanted anyway, so a gather that is also its levelling work costs
@@ -156,11 +157,12 @@ export function pickSource(code: string, ch: Character, world: World): SourcePic
     consider({ work, place: spot.place, until: spot.until, toll: spot.toll, sec, per: perOf(work), xp, lane, share: top?.xph ? Math.min(1, ((xp / sec) * 3600) / top.xph) : 0 }, r.name);
   }
   for (const m of catalog().monsters.values()) {
-    if (m.type === "boss" || m.type === "raid_boss" || !m.drops.some((d) => d.code === code)) continue;
+    if (m.type === "raid_boss" || !m.drops.some((d) => d.code === code)) continue; // task 032b: a boss it is admitted against alone is a source
     const spot = nearestSpot(placeOf(ch), "monster", m.code, world, ch.name);
-    if (!spot || !open("monster", m.code) || !admitted(ch, world, m.code)) continue;
+    const bw = bossWorld(world, m.code); // task 032b: a boss as its kill step would fight it (potions off: none)
+    if (!spot || !open("monster", m.code) || !admitted(ch, bw, m.code)) continue;
     const work = { kind: "kill" as const, monster: m.code, drop: code };
-    const sec = actionSec(work, ch, world), xp = fightXp(m.level, m.hp, m.type, ch.level, setWisdom(ch, fightRec(ch, world, m.code))) * favorXp(world, ch.name, "monster", m.code);
+    const sec = actionSec(work, ch, bw), xp = fightXp(m.level, m.hp, m.type, ch.level, setWisdom(ch, fightRec(ch, bw, m.code))) * favorXp(world, ch.name, "monster", m.code);
     if (!(sec <= 2 * CHUNK_SEC)) continue; // a kill longer than two chunks (potions at the field price) is no source of a step
     const top = xp > 0 ? pickMonster(ch, world, NO_BONUS) : undefined;
     consider({ work, place: spot.place, until: spot.until, toll: spot.toll, sec, per: perOf(work), xp, lane: "combat", share: top ? Math.min(1, xp / sec / (top.xp / top.sec)) : 0 }, m.name);
