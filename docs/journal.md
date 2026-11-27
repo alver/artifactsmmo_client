@@ -188,12 +188,26 @@ Keys: `who`, `skill` (`combat` for the character level), `lv` (the new level).
 - `code` (`gold`, the key's code, `tasks_coin`) and `q` (the quantity: the purchase's total price);
 - `for`: the bucket the action belonged to — the step's `pl:<key>` or the interrupt's `pl:int:<cls>:<what>`;
 - `via`: a transition's tile (`<layer>:<x>,<y>`); `item`: what the coins or the gold bought.
+- Task 032: `market` — a Grand Exchange purchase (`src/state/queue.ts` `ge-buy`, written when the purchase succeeds): `code`
+  `gold`, `q` the gold paid, `item`, `units`, `price` (a unit), `ref` (the reference it was judged on), `order` (the order's id).
 ```json
 {"t":"2026-01-15T12:01:28.300Z","run":"6aux","k":"spend","who":"Wil","what":"fare","code":"gold","q":1000,"for":"pl:src:palm_wood@Wil#1","via":"overworld:2,16"}
 {"t":"2026-01-15T12:00:58.350Z","run":"f0eu","k":"spend","who":"Cat","what":"coins","code":"tasks_coin","q":8,"for":"pl:mat:jasper_crystal@Cat#1","item":"jasper_crystal"}
 {"t":"2026-01-15T12:00:08.200Z","run":"jur5","k":"spend","who":"Dan","what":"gold","code":"gold","q":75000,"item":"lost_world_map"}
+{"t":"2026-01-15T14:52:56.650Z","run":"kbz1","k":"spend","who":"Pia","what":"market","code":"gold","q":30,"for":"pl:buy:copper_bar@Pia#1","item":"copper_bar","units":6,"price":5,"ref":5,"order":"o1"}
 ```
 `npm run journal`'s `## Spent` table lists every `spend` record and sums them by `what` and `code`, so the merchant's gold shows there beside the fares and the coins.
+
+### `market`: the Grand Exchange said no (task 032; `src/state/market.ts noteOffers`, `src/state/queue.ts` `ge-buy`)
+- `what` `wanted`: a need that passes the market's rules 1–3 and fails only the purse (a purchase's cap, the day's gold, the
+  bank's floor, fares and a due expansion) — once a code a UTC day: `who` (the deciding character), `code`, `ask`, `units`,
+  `gold`, `saves` (the hours it would save), `for` (the parent's label), `why`, `order`;
+- `what` `not bought`: the counter read the order again and refused — gone (404), another price, 434/435/436 or the bank short
+  of the gold: `who`, `code`, `order`, `price` (the planned one), `why`. Nothing was bought; the step's deposit-all brings the
+  gold back.
+```json
+{"t":"2026-01-15T14:52:56.650Z","run":"qptd","k":"market","what":"not bought","who":"Pia","code":"copper_bar","order":"o1","price":5,"why":"the order asks 9 now, 5 was planned"}
+```
 
 ### `outlook`: a run of the outlook ended (task 019; `src/state/outlook.ts`)
 The service's child process played the World forward (`src/plan/planner/road.ts`); one record a run that ended (the examples are the harness's fake runner, `scripts/scenarios/outlook-service.mts`), none for a
@@ -302,6 +316,9 @@ Written by `planner.ts statusNow`:
   - `head`: the queue's head; `note`; `running`; `error`;
 - `blocked`: `[{k, until, why}]`;
 - `events`: the live events, `[{code, at, until}]`;
+- `market` (task 032): `day` (UTC), `spent` (the gold the day's purchases took), `budget` (`config.market`: `day`, `piece`),
+  `buys` (the day's purchases: `t`, `who`, `code`, `units`, `price`, `ref`, `order`), `wanted` (`code`, `ask`, `units`, `gold`,
+  `saves`, `for`, `why`);
 - `last`: the last `pause` and `server` record of this run;
 - `outlook` (task 019): `at` (the World's time of the last whole road), `expected`, `sec`, `state` (`idle`, `running`,
   `failed`).
@@ -311,7 +328,7 @@ It is about 1 kB a character: 5–6 kB for the fleet.
 ## The snapshot (`logs/world/<day>.json`)
 Written by `planner.ts snapshotOf`:
 - `t`, `run`, `commit`;
-- `world`: the `World` as `decide()` reads it (`worldOf`): the characters, the bank's items, its gold and slots, the next expansion, the achievements with their progress, the live events, the steps in flight, `costs`, `blocked`, the merged config, the favors, the bags;
+- `world`: the `World` as `decide()` reads it (`worldOf`): the characters, the bank's items, its gold and slots, the next expansion, the achievements with their progress, the live events, the steps in flight, `costs`, `blocked`, the merged config, the favors, the bags; task 032: `market` (the last read's sell orders, the references, the day's gold spent) once the market was read;
 - `bankDetails`;
 - `offerings`: today's offerings cache;
 - `planner`: `current`, `costs`, `blocked`, `strikes`, the config `patch`, `offered`.

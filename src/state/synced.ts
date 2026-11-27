@@ -29,6 +29,7 @@ import { planner } from "./planner";
 import { outlook } from "./outlook";
 import { last24 } from "./last24";
 import { eventPlans } from "./eventorders";
+import { marketState } from "./market";
 import { simDeviations } from "../sim/validate";
 import { loadCatalog } from "../catalog";
 import { rpc } from "../lib/remote";
@@ -56,6 +57,7 @@ export const SYNCED: Record<string, Signal<unknown>> = {
   service,
   eventPlans,
   simDeviations,
+  marketState,
 } as Record<string, Signal<unknown>>;
 
 const MIGRATED = "ammo:v1:migrated";

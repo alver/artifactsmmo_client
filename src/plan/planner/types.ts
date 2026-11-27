@@ -18,7 +18,7 @@ export type Work =
   | { kind: "kill"; monster: string; drop?: string }   // units are kills, or items of `drop` (a combat_drop objective)
   | { kind: "gather"; resource: string; drop: string } // units are items of `drop`
   | { kind: "craft"; code: string }
-  | { kind: "buy"; code: string; npc: string; currency: string; price: number }
+  | { kind: "buy"; code: string; npc: string; currency: string; price: number; order?: string; ref?: number } // task 032: `order` — a Grand Exchange sell order (npc "grand_exchange", gold), `ref` its reference
   | { kind: "sell"; code: string; npc: string }
   | { kind: "task" } | { kind: "favor" }
   | { kind: "recycle"; codes?: Record<string, number> } // the recycling objective; task 015: a tidy step's codes and copies
@@ -84,7 +84,7 @@ export interface Step {
 /** Task 028: the rule of a role's order that took a step (decide.ts ORDER): a fighter's first · forging · a need's kill ·
  *  the XP pick · the free pass; a worker's need · short · craft ahead · today · fallback; anyone's tidy. Task 029: a fighter's
  *  training's kill (`train-kill`), a worker's batch from the bank (`train`). */
-export type Rule = "first" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy" | "cook";
+export type Rule = "first" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy" | "cook" | "market";
 /** Task 028 (A.1): a step's reason in parts. */
 export interface Reason {
   role?: "fighter" | "worker";
@@ -136,6 +136,7 @@ export interface PlannerConfig {
   gearFirst?: "off" | "all" | "pick";    // task 030: overrides config.ts GEAR_FIRST (the roads and the checks only)
   potions?: boolean;                      // task 031: overrides config.ts POTIONS (the roads and the checks only)
   kitchen?: boolean;                      // task 031: overrides config.ts KITCHEN (the roads and the checks only; the roles are DEFAULTS.roles')
+  market?: { day: number; piece: number }; // task 032: the market's purse — the gold a UTC day (0: nothing is bought), the most a purchase costs
 }
 
 export type Costs = Record<string, { sec: number; n: number; at: number }>;
@@ -168,6 +169,21 @@ export interface World {  // everything decide() reads — a snapshot, so it run
   hunted?: Record<string, number>;
   /** Task 027d: the forward model's tasks drawn so far, fleet-wide — the rotation's counter (tasks.ts drawOf). */
   drawn?: number;
+  /** Task 032: the Grand Exchange as the service last read it (state/market.ts) — the runtime's World only; the forward model
+   *  has none, so it buys nothing (market.ts). */
+  market?: Market;
+}
+
+/** Task 032: a sell order of the last read. */
+export interface MarketOrder { id: string; code: string; price: number; quantity: number; account?: string | null }
+/** Task 032, B.3: a code's reference price — the median unit price of its trades of 7 days (`n` trades), else of its lowest asks
+ *  over 72 h (`n` samples). */
+export interface MarketRef { price: number; n: number; from: "trades" | "asks" }
+export interface Market {
+  orders: MarketOrder[];                   // the sell orders of the last read
+  refs: Record<string, MarketRef | null>;  // by code: null = none (no trade, on sale under 24 h); missing = not read yet
+  spent: number;                           // the gold the market took today (UTC), the purchases' spend records
+  account?: string;                        // this account: its own orders are never bought (435)
 }
 
 /** An accepted offering's favor: × `xp` XP (and × `drop` drops) on its target for that character until `until` (ms). */

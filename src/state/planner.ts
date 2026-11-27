@@ -20,6 +20,7 @@ import { journal, lastRecords, meterCut, meterWork, runInfo, setMeterKey, writeS
 import { achievements, achievementsError, bankDetails, bankItems, characterList, characters, isOwned, log as activity, offerings, pendingRewards, plannerOn, pushLog } from "./store";
 import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue } from "./queue";
 import { liveEvents } from "./events";
+import { marketOf, marketState, noteOffers } from "./market";
 import { invCount, setFightBlocks, setMinWin } from "./exec";
 import { noSlotFor, setNoSlotHook } from "./loopkit";
 import { DEFAULTS } from "../plan/planner/config";
@@ -28,7 +29,7 @@ import { bankSec, minWinOf, placeOf, staticTiles } from "../plan/planner/reach";
 import { RUNE, runeOffer, runePays, runesHeld } from "../plan/planner/consumables";
 import { item as itemOf, itemName } from "../catalog";
 import { costKey, levelHoursEstimate, levelOf, perOf, sample, unitSec } from "../plan/planner/cost";
-import { decide, rank } from "../plan/planner/decide";
+import { rank } from "../plan/planner/decide";
 import { itemsOf } from "../plan/planner/compile";
 import { stepText } from "../plan/planner/road";
 import { isDone, targetsOf } from "../plan/planner/targets";
@@ -122,6 +123,7 @@ export function worldOf(now: number): World {
     // task 015, settled point 2: the bank's slots and the next expansion's price
     bankSlots: bankDetails.value?.slots, nextExpansion: bankDetails.value?.next_expansion_cost,
     ...(st.hunted ? { hunted: st.hunted } : {}), // task 027
+    ...((m) => (m ? { market: m } : {}))(marketOf(now)), // task 032: the last read's sell orders and the references
   };
 }
 
@@ -201,6 +203,8 @@ function start(name: string): void {
   }
   let step: Step;
   let items: QueueItem[];
+  let offers: ReturnType<typeof rank>["market"]; // task 032: the market's verdicts of the decision taken
+  const choose = (): Step => { const r = rank(name, worldOf(now)); offers = r.market; return r.step; };
   const hold = (keys: string[]): void => {
     const blocked = { ...planner.value.blocked };
     for (const k of keys) blocked[`${k}@${name}`] = { until: now + BRAKE_HOLD, why: "flapping" };
@@ -217,7 +221,7 @@ function start(name: string): void {
       journal("flap", { who: name, n: recent.length, until: iso(now + BRAKE_HOLD), keys: recent.map((s) => s.key), targets: all.length });
       recent.length = 0;
     }
-    step = decide(name, worldOf(now));
+    step = choose();
     // Per target: a target this character started BRAKE_N times inside the window is blocked and the decision made
     // again — three times at most in one start(); then whatever comes is taken.
     for (let i = 0; i < 3; i++) {
@@ -226,13 +230,14 @@ function start(name: string): void {
       plog(name, `flapping — ${step.target}: ${n} starts in 10 min, blocked 30 min`);
       journal("flap", { who: name, target: step.target, n, until: iso(now + BRAKE_HOLD) });
       hold([step.target]);
-      step = decide(name, worldOf(now));
+      step = choose();
     }
     items = itemsOf(step, ch);
   } catch (e) {
     journal("nostep", { who: name, why: (e as Error).message });
     return void plog(name, `no step — ${(e as Error).message}`); // the next queue change or tick tries again
   }
+  noteOffers(name, offers);
   starts.set(name, [...recent, { at: now, target: step.target, key: step.key }]);
   lastSeen.delete(name);
   const prev = planner.value.current[name];
@@ -348,6 +353,7 @@ function statusOf(): void {
     })),
     blocked: Object.entries(st.blocked).filter(([, b]) => b.until > now).map(([k, b]) => ({ k, until: iso(b.until), why: b.why })),
     events: liveEvents().map((e) => ({ code: e.code, at: [e.map.x, e.map.y, e.map.layer], until: e.expiration })),
+    market: { ...marketState.value, budget: configOf(st.config).market }, // task 032 (B.7)
     last: lastRecords(),
   });
 }
@@ -376,7 +382,7 @@ function measure(r: Running, ch: Character): { counter: number; units: number } 
   const mine = stepItems(ch.name, r.step.key);
   const w = r.step.work;
   let counter = (r.n - mine.length) * 1e6; // a finished item is progress
-  for (const it of mine) counter += ("done" in it ? it.done ?? 0 : 0) + (it.kind === "buy" && it.bought ? 1 : 0);
+  for (const it of mine) counter += ("done" in it ? it.done ?? 0 : 0) + ((it.kind === "buy" || it.kind === "ge-buy") && it.bought ? 1 : 0);
   // A train step: every XP of the character, not only the lane's — sourcing a batch's materials gathers or hunts first.
   if (w.kind === "train") for (const [k, v] of Object.entries(ch)) if (k.endsWith("xp") && !k.endsWith("max_xp") && typeof v === "number") counter += v;
   // the step's last item that counts: a supply step ends in a deposit-all, which has none (task 009); task 027d: a visit to
@@ -395,6 +401,7 @@ function measure(r: Running, ch: Character): { counter: number; units: number } 
     : tidy != null ? tidy
     : !last ? r.units
     : last.kind === "buy" ? (last.bought ? last.quantity : 0)
+    : last.kind === "ge-buy" ? last.bought ?? 0 // task 032
     : "done" in last ? last.done ?? 0 : 0;
   return { counter, units: Math.max(r.units, units) };
 }

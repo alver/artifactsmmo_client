@@ -28,15 +28,19 @@ interface Sinks {
   leaders?: (rel: string, data: string | Uint8Array) => void;
   leadersDir?: () => string[];
   day?: (day: string) => string | undefined;
+  marketDay?: (day: string) => string | undefined;
 }
 let sinks: Sinks = {};
 const listeners: ((rec: Rec) => void)[] = [];
 /** Task 028: hear every record as it is written (src/state/last24.ts), sinks or not — the harness's too. */
 export const onRecord = (fn: (rec: Rec) => void): void => void listeners.push(fn);
 /** Task 028: a day's journal file, its records (none without a disk that reads, or no file). */
-export function journalDay(day: string): Rec[] {
+export const journalDay = (day: string): Rec[] => linesOf(sinks.day, day);
+/** Task 032: a day's market read lines (market/<day>.jsonl), none without a disk that reads or a file. */
+export const marketDay = (day: string): Rec[] => linesOf(sinks.marketDay, day);
+function linesOf(read: ((day: string) => string | undefined) | undefined, day: string): Rec[] {
   try {
-    return (sinks.day?.(day) ?? "").split("\n").flatMap((l) => {
+    return (read?.(day) ?? "").split("\n").flatMap((l) => {
       try {
         return l ? [JSON.parse(l) as Rec] : [];
       } catch {
@@ -164,6 +168,7 @@ export function fileSinks(disk: Disk, root: string): (lines: string) => void {
     leaders: (rel, data) => (typeof data === "string" ? disk.append(`${root}/leaders/${rel}`, data) : disk.replace(`${root}/leaders/${rel}`, data)),
     leadersDir: disk.list && (() => disk.list!(`${root}/leaders`)),
     day: disk.read && ((day) => disk.read!(`${root}/journal/${day}.jsonl`)),
+    marketDay: disk.read && ((day) => disk.read!(`${root}/market/${day}.jsonl`)),
   };
   return (lines) => {
     const byHour = new Map<string, string[]>();

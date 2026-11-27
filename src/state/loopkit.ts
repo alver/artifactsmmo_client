@@ -11,7 +11,7 @@ import { catalog } from "../catalog";
 import { ApiError, api, getAllPages } from "../api/client";
 import { achievements, bankDetails, bankItems, characters } from "./store";
 import { liveEvents } from "./events";
-import { cooldownRemaining } from "../lib/util";
+import { cooldownLeft } from "../lib/util";
 import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { FREE, route, travelSec } from "../plan/route";
@@ -29,7 +29,7 @@ export async function waitCooldown(name: string, shouldStop: () => boolean): Pro
   for (;;) {
     if (shouldStop()) return;
     const ch = characters.value[name];
-    const left = ch ? cooldownRemaining(ch, Date.now()) : 0;
+    const left = ch ? cooldownLeft(ch, Date.now()) : 0;
     if (left <= 0) return;
     await sleep(Math.min(500, left * 1000) + 50);
   }
@@ -39,7 +39,7 @@ export async function waitCooldown(name: string, shouldStop: () => boolean): Pro
 export async function waitCooldownFull(name: string): Promise<void> {
   for (;;) {
     const ch = characters.value[name];
-    const left = ch ? cooldownRemaining(ch, Date.now()) : 0;
+    const left = ch ? cooldownLeft(ch, Date.now()) : 0;
     if (left <= 0) return;
     await sleep(left * 1000 + 50);
   }

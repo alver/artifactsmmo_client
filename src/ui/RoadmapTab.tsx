@@ -18,6 +18,8 @@ import { configOf, planner, refreshAchievements, setPlannerConfig } from "../sta
 import { outlook, refreshOutlook } from "../state/outlook";
 import { eventKey, liveEvents } from "../state/events";
 import { eventPlans } from "../state/eventorders";
+import { marketState } from "../state/market";
+import { itemName } from "../catalog";
 import { roleOfCh } from "../plan/planner/roles";
 import { LEVEL_KEYS } from "../plan/planner/road";
 import { loadOptionalFile } from "../catalog/load";
@@ -145,10 +147,24 @@ function Season() {
       <Levels />
       <div class="season-facts small">
         <span>bank: {bankItems.value.length}{bank ? ` of ${bank.slots}` : ""} slots · {bank ? `${bank.gold.toLocaleString()} gold · the next expansion ${bank.next_expansion_cost.toLocaleString()} gold` : "not read yet"}</span>
+        <Market />
         <span>service: {svc ? <>run {svc.run} · {svc.commit ? svc.commit.slice(0, 7) : "no commit"}{svc.dev ? " (dev)" : ""} · up since {when(Date.parse(svc.up))}</> : "not told yet"}</span>
       </div>
       <Events />
     </section>
+  );
+}
+
+/** Task 032 (B.7): the market's day — the gold spent of the budget, the purchases, the wanted list. */
+function Market() {
+  const m = marketState.value, purse = configOf(planner.value.config).market!;
+  const g = (n: number): string => Math.round(n).toLocaleString("en-US");
+  return (
+    <span>
+      market: {purse.day ? `${g(m.spent)} of ${g(purse.day)} gold today` : "off"}
+      {m.buys.length ? ` · bought ${m.buys.map((b) => `${itemName(b.code)} ×${b.units} at ${g(b.price)}`).join(", ")}` : ""}
+      {m.wanted.length ? <span title={m.wanted.map((w) => w.why).join("\n")}>{` · wanted: ${m.wanted.map((w) => `${itemName(w.code)} at ${g(w.ask)} (saves ${w.saves} h)`).join(", ")}`}</span> : ""}
+    </span>
   );
 }
 
@@ -291,11 +307,16 @@ function Priorities() {
   const first = patch.first ?? [], out = patch.exclude ?? [], weight = Object.entries(patch.weight ?? {});
   const x = (title: string, run: () => void) => <button class="cat-btn" title={title} onClick={run}>✕</button>;
   const floor = typeof cfg.risk === "object" ? cfg.risk.minWin : 0.75;
+  const purse = cfg.market!;
+  const opts = (xs: number[], v: number): number[] => [...new Set([...xs, v])].sort((a, b) => a - b);
   return (
     <section class="ws-card">
       <h3>Priorities</h3>
       {/* task 025, settled point 2: the floor a fight is admitted at — its rolled win rate (Alex: 0.75) */}
       <div class="prio-row">⚔ fights admitted at a win rate of at least <select value={String(floor)} onChange={(e) => void setPlannerConfig({ risk: { minWin: Number((e.target as HTMLSelectElement).value) } })}>{[0.5, 0.6, 0.7, 0.75, 0.8, 0.9, 0.95, 0.98, 0.99].map((v) => <option key={v} value={String(v)}>{Math.round(v * 100)}%</option>)}</select></div>
+      {/* task 032: the market's purse — the gold a UTC day (0: nothing is bought) and the most a purchase may cost */}
+      <div class="prio-row">🪙 the market spends at most <select value={String(purse.day)} onChange={(e) => void setPlannerConfig({ market: { ...purse, day: Number((e.target as HTMLSelectElement).value) } })}>{opts([0, 10_000, 25_000, 50_000], purse.day).map((v) => <option key={v} value={String(v)}>{v ? v.toLocaleString("en-US") : "nothing (off)"}</option>)}</select> gold a day</div>
+      <div class="prio-row">🪙 one purchase at most <select value={String(purse.piece)} onChange={(e) => void setPlannerConfig({ market: { ...purse, piece: Number((e.target as HTMLSelectElement).value) } })}>{opts([2_000, 5_000, 10_000, 20_000], purse.piece).map((v) => <option key={v} value={String(v)}>{v.toLocaleString("en-US")}</option>)}</select> gold</div>
       {first.map((c) => <div key={`f:${c}`} class="prio-row">⭐ first: {nameOf(c)} {x("Take it out of first", () => void setPlannerConfig({ first: cfg.first.filter((y) => y !== c) }))}</div>)}
       {out.map((c) => <div key={`x:${c}`} class="prio-row">⛔ excluded: {nameOf(c)} {x("Let the planner work on it again", () => void setPlannerConfig({ exclude: cfg.exclude.filter((y) => y !== c) }))}</div>)}
       {weight.map(([c, v]) => <div key={`w:${c}`} class="prio-row">⚖ weight ×{v}: {nameOf(c)} {x("Back to ×1", () => { const { [c]: _, ...rest } = cfg.weight; void setPlannerConfig({ weight: rest }); })}</div>)}

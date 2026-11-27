@@ -89,13 +89,18 @@ export type QueueItem = { id: string; error?: string } & (
   // first). The planner's `bank` interrupt; `price` is what it agreed to pay — a higher next price ends the item unbought.
   // `bought` as for `buy`: set the moment the purchase succeeds, checked first, never twice.
   | { kind: "expand"; price: number; bought?: boolean }
+  // Task 032: one purchase on the Grand Exchange, the planner's market step — exactly price × quantity withdrawn at the bank,
+  // the order read again by its id at the exchange and bought only at `price` (fewer units: what it holds); `ref` is the
+  // reference it was judged on. `bought` (the units) is set the moment the purchase succeeds, checked first, never twice;
+  // `ended` — the market's answer (the order gone, another price, 404/434/435/436, the bank short of the gold): nothing bought.
+  | { kind: "ge-buy"; code: string; quantity: number; order: string; price: number; ref?: number; bought?: number; ended?: string }
 );
 
 export type QueueItemKind = QueueItem["kind"];
 
 export const QUEUE_KINDS: QueueItemKind[] = [
   "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "recycle", "train", "gear", "task-loop", "offering", "task-visit",
+  "buy", "sell", "recycle", "train", "gear", "task-loop", "offering", "task-visit", "ge-buy",
 ];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
@@ -134,6 +139,7 @@ export function queueItemText(it: QueueItem): string {
     case "offering": return "Today's seasonal offerings";
     case "claim": return "Claim pending rewards";
     case "expand": return `Buy a bank expansion (${it.price.toLocaleString("en-US")} gold)`;
+    case "ge-buy": return `Buy ${it.quantity}× ${itemName(it.code)} on the Grand Exchange at ${it.price.toLocaleString("en-US")}`;
   }
 }
 
@@ -141,5 +147,5 @@ export const queueItemIcon: Record<QueueItemKind, string> = {
   "fight": "⚔", "gather": "⛏", "craft": "⚙",
   "withdraw": "🏦", "deposit-all": "📦", "buy": "🪙", "sell": "💰", "recycle": "♻",
   "train": "🎓", "gear": "🧰",
-  "task-loop": "🔁", "task-visit": "📜", "offering": "🛐", "claim": "🎁", "expand": "🏦",
+  "task-loop": "🔁", "task-visit": "📜", "offering": "🛐", "claim": "🎁", "expand": "🏦", "ge-buy": "🪙",
 };

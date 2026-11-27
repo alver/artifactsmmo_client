@@ -74,7 +74,8 @@ export function road(live: World, running: Record<string, Running | undefined>, 
   const t0 = performance.now();
   // The forward model's World (types.ts): no bank slots — no tidy step, no expansion (check-planner's invariant 21; advance
   // applies no recycle, so a tidy step would come back forever) — and no bags: it banks at a step's end.
-  const world: World = { ...live, bank: bankPlus(live.bank, new Map(Object.entries(live.bags ?? {}))), bags: undefined, bankSlots: undefined, nextExpansion: undefined };
+  // task 032: and no market — the forward model buys nothing
+  const world: World = { ...live, bank: bankPlus(live.bank, new Map(Object.entries(live.bags ?? {}))), bags: undefined, bankSlots: undefined, nextExpansion: undefined, market: undefined };
   const names = world.characters.map((c) => c.name);
   const on = names.filter((name) => isOn(name, world)); // task 020: a character that is off is not played (forward), so it gets no next step
   emit({ k: "waiting", from: world.now, waiting: waitingOf(world) });

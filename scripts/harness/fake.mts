@@ -107,6 +107,12 @@ export const world = {
   ge: [] as { id: string; type: "sell" | "buy"; account: string; code: string; quantity: number; price: number; created_at: string }[],
   geReads: 0,
   geFail: 0,
+  /** Task 032 (E): the game's clock less the engine's, ms — a cooldown's start, its expiration and the 499 check read it. */
+  skew: 0,
+  /** Task 032: each code's trades (GET /grandexchange/history/{code}, oldest first as the game answers; none: 404), the codes whose history was
+   *  read in order, and the reads of one order (GET /grandexchange/orders/{id}) — counted in `geReads` with the market read. */
+  geHistory: {} as Record<string, { order_id: string; seller: string; buyer: string; code: string; quantity: number; price: number; sold_at: string }[]>,
+  geHistoryReads: [] as string[],
   /** Task 025: the leaders' read — every public request asked without a token (virtual ms since the start, path and query),
    *  counted apart from `reads`; `publicFault` answers the public request after `after` more with `code`, once. */
   publicReads: [] as { t: number; path: string }[],
@@ -543,6 +549,21 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
   },
 
   "npc/buy": (d, body: ItemStack) => trade(d, body, "buy_price"),
+  // Task 032: a Grand Exchange purchase — the sell order's units at its price, from the pocket (guess: 3 s, as a trade).
+  "grandexchange/buy"(d, body: { id: string; quantity: number }) {
+    const o = world.ge.find((x) => x.id === body.id && x.type === "sell");
+    if (!o) throw new GameError(404, "Order not found.");
+    if (o.account === "harness") throw new GameError(435, "You cannot trade with yourself.");
+    if (body.quantity > o.quantity) throw new GameError(434, "This offer does not contain that many items.");
+    const total = o.price * body.quantity;
+    if (d.ch.gold < total) throw new GameError(492, "The character does not have enough gold.");
+    fits(d.ch, body.quantity);
+    d.ch.gold -= total;
+    give(d.ch, o.code, body.quantity);
+    o.quantity -= body.quantity;
+    if (!o.quantity) world.ge.splice(world.ge.indexOf(o), 1);
+    return { seconds: 3, reason: "buy_ge", data: { order: { id: o.id, code: o.code, quantity: body.quantity, price: o.price, total_price: total } } };
+  },
   "npc/sell": (d, body: ItemStack) => trade(d, body, "sell_price"),
 
   // Consumables that heal (food) only. Codes and the reply shape are OpenAPI's.
@@ -674,7 +695,7 @@ function act(call: Call): unknown {
   const { who, action, body } = call;
   const cur = world.chars.get(who);
   if (!cur) throw new GameError(498, "Character not found.");
-  const left = (Date.parse(cur.cooldown_expiration ?? "") - Date.now()) / 1000;
+  const left = (Date.parse(cur.cooldown_expiration ?? "") - (Date.now() + world.skew)) / 1000;
   if (left > 0) throw new GameError(499, `The character is in cooldown: ${left.toFixed(2)} seconds left.`);
   const run = ACTIONS[action] ?? (action.startsWith("claim_item/") ? (d: Draft) => claim(d, action.slice("claim_item/".length)) : undefined) ?? fatal(`action ${action} is not implemented`);
   // The action runs on a copy and is committed whole: a refusal changes nothing.
@@ -682,7 +703,7 @@ function act(call: Call): unknown {
   const done = run(d, body as never);
   call.note = done.note;
   const seconds = Math.max(3, done.seconds); // minimum cooldown of any action [1.2]
-  const started = Date.now();
+  const started = Date.now() + world.skew;
   d.ch.cooldown = seconds;
   d.ch.cooldown_expiration = new Date(started + seconds * 1000).toISOString();
   world.chars.set(who, d.ch);
@@ -772,6 +793,22 @@ export async function fakeFetch(input: unknown, init: { method?: string; body?: 
     if (world.geFail > 0) return world.geFail--, refuse(500, "injected fault 500");
     const size = Number(url.searchParams.get("size")) || 50, n = Number(url.searchParams.get("page")) || 1;
     return reply({ data: world.ge.slice((n - 1) * size, n * size), total: world.ge.length, page: n, size, pages: Math.max(1, Math.ceil(world.ge.length / size)) });
+  }
+  // Task 032: one order by its id, and a code's trades — public data, counted with the market read
+  const one = /^\/grandexchange\/orders\/([^/]+)$/.exec(url.pathname);
+  if (method === "GET" && one) {
+    world.geReads++;
+    const o = world.ge.find((x) => x.id === one[1]);
+    return o ? reply({ data: o }) : refuse(404, "GE order not found.");
+  }
+  const hist = /^\/grandexchange\/history\/([^/]+)$/.exec(url.pathname);
+  if (method === "GET" && hist) {
+    world.geReads++;
+    world.geHistoryReads.push(hist[1]);
+    const h = world.geHistory[hist[1]] ?? [];
+    if (!h.length) return refuse(404, "item history not found");
+    const size = Number(url.searchParams.get("size")) || 50, n = Number(url.searchParams.get("page")) || 1;
+    return reply({ data: h.slice((n - 1) * size, n * size), total: h.length, page: n, size, pages: Math.ceil(h.length / size) });
   }
   // Task 025: a public path asked without a token is the leaders' read; with one it is the account's (read(): its own
   // achievements, and anything else of the three ends the scenario)

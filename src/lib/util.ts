@@ -37,6 +37,20 @@ export function cooldownRemaining(ch: Character, nowMs: number): number {
   return left > 0 ? left : 0;
 }
 
+/** Task 032 (E): the game's clock less this machine's, ms — the latest echo's `cooldown.started_at` less its arrival here (the
+ *  echo's `remaining_seconds` is whole seconds; `started_at` has the milliseconds) — and the characters whose echo this run saw. */
+let skew = 0;
+const echoed = new Set<string>();
+export function noteEcho(name: string, startedAt: string | undefined, arrival: number): void {
+  const s = Date.parse(startedAt ?? "");
+  if (!Number.isFinite(s)) return;
+  skew = s - arrival;
+  echoed.add(name);
+}
+/** Seconds left on a character's cooldown by the game's clock (this machine's corrected by the echoes' skew); before the
+ *  character's first echo of the run, by this machine's clock as before. */
+export const cooldownLeft = (ch: Character, nowMs: number): number => cooldownRemaining(ch, nowMs + (echoed.has(ch.name) ? skew : 0));
+
 /** "body_armor" -> "Body Armor", "ring1" -> "Ring 1". */
 export function slotLabel(slot: string): string {
   return slot

@@ -33,6 +33,7 @@ import { journal } from "../lib/journal";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
 import { bankOff, blockFight, brakeWhy, craftableTimes, desiredForJob, fightBlocked, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gateP, gearSwapStep, goToMaster, invCount, invQty, minWinNow, provisionPotions, recoverFirst, runStep, stackCaps, otherCargo } from "./exec";
 import { categoryLevel, loadOfferings, offeringMayTake, offeringSlots, todayOfferings } from "./offerings";
+import { dropOrder } from "./market";
 import type { FightTally, StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
@@ -305,6 +306,57 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       const s: AcquisitionStep = { kind: "buy", code: it.code, quantity: it.quantity, npc: it.npc ?? "", cost: 0, at: tile };
       await runStep(name, ch, s, { ...ctx, bought: () => patchItem(name, it.id, { bought: true }) });
       return false; // this tick may have been the gold withdrawal; the next one sees `bought`
+    }
+    case "ge-buy": {
+      // Task 032 (B.5): one purchase on the Grand Exchange. Done once bought (recorded before the cooldown, checked first) or
+      // ended by the market's answer; the step's deposit-all brings the goods and any gold back to the bank.
+      if (it.bought != null || it.ended) return true;
+      const end = (why: string): true => {
+        patchItem(name, it.id, { ended: why });
+        dropOrder(it.order); // no decision takes it again before the next read
+        log(name, `market: ${itemName(it.code)} not bought — ${why}`, "info");
+        journal("market", { what: "not bought", who: name, code: it.code, order: it.order, price: it.price, why });
+        return true;
+      };
+      const total = it.price * it.quantity;
+      if (ch.gold < total) { // exactly price × quantity from the bank (the step's first deposit-all emptied the pocket)
+        const bank = nearestBank(ch);
+        if (!bank) return skipItem(name, it, "no bank on the map");
+        if (!isAt(ch, bank)) { ctx.note("→ bank (gold for the market)"); await moveTo(name, bank); return false; }
+        if ((bankDetails.value?.gold ?? 0) < total - ch.gold) return end(`the bank holds ${bankDetails.value?.gold ?? 0} gold of the ${total - ch.gold} it needs`);
+        ctx.note("withdraw gold for the market");
+        await step(name, () => actions.withdrawGold(name, total - ch.gold));
+        return false;
+      }
+      const ge = nearest("grand_exchange", "grand_exchange", ch);
+      if (!ge) return skipItem(name, it, "no Grand Exchange on the map");
+      if (!isAt(ch, ge)) { ctx.note("→ Grand Exchange"); await moveTo(name, ge); return false; }
+      // the order read again by its id: bought only at the planned price, at most what it still holds
+      let o: { code: string; price: number; quantity: number };
+      try {
+        o = await api<{ code: string; price: number; quantity: number }>(`/grandexchange/orders/${it.order}`);
+      } catch (e) {
+        if (e instanceof ApiError && e.code === 404) return end("the order is gone");
+        throw e;
+      }
+      if (o.code !== it.code || o.price !== it.price) return end(`the order asks ${o.price} now, ${it.price} was planned`);
+      const q = Math.min(it.quantity, o.quantity, freeSpace(ch)); // what the order still holds, what the bag takes
+      if (q < 1) return end("no room in the bag");
+      ctx.note(`buy ${q} ${itemName(it.code)} at ${it.price}`);
+      try {
+        await step(name, async () => {
+          const r = await actions.geBuy(name, it.order, q);
+          patchItem(name, it.id, { bought: q }); // before the cooldown: a restart inside it must not buy again
+          const paid = (r as { order?: { total_price?: number } }).order?.total_price ?? q * it.price;
+          journal("spend", { who: name, what: "market", code: "gold", q: paid, for: it.id.slice(0, it.id.lastIndexOf(":")), item: it.code, units: q, price: it.price, ...(it.ref != null ? { ref: it.ref } : {}), order: it.order });
+          devlog(`market: ${name} bought ${q} ${it.code} at ${it.price} (order ${it.order}${it.ref != null ? `, reference ${it.ref}` : ""}) for ${paid} gold`);
+          log(name, `market: bought ${q}× ${itemName(it.code)} at ${it.price.toLocaleString("en-US")} gold`, "ok");
+        });
+      } catch (e) {
+        if (e instanceof ApiError && [404, 434, 435, 436].includes(e.code)) return end(`the exchange answered ${e.code} (${e.message})`);
+        throw e;
+      }
+      return false;
     }
     case "sell": {
       const left = it.quantity - it.done;

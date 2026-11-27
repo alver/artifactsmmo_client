@@ -60,6 +60,11 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
       break;
     }
     case "buy": {
+      // task 032: a Grand Exchange purchase — the bag emptied, the purchase at the exchange, the goods and any gold banked
+      if (w.order) {
+        out = [{ kind: "deposit-all" }, { kind: "ge-buy", code: w.code, quantity: step.units, order: w.order, price: w.price, ...(w.ref != null ? { ref: w.ref } : {}) }, { kind: "deposit-all" }];
+        break;
+      }
       if (supply) { // a trade for a material: withdraw the currency, buy, bank what was bought
         out = [{ kind: "withdraw", code: w.currency, quantity: w.price * step.units }, { kind: "buy", code: w.code, quantity: step.units, npc: w.npc }, { kind: "deposit-all" }];
         break;

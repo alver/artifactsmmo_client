@@ -8,6 +8,7 @@ import { applyActionResult } from "../state/apply";
 import { characters, pushLog } from "../state/store";
 import { gateAt } from "../state/access";
 import { meterEcho, meterStart } from "../lib/journal";
+import { noteEcho } from "../lib/util";
 import type { ActionResult } from "../types/api";
 import type { ItemStack } from "../types/catalog";
 
@@ -17,6 +18,7 @@ async function act(name: string, action: string, body?: unknown): Promise<Action
   const prev = characters.value[name];
   try {
     const data = await api<ActionResult>(`/my/${name}/action/${action}`, { method: "POST", body });
+    noteEcho(name, data.cooldown?.started_at, Date.now()); // task 032 (E): the cooldown is waited by the game's clock
     applyActionResult(name, action, data);
     try {
       meterEcho(name, key, action, body, prev, data);
@@ -75,6 +77,8 @@ export const craft = (name: string, code: string, quantity = 1) => act(name, "cr
 export const recycle = (name: string, code: string, quantity = 1) => act(name, "recycling", { code, quantity });
 export const npcBuy = (name: string, code: string, quantity = 1) => act(name, "npc/buy", { code, quantity });
 export const npcSell = (name: string, code: string, quantity = 1) => act(name, "npc/sell", { code, quantity });
+// Task 032: buy `quantity` (at most 100) of a Grand Exchange sell order at its price (GEBuyOrderSchema { id, quantity }).
+export const geBuy = (name: string, id: string, quantity: number) => act(name, "grandexchange/buy", { id, quantity });
 
 // Bank gold + expansion. Body field names verified against the openapi
 // (DepositWithdrawGoldSchema = { quantity }). The gold ops echo the new bank

@@ -29,6 +29,18 @@ export const POTIONS = false;
  *  without (report 031). */
 export const KITCHEN = true;
 
+/** Task 032 (decision 83, Alex: let us try the market — be careful with prices): the market's purse, `config.market` — the gold a
+ *  UTC day (0 = nothing is bought) and the most one purchase (a piece, or a step's batch of a material) may cost. */
+export const MARKET_DAY_GOLD = 25_000;
+export const MARKET_PIECE_GOLD = 10_000;
+/** Task 032, B.3: an ask is bought at most at this × the code's reference. */
+export const MARKET_FAIR = 1.25;
+/** Task 032, B.2: a purchase pays when its gold at goldPerHour plus the trip is at most this share of its own chain's hours. */
+export const MARKET_PAYS = 0.5;
+/** Task 032, B.3 (the service's, state/market.ts): the reference's windows — the trades of 7 days; with none, the lowest asks
+ *  of 72 h once the code has been on sale for 24 h; a code's trades read at most once an hour. */
+export const MARKET_WINDOWS = { tradesMs: 7 * 86_400_000, asksMs: 72 * 3_600_000, onSaleMs: 24 * 3_600_000, readMs: 3_600_000 };
+
 export const DEFAULTS: PlannerConfig = {
   deadline: "2027-02-24T00:00:00Z",
   exclude: [],
@@ -80,6 +92,8 @@ export const DEFAULTS: PlannerConfig = {
   // Task 017, settled point 5 (design D.2: a character-hour of fights earns about 236 gold, of tasks 124): a fare's gold
   // counts as hours at this rate in the score of the step and of the chain it serves.
   goldPerHour: 300,
+  // Task 032: the market's purse (the Priorities card's two rows; 0 a day = nothing is bought).
+  market: { day: MARKET_DAY_GOLD, piece: MARKET_PIECE_GOLD },
 };
 
 /** Task 017, settled point 11: the tasks coins the bank keeps (a task's cancel fee needs one; a guess). */
