@@ -98,10 +98,13 @@ export type QueueItem = { id: string; error?: string } & (
 
 export type QueueItemKind = QueueItem["kind"];
 
-export const QUEUE_KINDS: QueueItemKind[] = [
-  "fight", "gather", "craft", "withdraw", "deposit-all",
-  "buy", "sell", "recycle", "train", "gear", "task-loop", "offering", "task-visit", "ge-buy",
-];
+// Every kind a stored queue keeps at load (state/queue.ts loadStored) — a Record, so a kind of QueueItem missing here fails the
+// typecheck (task 032c: `claim` and `expand` were missing, so a stored one was dropped at a restart).
+const KINDS: Record<QueueItemKind, true> = {
+  fight: true, gather: true, craft: true, withdraw: true, "deposit-all": true, buy: true, sell: true, recycle: true, train: true, gear: true,
+  "task-loop": true, offering: true, "task-visit": true, claim: true, expand: true, "ge-buy": true,
+};
+export const QUEUE_KINDS = Object.keys(KINDS) as QueueItemKind[];
 
 export const newId = (): string => Math.random().toString(36).slice(2, 10);
 

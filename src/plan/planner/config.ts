@@ -35,6 +35,9 @@ export const MARKET_DAY_GOLD = 25_000;
 export const MARKET_PIECE_GOLD = 10_000;
 /** Task 032, B.3: an ask is bought at most at this × the code's reference. */
 export const MARKET_FAIR = 1.25;
+/** Task 032c (B): where a purchase has no chain of ours to compare with (a material with no source of ours, a piece the fleet
+ *  cannot make), its reference must be the median of at least this many trades of 7 days — not the asks. */
+export const MARKET_MIN_TRADES = 3;
 /** Task 032, B.2: a purchase pays when its gold at goldPerHour plus the trip is at most this share of its own chain's hours. */
 export const MARKET_PAYS = 0.5;
 /** Task 032, B.3 (the service's, state/market.ts): the reference's windows — the trades of 7 days; with none, the lowest asks

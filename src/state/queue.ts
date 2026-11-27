@@ -33,7 +33,7 @@ import { journal } from "../lib/journal";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
 import { bankOff, blockFight, brakeWhy, craftableTimes, desiredForJob, fightBlocked, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gateP, gearSwapStep, goToMaster, invCount, invQty, minWinNow, provisionPotions, recoverFirst, runStep, stackCaps, otherCargo } from "./exec";
 import { categoryLevel, loadOfferings, offeringMayTake, offeringSlots, todayOfferings } from "./offerings";
-import { dropOrder } from "./market";
+import { dropOrder, soldFrom } from "./market";
 import type { FightTally, StepCtx } from "./exec";
 import type { QueueItem } from "../plan/queue";
 import type { AcquisitionStep, GearJob } from "../plan/types";
@@ -347,6 +347,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         await step(name, async () => {
           const r = await actions.geBuy(name, it.order, q);
           patchItem(name, it.id, { bought: q }); // before the cooldown: a restart inside it must not buy again
+          soldFrom(it.order, o.quantity - q);
           const paid = (r as { order?: { total_price?: number } }).order?.total_price ?? q * it.price;
           journal("spend", { who: name, what: "market", code: "gold", q: paid, for: it.id.slice(0, it.id.lastIndexOf(":")), item: it.code, units: q, price: it.price, ...(it.ref != null ? { ref: it.ref } : {}), order: it.order });
           devlog(`market: ${name} bought ${q} ${it.code} at ${it.price} (order ${it.order}${it.ref != null ? `, reference ${it.ref}` : ""}) for ${paid} gold`);

@@ -102,6 +102,9 @@ export function marketOf(now: number): Market | undefined {
 }
 /** An order the counter found gone or at another price: no decision takes it again before the next read. */
 export const dropOrder = (id: string): void => void (sells = sells?.filter((o) => o.id !== id));
+/** Task 032c: an order bought from holds what the counter read less what was bought — the next decision does not take the
+ *  units again before the next read (11-27 14:13: an emptied order picked again, "the order is gone", a 6 h block). */
+export const soldFrom = (id: string, left: number): void => void (sells = sells?.map((o) => (o.id === id ? { ...o, quantity: left } : o)).filter((o) => o.quantity > 0));
 
 const median = (xs: number[]): number => {
   const a = [...xs].sort((x, y) => x - y), m = a.length >> 1;

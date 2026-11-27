@@ -14,10 +14,14 @@
 // Task 032b (B.2): a material with no source of ours (a drop of a monster or a boss nobody that is on is admitted against
 // alone; not an event's) is priced in a bill by the market (`marketQuote`: its fair asks hold the units and the purse takes
 // one), else it is out with the market's answer; its purchase skips rule 2 ("no source of ours": no chain to compare with).
+// Task 032c: a piece the fleet cannot make is a bought candidate (gear.ts candidatesOf, `MarketNeed.bought`): rule 2 has no
+// chain for it either. (B) Where rule 2 has nothing to compare with, the reference must come from at least MARKET_MIN_TRADES
+// trades of 7 days — one from asks (the sellers' own standing price) or fewer trades holds no ask: not bought. And the units
+// the others' purchases in flight take from an order are not on sale to this one (`bestOrder`).
 // Pure.
 
 import { item, itemName } from "../../catalog";
-import { MARKET_DAY_GOLD, MARKET_FAIR, MARKET_PAYS, MARKET_PIECE_GOLD } from "./config";
+import { MARKET_DAY_GOLD, MARKET_FAIR, MARKET_MIN_TRADES, MARKET_PAYS, MARKET_PIECE_GOLD } from "./config";
 import { stepSec } from "./cost";
 import { CITY, nearestSpot, placeOf } from "./reach";
 import { available } from "./stock";
@@ -26,7 +30,7 @@ import type { MarketOrder, MarketRef, Place, World } from "./types";
 
 /** A need as rank() hands it over: its key (gear:, mat:, src:), the units it is short of, its parent's label and score;
  *  `cons`: a potion, a food or their ingredient (rule 1). */
-export interface MarketNeed { key: string; code: string; units: number; label: string; fit: number; any: number; cons?: boolean; via?: string[] }
+export interface MarketNeed { key: string; code: string; units: number; label: string; fit: number; any: number; cons?: boolean; via?: string[]; bought?: boolean }
 /** A need with a sell order and the market's verdict: `rule` 0 = buy, else the first rule that refuses (4 = wanted). */
 export interface Offer extends MarketNeed { order: MarketOrder; ask: number; gold: number; buyH: number; ownH: number; ref?: MarketRef | null; rule: 0 | 1 | 2 | 3 | 4; why: string; place?: Place }
 
@@ -35,6 +39,9 @@ const GE = "grand_exchange";
 const fmtH = (h: number): string => (!Number.isFinite(h) ? "∞" : h < 10 ? h.toFixed(1) : String(Math.round(h)));
 const g = (n: number): string => Math.round(n).toLocaleString("en-US");
 export const refText = (r: MarketRef): string => `${g(r.price)} (the median of ${r.n} ${r.from === "trades" ? `trade${r.n === 1 ? "" : "s"} of 7 days` : "lowest asks over 72 h"})`;
+/** Task 032c (B): with no chain of ours to compare with, a reference holds an ask only when it comes from MARKET_MIN_TRADES
+ *  trades or more; else why not (undefined: it serves). */
+const thin = (r: MarketRef): string | undefined => (r.from === "trades" && r.n >= MARKET_MIN_TRADES ? undefined : `${r.from === "trades" ? r.n : 0} trade${r.from === "trades" && r.n === 1 ? "" : "s"} in 7 days, no price to hold the ask against`);
 
 /** Hours the plan's own chain takes for `units` of a code from here: billOf as it prices today, the code itself opened (not
  *  taken from the bank), a level road left out; ∞ when it cannot be had or a road is all it lacks. */
@@ -45,10 +52,13 @@ export function ownHours(world: World, name: string, code: string, units: number
   return Number.isFinite(h) ? h : Infinity;
 }
 
-/** The lowest ask of a code that is not this account's (then the most units, then the id). */
-export function bestOrder(world: World, code: string): MarketOrder | undefined {
+/** The lowest ask of a code that is not this account's (then the most units, then the id) — task 032c: less the units the
+ *  others' purchases in flight take from it (`name` the deciding character). */
+export function bestOrder(world: World, code: string, name = ""): MarketOrder | undefined {
   const m = world.market;
-  return m?.orders.filter((o) => o.code === code && o.quantity > 0 && (!m.account || o.account !== m.account))
+  const taken = new Map<string, number>();
+  for (const [n, x] of Object.entries(world.current)) if (n !== name && x?.work.kind === "buy" && x.work.order) taken.set(x.work.order, (taken.get(x.work.order) ?? 0) + x.units);
+  return m?.orders.filter((o) => o.code === code && (!m.account || o.account !== m.account)).map((o) => (taken.has(o.id) ? { ...o, quantity: o.quantity - taken.get(o.id)! } : o)).filter((o) => o.quantity > 0)
     .sort((a, b) => a.price - b.price || b.quantity - a.quantity || (a.id < b.id ? -1 : 1))[0];
 }
 
@@ -69,10 +79,11 @@ function purseOf(world: World, name: string): { day: number; piece: number; left
 export function marketQuote(world: World, name: string, code: string, q: number): { hours?: number; why: string } | undefined {
   const m = world.market;
   if (!m || !((world.config.market?.day ?? MARKET_DAY_GOLD) > 0)) return undefined;
-  const ref = m.refs[code], low = bestOrder(world, code), n = Math.ceil(q - 1e-9);
+  const ref = m.refs[code], low = bestOrder(world, code, name), n = Math.ceil(q - 1e-9);
   const no = (why: string): { why: string } => ({ why: `no source of ours; market: ${why}` });
   if (!low) return no("none on sale");
   if (ref === null) return no(`ask ${g(low.price)}, no reference (no trade in 7 days, under 24 h on sale)`);
+  if (ref && thin(ref)) return no(thin(ref)!); // task 032c (B)
   if (ref && low.price > MARKET_FAIR * ref.price) return no(`ask ${g(low.price)} above ${MARKET_FAIR} × ${refText(ref)}`);
   const fair = m.orders.filter((o) => o.code === code && o.quantity > 0 && (!m.account || o.account !== m.account) && (!ref || o.price <= MARKET_FAIR * ref.price)).sort((a, b) => a.price - b.price);
   let gold = 0, got = 0;
@@ -95,12 +106,12 @@ export function marketOffers(world: World, name: string, needs: MarketNeed[]): O
   const { day, piece, left, purse } = purseOf(world, name);
   const out: Offer[] = [];
   for (const n of needs) {
-    const order = bestOrder(world, n.code);
+    const order = bestOrder(world, n.code, name);
     if (!order || n.units < 1) continue;
     const ask = order.price;
     const base = { ...n, order, ask, ref: m.refs[n.code], place: spot?.place };
     const judge = (units: number): { units: number; gold: number; buyH: number; ownH: number; pays: boolean } => {
-      const gold = ask * units, buyH = gold / cfg.goldPerHour + trip, ownH = ownHours(world, name, n.code, units);
+      const gold = ask * units, buyH = gold / cfg.goldPerHour + trip, ownH = n.bought ? Infinity : ownHours(world, name, n.code, units); // 032c: never made
       return { units, gold, buyH, ownH, pays: buyH <= MARKET_PAYS * ownH };
     };
     const at = (units: number): string => `${itemName(n.code)} ×${units} at ${g(ask)}`;
@@ -115,6 +126,7 @@ export function marketOffers(world: World, name: string, needs: MarketNeed[]): O
     if (!j0.pays) { out.push({ ...base, ...j0, rule: 2, why: `${at(units0)}: ${hours(j0)} — more than half` }); continue; }
     const ref = base.ref;
     if (!ref) { out.push({ ...base, ...j0, rule: 3, why: `${at(units0)}: ${ref === null ? "no reference — no trade in 7 days and under 24 h on sale" : "no reference read yet"}` }); continue; }
+    if (!Number.isFinite(j0.ownH) && thin(ref)) { out.push({ ...base, ...j0, rule: 3, why: `${at(units0)}: ${thin(ref)}` }); continue; } // task 032c (B)
     if (ask > MARKET_FAIR * ref.price) { out.push({ ...base, ...j0, rule: 3, why: `ask ${g(ask)} above ${MARKET_FAIR} × ${refText(ref)}` }); continue; }
     // rule 4: the purse — a batch cut to what fits, else wanted
     const caps: [number, string][] = [[Math.floor(piece / ask), `a purchase at most ${g(piece)}`], [Math.floor(left / ask), `${g(Math.max(0, left))} of today's ${g(day)} left`], [Math.floor(purse / ask), `the bank's gold after it would not cover the floor, the fares and the next expansion`]];

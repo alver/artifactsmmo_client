@@ -20,6 +20,12 @@
 // no rune, artifact, utility or bag, at most ten levels below it (task 032b: or below, where its slot has none inside the ten
 // levels and it beats the piece worn there), whose bill of materials is in reach (bank stock
 // counts), that someone who is on can source and that have a crafter; the rest are listed as rejected, with why.
+// Task 032c (decision 87, Alex: the market, carefully — what the fleet cannot make): a wearable in that window that is no such
+// candidate (no recipe, no crafter, a bill out or infinite) and stands in `world.market` is a bought candidate when its lowest
+// ask passes the market's fair price (a reference from trades) and purse (market.ts marketQuote; a reference unread yet counts
+// as fair, the purchase waits for it) — never a tool, at most BOUGHT_PER_SLOT a slot beside PER_SLOT's (the highest level,
+// then the lowest ask); its G is its gold at goldPerHour plus the trip (no bill, crafter or level road), it is a need by the
+// same rule and bought by the market's step, never made (`Need.bought`, `Piece.bought`: no recipe demand). No market: none.
 //
 // Restated from the hive (src/plan/hive/gear.ts, which the core may not import; it is deleted in the clean-up):
 // the candidate filter of `accountCraftableCandidates` (:72-98: equippable, a recipe, the level window, a crafter),
@@ -50,6 +56,7 @@ import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
 import type { Parent } from "./supply";
 import { targetsOf } from "./targets";
+import { bestOrder, marketQuote } from "./market";
 import { SLOTS_FOR_TYPE, slotCode } from "../../types/api";
 import type { Character } from "../../types/api";
 import type { GearRecommendation } from "../types";
@@ -67,10 +74,11 @@ export interface Need {
   fit: number; any: number;        // score: points (that fit the deadline) ÷ (G + H1 + the bundle's own hours)
   hours: number;                   // G + H1 + the bundle's own hours
   offered: boolean;                // every piece's crafter is on (section 7)
+  bought?: string[];               // task 032c: the pieces bought on the market, not made
 }
 export interface Rejected { for: string; piece: string; why: string }
 
-const FLIPS = 4, PER_SLOT = 3, DROPS = 3;
+const FLIPS = 4, PER_SLOT = 3, DROPS = 3, BOUGHT_PER_SLOT = 2;
 const calHOf = (world: World): number => Math.max(0, (Date.parse(world.config.deadline) - world.now) / 3.6e6);
 const solve = planRec;
 
@@ -78,7 +86,8 @@ const solve = planRec;
 const killSec = (ch: Character, world: World, monster: string, r: GearRecommendation): number =>
   fightSecOf(r, world, ch.name, monster) + killWalk(ch, world, monster);
 
-interface Cands { fight: string[]; tools: string[]; rejected: Rejected[] }
+interface Cands { fight: string[]; tools: string[]; rejected: Rejected[]; bought: Set<string> }
+type OnSale = { code: string; level: number; ask: number };
 const candMemo = new WeakMap<World, Map<string, Cands>>();
 /** The craftable pieces this character could be given now, and the ones rejected with why. */
 export function candidatesOf(ch: Character, world: World): Cands {
@@ -96,21 +105,33 @@ export function candidatesOf(ch: Character, world: World): Cands {
   // an empty slot takes none, as before
   const worn = (type: string): number => Math.min(...(SLOTS_FOR_TYPE[type] ?? []).map((s) => item(slotCode(ch, s) ?? "")?.level ?? 0));
   const low = new Map<string, string[]>(), lowRejected = new Map<string, Rejected[]>();
+  const buyIn = new Map<string, OnSale[]>(), buyLow = new Map<string, OnSale[]>(); // task 032c: bought, inside and below the window
   for (const it of catalog().items.values()) {
-    if (!it.craft || !SLOTS_FOR_TYPE[it.type] || ["utility", "bag", "rune", "artifact"].includes(it.type)) continue;
+    if (!SLOTS_FOR_TYPE[it.type] || ["utility", "bag", "rune", "artifact"].includes(it.type)) continue;
+    const order = world.market && it.subtype !== "tool" ? bestOrder(world, it.code, ch.name) : undefined; // task 032c: never a tool
+    if (!it.craft && !order) continue;
     const below = it.level < ch.level - 10;
     if (!canEquip(ch, it) || (below && (it.subtype === "tool" || !(it.level > worn(it.type)) || !(worn(it.type) > 0)))) continue;
     const reject = (why: string): void => void (below ? lowRejected.set(it.type, [...(lowRejected.get(it.type) ?? []), { for: ch.name, piece: it.code, why }]) : rejected.push({ for: ch.name, piece: it.code, why }));
+    // task 032c (A.1): what the fleet cannot make is a bought candidate while it is on sale and the market takes it
+    const buy = (why: string): void => {
+      const q = order && marketQuote(world, ch.name, it.code, 1);
+      if (!q) return void (it.craft && reject(why));
+      if (q.hours == null) return reject(`${itemName(it.code)}: ${q.why}`);
+      const m = below ? buyLow : buyIn;
+      m.set(it.type, [...(m.get(it.type) ?? []), { code: it.code, level: it.level, ask: order!.price }]);
+    };
+    if (!it.craft) { buy("no recipe"); continue; }
     const crafter = crafterOf(it.craft.skill, world);
-    if (!crafter) { reject(`no crafter of ${it.craft.skill}`); continue; }
+    if (!crafter) { buy(`no crafter of ${it.craft.skill}`); continue; }
     // in reach = nothing in its tree out of reach (bank stock counts), and someone that is on can source every leaf
     const bill = billOf(world, ch.name, recipeDemand(it.code, 1));
-    if (bill.out.length) { reject(bill.out.join("; ")); continue; }
+    if (bill.out.length) { buy(bill.out.join("; ")); continue; }
     if (!Number.isFinite(bill.hours)) {
       const who = [...bill.leaves.values()].filter((l) => l.kind === "src" && !l.gates.some((g) => g.kind === "event") && !Number.isFinite(fleetSec(l.work, l.gates, world))).map((l) => itemName(l.code));
       const road = bill.gated.filter((g) => !Number.isFinite(g.hours)).map((g) => `${g.lane} ${g.level} for ${itemName(g.code)}`); // task 012
       const ev = bill.events.filter((e) => !Number.isFinite(e.hours)).map((e) => `${itemName(e.code)} (${e.event})`); // task 013
-      reject([who.length ? `nobody that is on sources ${who.join(", ")} yet` : "", road.length ? `no XP source on the way to ${road.join(", ")}` : "", ev.length ? `nobody can ever be a member of the event for ${ev.join(", ")}` : ""].filter(Boolean).join("; "));
+      buy([who.length ? `nobody that is on sources ${who.join(", ")} yet` : "", road.length ? `no XP source on the way to ${road.join(", ")}` : "", ev.length ? `nobody can ever be a member of the event for ${ev.join(", ")}` : ""].filter(Boolean).join("; "));
       continue;
     }
     if (it.subtype === "tool") tools.push(it.code);
@@ -120,7 +141,15 @@ export function candidatesOf(ch: Character, world: World): Cands {
   for (const [type, cs] of low) if (!inside.has(type)) bySlot.set(type, cs);
   for (const [type, rs] of lowRejected) if (!inside.has(type)) rejected.push(...rs);
   const fight = [...bySlot.values()].flatMap((cs) => cs.sort((a, b) => (item(b)!.level - item(a)!.level) || (a < b ? -1 : 1)).slice(0, PER_SLOT));
-  const out = { fight, tools, rejected };
+  // task 032c (A.4): beside them at most BOUGHT_PER_SLOT bought a slot (the window as above: below only where nothing is inside)
+  for (const [type, cs] of buyLow) if (!inside.has(type) && !buyIn.has(type)) buyIn.set(type, cs);
+  const bought = new Set<string>();
+  for (const cs of buyIn.values()) {
+    cs.sort((a, b) => b.level - a.level || a.ask - b.ask || (a.code < b.code ? -1 : 1));
+    for (const c of cs.slice(0, BOUGHT_PER_SLOT)) { bought.add(c.code); fight.push(c.code); }
+    for (const c of cs.slice(BOUGHT_PER_SLOT)) rejected.push({ for: ch.name, piece: c.code, why: `on sale, beyond the ${BOUGHT_PER_SLOT} bought candidates a slot` });
+  }
+  const out = { fight, tools, rejected, bought };
   byName.set(ch.name, out);
   return out;
 }
@@ -130,7 +159,10 @@ function makeHours(pieces: Map<string, number>, ch: Character, world: World): { 
   const demand: [string, number][] = [];
   let crafts = 0, offered = true;
   const lv = new Map<string, number>(); // crafter|skill → the highest recipe level asked
+  const bought = candidatesOf(ch, world).bought;
+  let gold = 0; // task 032c: a bought piece's gold at goldPerHour plus the trip — no bill, crafter or level road
   for (const [code, n] of pieces) {
+    if (bought.has(code)) { gold += marketQuote(world, ch.name, code, n)?.hours ?? Infinity; continue; }
     const r = item(code)!.craft!;
     demand.push(...recipeDemand(code, n));
     crafts += (n * CRAFT_SEC + stepSec(makePlace({ kind: "craft", code }, world))) / 3600; // task 012: once per piece code
@@ -146,7 +178,7 @@ function makeHours(pieces: Map<string, number>, ch: Character, world: World): { 
     const c = world.characters.find((x) => x.name === who)!;
     if (levelOf(c, skill as Lane) < L) levels += hoursToLevel(skill as Lane, levelOf(c, skill as Lane), L, world, c);
   }
-  return { G: bill.hours + crafts + levels, parts: { supply: bill.hours - bill.crafts, crafts: crafts + bill.crafts, levels }, offered };
+  return { G: bill.hours + crafts + levels + gold, parts: { supply: bill.hours - bill.crafts + gold, crafts: crafts + bill.crafts, levels }, offered };
 }
 
 /** The new pieces of a solved set (codes the pool does not hold, with their copies). */
@@ -158,7 +190,8 @@ function newPieces(r: GearRecommendation, ch: Character, world: World): Map<stri
   for (const c of r.codes) if (item(c)?.type !== "utility") used.set(c, (used.get(c) ?? 0) + 1);
   const out = new Map<string, number>();
   for (const [c, n] of used) if (n > (pool.get(c) ?? 0)) out.set(c, n - (pool.get(c) ?? 0));
-  return [...out.keys()].every((c) => item(c)?.craft) ? out : new Map(); // a copy short that no recipe makes: no set
+  const bought = candidatesOf(ch, world).bought; // task 032c: or the market sells it
+  return [...out.keys()].every((c) => item(c)?.craft || bought.has(c)) ? out : new Map(); // a copy short that no recipe makes: no set
 }
 
 /**
@@ -189,6 +222,9 @@ export function piecesFor(ch: Character, world: World, monster: string): { piece
   const n = fightNeed(ch, world, monster, candidatesOf(ch, world).fight, Infinity, () => 0);
   return n && { pieces: n.pieces, G: n.mk.G };
 }
+
+/** Task 032c: the bought pieces of a set, for its Need. */
+const boughtOf = (pieces: Map<string, number>, c: Cands): { bought?: string[] } => { const b = [...pieces.keys()].filter((x) => c.bought.has(x)); return b.length ? { bought: b } : {}; };
 
 const needMemo = new WeakMap<World, Map<string, { needs: Need[]; rejected: Rejected[] }>>();
 /** Every character's gear needs (characters that are on), and the candidates rejected. `name` is the deciding
@@ -262,7 +298,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
       }
       if (best) {
         const s = bundleScore(b, best.mk.G + best.H1 + rest + (unpaced ? (unpaced * best.H1) / Math.max(1, end - L) : 0), calH); // 027e: never 0 × ∞
-        push({ work: `combat ${L} → ${end}${end < b.next ? ` (of ${b.next})` : ""}`, key: `lvl:combat:${b.next}`, monster: best.monster, pieces: best.pieces, H0, H1: best.H1, G: best.mk.G, parts: best.mk.parts, points: s.points, fit: s.fit, any: s.any, hours: s.hours, offered: best.mk.offered });
+        push({ work: `combat ${L} → ${end}${end < b.next ? ` (of ${b.next})` : ""}`, key: `lvl:combat:${b.next}`, monster: best.monster, pieces: best.pieces, H0, H1: best.H1, G: best.mk.G, parts: best.mk.parts, points: s.points, fit: s.fit, any: s.any, hours: s.hours, offered: best.mk.offered, ...boughtOf(best.pieces, c) });
       }
     }
 
@@ -319,7 +355,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
       const pts = t.points * (world.config.weight[t.achievement] ?? 1);
       const rest = achHours(t.achievement, ch.name, world) - hoursOf(t, ch, world); // the achievement's other objectives
       const hours = n.mk.G + n.H1 + Math.max(0, Number.isFinite(rest) ? rest : 0);
-      best = { for: ch.name, work: `${t.achievement} (${m.code})`, key: t.key, monster: m.code, pieces: n.pieces, H0, H1: n.H1, G: n.mk.G, parts: n.mk.parts, points: pts, fit: hours <= calH ? pts / hours : 0, any: pts / hours, hours, offered: n.mk.offered };
+      best = { for: ch.name, work: `${t.achievement} (${m.code})`, key: t.key, monster: m.code, pieces: n.pieces, H0, H1: n.H1, G: n.mk.G, parts: n.mk.parts, points: pts, fit: hours <= calH ? pts / hours : 0, any: pts / hours, hours, offered: n.mk.offered, ...boughtOf(n.pieces, c) };
     }
     if (best) needs.push(best);
   }
@@ -329,24 +365,26 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
 }
 
 /** A piece the offered needs ask for: the copies per fighter, whose work each copy is, the best-scoring need. */
-export interface Piece { copies: Map<string, number>; works: Map<string, string>; best: Need }
+export interface Piece { copies: Map<string, number>; works: Map<string, string>; best: Need; bought?: boolean }
 /** The pieces of every offered need (rank()'s gear parents; task 013: also the event demand's, events.ts). */
 export function gearPieces(world: World, name = ""): Map<string, Piece> {
   const pieces = new Map<string, Piece>();
   for (const n of gearNeeds(world, name).needs) {
     if (!n.offered) continue; // section 7: the crafter is not on
     for (const [code, k] of n.pieces) {
-      const e = pieces.get(code) ?? { copies: new Map(), works: new Map(), best: n };
+      const e: Piece = pieces.get(code) ?? { copies: new Map(), works: new Map(), best: n };
       e.copies.set(n.for, Math.max(e.copies.get(n.for) ?? 0, k));
       e.works.set(n.for, e.works.has(n.for) ? `${e.works.get(n.for)}; ${n.work}` : n.work); // task 011: each copy says whose work it is
       if (n.fit > e.best.fit || (n.fit === e.best.fit && n.any > e.best.any)) e.best = n;
+      if (n.bought?.includes(code)) e.bought = true; // task 032c
       pieces.set(code, e);
     }
   }
   return pieces;
 }
-/** A piece as a parent of supply: its copies less `inFlight` (the others' gear steps on it), its recipe's materials. */
+/** A piece as a parent of supply: its copies less `inFlight` (the others' gear steps on it), its recipe's materials (task 032c:
+ *  none for a piece bought on the market). */
 export function pieceParent(code: string, p: Piece, qty: number, world: World, name: string): Parent {
-  const demand = recipeDemand(code, qty);
+  const demand = p.bought ? [] : recipeDemand(code, qty);
   return { key: `gear:${code}`, label: `${itemName(code)} for ${p.best.for} (${p.best.work})`, points: p.best.points, fit: p.best.fit, any: p.best.any, hours: p.best.hours, demand, gated: billOf(world, name, demand).gated };
 }

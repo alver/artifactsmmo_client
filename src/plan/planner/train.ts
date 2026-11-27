@@ -158,7 +158,7 @@ function trainScore(lane: Lane, h: Character, world: World, calH: number, name: 
     if (b && Number.isFinite(b.hGate)) take(bundleScore(b, b.hGate, calH));
   }
   for (const [code, piece] of gearPieces(world, name)) {
-    const r = item(code)?.craft;
+    const r = piece.bought ? undefined : item(code)?.craft; // task 032c: a bought piece asks no craft level
     if (r?.skill === lane && r.level > levelOf(h, lane)) take(piece.best);
   }
   return best;

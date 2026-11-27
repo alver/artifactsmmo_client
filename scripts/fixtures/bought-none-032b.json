@@ -1,0 +1,66 @@
+{
+ "w26": [
+  {
+   "who": "First",
+   "target": "src:blue_slimeball",
+   "units": 284,
+   "why": "fighter, a training's kill: supply: Blue Slimeball: 490 actions short for weaponcrafting 24 → 25 (Battlestaff ×19) (+3 pts, chain ~8.9 h); Blue Slime: 0 combat XP a kill; 284 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+  },
+  {
+   "who": "Second",
+   "target": "mat:hardwood_plank",
+   "units": 11,
+   "why": "worker, a need: supply: Hardwood Plank: 121 short for weaponcrafting 24 → 25 (Battlestaff ×19) (+3 pts, chain ~8.9 h); 11 made now (0.1 h)"
+  },
+  {
+   "who": "Third",
+   "target": "mat:cooked_gudgeon",
+   "units": 1080,
+   "why": "worker, the stock first: supply: Cooked Gudgeon ×1080 from the bank's raw for Fifth: their fight steps rest or take too little food; 1080 made now (1.5 h)"
+  },
+  {
+   "who": "Fourth",
+   "target": "src:iron_ore",
+   "units": 190,
+   "why": "worker, a need: supply: Iron Ore: 917 actions short for Piggy Helmet for First (the_reaper (death_knight)) (+3 pts, chain ~23 h); Iron Rocks: 0 mining XP a gather; 190 gathers now (1.5 h)"
+  },
+  {
+   "who": "Fifth",
+   "target": "src:blue_slimeball",
+   "units": 284,
+   "why": "fighter, a training's kill: supply: Blue Slimeball: 490 actions short for weaponcrafting 24 → 25 (Battlestaff ×19) (+3 pts, chain ~8.9 h); Blue Slime: 0 combat XP a kill; 284 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+  }
+ ],
+ "w27": [
+  {
+   "who": "First",
+   "target": "src:blue_slimeball",
+   "units": 10,
+   "why": "fighter, a training's kill: supply: Blue Slimeball: 10 actions short for weaponcrafting 25 → 26 (Battlestaff ×13) (+4 pts, chain ~3.0 h); Blue Slime: 0 combat XP a kill; 10 kills now (0.0 h); rests (no food heals so little); wins 100% of fights, 9 s a win"
+  },
+  {
+   "who": "Second",
+   "target": "src:ogre_skin",
+   "units": 60,
+   "why": "worker, a need: supply: Ogre Skin: 152 actions short for Royal Skeleton Ring for Fifth (cultist_purifier (cultist_acolyte)) (+4 pts, chain ~299 h); Ogre: 33 combat XP a kill, 52% of the lane's best; 60 kills now (1.5 h); rests (no food in the bank; raw for Apple Pie waits for the cook); wins 100% of fights, 88 s a win"
+  },
+  {
+   "who": "Third",
+   "target": "mat:cooked_rat_meat",
+   "units": 424,
+   "why": "worker, the stock first: supply: Cooked Rat Meat ×424 from the bank's raw for First, Fifth: their fight steps rest or take too little food; 424 made now (0.6 h)"
+  },
+  {
+   "who": "Fourth",
+   "target": "src:iron_ore",
+   "units": 27,
+   "why": "worker, a need: supply: Iron Ore: 27 actions short for gearcrafting 28 → 29 (Steel Armor ×29) (+4 pts, chain ~4.5 h); Iron Rocks: 0 mining XP a gather; 27 gathers now (0.2 h)"
+  },
+  {
+   "who": "Fifth",
+   "target": "src:blue_slimeball",
+   "units": 10,
+   "why": "fighter, a training's kill: supply: Blue Slimeball: 10 actions short for weaponcrafting 25 → 26 (Battlestaff ×13) (+4 pts, chain ~3.0 h); Blue Slime: 0 combat XP a kill; 10 kills now (0.0 h); rests (no food heals so little); wins 100% of fights, 9 s a win"
+  }
+ ]
+}

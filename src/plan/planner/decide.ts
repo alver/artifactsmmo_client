@@ -435,17 +435,18 @@ export function rank(name: string, world: World, free = false): Ranking {
   const mneeds: MarketNeed[] = []; // task 032: the needs the market may serve — a piece one copy a wearer, a leaf's shortfall
   for (const [code, piece] of gearPieces(world, name)) {
     const { copies, works, best: n } = piece;
-    const r = item(code)!.craft!;
     const qty = [...copies.values()].reduce((s, x) => s + x, 0) - inFlight(`gear:${code}`) - buying(code);
     if (qty <= 0) continue;
     const par = pieceParent(code, piece, qty, world, name);
     parents.push(par);
-    mneeds.push({ key: par.key, code, units: Math.min(qty, copies.size), label: par.label, fit: par.fit, any: par.any });
+    mneeds.push({ key: par.key, code, units: Math.min(qty, copies.size), label: par.label, fit: par.fit, any: par.any, ...(piece.bought ? { bought: true } : {}) });
     const tool = item(code)!.subtype === "tool";
     const need = tool || [...copies.keys()].some((who) => roleOf(who, world) === "fighter"); // 027c (Alex): a lane holder's tool too
     if (fighter ? need : tool || roadPieces.has(code)) needs.add(par.key);
     if (roadPieces.has(code)) road.add(par.key);
     if (roadPieces.has(code) && !tool) gearSide.add(par.key);
+    if (piece.bought) continue; // task 032c: bought by the market's step, never made — no craft step, no craft level
+    const r = item(code)!.craft!;
     if (crafterOf(r.skill, world) !== name || (fighter && !need)) continue; // task 027b: a fighter forges only what a fighter needs (027c: or a tool)
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
