@@ -3,7 +3,22 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-25 (late afternoon). **Report 027g accepted (decision 77): `c03bff4` on `origin/rework`; Alex
+Last updated: 2026-11-27 (morning). **Report 031 read (decision 82): `fd8b44c` on `origin/rework` — `POTIONS` off,
+`KITCHEN` off by the task's rule; Alex restarted the service on it before the chat asked — run `tmek`, boot
+07:55:08 UTC on 11-27, all five steps re-attached, 42 points. On the road the fighters reach combat 40 on days 19–21
+and 50 on day 33 (12-28; 030: days 23 and 39–42); 71 points on day 42. The chat's call: the kitchen goes on — play
+shows the fighters resting 28% and 41% of their hours with 12,700 raw food and no cooked food in the bank. Task
+031b is written (`tasks/031b-kitchen-on.md`, the one word, a short gate, the planner check after the push). Next:
+Alex runs 031b; when its Summary is there he restarts; the chat holds Third's first day against the report's B.1.
+Alex said yes to the market, "be careful with prices" (decision 83): task 032 is written
+(`tasks/032-market.md`) — a need may be bought on the Grand Exchange under four rules (only a need's shortfall; at
+most half the hours of the own chain at `goldPerHour`; an ask within 1.25 × the 7-day trades' median; 10,000 gold
+a purchase and 25,000 a day), the order read again at the counter; the forward model buys nothing. Order: 031b,
+a restart after its push; when 031b's session has ended Alex runs 032; its report is read in a new chat — the
+first shopping list (its part A) before the restart. Then: the weapons past 30 on what the market leaves, and the
+speed (the planner check takes 87 minutes).** Before that, on
+11-26 (decision 81, written down on 11-27): reports 028, 029 and 030 accepted, 031 written. Before that, on 11-25,
+late afternoon: **Report 027g accepted (decision 77): `c03bff4` on `origin/rework`; Alex
 restarted the service on it before the chat asked — run `ghfm`, boot 15:56:46 UTC on 11-25, all five steps
 re-attached, 39 points. Food works (a win on the pick 125 s → 67 s) and the fighters reach 45 eleven to fourteen
 days sooner, then stand at 45–46 for three weeks (the potion a fight; Third cooks instead of brewing) and Second
@@ -2502,6 +2517,75 @@ accepted, Alex restarted the service (run `[yewz]`,
       works nor cancels the fighters' tasks. **For 030 (the gear road): the pieces above as its list, the imp from
       30, tasks that name the pick's monster.**
 
+81. **Reports 028, 029 and 030; no potions, a kitchen; 031** (2026-11-26; written down on 11-27 from the task
+    files, the reports, `.git` and the journal — the chats of 11-26 did not update these notes, so what they
+    weighed beyond this is not recorded).
+    - **028** (one page) is `6867428`, **029** (the fleet levels the crafts) is `2d3f66e`; Alex restarted on
+      `2d3f66e` — run `udbv`, boot 07:25:54 UTC on 11-26. **030** (weapons before potions) is `d2fd93c`; Alex
+      restarted on it — run `szzd`, boot 11:23:40 UTC on 11-26. All on `origin/rework`.
+    - **The chat's calls on report 030**: `GEAR_FIRST` stays `all` (the fighters 50 / 50 on day 42 against 46 / 46
+      and 45 / 45); its decision 2 — no level-35 weapon on any road, each asks a Diamond, and from combat 40
+      `PER_SLOT` keeps only level-40 weapons that weaponcrafting (37 on day 42) cannot make — is left; the speed
+      comes after 031.
+    - **Alex (11-26)**: by what the other players show, potions are worth next to nothing — make none. After the
+      chat read the others' food (24 of 25 leading accounts keep a cook at 40+ and a fisher at 30+): Third is the
+      kitchen, fishing and cooking, instead of the alchemist.
+    - **031 as written** (`tasks/031-no-potions-a-kitchen.md`): `POTIONS` off whatever the roads say — no potion
+      is a need, the bank's are drunk until gone; `KITCHEN` — Third crafts gearcrafting and cooking and gathers
+      fishing, alchemy is nobody's lane, the bank's raw food is cooked before the rest of (1a) while a fighter
+      rests, the kitchen's levels rise to the next food tier; committed on only if the later fighter reaches 50 no
+      later than without it.
+
+82. **Report 031 read; the kitchen goes on, 031b; the market asked of Alex** (2026-11-27, morning; a new chat).
+    Checked in the chat: `HEAD` = `origin/rework` = `fd8b44c`; `logs/status.json` and the journal — Alex restarted
+    before the chat asked, run `tmek`, boot 07:55:08 UTC on 11-27, all five steps re-attached, 42 points.
+    - **The road** (11-26 is day 1; `d2fd93c` / committed / kitchen on): combat 40 — First 23 / 21 / 21, Fifth 23 /
+      19 / 18; combat 50 — First 42 / 33 / 34, Fifth 39 / 33 / 32; points on day 42 — 68 / 71 / 74; the first
+      level-30 weapon — day 6 / 9 / 4; the fighters' rest to day 42 — 404 / 307 / 209 h. The potions took 258 h of
+      the workers' time; it went to train steps (1,383 → 1,654 h). The road to day 42 takes 2,127 s (030: 5,507 s),
+      the 21-day outlook 1,364 s, `check -- planner` 5,220 s. No level-35 weapon on any road; weaponcrafting 37 on
+      day 42. Potions off costs `cult_destroyer` (2) and `cursed_wood_blessed_victory` (1) on the road.
+    - **The kitchen is on (the chat's call; Alex's word of 11-26 stands).** D.3's rule turned on one day of one
+      fighter. Play on `szzd` (20.5 h): First rested 5.1 h of 18.0, Fifth 6.7 h of 16.3; the fighters spent no
+      hour on the XP pick (tasks coins 6.2 h and 10.3 h, the rest a training's kills) until 06:28 UTC on 11-27; the
+      three workers spent 26.5 of their 56.5 h on iron ore. At 00:00 UTC on 11-27 the bank held no cooked food
+      and 12,713 raw (trout 4,140, chicken 2,916, gudgeon 2,193, shrimp 1,720, wolf 929, rat 424, beef 391); the
+      cooking lane is Fourth's at 26, under the rat meat's 30. **031b** (`tasks/031b-kitchen-on.md`): the one
+      word, the short gate, commit and push, then the planner check; read-only — the kitchen's first day on the
+      11-27 World, and which achievements the replay's rows B, E, G lost (112 → 99, 87 → 80, 86 → 62, not looked
+      into in 031). **A restart follows 031b's push.**
+    - **Gold and the Grand Exchange (found in the chat; asked of Alex).** The bank's gold: 101,962 at 11:23 UTC on
+      11-26, 127,544 at 07:55 UTC on 11-27 — about 30,000 a day, spent on nothing (an expansion's cap is 60,000,
+      the next one costs 112,000). The 07:55 UTC read of `logs/market/` (lowest ask, units at it / in all):
+      `elderwood_staff` 1,498 (1 / 6), `perfect_bow` 1,750 (2 / 2), `death_knight_sword` 2,979 (3 / 19),
+      `royal_skeleton_armor` 2,049 (2 / 4), `royal_skeleton_pants` 1,800 (1 / 1), `royal_skeleton_ring` 1,578
+      (2 / 20), `gold_ring` 1,199 (3 / 12), `steel_bar` 250 (91 / 397), `iron_bar` 250 (37 / 157),
+      `hardwood_plank` 80 (188 / 188), `mithril_bar` 570 (10 / 100), `diamond` 45,000 (2 / 2). The fighters at
+      combat 31 wear a Battlestaff (20), skeleton armour (20) and an iron shield (10). Buying is Alex's to decide
+      (what is spent). If yes: 032 is the market — a purchase as one more source of a need, gold against hours,
+      under a budget; if no: 032 is the weapons past 30. The speed after either.
+
+83. **The market, carefully; 032** (Alex, 2026-11-27, morning, the same chat, `tasks/032-market.md`). **Alex**: let
+    us try the market — the leaders will be putting what we need there; the one thing: be careful with prices.
+    - **What careful means here (the chat's rules, in the task as B.1–B.5)**: (1) only a need the plan already
+      holds, only its shortfall, one copy a wearer; never potions, food or their ingredients (decision 56 stands);
+      nothing is sold, no buy order is placed. (2) It pays in hours: gold ÷ `config.goldPerHour` (300; the fleet
+      earns about 250 a character-hour) plus the trip is at most half the own chain's hours — a steel bar at 250
+      is about 50 minutes of gold against some 5 minutes of mining, so it is refused; an Elderwood Staff at 1,498
+      is 5 hours against a chain of days. (3) A fair price: the ask is within 1.25 × the median of the code's
+      trades of 7 days (`/grandexchange/history/{code}`), or, with no trade, of its lowest asks over 72 h of
+      `logs/market/` once it has been on sale for a day; no reference, no purchase. (4) The purse: 10,000 gold a
+      purchase, 25,000 a UTC day (`config.market`, 0 = off), the bank's floor, fares and a due expansion kept; a
+      need that fails only here is "wanted" and shown, so the Diamond (45,000) comes to Alex as a line, not as a
+      purchase. (5) At the counter the order is read again by its id and bought only at the planned price.
+    - **Where it lives**: the live World carries the last read's sell orders; the forward model has no market, so
+      the outlook and the roads stay what they are and purchases show up as the bank's stock.
+    - **Read-only in 032**: the first shopping list (before anything is built); the pieces on sale the plan does
+      not ask for (drops, pieces above the craft's level) and what they would change for the fighters; what the
+      bids would pay for the bank's surplus; the Diamond's trades and the level-35 chain with it bought.
+    - **Order**: 031b first (a restart after its push); 032 when 031b's session has ended; report 032 in a new
+      chat, its part A read before the restart.
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -2539,8 +2623,12 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 027e | Level first (decision 71, Alex): a fighter's order — `config.first`, forging by need, a road's need's kill, the XP pick, today's rule only at a wall or the cap; a worker's first tier is the fighters' road, an objective's needs rank in today's rule; the gear craft ahead of the fighters; the wall at 45 (the sliver fights without the potion, no NaN); read-only: where a fighter's seconds go and what food would change; two roads side by side, the combat levels first | done, `44bb5f1` on `rework`, pushed to `origin/rework`. Read in the chat on 2026-11-25 (decision 72). **Engine change: Alex restarted the service on 2026-11-25 at 09:11:08 UTC** (run `42oo`); all five steps re-attached. The fighters are not higher on day 14 (39/33/39 against 39/34/39); First and Fifth at 50 on day 45 (56, never); 106 points against 97; the fighters' hours: the pick 387, a need's kills 2,037; rest is 52–61% of a win's seconds in play. Invariant 3 still fails. |
 | 027f | Fourth's loop (decision 72): the train item deposits and withdraws its gear for ever; the stall counts a level step's own work over restarts | done, `2d1dfa8` on `rework`, pushed to `origin/rework`; accepted (decision 73). **Alex restarted the service on 2026-11-25 at 09:42:41 UTC** (run `0n77`); all five steps re-attached. `toWear`, `LEVEL_STALL_SEC` 60 min; 108/108. Second's train step of 11-24 held the same loop for 5.6 h. |
 | 027g | The fighter's seconds (decision 74): a need's kill to a worker where one is admitted; no food is held — a fight eats what the bank holds when eating is faster than resting; the cook cooks the by-products, no fishing for food alone (`FOOD_FISHING`, off); invariant 3 (the take carries its set's potions, the solve reads worn pinned artifacts); read-only: the others' XP an hour by level band. After it: gold kept for the fares before a bank expansion; the fighters at the cap (1,321 h of fallback) | done, `c03bff4` on `rework`, pushed to `origin/rework`. Accepted 2026-11-25 (decision 77). **Engine change: Alex restarted the service on 2026-11-25 at 15:56:46 UTC** (run `ghfm`); all five steps re-attached. A win on the pick 125 s → 67 s; the fighters at 41/40 on day 14 (39/39), 45 on days 18–19 (30–33), then 45–46 to day 42 (the potion a fight); Second at 35 on day 43 (15); 101 points (106); `FOOD_FISHING` off; 110/110; the planner check `102 / 120 / 87 / 89 / 84`. |
-| 028 | One page (decision 76, Alex): Roadmap, Fleet and Character become one page — a season strip, a card a hero (levels, gear, the step, its reason in parts with the role's order, the next steps, the last 24 h), the plan in levels (a chart of combat and the gear crafts by day, who supplies whom), the achievements folded below; every manual action and its code deleted. Data only on the service's side: a step's reason in parts, the road's levels and gear by day, the needs line, the 24-hour signal | written 2026-11-25, `tasks/028-one-page.md`; runs on top of 027g. **A restart follows its acceptance.** |
-| 029 | The fleet levels the crafts (decision 78, Alex): a gear craft's next level under its target is a parent of supply — the training batch's leaves are first-tier needs, a training's kill is a fighter's before its pick (`TRAIN_HUNT`, on), the train step crafts from the bank and its hunt eats, the model's train step follows the bank; riding along: Fourth's bag block, cooking to Fourth, food up to half a bag, Second stays a worker; read-only: the weapon and armour the fighters wear by day, where they wait | written 2026-11-25, `tasks/029-fleet-levels-crafts.md`; runs on top of 028; both reports in one chat. **Engine change: one restart follows the acceptance of 028 and 029.** |
+| 028 | One page (decision 76, Alex): Roadmap, Fleet and Character become one page — a season strip, a card a hero (levels, gear, the step, its reason in parts with the role's order, the next steps, the last 24 h), the plan in levels (a chart of combat and the gear crafts by day, who supplies whom), the achievements folded below; every manual action and its code deleted. Data only on the service's side: a step's reason in parts, the road's levels and gear by day, the needs line, the 24-hour signal | done, `6867428` on `rework`, pushed to `origin/rework` (decision 81). |
+| 029 | The fleet levels the crafts (decision 78, Alex): a gear craft's next level under its target is a parent of supply — the training batch's leaves are first-tier needs, a training's kill is a fighter's before its pick (`TRAIN_HUNT`, on), the train step crafts from the bank and its hunt eats, the model's train step follows the bank; riding along: Fourth's bag block, cooking to Fourth, food up to half a bag, Second stays a worker; read-only: the weapon and armour the fighters wear by day, where they wait | done, `2d3f66e` on `rework`, pushed to `origin/rework` (decision 81). **Alex restarted the service on 2026-11-26 at 07:25:54 UTC** (run `udbv`). |
+| 030 | Weapons before potions: `GEAR_FIRST` — gear work, a training and their leaves in the first half of a worker's tier (1), consumables and tools in the second; the outlook's kill at 90 minutes | done, `d2fd93c` on `rework`, pushed to `origin/rework` (decision 81). **Alex restarted the service on 2026-11-26 at 11:23:40 UTC** (run `szzd`). `GEAR_FIRST` = `all`; no level-35 weapon on any road (its decision 2, left). |
+| 031 | No potions, a kitchen (Alex, 11-26): `POTIONS` off — no potion is a need, the stock is drunk; `KITCHEN` — Third cooks and fishes, alchemy nobody's lane, the bank's raw food cooked while a fighter rests, the kitchen's levels | done, `fd8b44c` on `rework`, pushed to `origin/rework`; read on 2026-11-27 (decision 82). **Alex restarted the service on 2026-11-27 at 07:55:08 UTC** (run `tmek`). `POTIONS` off, `KITCHEN` off by the task's rule. |
+| 031b | The kitchen is on (decision 82): `KITCHEN = true`, the short gate, commit and push, the planner check after; read-only: the kitchen's first day on the 11-27 World, what the replay's rows B, E, G lost | written 2026-11-27, `tasks/031b-kitchen-on.md`. **Engine change: a restart follows its push.** |
+| 032 | The market, carefully (decision 83, Alex): a need's shortfall may be bought on the Grand Exchange — it pays in hours at `goldPerHour` (at most half the own chain), the ask within 1.25 × the 7-day trades' median, 10,000 gold a purchase and 25,000 a day, the order read again at the counter, a `spend` record; the live World carries the orders, the forward model none; read-only: the first shopping list, pieces the plan does not ask for, the bids, the Diamond | written 2026-11-27, `tasks/032-market.md`; runs on top of 031b. **Engine change: a restart follows its acceptance.** |
 | 030… | **Renumbered on 11-25 (decision 78): the crafts are 029, the gear road 030, group bosses 031.** Before that, on 11-25 (decision 76): one page is 028, the gear road 029, group bosses 030. Before that, renumbered on 11-24: the roles are 027, the gear road 028, group bosses 029. As it stood before — 026 the roles (decisions 63, 64, Alex): First and Fifth fighters for good, Second at weaponcrafting 30, Third and Fourth — and Second until then — a lane and a craft each, the crafts to 30; the yardstick 33 → 41 points in four days; the details on the model (decision 62); the leaders' and neighbours' read every four hours if 025 did not take it. 027 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 028 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
