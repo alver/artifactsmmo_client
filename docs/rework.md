@@ -2586,6 +2586,74 @@ accepted, Alex restarted the service (run `[yewz]`,
     - **Order**: 031b first (a restart after its push); 032 when 031b's session has ended; report 032 in a new
       chat, its part A read before the restart.
 
+84. **The "wait" on the page is this machine's clock; 032's part E** (2026-11-27, late morning, the same chat; 031b
+    in work). **Alex**: the logs show heroes idle for 2–3 hours in places — why? Found in the chat: no hero stood
+    still — over 11-26 and 11-27 no step followed its predecessor's end by more than two minutes; the 2–3 h are the
+    grey `wait` of the card's last 24 h, a little after every action. `waitCooldown` compares the server's
+    `cooldown_expiration` with the local clock, and this machine's clock runs slow by about 0.1 s an hour between
+    Windows' syncs: `wait` ÷ actions climbs 1.0 s (11-26 00 h UTC) → 2.8 s (17 h), falls to 0.5 s after a sync
+    (19–20 h), climbs again to 2.0 s (11-27 10 h); Second gathers ash every 23.03 s on a 21 s cooldown. 9.9 h of
+    `wait` in 21,499 actions on `szzd` and `tmek`, 9% of the metered seconds; about 0.5 s an action is the request
+    itself, the rest — some 6 hero-hours a day — is the clock. **At once** (Alex, by hand, an admin console):
+    `w32tm /resync`. **For good**: 032's part E — the wait is the echo's remaining seconds from its arrival, not the
+    local clock against the expiration; a check with the fake's clock 3 s off either way. To hold against it after
+    the restart: `wait` ÷ actions by hour stays near 0.5 s. Beside it, seen and left: the card's "h of steps" does
+    not count interrupts (events and offerings, an hour each) nor a re-attached step's seconds before a restart.
+    **Done by Alex at 11:41 UTC** (`net start w32time`, a peer list, `w32tm /resync`, the service set to start
+    itself): the clock jumped 1.9 s and Third and Fourth gather iron every 24.2 s where it was 26.2 s.
+
+85. **Report 031b read; the service is on it** (2026-11-27, midday, the same chat). `HEAD` = `origin/rework` =
+    `fd3a9cb` (`031b: report`, after `0a7421b`); Alex restarted — run `szqp`, boot 11:50:00 UTC on 11-27, the five
+    steps re-attached, 42 points. Besides the one word, `check-onepage`'s whys and its road (48 → 84 h) followed.
+    - **To hold play against** (the report's B.1, the 11-27 World, 24 h): Third's next step after its running iron
+      ore is `mat:cooked_gudgeon` ("worker, the stock first", 1.5 h); 3,440 cooked units in the day (cheese 1,280,
+      gudgeon 1,080, chicken 1,080) against 0; the fighters' rest 3.6 h each against 7.2 and 6.9 h.
+    - **The replay to the deadline fell again**: 87 / 95 / 91 / 74 / 58 (031: 90 / 99 / 94 / 80 / 62; 030: 78 / 112 /
+      94 / 87 / 86). What rows B, E, G lost against 030: the alchemy levels' achievements (4–6 points: alchemy is
+      nobody's lane) and kills the model admitted only with potions — `its_malefic`, `closing_the_gate`,
+      `corruption_eradicator`, `cultist_purifier`, `the_reaper`, `king_of_the_goblins`, `cult_destroyer`. The
+      near road gains (50 on day 33, 74 points on day 42), the far end loses until the gear carries those fights.
+      **Left open, after the market**: the weapons past 30 (those kills on gear), and alchemy back as a lane for
+      its own achievements only.
+    - **Next**: 032 may start (031b's session has ended); its report in a new chat.
+
+86. **The near road, not the season's; the others' path as the guide** (Alex, 2026-11-27, midday, the same chat).
+    **Alex**: let us not labour over the whole route — what is to be done up to 30–35 is plain, and the thing now is to
+    get what is needed there fast; playing the roadmap to the season's end is dear, slow and not to be trusted. And
+    the read of all the players is piling up: their path can be followed and ours fitted to it — it looks much the
+    same for everyone. What the chat makes of it:
+    - **No task is judged by the far end any more.** The replay to the deadline (`check -- planner`'s five rows, 87
+      minutes) and roads past 14 days are neither a gate nor a proof; a task is proven by its checks and, where
+      days matter, a road of at most 14 days. `check -- planner` runs only when the invariants' own code is touched.
+      Decision 85's "the far end loses" is noted, not acted on. The speed task shrinks accordingly.
+    - **The yardstick is what the accounts at 30–35 wear and complete** (the 10:00 UTC read of 11-27, four accounts
+      around this one read in the chat). In 24 h this account went 29th → 33rd with no point (42); Everywon +9
+      (46), sqidking +7 (44), Eloimaya +4 (45), Zetark +3 (39). All four hold `the_reaper` (here 40 / 250 Death
+      Knights, blocked under the floor); sqidking and Eloimaya took `cultist_purifier` (4) on 11-26 and 11-27;
+      Everywon `diamond_in_the_sky` (3; all five of its characters mine at 39–40). **Worn**: a level-30 weapon on
+      every fighter (gold_sword, elderwood_staff ×2, perfect_bow, obsidian_battleaxe), a `slime_shield` 20 on 13 of
+      15 characters, steel armour / legs / boots 20 as the base, gold, obsidian or royal skeleton pieces 30 on the
+      fighters, topaz or dreadful amulets; cooking 40–41 on eight of Everywon's and Zetark's ten characters
+      (sqidking's cook 50 with fishing
+      41). sqidking's fighters stand at 41 / 40 with crafts at 29 / 33 / 26 and wear mithril_platelegs 40 that its
+      gearcrafter cannot make. This fleet's fighters at 31: battlestaff 20, iron_shield 10. **Gold moves**: in the
+      same day Wudagem −381,000, Donatien −371,000, Turbofish −341,000, br_lemes −100,000, Zetark −79,000,
+      sqidking −61,000 (what on is not in the read).
+    - **032b** (`tasks/032b-market-no-source.md`; 032 was already in work, so its file stays as it was read).
+      **Alex**: would it not be better to kill the boss ourselves? It is: `slimed_to_none` is done since 11-26, so
+      the plan can fight the King Slime (level 15, 1,000 HP; 1–2 king slimeballs one kill in 12, about 48 kills a
+      shield), but a boss is left out as the source of a drop. 032b as written: a boss a character is admitted
+      against alone at the floor is a source of its drops like any monster; the piece that asks the drop is a
+      candidate and a need; the market stands beside it by 032's rules (rule 2 picks the cheaper of kills and
+      gold; with nobody admitted, rules 3–5 only); read-only: the neighbours' kit piece by piece against today's
+      plan, the King Slime's hours against the market's gold, the cheapest set that admits the Death Knight at 31,
+      33, 35, and who is admitted against the other five bosses of `around_the_world` (5). No road past 3 days, no
+      replay. Order: 032, then 032b on top of it with no restart between; both reports in one new chat (032's
+      shopping list read first), one restart.
+    - **After 032: the board's road (033)** — a standing table from `logs/board/`: by combat band what the accounts
+      wear, what they fight and the order their achievements come in; the fleet's targets at 30–35 taken from it
+      rather than from a played season.
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -2627,8 +2695,9 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 029 | The fleet levels the crafts (decision 78, Alex): a gear craft's next level under its target is a parent of supply — the training batch's leaves are first-tier needs, a training's kill is a fighter's before its pick (`TRAIN_HUNT`, on), the train step crafts from the bank and its hunt eats, the model's train step follows the bank; riding along: Fourth's bag block, cooking to Fourth, food up to half a bag, Second stays a worker; read-only: the weapon and armour the fighters wear by day, where they wait | done, `2d3f66e` on `rework`, pushed to `origin/rework` (decision 81). **Alex restarted the service on 2026-11-26 at 07:25:54 UTC** (run `udbv`). |
 | 030 | Weapons before potions: `GEAR_FIRST` — gear work, a training and their leaves in the first half of a worker's tier (1), consumables and tools in the second; the outlook's kill at 90 minutes | done, `d2fd93c` on `rework`, pushed to `origin/rework` (decision 81). **Alex restarted the service on 2026-11-26 at 11:23:40 UTC** (run `szzd`). `GEAR_FIRST` = `all`; no level-35 weapon on any road (its decision 2, left). |
 | 031 | No potions, a kitchen (Alex, 11-26): `POTIONS` off — no potion is a need, the stock is drunk; `KITCHEN` — Third cooks and fishes, alchemy nobody's lane, the bank's raw food cooked while a fighter rests, the kitchen's levels | done, `fd8b44c` on `rework`, pushed to `origin/rework`; read on 2026-11-27 (decision 82). **Alex restarted the service on 2026-11-27 at 07:55:08 UTC** (run `tmek`). `POTIONS` off, `KITCHEN` off by the task's rule. |
-| 031b | The kitchen is on (decision 82): `KITCHEN = true`, the short gate, commit and push, the planner check after; read-only: the kitchen's first day on the 11-27 World, what the replay's rows B, E, G lost | written 2026-11-27, `tasks/031b-kitchen-on.md`. **Engine change: a restart follows its push.** |
-| 032 | The market, carefully (decision 83, Alex): a need's shortfall may be bought on the Grand Exchange — it pays in hours at `goldPerHour` (at most half the own chain), the ask within 1.25 × the 7-day trades' median, 10,000 gold a purchase and 25,000 a day, the order read again at the counter, a `spend` record; the live World carries the orders, the forward model none; read-only: the first shopping list, pieces the plan does not ask for, the bids, the Diamond | written 2026-11-27, `tasks/032-market.md`; runs on top of 031b. **Engine change: a restart follows its acceptance.** |
+| 031b | The kitchen is on (decision 82): `KITCHEN = true`, the short gate, commit and push, the planner check after; read-only: the kitchen's first day on the 11-27 World, what the replay's rows B, E, G lost | done, `0a7421b` and `fd3a9cb` (`031b: report`) on `rework`, pushed to `origin/rework`; read on 2026-11-27 (decision 85). **Alex restarted the service on 2026-11-27 at 11:50:00 UTC** (run `szqp`). 117/117; the replay `87 / 95 / 91 / 74 / 58`. |
+| 032 | The market, carefully (decision 83, Alex): a need's shortfall may be bought on the Grand Exchange — it pays in hours at `goldPerHour` (at most half the own chain), the ask within 1.25 × the 7-day trades' median, 10,000 gold a purchase and 25,000 a day, the order read again at the counter, a `spend` record; the live World carries the orders, the forward model none; read-only: the first shopping list, pieces the plan does not ask for, the bids, the Diamond; riding along (decision 84): a cooldown waited by the echo, not by the local clock | written 2026-11-27, `tasks/032-market.md`; runs on top of 031b. **Engine change: a restart follows its acceptance.** |
+| 032b | A boss is a source of its drops, the market the other one (decision 86, Alex): a boss a character is admitted against alone is a source like any monster, so the slime shield (6 king slimeballs) is a candidate and a need; the market beside it by 032's rules; read-only: the neighbours' kit at 30–41 against today's plan, the King Slime's hours against the market, the cheapest set that admits the Death Knight, the other bosses | written 2026-11-27, `tasks/032b-market-no-source.md`; runs on top of 032, no restart between. **Engine change: one restart follows the acceptance of 032 and 032b.** |
 | 030… | **Renumbered on 11-25 (decision 78): the crafts are 029, the gear road 030, group bosses 031.** Before that, on 11-25 (decision 76): one page is 028, the gear road 029, group bosses 030. Before that, renumbered on 11-24: the roles are 027, the gear road 028, group bosses 029. As it stood before — 026 the roles (decisions 63, 64, Alex): First and Fifth fighters for good, Second at weaponcrafting 30, Third and Fourth — and Second until then — a lane and a craft each, the crafts to 30; the yardstick 33 → 41 points in four days; the details on the model (decision 62); the leaders' and neighbours' read every four hours if 025 did not take it. 027 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 028 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
