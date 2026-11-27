@@ -3,7 +3,15 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-27 (afternoon). **Reports 032 and 032b read and accepted (decision 87): `122a769` on
+Last updated: 2026-11-27 (afternoon, later). **Report 032c read and accepted (decision 88): `05e15c4` on
+`origin/rework`; Alex restarted on it before the chat asked — run `wi4r`, boot 14:40:44 UTC on 11-27, 42 points. The
+market's first hour on `122a769`: four purchases, 2,730 gold, each at or under its reference. Found in the journal:
+the fighters do not level — on 11-27 First and Fifth spent 85% of their hours on kills that give no XP (the crafts'
+training batches, coins) and made 850 and 1,260 combat XP against some 14,000 the day before; 032c's three-day road
+says 31 / 31 with the bows or without. Task 033 is written (`tasks/033-fighters-fight.md`): `TRAIN_HUNT` off, no
+fighter's step for coins on a no-XP task, a fighter's pick weapon is not a worker's. It waits for Alex's word (it
+ends 029's "the whole fleet levels the crafts" for the fighters). After it: one verdict without potions (032c's C.4),
+then the board's road.** Before that, the same afternoon: **Reports 032 and 032b read and accepted (decision 87): `122a769` on
 `origin/rework` (`d702672` the market, `d5fe240` a boss is a source); Alex restarted at 13:45:17 UTC —
 run `1cxk` on `122a769`, the five steps re-attached, 42 points. The first purchases expected: an Elderwood Staff for Fifth, owlbear hair, red
 cloth, lizard skin, green cloth (5,356 gold by 032's part A) and the king slimeballs for two slime shields (14 for
@@ -2696,6 +2704,39 @@ accepted, Alex restarted the service (run `[yewz]`,
       `gear:slime_shield` once six slimeballs are banked; `wait` ÷ actions near 0.5 s an hour, no 499.
     - **Order**: 032c may start; its report in a new chat, a restart after it; then the board's road (033).
 
+88. **Report 032c read; the fighters do not level, 033** (2026-11-27, afternoon, the same chat — Alex brought the
+    report there). `HEAD` = `origin/rework` = `05e15c4` (`032c: a piece on sale is a candidate`, after `df355f7`
+    `Rework notes`); **Alex restarted before the chat asked** — run `wi4r`, boot 14:40:44 UTC on 11-27, 42 points,
+    132,005 gold. Accepted as built: 125/125; nothing moves without a market; `decide` 7.63 → 7.78 s.
+    - **The market's first hour in play** (run `1cxk`, `122a769`, the journal's `spend` records): king slimeball ×6 at
+      273 (reference 319), lizard eye ×2 at 175 (175), owlbear hair ×8 at 74 and ×2 at 75 (95.5) — 2,730 gold, every
+      purchase at or under its reference. One miss: after the 8 hairs the next decision took the emptied order ("the
+      order is gone", a 6 h block on `buy:owlbear_hair@Second`); 032c's `soldFrom` repairs it.
+    - **032c as built**: a wearable on sale the fleet cannot make is a bought candidate (two a slot,
+      `BOUGHT_PER_SLOT`); with no chain to compare a purchase needs 3 trades (`MARKET_MIN_TRADES`; refuses nothing
+      today). Its first tick on the 00:00 World: a Perfect Bow for Fifth (1,750, `cultist_purifier`), two Death Knight
+      Swords (2,979 each, `king_of_the_goblins`, one for First), five materials — 13,415 gold. The Death Knight
+      potion-free: Gold Platelegs + Gold Boots + Royal Skeleton Ring ×2 (p 0.91); Fifth's needs hold all three. Its
+      decisions: First's road need cannot ask for the bow (gear work (a) judges the pick's monster only, and with H0 ∞
+      keeps the fastest set — a Greater Dreadful Staff whose cyclops eyes rest on potions); a banked piece is
+      anyone's; both left by the task.
+    - **Found by the chat in the journal, and it outweighs the bows**: the fighters do not level. 11-27, 00:00–14:40
+      UTC — First 9.5 h on a training's kills, 3.2 h on a need's kills (coins), 2.3 h on the pick: 850 combat XP;
+      Fifth 8.9 / 3.2 / 2.1 h: 1,260 XP (11-26: 13,926 and 14,432). They kill sheep, slimes, cows, highwaymen and
+      flying snakes at 0 XP for the crafts' training (`TRAIN_HUNT`, 029). First stands at 31 since 21:47 UTC on 11-26,
+      Fifth since 05:34. 032c's C.2 says the same of the next three days (139–141 of 144 fighter-hours on a
+      training's kills; with bows banked the workers wear them). The cause is decision 78's order, built on Alex's
+      "the whole fleet levels the crafts"; with the market selling the level-30 pieces the trade has turned.
+    - **033** (`tasks/033-fighters-fight.md`): `TRAIN_HUNT = false` (027g's `workerHunts` again); no fighter's step
+      for coins on a task whose monster gives it no XP; a worker's fight step leaves the fighters' pick weapons in
+      the bank; read-only: three days of road before and after, and with the market's weapons banked. **Waits for
+      Alex's word**: the crafts will level slower, on three workers.
+    - **Seen, for the task after**: no potion has been drunk since 07:55 UTC on 11-27 (the bank holds 572), yet a
+      bill admits a kill with them where the step fights potion-free — 10 of the 32 kills behind today's needs (032c's
+      C.4). One verdict, potion-free, for every monster (as 032b made it for a boss) is the next task; what to do
+      with the stock is Alex's.
+    - **Order**: 033 on Alex's yes, a restart after it; then the one verdict (034), then the board's road (035).
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -2740,7 +2781,8 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 031b | The kitchen is on (decision 82): `KITCHEN = true`, the short gate, commit and push, the planner check after; read-only: the kitchen's first day on the 11-27 World, what the replay's rows B, E, G lost | done, `0a7421b` and `fd3a9cb` (`031b: report`) on `rework`, pushed to `origin/rework`; read on 2026-11-27 (decision 85). **Alex restarted the service on 2026-11-27 at 11:50:00 UTC** (run `szqp`). 117/117; the replay `87 / 95 / 91 / 74 / 58`. |
 | 032 | The market, carefully (decision 83, Alex): a need's shortfall may be bought on the Grand Exchange — it pays in hours at `goldPerHour` (at most half the own chain), the ask within 1.25 × the 7-day trades' median, 10,000 gold a purchase and 25,000 a day, the order read again at the counter, a `spend` record; the live World carries the orders, the forward model none; read-only: the first shopping list, pieces the plan does not ask for, the bids, the Diamond; riding along (decision 84): a cooldown waited by the echo, not by the local clock | done, `d702672` on `rework`, pushed to `origin/rework`; accepted 2026-11-27 (decision 87). 121/121; the first list 5,356 gold for about 182 h of chains. **Engine change: Alex restarted the service on 2026-11-27 at 13:45:17 UTC** (run `1cxk`, one restart with 032b). |
 | 032b | A boss is a source of its drops, the market the other one (decision 86, Alex): a boss a character is admitted against alone is a source like any monster, so the slime shield (6 king slimeballs) is a candidate and a need; the market beside it by 032's rules; read-only: the neighbours' kit at 30–41 against today's plan, the King Slime's hours against the market, the cheapest set that admits the Death Knight, the other bosses | done, `d5fe240` and `122a769` (`032b: report`) on `rework`, pushed to `origin/rework`; accepted 2026-11-27 (decision 87). 122/122; the King Slime is no source potion-free, the slimeballs are bought (14 for 3,822). **Engine change: Alex restarted the service on 2026-11-27 at 13:45:17 UTC** (run `1cxk`). |
-| 032c | What the fleet cannot make is bought (decision 87): a wearable on sale with no recipe or chain in reach is a bought candidate — fair by trades, inside the purse, a need by today's rule, at most two a slot (the perfect bows: +66–74% XP for the fighters); with no chain to compare a purchase needs a reference from at least 3 trades; riding along: `QUEUE_KINDS` gets `claim` and `expand`; read-only: the fighters' weapons before and after, three days with the bows, the Death Knight with the market counted, the kills that rest on the bank's potions | written 2026-11-27, `tasks/032c-bought-pieces.md`; runs on top of 032b; Alex said yes on 2026-11-27, it may start. **Engine change: a restart follows its acceptance.** |
+| 032c | What the fleet cannot make is bought (decision 87): a wearable on sale with no recipe or chain in reach is a bought candidate — fair by trades, inside the purse, a need by today's rule, at most two a slot (the perfect bows: +66–74% XP for the fighters); with no chain to compare a purchase needs a reference from at least 3 trades; riding along: `QUEUE_KINDS` gets `claim` and `expand`; read-only: the fighters' weapons before and after, three days with the bows, the Death Knight with the market counted, the kills that rest on the bank's potions | done, `05e15c4` on `rework`, pushed to `origin/rework`; accepted 2026-11-27 (decision 88). 125/125; the first tick 13,415 gold (a Perfect Bow for Fifth, two Death Knight Swords). **Engine change: Alex restarted the service on 2026-11-27 at 14:40:44 UTC** (run `wi4r`). |
+| 033 | A fighter fights for XP (decision 88): `TRAIN_HUNT` off — a training's kill is a worker's where one is admitted (027g's rule); no fighter's step for coins on a task whose monster gives it no XP; a worker's fight step leaves the fighters' pick weapons in the bank; read-only: three days of road before and after, and with the market's weapons banked | written 2026-11-27, `tasks/033-fighters-fight.md`; runs on top of 032c; **waits for Alex's word**. **Engine change: a restart follows its acceptance.** |
 | 030… | **Renumbered on 11-25 (decision 78): the crafts are 029, the gear road 030, group bosses 031.** Before that, on 11-25 (decision 76): one page is 028, the gear road 029, group bosses 030. Before that, renumbered on 11-24: the roles are 027, the gear road 028, group bosses 029. As it stood before — 026 the roles (decisions 63, 64, Alex): First and Fifth fighters for good, Second at weaponcrafting 30, Third and Fourth — and Second until then — a lane and a craft each, the crafts to 30; the yardstick 33 → 41 points in four days; the details on the model (decision 62); the leaders' and neighbours' read every four hours if 025 did not take it. 027 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 028 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
