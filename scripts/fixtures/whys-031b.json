@@ -1,0 +1,482 @@
+[
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@First#1",
+  "why": "fighter, a training's kill: supply: Cowhide: 315 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.5 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); task: cancels 222 of 386 gudgeon (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:weaponcrafting:30@Second#1",
+  "why": "worker, a batch from the bank: level: weaponcrafting 20 → 30 for the fighters' next tier (+3 pts behind it): Battlestaff ×2 (596 XP a run), a batch from the bank, 2 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Third#1",
+  "why": "worker, a need: supply: Hard Leather: 22 short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.7 h); 2 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Fourth#1",
+  "why": "worker, a need: supply: Iron Ore: 564 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.9 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fifth#1",
+  "why": "fighter, a training's kill: supply: Cowhide: 145 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.9 h); Cow: 0 combat XP a kill; 145 kills now (1.1 h); rests (the bank's food heals more than a fight loses); task: cancels 0 of 120 spruce_wood (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#1",
+  "why": "worker, a need: supply: Iron Ore: 388 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.7 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#1",
+  "why": "worker, a need: supply: Iron Ore: 359 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.9 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fifth#2",
+  "why": "fighter, a training's kill: supply: Cowhide: 752 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~5.6 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Third#1",
+  "why": "worker, a need: supply: Hard Leather: 23 short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~4.7 h); 9 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Fourth#2",
+  "why": "worker, a need: supply: Iron Ore: 717 actions short for jewelrycrafting 23 → 24 (Fire Ring ×19) (+3 pts, chain ~4.6 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@First#2",
+  "why": "fighter, a training's kill: supply: Cowhide: 646 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~4.3 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#2",
+  "why": "worker, a need: supply: Iron Ore: 202 actions short for jewelrycrafting 23 → 24 (Fire Ring ×19) (+3 pts, chain ~3.1 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:iron_bar@Third#1",
+  "why": "worker, a need: supply: Iron Bar: 72 short for jewelrycrafting 23 → 24 (Fire Ring ×19) (+3 pts, chain ~3.1 h); 52 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#1",
+  "why": "worker, a need: supply: Iron Ore: 26 actions short for jewelrycrafting 23 → 24 (Fire Ring ×19) (+3 pts, chain ~3.1 h); Iron Rocks: 0 mining XP a gather; 26 gathers now (0.2 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:iron_bar@Third#1",
+  "why": "worker, a need: supply: Iron Bar: 20 short for jewelrycrafting 23 → 24 (Fire Ring ×19) (+3 pts, chain ~2.8 h); 3 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Third#1",
+  "why": "worker, a need: supply: Steel Bar: 62 short for Steel Fishing Rod for Third (fishing 20 → 50 and 3 gathering objectives (tool: 90.6 h saved)) (+1 pts, chain ~706 h); 1 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Third#1",
+  "why": "worker, a need: supply: Hard Leather: 37 short for gearcrafting 25 → 26 (Hard Leather Boots ×19) (+3 pts, chain ~6.9 h); 13 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, a batch from the bank: level: gearcrafting 25 → 30 for the fighters' next tier (+3 pts behind it): Hard Leather Armor ×4 (546 XP a run), a batch from the bank, 4 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#1",
+  "why": "worker, a need: supply: Iron Ore: 39 actions short for jewelrycrafting 23 → 24 (Fire Ring ×19) (+3 pts, chain ~2.8 h); Iron Rocks: 0 mining XP a gather; 39 gathers now (0.3 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#2",
+  "why": "worker, a need: supply: Iron Ore: 252 actions short for jewelrycrafting 23 → 24 (Fire Ring ×19) (+3 pts, chain ~2.5 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:flying_wing@Fifth#1",
+  "why": "fighter, a training's kill: supply: Flying Wing: 112 actions short for jewelrycrafting 23 → 24 (Fire Ring ×19) (+3 pts, chain ~2.5 h); Flying Snake: 0 combat XP a kill; 112 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 28 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@First#3",
+  "why": "fighter, a training's kill: supply: Cowhide: 140 actions short for gearcrafting 25 → 26 (Hard Leather Boots ×15) (+3 pts, chain ~4.0 h); Cow: 0 combat XP a kill; 140 kills now (1.0 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, a batch from the bank: level: jewelrycrafting 23 → 30 for the fighters' next tier (+3 pts behind it): Fire Ring ×10 (363 XP a run), a batch from the bank, 10 now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:iron_bar@Second#1",
+  "why": "worker, a need: supply: Iron Bar: 30 short for jewelrycrafting 23 → 24 (Fire Ring ×9) (+3 pts, chain ~1.4 h); 30 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Fourth#1",
+  "why": "worker, a need: supply: Hard Leather: 44 short for jewelrycrafting 23 → 24 (Steel Ring ×6) (+3 pts, chain ~1.6 h); 25 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Fourth#1",
+  "why": "worker, a need: supply: Steel Bar: 156 short for jewelrycrafting 23 → 24 (Steel Ring ×6) (+3 pts, chain ~1.6 h); 30 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#1",
+  "why": "worker, a need: supply: Iron Ore: 188 actions short for Steel Pickaxe for Fourth (mining 35 → 50 and 2 gathering objectives (tool: 75.8 h saved)) (+1 pts, chain ~611 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, a need: level: jewelrycrafting 23 → 30 for the fighters' next tier (+3 pts behind it): Fire Ring ×9 (363 XP a run), the bank's part free, the rest sourced itself, 9 now (1.4 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, a batch from the bank: level: gearcrafting 25 → 30 for the fighters' next tier (+3 pts behind it): Hard Leather Armor ×5 (546 XP a run), a batch from the bank, 5 now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:cooked_chicken@Third#1",
+  "why": "worker, the stock first: supply: Cooked Chicken ×1080 from the bank's raw for Fifth: their fight steps rest or take too little food; 1080 made now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:blue_slimeball@First#1",
+  "why": "fighter, a training's kill: supply: Blue Slimeball: 568 actions short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~5.8 h); Blue Slime: 0 combat XP a kill; 259 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:blue_slimeball@Fifth#1",
+  "why": "fighter, a training's kill: supply: Blue Slimeball: 309 actions short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~5.9 h); Blue Slime: 0 combat XP a kill; 259 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Fourth#1",
+  "why": "worker, a need: supply: Hard Leather: 33 short for jewelrycrafting 24 → 25 (Steel Ring ×22) (+3 pts, chain ~11 h); 9 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Fourth#1",
+  "why": "worker, a need: supply: Steel Bar: 184 short for jewelrycrafting 24 → 25 (Steel Ring ×22) (+3 pts, chain ~11 h); 59 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#2",
+  "why": "worker, a need: supply: Iron Ore: 375 actions short for jewelrycrafting 24 → 25 (Steel Ring ×22) (+3 pts, chain ~10 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Fourth#2",
+  "why": "worker, a need: supply: Steel Bar: 125 short for jewelrycrafting 24 → 25 (Steel Ring ×22) (+3 pts, chain ~9.9 h); 59 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Fourth#1",
+  "why": "worker, a need: supply: Iron Ore: 22 actions short for Steel Fishing Rod for Third (fishing 20 → 50 and 3 gathering objectives (tool: 90.6 h saved)) (+1 pts, chain ~706 h); Iron Rocks: 0 mining XP a gather; 22 gathers now (0.2 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Fourth#1",
+  "why": "worker, a need: supply: Steel Bar: 66 short for Steel Fishing Rod for Third (fishing 20 → 50 and 3 gathering objectives (tool: 90.6 h saved)) (+1 pts, chain ~706 h); 7 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:snakeskin@Fourth#1",
+  "why": "worker, a need: supply: Snakeskin: 19 short for gearcrafting 25 → 26 (Snakeskin Boots ×11) (+3 pts, chain ~2.1 h); 13 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, a need: level: jewelrycrafting 24 → 30 for the fighters' next tier (+3 pts behind it): Steel Ring ×3 (548 XP a run), the bank's part free, the rest sourced itself, 3 now (1.3 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#1",
+  "why": "worker, a need: supply: Iron Ore: 15 actions short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~5.8 h); Iron Rocks: 0 mining XP a gather; 15 gathers now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Third#1",
+  "why": "worker, a need: supply: Steel Bar: 64 short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~5.8 h); 5 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@First#1",
+  "why": "fighter, a training's kill: supply: Cowhide: 416 actions short for jewelrycrafting 24 → 25 (Steel Ring ×19) (+3 pts, chain ~14 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, a batch from the bank: level: gearcrafting 25 → 30 for the fighters' next tier (+3 pts behind it): Magic Wizard Hat ×4 (585 XP a run), a batch from the bank, 4 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#2",
+  "why": "worker, a need: level: gearcrafting 25 → 30 for the fighters' next tier (+3 pts behind it): Hard Leather Boots ×5 (546 XP a run), the bank's part free, the rest sourced itself, 5 now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fifth#1",
+  "why": "fighter, a training's kill: supply: Cowhide: 406 actions short for jewelrycrafting 24 → 25 (Steel Ring ×19) (+3 pts, chain ~15 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Second#1",
+  "why": "worker, a need: supply: Steel Bar: 59 short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~3.8 h); 59 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:weaponcrafting:30@Second#1",
+  "why": "worker, a need: level: weaponcrafting 21 → 30 for the fighters' next tier (+3 pts behind it): Battlestaff ×6 (594 XP a run), the bank's part free, the rest sourced itself, 6 now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#2",
+  "why": "worker, a need: level: jewelrycrafting 24 → 30 for the fighters' next tier (+3 pts behind it): Steel Ring ×2 (548 XP a run), the bank's part free, the rest sourced itself, 2 now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@First#2",
+  "why": "fighter, a training's kill: supply: Cowhide: 140 actions short for jewelrycrafting 24 → 25 (Steel Ring ×17) (+3 pts, chain ~13 h); Cow: 0 combat XP a kill; 140 kills now (1.0 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Third#1",
+  "why": "worker, a need: supply: Hard Leather: 36 short for jewelrycrafting 24 → 25 (Steel Ring ×17) (+3 pts, chain ~13 h); 12 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, a batch from the bank: level: gearcrafting 25 → 30 for the fighters' next tier (+3 pts behind it): Hard Leather Armor ×1 (546 XP a run), a batch from the bank, 1 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#1",
+  "why": "worker, a need: supply: Iron Ore: 477 actions short for gearcrafting 26 → 27 (Steel Armor ×27) (+3 pts, chain ~11 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fifth#2",
+  "why": "fighter, a training's kill: supply: Cowhide: 32 actions short for jewelrycrafting 24 → 25 (Steel Ring ×17) (+3 pts, chain ~12 h); Cow: 0 combat XP a kill; 32 kills now (0.2 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:skeleton_bone@Fifth#1",
+  "why": "fighter, a training's kill: supply: Skeleton Bone: 376 actions short for jewelrycrafting 24 → 25 (Steel Ring ×17) (+3 pts, chain ~11 h); Skeleton: 29 combat XP a kill, 40% of the lane's best; 61 kills now (1.2 h) with 74 Cooked Chicken from the bank; the bag caps it at 61 kills (1 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Second#1",
+  "why": "worker, a need: supply: Hard Leather: 24 short for jewelrycrafting 24 → 25 (Steel Ring ×17) (+3 pts, chain ~11 h); 15 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#1",
+  "why": "worker, a need: supply: Iron Ore: 241 actions short for gearcrafting 26 → 27 (Steel Armor ×27) (+3 pts, chain ~11 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:blue_slimeball@First#1",
+  "why": "fighter, a training's kill: supply: Blue Slimeball: 230 actions short for weaponcrafting 21 → 22 (Battlestaff ×10) (+3 pts, chain ~2.9 h); Blue Slime: 0 combat XP a kill; 230 kills now (1.3 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Fourth#1",
+  "why": "worker, a need: supply: Hard Leather: 10 short for jewelrycrafting 24 → 25 (Steel Ring ×17) (+3 pts, chain ~9.5 h); 9 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, a need: level: jewelrycrafting 24 → 30 for the fighters' next tier (+3 pts behind it): Steel Ring ×2 (548 XP a run), the bank's part free, the rest sourced itself, 2 now (1.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, a batch from the bank: level: gearcrafting 26 → 30 for the fighters' next tier (+3 pts behind it): Hard Leather Armor ×4 (545 XP a run), a batch from the bank, 4 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Third#1",
+  "why": "worker, a need: supply: Steel Bar: 143 short for gearcrafting 26 → 27 (Steel Armor ×23) (+3 pts, chain ~9.1 h); 58 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:skeleton_bone@Fifth#2",
+  "why": "fighter, a training's kill: supply: Skeleton Bone: 275 actions short for jewelrycrafting 24 → 25 (Steel Ring ×15) (+3 pts, chain ~10 h); Skeleton: 28 combat XP a kill, 40% of the lane's best; 61 kills now (1.2 h) with 74 Cooked Chicken from the bank; the bag caps it at 61 kills (1 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 39 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#1",
+  "why": "worker, a need: supply: Iron Ore: 68 actions short for gearcrafting 26 → 27 (Steel Armor ×23) (+3 pts, chain ~9.1 h); Iron Rocks: 0 mining XP a gather; 68 gathers now (0.6 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#2",
+  "why": "worker, a need: level: jewelrycrafting 24 → 30 for the fighters' next tier (+3 pts behind it): Steel Ring ×2 (548 XP a run), the bank's part free, the rest sourced itself, 2 now (1.4 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Third#1",
+  "why": "worker, a need: supply: Steel Bar: 81 short for gearcrafting 26 → 27 (Steel Armor ×23) (+3 pts, chain ~9.1 h); 23 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@First#1",
+  "why": "fighter, a training's kill: supply: Cowhide: 384 actions short for jewelrycrafting 24 → 25 (Steel Ring ×13) (+3 pts, chain ~9.9 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#2",
+  "why": "worker, a need: supply: Iron Ore: 66 actions short for gearcrafting 26 → 27 (Steel Armor ×23) (+3 pts, chain ~9.1 h); Iron Rocks: 0 mining XP a gather; 66 gathers now (0.6 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Third#2",
+  "why": "worker, a need: supply: Steel Bar: 58 short for gearcrafting 26 → 27 (Steel Armor ×23) (+3 pts, chain ~9.1 h); 58 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, a need: level: gearcrafting 26 → 30 for the fighters' next tier (+3 pts behind it): Steel Armor ×3 (545 XP a run), the bank's part free, the rest sourced itself, 3 now (1.2 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:skeleton_bone@Fifth#3",
+  "why": "fighter, a training's kill: supply: Skeleton Bone: 228 actions short for jewelrycrafting 24 → 25 (Steel Ring ×13) (+3 pts, chain ~8.8 h); Skeleton: 28 combat XP a kill, 40% of the lane's best; 61 kills now (1.2 h) with 74 Cooked Chicken from the bank; the bag caps it at 61 kills (1 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 39 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:weaponcrafting:30@Second#1",
+  "why": "worker, a need: level: weaponcrafting 21 → 30 for the fighters' next tier (+3 pts behind it): Battlestaff ×9 (594 XP a run), the bank's part free, the rest sourced itself, 9 now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Fourth#1",
+  "why": "worker, a need: supply: Steel Bar: 25 short for gearcrafting 26 → 27 (Steel Armor ×20) (+3 pts, chain ~9.1 h); 23 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, a need: level: jewelrycrafting 24 → 30 for the fighters' next tier (+3 pts behind it): Steel Ring ×2 (548 XP a run), the bank's part free, the rest sourced itself, 2 now (1.4 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#2",
+  "why": "worker, a need: level: gearcrafting 26 → 30 for the fighters' next tier (+3 pts behind it): Steel Armor ×3 (545 XP a run), the bank's part free, the rest sourced itself, 3 now (1.3 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@First#2",
+  "why": "fighter, a training's kill: supply: Cowhide: 134 actions short for jewelrycrafting 24 → 25 (Steel Ring ×11) (+3 pts, chain ~7.1 h); Cow: 0 combat XP a kill; 134 kills now (1.0 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:skeleton_bone@Fifth#4",
+  "why": "fighter, a training's kill: supply: Skeleton Bone: 198 actions short for jewelrycrafting 24 → 25 (Steel Ring ×11) (+3 pts, chain ~5.9 h); Skeleton: 28 combat XP a kill, 40% of the lane's best; 61 kills now (1.2 h) with 74 Cooked Chicken from the bank; the bag caps it at 61 kills (1 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 39 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:weaponcrafting:30@Second#2",
+  "why": "worker, a batch from the bank: level: weaponcrafting 21 → 30 for the fighters' next tier (+3 pts behind it): Skull Staff ×1 (554 XP a run), a batch from the bank, 1 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Second#1",
+  "why": "worker, a need: supply: Hard Leather: 21 short for jewelrycrafting 24 → 25 (Steel Ring ×11) (+3 pts, chain ~7.0 h); 12 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:ash_wood@Second#1",
+  "why": "worker, a need: supply: Ash Wood: 380 actions short for weaponcrafting 22 → 23 (Battlestaff ×17) (+3 pts, chain ~7.9 h); Ash Tree: 0 woodcutting XP a gather; 205 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:blue_slimeball@First#1",
+  "why": "fighter, a training's kill: supply: Blue Slimeball: 630 actions short for weaponcrafting 22 → 23 (Battlestaff ×17) (+3 pts, chain ~7.9 h); Blue Slime: 0 combat XP a kill; 259 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@First#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Second#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Third#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Fourth#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Fifth#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:yellow_slimeball@First#1",
+  "why": "fighter, a training's kill: supply: Yellow Slimeball: 300 actions short for jewelrycrafting 20 → 21 (Earth Ring ×10) (+3 pts, chain ~6.6 h); Yellow Slime: 0 combat XP a kill; 74 kills now (1.5 h); rests (no food in the bank, nor raw food to cook); wins 100% of fights, 73 s a win"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:cowhide@Second#1",
+  "why": "fighter, a need's kill: supply: Cowhide: 544 actions short for Hard Leather Pants for Fifth (arachnophobia_conquered (spider)) (+2 pts, chain ~67 h); Cow: 0 combat XP a kill; 242 kills now (1.5 h); rests (no food heals so little); wins 100% of fights, 22 s a win"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:ash_wood@Third#1",
+  "why": "worker, a need: supply: Ash Wood: 260 actions short for Battlestaff for Fifth (arachnophobia_conquered (spider)) (+2 pts, chain ~67 h); Ash Tree: 0 woodcutting XP a gather; 205 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:ash_wood@Fourth#1",
+  "why": "worker, a need: supply: Ash Wood: 260 actions short for Battlestaff for Fifth (arachnophobia_conquered (spider)) (+2 pts, chain ~67 h); Ash Tree: 0 woodcutting XP a gather; 205 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:yellow_slimeball@Fifth#1",
+  "why": "fighter, a training's kill: supply: Yellow Slimeball: 300 actions short for jewelrycrafting 20 → 21 (Earth Ring ×10) (+3 pts, chain ~6.6 h); Yellow Slime: 0 combat XP a kill; 74 kills now (1.5 h); rests (no food in the bank, nor raw food to cook); wins 100% of fights, 73 s a win"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:combat:24@First#1",
+  "why": "fighter: the XP pick: combat 23: Skeleton at 0.58 XP/s, 81 now (1.5 h) with 4 Minor Health Potion from the bank; rests (no food in the bank; raw for Cooked Trout waits for the cook); task: cancels 222 of 386 gudgeon (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 79 s a win"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:weaponcrafting:30@Second#1",
+  "why": "worker, craft to 30: weaponcrafting 20 → 30: Battlestaff ×3 (596 XP a run), a batch from the bank, 3 now (0.0 h)"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, craft to 30: gearcrafting 22 → 30: Skeleton Helmet ×8 (523 XP a run), a batch from the bank, 8 now (0.1 h)"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, craft to 30: jewelrycrafting 20 → 30: Air & Water Amulet ×10 (195 XP a run), a batch from the bank, 10 now (0.1 h)"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:combat:24@Fifth#1",
+  "why": "fighter: the XP pick: combat 23: Skeleton at 0.58 XP/s, 81 now (1.5 h) with 4 Minor Health Potion from the bank; rests (no food in the bank; raw for Cooked Trout waits for the cook); task: cancels 0 of 120 spruce_wood (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 79 s a win"
+ }
+]

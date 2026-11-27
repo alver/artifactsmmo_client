@@ -27,7 +27,7 @@ export const POTIONS = false;
  *  the roads and the checks only (the roles stay DEFAULTS.roles': a road with the other value passes its roles in its patch).
  *  False by task 031's rule (D.3): from the World of 11-26 the later fighter reaches combat 50 on road day 34 with it, 33
  *  without (report 031). */
-export const KITCHEN = false;
+export const KITCHEN = true;
 
 export const DEFAULTS: PlannerConfig = {
   deadline: "2027-02-24T00:00:00Z",

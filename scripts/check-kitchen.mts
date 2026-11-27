@@ -8,7 +8,7 @@
 //      before its other (1a) work; raw rat meat → cooked by Third at cooking 32, not offered at cooking 29;
 //   4. Third's roles (gearcrafting, cooking, fishing; nobody holds alchemy); Third at fishing 22 / cooking 32 → its tier (3)
 //      names fishing 30; at 30 / 32 → fishing and cooking 40.
-// The kitchen's cases pass its roles (KITCHEN is committed off: report 031). On d2fd93c every case fails (no config.potions,
+// The kitchen's cases pass its roles (KITCHEN: committed off by report 031, on since 031b). On d2fd93c every case fails (no config.potions,
 // no kitchen). node --import tsx scripts/check-kitchen.mts
 import { readFile } from "node:fs/promises";
 import { setDataReader } from "../src/catalog/load";
@@ -28,7 +28,7 @@ await loadCatalog();
 const fx = JSON.parse(await readFile("scripts/fixtures/world-2026-11-26.json", "utf8")) as { world: World };
 const ROLES_030 = { First: { role: "fighter" }, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] }, Third: { role: "worker", craft: ["gearcrafting"], gather: ["alchemy", "fishing"] }, Fourth: { role: "worker", craft: ["jewelrycrafting", "cooking"], gather: ["mining", "woodcutting"] }, Fifth: { role: "fighter" } } as World["config"]["roles"];
 const C030 = { potions: true, kitchen: false, roles: ROLES_030 };
-// the kitchen as task 031 (B.1) wrote it, whatever the constants say (KITCHEN is committed off: report 031)
+// the kitchen as task 031 (B.1) wrote it, whatever the constants say (KITCHEN: committed off by report 031, on since 031b)
 const ROLES_KITCHEN = { First: { role: "fighter" }, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] }, Third: { role: "worker", craft: ["gearcrafting", "cooking"], gather: ["fishing"] }, Fourth: { role: "worker", craft: ["jewelrycrafting"], gather: ["mining", "woodcutting"] }, Fifth: { role: "fighter" } } as World["config"]["roles"];
 const NEW = { potions: false, kitchen: true, roles: ROLES_KITCHEN };
 const of = (cfg: Partial<World["config"]>, patch: Partial<World> = {}): World => ({

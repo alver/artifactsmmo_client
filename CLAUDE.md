@@ -149,8 +149,9 @@ Design: `docs/design/planner.md`. **Core** `src/plan/planner/` (pure): `decide(n
   food only), no potion is a parent of supply, `waitingOf` says "gear", an event member is admitted on its pool; a fight is admitted on
   the gear, the rune and food, and what that does not win is no candidate (`fightTake`'s gear alone). The potions the bank holds are
   drunk as before (`fightTake` from the stock at the chain's price) until they are gone; nothing brews more, nothing sells or
-  recycles them; an achievement whose own target is brewing stays an objective. **`KITCHEN`** (`config.ts`, **false** — task
-  031's rule, D.3: from the World of 11-26 the later fighter reaches combat 50 on road day 34 with it, 33 without; report 031;
+  recycles them; an achievement whose own target is brewing stays an objective. **`KITCHEN`** (`config.ts`, **true** since task
+  031b — task 031 committed it off by its rule D.3, on one day: from the World of 11-26 the later fighter reaches combat 50 on
+  road day 34 with it, 33 without; play of 11-26/27 then showed the fighters resting beside the bank's uncooked raw food; reports 031, 031b;
   `config.kitchen` overrides it for the roads and the checks only — the roles stay `DEFAULTS.roles'`, a road with the other value
   passes its roles in its patch). On: Third holds cooking and fishing, alchemy is nobody's lane ("The roles"); the road's food need (work
   (a), whether it is one stays `consumableNeeds`' test) is a worker's (1a) — its cook step, and its fishing where `FOOD_FISHING` opens
@@ -214,7 +215,7 @@ Design: `docs/design/planner.md`. **Core** `src/plan/planner/` (pure): `decide(n
   holds (a whole unit) costs nothing to eat, its chain prices making more only; a fight eats the pool's food that heals its loss
   fastest where that beats resting in its own seconds (`consPrice.food(lost, maxHp)`: one `use` against the rest it saves), and
   the bank holds it — whatever the step is for. (Task 025 priced a held food at its chain: none was eaten before cooked salmon.) A need never
-  holds stock back from its own fight (`reservable`'s monster). Task 031 (`KITCHEN` on; it is committed off): the kitchen cooks the bank's raw food while a
+  holds stock back from its own fight (`reservable`'s monster). Task 031 (`KITCHEN`, on since 031b): the kitchen cooks the bank's raw food while a
   fighter rests (the consumables paragraph, "the stock first") and levels its fishing and cooking to the next food tier.
 - **The healing rune**: part of a step's `wear` (`decide.ts WEAR_SLOTS`); a worn one stays on through every reset and every
   non-fight job (`jobgear.ts PINNED_RUNE`; the forward model's `wear` keeps it unless a step names one). **The planner buys
@@ -232,8 +233,8 @@ Design: `docs/design/planner.md`. **Core** `src/plan/planner/` (pure): `decide(n
 **Two fighters, three workers** (Alex, decisions 63, 64): `DEFAULTS.roles` — First and Fifth `role: "fighter"` with no lane; Second
 `"worker"` (woodcutting, weaponcrafting; task 029, B.4: its `fighterFrom` went — it stays a worker, two fighters until the planning
 chat says otherwise); Third `"worker"` (alchemy, fishing, gearcrafting); Fourth `"worker"` (mining, jewelrycrafting, cooking — task
-029, B.2: 027g's Third cooked 328 h while the fighters waited for its potions; woodcutting is pinned too) — `KITCHEN` off (task 031,
-committed so by its road); on (B.1): Third `"worker"` (gearcrafting, cooking; fishing) — the kitchen; Fourth (jewelrycrafting;
+029, B.2: 027g's Third cooked 328 h while the fighters waited for its potions; woodcutting is pinned too) — `KITCHEN` off (task 031's
+value); on (B.1, committed by task 031b): Third `"worker"` (gearcrafting, cooking; fishing) — the kitchen; Fourth (jewelrycrafting;
 mining, woodcutting); **alchemy is nobody's lane** (`rolesOf`: with the kitchen, alchemy nobody pins goes to nobody). `fighterFrom` stays a
 mechanism of `RoleConfig` (`check-roles` case 5). The role is read in one place,
 `roles.ts roleOfCh` (a fighter: `role`, or a worker past its `fighterFrom`); a character with no `role` is neither (the rule before
@@ -262,20 +263,20 @@ one's (one owner a gathering skill) — so Fourth holds woodcutting from the mom
   fight admitted: …", "fighter, at the level cap: …"). So a kill objective's materials, a tool's kill materials and its coins wait
   for a fighter's fifth tier, or a worker admitted to the fight (027g: every one is a worker's then). A **worker**, in this order: (0)
   task 029 (A.4): **its gear craft's train step when the bank covers a batch** ("worker, a batch from the bank: …", rule `train`);
-  task 031 (`KITCHEN` on; it is committed off): **the stock's cook step** while a fighter rests (rule `cook`, the consumables paragraph); (1) **a need of the fighters' road** — gear work (a), the craft level such a piece asks, the consumables of the road (the XP
+  task 031 (`KITCHEN`, on since 031b): **the stock's cook step** while a fighter rests (rule `cook`, the consumables paragraph); (1) **a need of the fighters' road** — gear work (a), the craft level such a piece asks, the consumables of the road (the XP
   pick's among them), task 029: a craft's training (below) — or a lane holder's tool (027c) (`gear:`, `mat:`, `src:`, by any parent
   the leaf serves — `Candidate.need`), today's scoring; then, last of the tier, its own craft's train step the bank does not cover (it
   sources what the bank lacks itself, a chunk) — task 030 (Alex: weapons and armour before potions; `GEAR_FIRST` in `config.ts`, **`all`**,
   `config.gearFirst` overrides it for the roads and the checks only): the tier in two halves, **(1a)** weapons and armour — gear work (a)
   of a piece that is no tool, the craft level such a piece asks, a craft's training's leaves (`Candidate.gear`, by any parent the leaf
-  serves) — task 031 (`KITCHEN` on; it is committed off): and the road's food need (its cook step) —, today's scoring among them, its own train step last — and **(1b)**, only when (1a) has no candidate, the road's consumables
+  serves) — task 031 (`KITCHEN`, on since 031b): and the road's food need (its cook step) —, today's scoring among them, its own train step last — and **(1b)**, only when (1a) has no candidate, the road's consumables
   and a lane holder's tool ("worker, a need (consumables or a tool): …", rule `need-cons`); `pick` puts the consumables of a fighter's XP
   pick of today (the monster its pick fights now, `along`'s) into (1a); `off` is 029's one tier (report 030: First and Fifth at combat
   50 / 50 on day 42 under `all`, 46 / 46 under `pick`, 45 / 45 under `off`); a kill or drop
   objective's needs (work (b)) and their consumables, and an event's, rank in (4); (2) an objective whose achievement completes
   within `WORKER_SHORT_H` 6 hours of its work (`achHours`; any lane, never a kill); (3) **its gear craft ahead of the fighters**:
   to the tier they wear next — the highest fighter's (on) combat level + 5, down to a multiple of 5, at least `WORKER_CRAFT` 30,
-  at most the level cap (26 → 30, 30 → 35, 36 → 40; `lvl:<craft>:<N>`, the `train` item) — task 031 (`KITCHEN` on; it is committed off): beside it the
+  at most the level cap (26 → 30, 30 → 35, 36 → 40; `lvl:<craft>:<N>`, the `train` item) — task 031 (`KITCHEN`, on since 031b): beside it the
   kitchen's fishing and cooking to the next food tier, today's scoring among them ("worker, the kitchen to 30: …"); (4) today's rule inside its lanes (a
   work of no lane — a task, a trade — included; `Candidate.out` marks the rest), its fallback in its own gathering lanes. Never a
   combat level or a kill objective; a `src:` kill (027g) whenever `pickSource` admits it — but one of a monster another fighter's
@@ -319,7 +320,7 @@ one's (one owner a gathering skill) — so Fourth holds woodcutting from the mom
 - **Checks**: task 031: `check-kitchen` (no potion parent, the fight a potion alone admits, the stock's cook step, the kitchen's roles
   and levels on the World of 11-26); the older mechanism checks (`check-gear-first`, `check-level`, `check-roles`, `check-seconds`, the
   scenarios `consumables-no-field-brew`, `consumables-supply-chain`, `kill-sliver`) run with `potions: true` (and `kitchen: false`
-  where 030's roles or tiers are what they test); `check-onepage` compares `scripts/fixtures/whys-031.json`. Task 030: `check-gear-first` (the two halves on one World of the 11-26 road, `scripts/fixtures/world-gear-first.json`);
+  where 030's roles or tiers are what they test); `check-onepage` compares `scripts/fixtures/whys-031b.json` (task 031b: the kitchen on; its road 84 h — the first piece at 83.0 h). Task 030: `check-gear-first` (the two halves on one World of the 11-26 road, `scripts/fixtures/world-gear-first.json`);
   `check-roles` (made-up worlds of the 11-21 fixture: a fighter with a gathering objective fights; a worker trains its craft
   over an admitted monster; a 3-hour objective before the craft, not a 10-hour one; a `src:` kill to the fighter, to a worker only with
   no fighter admitted; Second at weaponcrafting 29 and 30, Fourth's woodcutting; 027b: a fighter forges a needed piece, trains the
