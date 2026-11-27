@@ -138,8 +138,9 @@ export const MARGIN = 1.2;
 export const FOOD_FISHING = false;
 /** Task 029, A.3 (Alex: the crafts first now): true — a training's src: kill is a fighter's work before its XP pick, whoever
  *  else is admitted and whether or not it gives the fighter XP (the workers are the crafters); false — such a kill follows
- *  task 027g's rule (a worker that is on and admitted hunts it). `config.trainHunt` overrides it for the roads and checks only. */
-export const TRAIN_HUNT = true;
+ *  task 027g's rule (a worker that is on and admitted hunts it). `config.trainHunt` overrides it for the roads and checks only.
+ *  Task 033 (Alex: a fighter fights for XP; the market sells the level-30 pieces now): false. */
+export const TRAIN_HUNT = false;
 /** Task 030, A (Alex: weapons and armour before potions): a worker's tier (1) — "off": one tier, as 2d3f66e ranks it; "all":
  *  two halves, (1a) weapons and armour (gear work (a), the craft level such a piece asks, a craft's training's leaves; last its
  *  own craft's train step the bank does not cover), (1b) the road's consumables and a lane holder's tool, only when (1a) has

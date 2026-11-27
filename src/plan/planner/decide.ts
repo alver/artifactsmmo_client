@@ -40,7 +40,7 @@
 
 import { achievement as achievementOf, item, itemName, resource as resourceOf } from "../../catalog";
 import { CRAFT_SEC } from "../xp";
-import { PINNED_ARTIFACTS, jobGear } from "../jobgear";
+import { PINNED_ARTIFACTS, jobGear, ownedQtyOf } from "../jobgear";
 import { CHUNK_SEC, GATHER_LANES, GEAR_CRAFT, GEAR_FIRST, KITCHEN, TRAIN_HUNT, TRAIN_LANES } from "./config";
 import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
@@ -54,7 +54,7 @@ import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pi
 import { admitted, fightRec, nearestSpot, placeOf, withToll, verdictOf } from "./reach";
 import { crafterOf, fights, roleOf, rolesFor } from "./roles";
 import { cancelOf, coinsInFlight, monstersTask, startVisit, taskText, visitSec } from "./tasks";
-import { available, poolBank } from "./stock";
+import { available, poolBank, setPoolOut } from "./stock";
 import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
 import { sourceFor, targetsOf } from "./targets";
 import { WORKER_CRAFT, craftTarget, trainParents, trainPlan } from "./train";
@@ -235,6 +235,33 @@ function planLevel(lane: Lane, ch: Character, world: World, bonus: Set<string>):
 /** The slots a step's set is worn in (task 009: artifacts, utilities and bags are not planned; task 025, settled point 5:
  *  the rune is — the healing rune a fight's solve wears). */
 export const WEAR_SLOTS: GearSlot[] = GEAR_SLOTS.filter((g) => !g.startsWith("artifact") && !g.startsWith("utility") && g !== "bag");
+
+/** Task 033 (A.3): a fighter's weapon stays a fighter's — the pieces each fighter's solved set for its XP pick holds (it does
+ *  not wear or hold them yet) are out of a worker's pool, as a piece a running step booked is (stock.ts poolBank). The
+ *  fighters' picks first: solved on their own pools, with the bonus of the kill objectives' monsters and the held task.
+ *  shortcut: a road need's kill monster (rule 4's bonus, by the deciding character's leaves) is not in that bonus — it moves
+ *  the pick only within 25%; upgrade if a fighter's pick and this one part. */
+const pickHold = new WeakMap<World, Map<string, number> | null>();
+setPoolOut((world, name) => {
+  if (roleOf(name, world) !== "worker") return undefined;
+  if (pickHold.has(world)) return pickHold.get(world);
+  pickHold.set(world, null); // a pool asked while the sets are solved is the pool without them, and is not kept
+  const out = new Map<string, number>();
+  const cap = atlas()?.xpNeeded.length ?? Infinity;
+  const kills = targetsOf(world).flatMap((t) => (t.work.kind === "kill" ? [t.work.monster] : []));
+  for (const f of world.characters) {
+    if (!isOn(f.name, world) || roleOf(f.name, world) !== "fighter" || f.level >= cap) continue;
+    const task = monstersTask(f);
+    const p = pickMonster(f, world, new Set(task ? [...kills, task] : kills));
+    const set = p && fightRec(f, world, p.monster)?.slots;
+    if (!set) continue;
+    const has = ownedQtyOf(f, []), want = new Map<string, number>();
+    for (const g of WEAR_SLOTS) if (set[g]) want.set(set[g]!, (want.get(set[g]!) ?? 0) + 1);
+    for (const [c, n] of want) if (n > (has.get(c) ?? 0)) out.set(c, (out.get(c) ?? 0) + n - (has.get(c) ?? 0));
+  }
+  pickHold.set(world, out);
+  return out;
+});
 /** The set a step's job wears from the character's pool: the fight solve's, else the gather argmax; none for the rest. */
 function wearOf(w: Work, ch: Character, world: World): Record<string, string> | undefined {
   const set: Partial<Record<GearSlot, string>> | undefined =
@@ -500,7 +527,9 @@ export function rank(name: string, world: World, free = false): Ranking {
     const par = s.parent;
     const t: Target = { key: s.key, points: 0, work: s.work, left: s.short, gates: s.gates, filler: false };
     if (s.code === "tasks_coin") { // task 027d: coins are a fighter's work — its held task's kills
-      const c = holder ? coinCand(s.short, par, t, s.via) : undefined;
+      // task 033 (A.2): a worker's where no fighter's held task is its XP pick (the fighter's own filter: its branch, below)
+      const rides = (): boolean => [...picksNow()].some(([f, m]) => monstersTask(world.characters.find((c) => c.name === f)!) === m);
+      const c = holder || (worker && !rides()) ? coinCand(s.short, par, t, s.via) : undefined;
       if (c) supply.push(c);
       continue;
     }
@@ -723,7 +752,8 @@ export function rank(name: string, world: World, free = false): Ranking {
     // worker that is on and admitted, to this fighter (before its pick) only when none is; 027d's coins stay a fighter's
     const mine = x?.work.kind === "kill" ? x.work.monster : undefined;
     // task 029 (A.3): a training's kill is a fighter's whoever else is admitted (TRAIN_HUNT; off: 027g's rule)
-    const kill = pick(supply.filter((c) => c.road && (c.target.key === "src:tasks_coin" || (c.step.work.kind === "kill" && c.step.work.monster !== mine && ((trainHunt && c.train) || !workerHunts(c.step.work.monster))))));
+    // task 033 (A.2): the coins only where the held task's monster is the pick (its ×1.25 among the bonus): they ride on it
+    const kill = pick(supply.filter((c) => c.road && (c.target.key === "src:tasks_coin" ? !!held && held === mine : c.step.work.kind === "kill" && c.step.work.monster !== mine && ((trainHunt && c.train) || !workerHunts(c.step.work.monster)))));
     const trainKill = !!kill?.train;
     const c = first ?? forge ?? kill;
     if (!c && !x && !buy) {

@@ -3,7 +3,7 @@
 //   A. (11-21 fixture, First and Fifth unarmed, Second a fighter at weaponcrafting 30, the bank empty: the fighters' road
 //      asks a Battlestaff and more) a road need's src: kill within 25% of the pick's rate → the pick is that monster, its
 //      kill no src: step of the fighter's; with an admitted worker on, another src: kill is the worker's and the fighter
-//      takes its pick; with none, the fighter's, before its pick; the coins stay the fighter's;
+//      takes its pick; with none, the fighter's, before its pick; the coins a fighter's candidate (task 033: a worker's too);
 //   B. (the World of 11-25) a cooked food a better work's need asks → the pick's step withdraws it and eats; a potion under an
 //      event's reserve is still held; raw food in the bank, none cooked → the cook's first-tier step cooks it; no raw → no
 //      gather or kill for food with FOOD_FISHING off, today's chain with it on; a fight where resting is faster rests, and
@@ -84,7 +84,8 @@ const workerAdmitted = (w: World, m: string): boolean => WORKERS.some((n) => adm
   const task = { task: "chicken", task_type: "monsters", task_progress: 10, task_total: 50 };
   const wd = worldOf(ROAD, { First: task, Fifth: task }, { ...Object.fromEntries(fixture.bank.map((b) => [b.code, b.quantity])), ...MATS });
   const coin = rank("First", wd).supply.find((c) => c.target.key === "src:tasks_coin")?.step;
-  cases.push(["…the coins stay the fighter's (its held task's kills), a worker admitted for the monster or not", !!coin && monsterOf(coin) === "chicken" && workerAdmitted(wd, "chicken") && !rank("Fourth", wd).supply.some((c) => c.target.key === "src:tasks_coin"), `First: ${coin ? said(coin) : "no src:tasks_coin candidate"}; a worker admitted for the chicken: ${workerAdmitted(wd, "chicken")}`]);
+  // task 033 (A.2): the chicken no fighter's pick — the worker's candidate too (scripts/check-fighters.mts: the fighter's step)
+  cases.push(["…the coins: the fighter's candidate (its held task's kills); task 033: a worker's too, the task's monster no fighter's pick", !!coin && monsterOf(coin) === "chicken" && workerAdmitted(wd, "chicken") && rank("Fourth", wd).supply.some((c) => c.target.key === "src:tasks_coin"), `First: ${coin ? said(coin) : "no src:tasks_coin candidate"}; a worker admitted for the chicken: ${workerAdmitted(wd, "chicken")}`]);
 }
 
 // ── B. food ──────────────────────────────────────────────────────────────────

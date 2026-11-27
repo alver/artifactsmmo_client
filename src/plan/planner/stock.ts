@@ -48,6 +48,11 @@ export function available(code: string, world: World, forName: string): number {
   return Math.max(0, bank - (reserved(world, forName).get(code) ?? 0) - floor(code));
 }
 
+/** Task 033 (A.3): what is out of a character's pool beside the others' reservations — a worker's: the pieces the fighters'
+ *  sets for their XP picks hold (decide.ts sets it); null while those sets are being solved (such a pool is not kept). */
+let outOf: ((world: World, name: string) => Map<string, number> | null | undefined) | undefined;
+export const setPoolOut = (f: typeof outOf): void => void (outOf = f);
+
 const pools = new WeakMap<World, Map<string, BankItem[]>>();
 const wholeGear = new WeakMap<BankItem[], BankItem[]>();
 /** The bank a character plans its gear with (section 6): the bank less what the others' current steps reserved, and
@@ -57,7 +62,9 @@ export function poolBank(world: World, name: string): BankItem[] {
   if (!byName) pools.set(world, (byName = new Map()));
   let b = byName.get(name);
   if (!b) {
-    const res = reserved(world, name);
+    const out = outOf?.(world, name);
+    const res0 = reserved(world, name);
+    const res = out?.size ? new Map([...res0, ...[...out].map(([c, q]) => [c, q + (res0.get(c) ?? 0)] as [string, number])]) : res0;
     let whole = wholeGear.get(world.bank);
     if (!whole) {
       whole = world.bank.some((x) => !Number.isInteger(x.quantity) && SLOTS_FOR_TYPE[item(x.code)?.type ?? ""])
@@ -70,6 +77,7 @@ export function poolBank(world: World, name: string): BankItem[] {
     // fights; upgrade if a plan ever leans on a potion that is all reserved
     const keep = (code: string): boolean => !!(world.config.consumables ?? 1) && item(code)?.type === "utility";
     b = res.size ? whole.map((x) => (res.has(x.code) && !keep(x.code) ? { ...x, quantity: Math.max(0, x.quantity - res.get(x.code)!) } : x)).filter((x) => x.quantity > 0) : whole;
+    if (out === null) return b;
     byName.set(name, b);
   }
   return b;

@@ -3,8 +3,8 @@
 // (11-21, the fighters unarmed); task 029: and on the 11-21 fixture with no open achievement. Run against a tree (its src/
 // and public/data/) to record what that tree says:
 //   node --import tsx scripts/whys.mts <tree> <out.json> [hours]
-// check-onepage compares this tree's whys with the record of 032b's tree (scripts/fixtures/whys-032b.json, a boss admitted alone a
-// source of its drops; 031b compared whys-031b.json, the kitchen on;
+// check-onepage compares this tree's whys with the record of 033's tree (scripts/fixtures/whys-033.json, a fighter fights for XP;
+// 032b compared whys-032b.json, a boss admitted alone a source of its drops; 031b compared whys-031b.json, the kitchen on;
 // 031 compared whys-031.json, 030 whys-030.json, 029 whys-029.json; 028 compared
 // 027g's, whys-027g.json, recorded on c03bff4: the planner did not change there).
 import { readFile, writeFile } from "node:fs/promises";

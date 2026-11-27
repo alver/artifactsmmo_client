@@ -1,0 +1,32 @@
+[
+ {
+  "who": "First",
+  "target": "lvl:combat:36",
+  "units": 29,
+  "why": "fighter: the XP pick: combat 29 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 341 h to the gate at the pace before it); Vampire at 0.90 XP/s, 29 now (0.5 h) with 76 Cooked Trout from the bank; the bag caps it at 29 kills (2.18 Cooked Trout a kill, 78 is half of 156); wins 94% of fights, 65 s a win"
+ },
+ {
+  "who": "Second",
+  "target": "mat:dead_wood_plank",
+  "units": 10,
+  "why": "worker, a need: supply: Dead Wood Plank: 10 short for Piggy Armor for Fifth (closing_the_gate (imp)) (+4 pts, chain ~129 h); 10 made now (0.1 h)"
+ },
+ {
+  "who": "Third",
+  "target": "mat:cooked_gudgeon",
+  "units": 1080,
+  "why": "worker, the stock first: supply: Cooked Gudgeon ×1080 from the bank's raw for Fifth: their fight steps rest or take too little food; 1080 made now (1.5 h)"
+ },
+ {
+  "who": "Fourth",
+  "target": "src:iron_ore",
+  "units": 190,
+  "why": "worker, a need: supply: Iron Ore: 845 actions short for gearcrafting 26 → 27 (Steel Armor ×25) (+4 pts, chain ~10 h); Iron Rocks: 0 mining XP a gather; 190 gathers now (1.5 h)"
+ },
+ {
+  "who": "Fifth",
+  "target": "lvl:combat:36",
+  "units": 32,
+  "why": "fighter: the XP pick: combat 30 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 336 h to the gate at the pace before it); Vampire at 0.63 XP/s, 32 now (0.5 h) with 79 Cooked Trout from the bank; the bag caps it at 32 kills (2.04 Cooked Trout a kill, 79 is half of 158); wins 99% of fights, 59 s a win"
+ }
+]

@@ -4,7 +4,8 @@
 //      worker's step is the purchase of one copy (`buy:elderwood_staff`, rule `market`), its gold reserved (`withdraw`),
 //      compiled to [deposit-all, ge-buy by the order's id, deposit-all]; the fighters' steps are the ones without a market;
 //   2. the same ask above 1.25 × the reference (1,000) → every step as without a market; a need's own step says it (First's
-//      blue slimeball kills, their slimeballs at 2 against a reference of 1: "market: ask 2 above 1.25 × 1 …");
+//      blue slimeball kills — TRAIN_HUNT on for it, task 033 —, their slimeballs at 2 against a reference of 1: "market: ask 2
+//      above 1.25 × 1 …");
 //   3. no trade and under 24 h on sale (no reference) → not bought;
 //   4. steel bars at 250 for a training batch → not bought (rule 2: 25,000 gold is 83 h against 2.5 h of its own chain);
 //   5. an ask above a purchase's cap (an Obsidian Battleaxe at 12,000) → wanted, not bought; the day's budget spent (24,000 of
@@ -52,10 +53,13 @@ const cases: [string, boolean, string][] = [];
 
 // ── 2. above 1.25 × the reference ──
 {
-  const w = of([["elderwood_staff", 1495, 3], ["blue_slimeball", 2, 100]], { elderwood_staff: trades(1000), blue_slimeball: trades(1, 40) });
-  const moved = same(w), first = rank("First", w).step;
+  // task 033: First's slimeball kills are a training's — TRAIN_HUNT on for this case (029's rule), its own base beside it
+  const on = { trainHunt: true };
+  const w = of([["elderwood_staff", 1495, 3], ["blue_slimeball", 2, 100]], { elderwood_staff: trades(1000), blue_slimeball: trades(1, 40) }, {}, on);
+  const b2 = new Map(NAMES.map((n) => [n, rank(n, { ...w0, config: { ...config, ...on } }).step]));
+  const moved = NAMES.filter((n) => { const s = rank(n, w).step, b = b2.get(n)!; return s.target !== b.target || s.units !== b.units; }), first = rank("First", w).step;
   const v = (rank("Second", w).market ?? []).find((o) => o.code === "elderwood_staff");
-  const ok = !moved.length && v?.rule === 3 && /ask 1,495 above 1.25 × 1,000/.test(v.why) && base.get("First")!.target === "src:blue_slimeball" && first.why.includes("; market: ask 2 above 1.25 × 1 (the median of 40 trades of 7 days)");
+  const ok = !moved.length && v?.rule === 3 && /ask 1,495 above 1.25 × 1,000/.test(v.why) && b2.get("First")!.target === "src:blue_slimeball" && first.why.includes("; market: ask 2 above 1.25 × 1 (the median of 40 trades of 7 days)");
   cases.push(["2. the ask above 1.25 × the reference → made as today; the need's own step's why says it", ok, `moved ${JSON.stringify(moved)} · ${v?.why} · First: …${first.why.slice(first.why.indexOf("; market:"), first.why.indexOf("; market:") + 80)}`]);
 }
 

@@ -1,6 +1,6 @@
 // Task 028 (D.1): the data of the one page.
-//   A.1 the reason in parts — every step's why on the fixture Worlds is 032b's to the letter (scripts/whys.mts against
-//       scripts/fixtures/whys-032b.json — task 032b: a boss admitted alone a source of its drops; 031b held whys-031b.json, the kitchen on; 031 held whys-031.json, 030 whys-030.json, 029 whys-029.json, 028 027g's, whys-027g.json, recorded on c03bff4), and its rule is the one the why's
+//   A.1 the reason in parts — every step's why on the fixture Worlds is 033's to the letter (scripts/whys.mts against
+//       scripts/fixtures/whys-033.json — task 033: a fighter fights for XP, the crafts' kills the workers'; 032b held whys-032b.json, a boss admitted alone a source of its drops; 031b held whys-031b.json, the kitchen on; 031 held whys-031.json, 030 whys-030.json, 029 whys-029.json, 028 027g's, whys-027g.json, recorded on c03bff4), and its rule is the one the why's
 //       head names; a fighter's XP
 //       pick, a worker's need and a craft-ahead step carry the rule, the goal and the limits;
 //   A.2 the road's lines carry the levels and the gear made, and two cold runs (two processes) give the same lines;
@@ -19,16 +19,18 @@ async function roadLines(): Promise<string[]> {
   const { setDataReader } = await import("../src/catalog/load");
   const { loadCatalog } = await import("../src/catalog");
   const { road } = await import("../src/plan/planner/road");
+  const { DEFAULTS } = await import("../src/plan/planner/config");
   setDataReader(async (name) => JSON.parse(await readFile(`public/data/${name}.json`, "utf8")));
   await loadCatalog();
-  const live = JSON.parse(await readFile("scripts/fixtures/world-2026-11-25.json", "utf8")).world;
+  // task 033: the World of 11-27 under this tree's DEFAULTS (from 11-25's the first piece now comes at 151 h, past the backstop)
+  const live = JSON.parse(await readFile("scripts/fixtures/world-2026-11-27.json", "utf8")).world;
   // four hours before midnight, so a day line comes early
-  const world = { ...live, now: Date.parse("2026-11-24T20:00:00Z") };
+  const world = { ...live, now: Date.parse("2026-11-26T20:00:00Z"), config: { ...DEFAULTS, ...live.config, on: { ...DEFAULTS.on, ...live.config.on } } };
   const out: string[] = [];
-  // task 029: 36 hours — the fleet trains its crafts first, the first gear piece of this road is made at 31.7 h; task 030
-  // (GEAR_FIRST all): 48 hours — the first piece at 41.6 h (task 031, potions off: the same); task 031b (the kitchen on): 84
-  // hours — the first piece at 83.0 h
-  road(world, {}, world.now + 84 * 3.6e6, (l) => out.push(JSON.stringify({ ...l, ...("sec" in l ? { sec: 0 } : {}) })));
+  // task 029 (the World of 11-25): 36 hours — the fleet trains its crafts first, the first gear piece of this road is made at
+  // 31.7 h; task 030 (GEAR_FIRST all): 48 hours — the first piece at 41.6 h (task 031, potions off: the same); task 031b (the
+  // kitchen on): 84 hours — the first piece at 83.0 h; task 033 (the World of 11-27): 18 hours — the first piece at 14.3 h
+  road(world, {}, world.now + 18 * 3.6e6, (l) => out.push(JSON.stringify({ ...l, ...("sec" in l ? { sec: 0 } : {}) })));
   return out;
 }
 if (ROAD) {
@@ -49,9 +51,9 @@ const runs = Promise.all([cold(), cold()]);
 // ── A.1 ──
 const steps: { w: string; step: any }[] = [];
 const whys = await whysOf(".", 12, (w, step) => steps.push({ w, step }));
-const gold = JSON.parse(await readFile("scripts/fixtures/whys-032b.json", "utf8")) as typeof whys;
+const gold = JSON.parse(await readFile("scripts/fixtures/whys-033.json", "utf8")) as typeof whys;
 const differ = whys.map((x, i) => (JSON.stringify(x) === JSON.stringify(gold[i]) ? -1 : i)).filter((i) => i >= 0);
-ok("A.1 every why is 032b's to the letter", whys.length === gold.length && !differ.length, `${whys.length} whys, ${gold.length} recorded; differ: ${differ.slice(0, 3).map((i) => `${whys[i]?.key}: ${whys[i]?.why.slice(0, 80)}`).join(" | ")}`);
+ok("A.1 every why is 033's to the letter", whys.length === gold.length && !differ.length, `${whys.length} whys, ${gold.length} recorded; differ: ${differ.slice(0, 3).map((i) => `${whys[i]?.key}: ${whys[i]?.why.slice(0, 80)}`).join(" | ")}`);
 const HEAD: [RegExp, string][] = [[/^fighter: the XP pick/, "xp-pick"], [/^fighter, first/, "first"], [/^fighter, forging/, "forging"], [/^fighter, a need's kill/, "need-kill"], [/^fighter, a training's kill/, "train-kill"], [/^fighter, (no fight admitted|at the level cap)/, "free"],
   [/^worker, a batch from the bank/, "train"], [/^worker, the stock first/, "cook"], [/^worker, the kitchen to/, "craft-ahead"], [/^worker, a need \(consumables or a tool\)/, "need-cons"], [/^worker, a need/, "need"], [/^worker, done within/, "short"], [/^worker, craft to/, "craft-ahead"], [/^worker: fallback/, "fallback"], [/^worker: /, "today"], [/^tidy:/, "tidy"], [/^fallback/, "fallback"]];
 const wrong = steps.filter(({ step }) => {

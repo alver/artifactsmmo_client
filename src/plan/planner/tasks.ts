@@ -5,6 +5,8 @@
 //      `bonus`). A worker holds none by this rule.
 //   2. Coins a need's bill lacks are a supply leaf, `src:tasks_coin` (supply.ts billOf), for a fighter: kills of its held
 //      task's monster, a chunk at a time; the step that finishes the task turns it in (decide.ts).
+//      Task 033 (A.2): a fighter's only where its held task's monster is its XP pick (the ×1.25 of the held task: the coins
+//      ride on the pick), else a worker's — one that holds no task takes one at the master for it.
 //   3. A task worked on purpose (src:tasks_coin, the filler) is cancelled at the master before the work when the character
 //      is not admitted to its monster or its hours left exceed a fresh draw's mean hours plus one coin's (`cancelOf`).
 //   4. The forward model has no dice: a draw is the pool in a fixed rotation at its mean quantity (`drawOf`).
@@ -15,7 +17,6 @@
 import { catalog, monster as monsterOf, task as taskOf } from "../../catalog";
 import { codeSec } from "./cost";
 import { admitted, bankSec, fightRec, nearestSpot, placeOf, winSecOf } from "./reach";
-import { roleOf } from "./roles";
 import { MIN_COOLDOWN } from "../../sim/cost";
 import type { Character } from "../../types/api";
 import type { Task } from "../../types/catalog";
@@ -56,10 +57,11 @@ const coinIn = (world: World): boolean => world.bank.some((b) => b.code === "tas
 /**
  * What a visit to the tasks master does before a fighter's kill step: nothing (it works an unfinished monsters task), turn
  * a finished one in and take another (`{}`), or cancel an items task for a bank coin and take a monsters one; with no coin
- * in the bank an items task stays (undefined: no visit). A worker gets none.
+ * in the bank an items task stays (undefined: no visit). Task 033 (A.2): the callers decide who visits — a fighter's kill
+ * step, and the coins' step of whoever holds them (decide.ts coinCand: a worker's too).
  */
 export function startVisit(ch: Character, world: World): { cancel?: string } | undefined {
-  if (roleOf(ch.name, world) !== "fighter" || monstersTask(ch)) return undefined;
+  if (monstersTask(ch)) return undefined;
   if (!ch.task || ch.task_progress >= ch.task_total) return {};
   return ch.task_type === "items" && coinIn(world) ? { cancel: ch.task } : undefined;
 }

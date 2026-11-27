@@ -16,7 +16,8 @@
 //   5. a piece on sale that has a chain in reach (an Elderwood Staff, 27 h to make) → no bought candidate; 032's rule 2 judges it
 //      on its chain ("against … h to make") and it is bought as on 032b's tree;
 //   6. no market → every decision is 032b's tree's (scripts/fixtures/bought-none-032b.json, recorded by this file's
-//      `--record <tree> <out>` on 122a769).
+//      `--record <tree> <out>` on 122a769); task 033 (the fighters' XP pick where they took a training's kill): 033's tree's,
+//      scripts/fixtures/bought-none-033.json.
 // On 032b's tree (122a769) cases 1–4 fail: a piece with no recipe is no candidate, and an asks-only reference holds an ask.
 //   node --import tsx scripts/check-bought.mts [--record <tree> <out.json>]
 import { readFile, writeFile } from "node:fs/promises";
@@ -137,10 +138,10 @@ const cases: [string, boolean, string][] = [];
 
 // ── 6. no market: 032b's decisions ──
 {
-  const gold = JSON.parse(await readFile("scripts/fixtures/bought-none-032b.json", "utf8")) as { w26: ReturnType<typeof stepsOf>; w27: ReturnType<typeof stepsOf> };
+  const gold = JSON.parse(await readFile("scripts/fixtures/bought-none-033.json", "utf8")) as { w26: ReturnType<typeof stepsOf>; w27: ReturnType<typeof stepsOf> };
   const now = { w26: stepsOf(W26), w27: stepsOf(W27) };
   const moved = (["w26", "w27"] as const).flatMap((k) => now[k].filter((s, i) => JSON.stringify(s) !== JSON.stringify(gold[k][i])).map((s) => `${k} ${s.who}: ${s.target} — ${s.why.slice(0, 100)}`));
-  cases.push(["6. no market → every decision is 032b's tree's (the Worlds of 11-26 and 11-27)", !moved.length && now.w26.length === gold.w26.length && now.w27.length === gold.w27.length, moved.join(" | ") || `${now.w26.length + now.w27.length} decisions equal`]);
+  cases.push(["6. no market → every decision is 033's tree's (the Worlds of 11-26 and 11-27)", !moved.length && now.w26.length === gold.w26.length && now.w27.length === gold.w27.length, moved.join(" | ") || `${now.w26.length + now.w27.length} decisions equal`]);
 }
 
 let bad = 0;

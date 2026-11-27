@@ -1,7 +1,7 @@
 // Task 029: the fleet levels the crafts — made-up worlds of the core (pure, no harness) from the World of 11-25 (its five
 // characters, its bank) under this tree's roles (config.ts DEFAULTS.roles):
 //   A.1 a craft under its target → its training's leaves are first-tier needs (a worker's); at the target → none;
-//   A.3 a training's src: kill with a worker admitted → the fighter's, before its XP pick; TRAIN_HUNT off → a worker's; a
+//   A.3 a training's src: kill with a worker admitted → the fighter's, before its XP pick (TRAIN_HUNT on); off → a worker's; a
 //       training's kill monster within 25% of the pick's rate → the pick is that monster;
 //   A.4 the bank covers a batch → the crafter's train step, first, its hours the crafting's, not the atlas's;
 //   A.5 the forward model: a train step takes its batch from the bank (recycling's return back) and gives its XP; the level
@@ -61,7 +61,8 @@ const cases: [string, boolean, string][] = [];
 // ── A.3 ──
 {
   // the World of 11-25: the jewelry training's Steel Rings ask Hard Leather — cowhide, the cow's, every worker admitted to it
-  const w = worldOf();
+  // (task 033: TRAIN_HUNT is off by default — the case sets it on)
+  const w = worldOf({}, undefined, { trainHunt: true });
   const s = rank("First", w).step, m = monsterOf(s);
   const pick = pickMonster(ch(w, "First"), w, new Set());
   const anyWorker = !!m && WORKERS.some((n) => admitted(ch(w, n), w, m));
