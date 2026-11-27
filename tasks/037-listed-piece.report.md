@@ -1,0 +1,21 @@
+# 037 — A listed piece pays for itself; a craft's seconds as they are: report
+
+## Summary
+- **Proof 2: nobody asks for the slime shield on the live state, under the new rule too.** The state is 20:09 UTC, run on a zero-call service from a scratch copy: `stage.json` in its World, 20 POSTs refused, no market. Stage 1 gives neither fighter a work (a): it lists no achievement behind a combat gate, so there is no combat bundle (036's decision 1). Work (b), The Reaper, has 116 kills left. The shield takes First's Death Knight from 34.6 to 32.6 s a kill, which saves 3.9 min (Fifth: 1.9 min) against its 5.8 min chain, so it fails `G ≤ H0 − H1` too. So the chain has no steps and nobody takes it. Its recipe is gearcrafting 20 (Third): 6 hardwood planks, 6 of the bank's 13 king slimeballs, 3 cloth. The only needs are the three steel tools. The first steps of the day, nobody seeded: **First** the XP pick, Death Knight (Lv 28), 51 XP a kill at 31, 66 kills twice (the bag caps it at 80 Apple Pie); **Fifth** the Death Knight, 152 kills at 31, then 152 at 32; **no fight at 0 XP**. The workers: Second and Fourth earn tasks coins for the Steel Axe, Third fishes to 30.
+- **A, built:** `gear.ts ratioOf`. With a stage's `pieces`, every fight candidate is a listed piece, and works (a) and (b) test `G + H1 ≤ 1 × H0`, which is `G ≤ H0 − H1`; otherwise 0.85 stays. Proof 1, `check-stage` case 10 (the World of 16:35, stage 1's shape): the slime shield at The Reaper saves 4.6% there (7.0 min against G 5.8 min) and is Fifth's need, none with no stage; the gold shield, the solve's pick (G 29 h), is none. Red first: on fd7499e's `gear.ts` case 10 fails, 1–9 hold.
+- **B.1: the 5 is right, and nothing is built.** The game's rule is 5 s a unit crafted, less 10% for the altar doll all five wear (`*_crafting −10`). The meters of 11-27 give 4.45–4.5 s a unit over 22 plank and bar steps and 4–4.5 s for pieces (raw log: 14 steel bars crafted at 01:01:39, next action at 01:02:43).
+- **B.2, where the seconds go: the walks.** A bar or plank takes 10 materials, so a bag makes about 14, and a step walks bank ↔ workshop once a bagful (steel 70 s, planks 100 s); the plan counts one round trip a step (`stepSec`). The planks of 16:40: 78 units, plan 532 s = 78 × 5 + 142; ran 1,022 s = craft 348 + walk 600 (6 round trips) + bank 51 + wait 84. The `sample`'s `est` is the craft alone, so `slow` fires on any such step.
+- **B.3, `kill:cow`:** the step ran under its own plan: 4,481 s for 219 kills against 5,408 s planned (17 s a win with the wooden club it wore). The 10 is `stepSample`'s price on the World at the step's end (15:05), after the perfect bows bought at 14:48 — not the set the step wore.
+- **Committed:** `Rework notes` (`docs/rework.md`), then `037: a listed piece pays for itself`, pushed to `origin/rework`.
+- **Gate:** typecheck passes; `npm run check`: **127 checks: 127 ok, 0 known defects reproduced, 0 failed — 554.0 s**; the build into `D:\Temp\ammo-037\dist` passes (406.44 kB).
+
+## Decisions for Alex
+1. **The slime shield still waits for a work.** Under a stage, the fighters' road to the stage's `fighters` level is not a work (a) (A.2 kept that). Today First's road to 35 is 13.0 h at the Death Knight. With that road as (a)'s gate, the shield's 5.8% would save about 45 min against its 5.8 min chain. Should a stage's `fighters` level be (a)'s gate?
+2. **Stage 2 lists the gold shield beside the slime shield.** From 31 up, the slime shield is then no candidate (032b: a piece more than ten levels below only where its slot has none inside). The gold shield costs 29 h (the Demon's calendar).
+3. **Price a craft step's walks once a bagful?** That is `stepSec` × ⌈materials ÷ bag⌉: the planks of 16:40 would read 1,032 s, not 532. Not built (B.2).
+
+## How Alex verifies
+`npm run check -- stage`: 10 cases, and case 10 prints the shield's minutes. After the restart, with stage 1 as written, no decision changes (Proof 2); the rule shows once a work saves more than the 5.8 min the shield's chain costs.
+
+## Files
+`src/plan/planner/gear.ts`, `scripts/check-stage.mts`, `CLAUDE.md`; `stage.json`, `tasks/037-listed-piece.md`, this report. Scratch: `D:\Temp\ammo-037` (`p2.mts`, `diag.mts`, `needs.mts`, `p2.txt`, the service copy `svc\`).

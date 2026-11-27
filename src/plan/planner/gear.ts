@@ -1,6 +1,7 @@
 // Gear by need (task 009 section 4). One rule for flips and speed-ups alike: a set of craftable pieces is needed
 // for a work when making them and then doing the work takes at most NEED_RATIO of the work's hours without them
-// (G + H1 ≤ 0.85 × H0; a win that is not there is ∞ hours, so a flip always qualifies).
+// (G + H1 ≤ 0.85 × H0; a win that is not there is ∞ hours, so a flip always qualifies). Task 037: with a stage's `pieces`,
+// (a) and (b) take (c)'s rule, G ≤ H0 − H1 (ratioOf).
 //
 // The work a piece can serve:
 //   (a) per character that is on, its road to its next combat gate (rule 3's bundle) — the XP monster;
@@ -80,6 +81,10 @@ export interface Need {
 export interface Rejected { for: string; piece: string; why: string }
 
 const FLIPS = 4, PER_SLOT = 3, DROPS = 3, BOUGHT_PER_SLOT = 2;
+// Task 037 (Alex, 11-27: six minutes of work is nothing — such things are to be made): with a stage's `pieces` every fight
+// candidate is a listed piece (candidatesOf), and (a) and (b) take (c)'s rule, G ≤ H0 − H1 — written G + H1 ≤ 1 × H0, so ∞
+// reads as before; NEED_RATIO for a World with no stage or a stage with no list.
+const ratioOf = (world: World): number => (stageOf(world)?.pieces ? 1 : NEED_RATIO);
 const calHOf = (world: World): number => Math.max(0, (Date.parse(world.config.deadline) - world.now) / 3.6e6);
 const solve = planRec;
 
@@ -210,7 +215,7 @@ function fightNeed(ch: Character, world: World, monster: string, cands: string[]
     const pieces = newPieces(r, ch, world);
     if (!pieces.size) break; // it wins without a new piece
     const H1 = h1(r), mk = makeHours(pieces, ch, world);
-    if (mk.G + H1 <= NEED_RATIO * H0) best = { pieces, H1, mk };
+    if (mk.G + H1 <= ratioOf(world) * H0) best = { pieces, H1, mk };
     else if (best) break; // the set without the dearest piece no longer pays: keep the last that did
     // the dearest new piece goes (a piece nobody can source yet is ∞) and the solve looks again
     const dear = [...pieces.keys()].map((c) => ({ c, g: makeHours(new Map([[c, pieces.get(c)!]]), ch, world).G })).sort((a, b) => b.g - a.g || (a.c < b.c ? -1 : 1))[0].c;
@@ -352,7 +357,7 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
     let best: Need | undefined;
     for (const ch of able) {
       const c = candidatesOf(ch, world);
-      if (!c.fight.length || m.level > ch.level + 10 || !(gMin(ch, c.fight) <= NEED_RATIO * H0)) continue; // G + H1 ≤ 0.85 × H0 cannot hold: no solve
+      if (!c.fight.length || m.level > ch.level + 10 || !(gMin(ch, c.fight) <= ratioOf(world) * H0)) continue; // G + H1 ≤ ratio × H0 cannot hold: no solve
       const n = fightNeed(ch, world, m.code, c.fight, H0, (r) => Math.min(H0, (left * killSec(ch, world, m.code, r) * per) / 3600));
       if (!n || (best && (n.mk.G + n.H1 > best.G + best.H1 || (n.mk.G + n.H1 === best.G + best.H1 && ch.name > best.for)))) continue;
       const pts = t.points * (world.config.weight[t.achievement] ?? 1);

@@ -1,5 +1,5 @@
 {
-  "about": "The season plan's stages as data (docs/season-plan.md). Edited by the planning chat; the service reads it at boot and whenever it changes (task 036). A stage is current until every fighter has reached `fighters`; the last stage stays. A field left out of a stage narrows nothing. crafts / gathering: the level a skill is trained to in this stage, not past it. pieces: the only wearables the fighters' gear work may ask for (made or bought). achievements: the only achievements chased as objectives; any other still completes when it happens.",
+  "about": "The season plan's stages as data (docs/season-plan.md). Edited by the planning chat; the service reads it at boot and whenever it changes (task 036). A stage is current until every fighter has reached `fighters`; the last stage stays. A field left out of a stage narrows nothing. crafts / gathering: the level a skill is trained to in this stage, not past it. pieces: the only wearables the fighters' gear work may ask for (made or bought). achievements: the only achievements chased as objectives; any other still completes when it happens. The professional_ and master_ gathering achievements are listed in every stage on purpose: they are the far gates of the workers' lanes, so a lane's tool (steel axe, steel pickaxe, steel fishing rod) still pays over its road (036's report, D.4).",
   "stages": [
     {
       "name": "1: fighters to 35",
@@ -7,7 +7,11 @@
       "crafts": { "weaponcrafting": 30, "gearcrafting": 30, "jewelrycrafting": 30 },
       "gathering": { "fishing": 30, "mining": 38, "woodcutting": 37 },
       "pieces": ["slime_shield"],
-      "achievements": ["ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman"]
+      "achievements": [
+        "ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman",
+        "professional_fisherman", "professional_lumberjack", "professional_miner",
+        "master_fisherman", "master_lumberjack", "master_miner"
+      ]
     },
     {
       "name": "2: fighters to 40",
@@ -20,8 +24,9 @@
       ],
       "achievements": [
         "ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman",
-        "lich_please", "cultist_purifier", "life_lover", "diamond_in_the_sky",
-        "professional_fisherman", "professional_lumberjack", "professional_miner"
+        "cultist_purifier", "life_lover", "diamond_in_the_sky",
+        "professional_fisherman", "professional_lumberjack", "professional_miner",
+        "master_fisherman", "master_lumberjack", "master_miner"
       ]
     },
     {

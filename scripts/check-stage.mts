@@ -16,7 +16,9 @@
 //   8. B.1: the jewelry training's King Slimeball, no worker admitted — no market: the training takes its next recipe; a fair
 //      ask: Skull Amulet stays and a worker buys the drop;
 //   9. B.2: the live ask (272, reference 319) on a running Skull Amulet step — bought, "no source of ours" (rule 2 has no own
-//      hours: nobody of ours hunts the drop).
+//      hours: nobody of ours hunts the drop);
+//  10. task 037: a listed piece is a need when it pays for itself (G ≤ H0 − H1), however little it saves; not when its chain
+//      costs more. On fd7499e (NEED_RATIO 0.85 for every piece) case 10 fails, 1–9 hold.
 // On cc1a3a9 (035), with this check's own imports copied in (plan/planner/stage.ts, state/stage.ts), cases 1, 2, 3, 5, 6, 8 and
 // 9 fail (the World's stages are not read — case 6's quiet world needs them; the training is priced at the fighters' kill, rule
 // 2 against their hours); 4 and 7 hold (the stage module itself; a stage that narrows nothing). node --import tsx scripts/check-stage.mts
@@ -26,7 +28,7 @@ import { loadCatalog } from "../src/catalog";
 import { loadAtlas } from "../src/catalog/atlas";
 import { DEFAULTS } from "../src/plan/planner/config";
 import { rank } from "../src/plan/planner/decide";
-import { candidatesOf, gearPieces } from "../src/plan/planner/gear";
+import { candidatesOf, gearNeeds, gearPieces, piecesFor } from "../src/plan/planner/gear";
 import { targetsOf, unhandledOf } from "../src/plan/planner/targets";
 import { craftTarget, trainParents, trainPick } from "../src/plan/planner/train";
 import { stageOf } from "../src/plan/planner/stage";
@@ -156,6 +158,22 @@ const cases: [string, boolean, string][] = [];
   const r = rank("Second", wl), o = r.market?.find((x) => x.code === "king_slimeball");
   cases.push(["9. B.2: the live ask on a running Skull Amulet step, nobody of ours hunts the drop → rule 2 void, bought",
     o?.rule === 0 && o.why.includes("no source of ours") && r.step.target === "buy:king_slimeball", `offer rule ${o?.rule}: ${o?.why}; Second: ${said(r.step)}`]);
+}
+
+// ── 10. task 037: a listed piece pays for itself ──
+{
+  // stage 1's shape (one piece, the achievements that leave no combat bundle): the slime shield at The Reaper's Death Knight
+  // saves Fifth under 15% for minutes of chain — a need by G ≤ H0 − H1, none by 0.85 (HEAD) nor with no stage; the gold shield
+  // (the Demon's calendar, 29 h) is the solve's pick there and costs more than it saves — no need
+  const A1 = ["ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman", "professional_fisherman", "professional_lumberjack", "professional_miner", "master_fisherman", "master_lumberjack", "master_miner"];
+  const asks = (w: World, code: string) => gearNeeds(w, "").needs.filter((n) => n.pieces.has(code));
+  const ws = worldOf({ stages: stage({ pieces: ["slime_shield"], achievements: A1 }) }), wg = worldOf({ stages: stage({ pieces: ["gold_shield"], achievements: A1 }) });
+  const s = asks(ws, "slime_shield"), g = asks(wg, "gold_shield"), none = asks(worldOf(), "slime_shield");
+  const fifth = wg.characters.find((c) => c.name === "Fifth")!, pick = piecesFor(fifth, wg, "death_knight");
+  const f = (n: { for: string; work: string; G: number; H0: number; H1: number }): string => `${n.for} ${n.work}: G ${(n.G * 60).toFixed(1)} min, saves ${((n.H0 - n.H1) * 60).toFixed(1)} min of ${n.H0.toFixed(2)} h (${((1 - n.H1 / n.H0) * 100).toFixed(1)}%)`;
+  cases.push(["10. task 037: a listed piece that pays for itself is a need though it saves under 15% (none with no stage); one whose chain costs more than it saves is none",
+    s.length > 0 && s.every((n) => n.H1 > 0.85 * n.H0 && n.G <= n.H0 - n.H1) && !none.length && pick?.pieces.has("gold_shield") === true && pick.G > 0 && !g.length,
+    `slime shield: ${s.map(f).join("; ") || "no need"}; no stage: ${none.length} needs; gold shield: the solve's pick at the Death Knight (G ${pick?.G.toFixed(1)} h) — ${g.map(f).join("; ") || "no need"}`]);
 }
 
 let bad = 0;
