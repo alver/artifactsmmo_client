@@ -451,8 +451,9 @@ export function rank(name: string, world: World, free = false): Ranking {
   const needs = new Set<string>();
   const road = new Set<string>(); // task 027e: the parents of the fighters' road (A.3: a fighter's kill for one goes before its XP pick)
   const gearSide = new Set<string>(); // task 030: the parents of weapons and armour (a worker's tier (1a))
-  /** A leaf's flags by every parent it serves (supply.ts `via`): a need, the fighters' road, weapons and armour. */
-  const flags = (via: string[]): Partial<Candidate> => ({ ...(via.some((k) => needs.has(k)) ? { need: true } : {}), ...(via.some((k) => road.has(k)) ? { road: true } : {}), ...(via.some((k) => gearSide.has(k)) ? { gear: true } : {}) });
+  /** A leaf's flags by every parent it serves (supply.ts `via`): a need, the fighters' road, weapons and armour. Task 033b:
+   *  `road` (a fighter's kill in (3)) is a parent of the road but a craft's training — a leaf of a training alone is no fighter's. */
+  const flags = (via: string[]): Partial<Candidate> => ({ ...(via.some((k) => needs.has(k)) ? { need: true } : {}), ...(via.some((k) => road.has(k) && !k.startsWith("train:")) ? { road: true } : {}), ...(via.some((k) => gearSide.has(k)) ? { gear: true } : {}) });
   const roadPieces = new Set(gearNeeds(world, name).needs.filter((n) => n.offered && n.key.startsWith("lvl:combat:")).flatMap((n) => [...n.pieces.keys()])); // gear.ts (a)
   // Task 029 (A.1): a gear craft's next level under the target is a parent of supply, a need of the fighters' road (train.ts);
   // a worker's own craft in training has one train step (below): a piece's or a chain's level of it up to the target is that one
@@ -751,10 +752,11 @@ export function rank(name: string, world: World, free = false): Ranking {
     // task 027g (A): a road need's kill whose monster is the pick comes along with it (the pick's step); another goes to a
     // worker that is on and admitted, to this fighter (before its pick) only when none is; 027d's coins stay a fighter's
     const mine = x?.work.kind === "kill" ? x.work.monster : undefined;
-    // task 029 (A.3): a training's kill is a fighter's whoever else is admitted (TRAIN_HUNT; off: 027g's rule)
+    // task 029 (A.3): a training's kill is a fighter's whoever else is admitted (TRAIN_HUNT); task 033b: off, never — only a
+    // need of the road's gear work (a) or consumables is (`road`), whether or not a worker is admitted
     // task 033 (A.2): the coins only where the held task's monster is the pick (its ×1.25 among the bonus): they ride on it
-    const kill = pick(supply.filter((c) => c.road && (c.target.key === "src:tasks_coin" ? !!held && held === mine : c.step.work.kind === "kill" && c.step.work.monster !== mine && ((trainHunt && c.train) || !workerHunts(c.step.work.monster)))));
-    const trainKill = !!kill?.train;
+    const kill = pick(supply.filter((c) => (c.road || (trainHunt && c.train)) && (c.target.key === "src:tasks_coin" ? !!held && held === mine : c.step.work.kind === "kill" && c.step.work.monster !== mine && ((trainHunt && c.train) || !workerHunts(c.step.work.monster)))));
+    const trainKill = trainHunt && !!kill?.train;
     const c = first ?? forge ?? kill;
     if (!c && !x && !buy) {
       const r = rank(name, world, true);

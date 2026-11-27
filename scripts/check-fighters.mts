@@ -3,12 +3,23 @@
 // Spider task, 0 combat XP a kill; the Vampire their pick) under this tree's DEFAULTS, nothing running:
 //   1. a training's src: kill of a monster that gives the fighter no XP, a worker on and admitted → the fighter's step is its
 //      XP pick, a worker's step is the kill (TRAIN_HUNT off: 027g's rule);
-//   2. the same with no worker admitted (each braked on the training's monsters) → the fighter's kill by rule (3), as 027g;
+//   2. the same with no worker admitted (each braked on the training's monsters) → no fighter's step for a leaf of a
+//      training alone (task 033b; 033 had it the fighter's by rule (3), as 027g) — one that serves a road piece too may be;
 //   3. a coins need on a task of a no-XP monster → no fighter's step for it, a worker's candidate (A.2); the fighter's task on
 //      its pick's monster → the coins ride on the pick (its step kills the pick's monster), no worker's candidate;
 //   4. a Perfect Bow banked, the fighters' pick the Imp with it → a worker's kill step that would wear it (the Flying Snake's
 //      wings, TRAIN_HUNT off on both trees) leaves it, and with that step running the fighter's next pick step wears it (A.3).
-// On 05e15c4 cases 1, 3 and 4 fail; case 2 holds there too (027g's rule is unchanged). node --import tsx scripts/check-fighters.mts
+// Task 033b, on the live World of 16:35 UTC on 11-27 (scripts/fixtures/world-2026-11-27-1635.json, a zero-call service's
+// snapshot: First and Fifth at combat 31 wear the Perfect Bow and are admitted alone against the King Slime, no worker is;
+// the jewelry training is on Skull Amulet, short of King Slimeball; the Cyclops Eye, whose score ties the King Slime's and
+// wins by its key, blocked for both):
+//   5. the training's King Slimeball → no fighter's step is the King Slime: Fifth's is its XP pick (First's another need of
+//      the road); on sale at an ask that passes the market's rules → a worker buys it; none on sale → nobody's step is it
+//      (the training waits on its recipe: train.ts supplierSec still prices the kill at the fighters' seconds);
+//   6. the same drop asked by Fifth's own Greater Dreadful Amulet (its gear work (a); the bank and the bags without King
+//      Slimeballs) → the fighters' kill by rule (3), as on 51928ef.
+// On 05e15c4 cases 1, 3 and 4 fail, case 2 held there (027g's rule); on 51928ef cases 2 and 5 fail, 6 holds (labelled "a
+// training's kill" there). node --import tsx scripts/check-fighters.mts
 import { readFile } from "node:fs/promises";
 import { setDataReader } from "../src/catalog/load";
 import { loadCatalog, monster } from "../src/catalog";
@@ -17,6 +28,8 @@ import { DEFAULTS } from "../src/plan/planner/config";
 import { rank } from "../src/plan/planner/decide";
 import { pickMonster } from "../src/plan/planner/pick";
 import { admitted } from "../src/plan/planner/reach";
+import { bossWorld } from "../src/plan/planner/consumables";
+import { trainParents } from "../src/plan/planner/train";
 import { fightXp } from "../src/plan/xp";
 import type { Character } from "../src/types/api";
 import type { Step, World } from "../src/plan/planner/types";
@@ -54,7 +67,8 @@ const cases: [string, boolean, string][] = [];
   const wb = worldOf({ blocked });
   const sb = rank("First", wb).step;
   const none = kills.every((c) => WORKERS.every((n) => !admitted(ch(wb, n), wb, mon(c.step)!)));
-  cases.push(["2. …no worker admitted → the fighter's kill by rule (3), as 027g", none && keys.has(sb.target) && (sb.reason?.rule === "train-kill" || sb.reason?.rule === "need-kill"), `workers admitted: ${!none}; First: ${said(sb)}`]);
+  const alone = new Set(kills.filter((c) => !c.road).map((c) => c.target.key)); // a training's alone (wolf bone serves a road piece too)
+  cases.push(["2. …no worker admitted → still no fighter's step for a training's alone (033b)", none && alone.size > 0 && !alone.has(sb.target), `workers admitted: ${!none}; a training's alone ${[...alone].join(", ") || "none"}; First: ${said(sb)}`]);
 }
 
 // ── 3 ──
@@ -84,6 +98,39 @@ const cases: [string, boolean, string][] = [];
   const next = rank("First", wr).step;
   cases.push(["4. a fighter's pick weapon banked → a worker's kill step leaves it, the fighter's next pick step wears it", fs.wear?.weapon === "perfect_bow" && ss.work.kind === "kill" && !!ss.wear?.weapon && ss.wear.weapon !== "perfect_bow" && next.reason?.rule === "xp-pick" && next.wear?.weapon === "perfect_bow",
     `First alone: ${said(fs)}; Second: ${said(ss)}; with Second's running, First: ${said(next)}`]);
+}
+
+// ── 5, 6 (task 033b) ──
+{
+  const lx = (JSON.parse(await readFile("scripts/fixtures/world-2026-11-27-1635.json", "utf8")) as { world: World }).world;
+  const KS = "src:king_slimeball";
+  const liveOf = (o: { market?: World["market"]; gone?: string } = {}): World => {
+    const gone = (c: string): boolean => c === o.gone;
+    return {
+      ...lx, current: {}, ...(o.market ? { market: o.market } : {}),
+      blocked: { ...lx.blocked, ...Object.fromEntries(["First", "Fifth"].map((n) => [`src:cyclops_eye@${n}`, { until: lx.now + 864e5, why: "check" }])) },
+      bank: lx.bank.filter((b) => !gone(b.code)), bags: Object.fromEntries(Object.entries(lx.bags ?? {}).filter(([c]) => !gone(c))),
+      config: { ...DEFAULTS, ...lx.config, on: { ...DEFAULTS.on, ...lx.config.on }, roles: DEFAULTS.roles } as World["config"],
+    };
+  };
+  const sale = (price: number, ref: number): World["market"] => ({ orders: [{ id: "k1", code: "king_slimeball", price, quantity: 500, account: "someone" }], refs: { king_slimeball: { price: ref, n: 30, from: "trades" } }, spent: 0, account: "alverus" });
+  const ALL = ["First", "Fifth", ...WORKERS];
+  const steps = (w: World): Record<string, Step> => Object.fromEntries(ALL.map((n) => [n, rank(n, w).step]));
+  const w = liveOf();
+  const adm = ALL.filter((n) => admitted(ch(w, n), bossWorld(w, "king_slime"), "king_slime"));
+  const train = trainParents(w, "Fourth", Infinity).find((p) => p.key === "train:jewelrycrafting");
+  const leaf = rank("First", w).supply.find((c) => c.target.key === KS);
+  const s = steps(w), fair = steps(liveOf({ market: sale(20, 20) })), live = steps(liveOf({ market: sale(272, 319) }));
+  const on = (x: Record<string, Step>): string[] => ALL.filter((n) => x[n].target === KS);
+  const buys = WORKERS.filter((n) => fair[n].target === "buy:king_slimeball" && fair[n].reason?.rule === "market");
+  cases.push(["5. a training's boss drop, a fighter admitted alone, no worker → the fighters' steps are not the kill (Fifth's XP pick); bought where the market's rules pass; none on sale → nobody's",
+    adm.join() === "First,Fifth" && !!train?.label.includes("Skull Amulet") && !!leaf?.train && !leaf.road && s.Fifth.reason?.rule === "xp-pick" && !on(s).length && buys.length > 0 && !on(fair).length,
+    `admitted alone ${adm.join(",")}; ${train?.label}; First: ${said(s.First)}; Fifth: ${said(s.Fifth)}; at 20 (ref 20): ${buys.join(",") || "nobody"} buys, fighters ${said(fair.First)} · ${said(fair.Fifth)}; at 272 (ref 319, as live): ${ALL.filter((n) => live[n].target === "buy:king_slimeball").join(",") || "nobody"} buys, on the kill ${on(live).join(",") || "nobody"}; none on sale: on the kill ${on(s).join(",") || "nobody"}`]);
+  const own = steps(liveOf({ gone: "king_slimeball" }));
+  const of = rank("Fifth", liveOf({ gone: "king_slimeball" })).supply.find((c) => c.target.key === KS);
+  cases.push(["6. the drop asked by Fifth's own Greater Dreadful Amulet (gear work (a)) → the fighters' kill by rule (3), as today",
+    !!of?.road && own.Fifth.target === KS && ["need-kill", "train-kill"].includes(own.Fifth.reason?.rule ?? ""),
+    `Fifth's leaf for ${of?.step.parent} (road ${!!of?.road}); First: ${said(own.First)}; Fifth: ${said(own.Fifth)}`]);
 }
 
 let bad = 0;

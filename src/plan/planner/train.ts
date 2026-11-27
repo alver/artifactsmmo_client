@@ -47,7 +47,9 @@ export function craftTarget(world: World): number {
 
 const supMemo = new WeakMap<World, Map<string, number>>();
 /** A.2: a training's field action at the seconds of whoever supplies it under this task — a kill at the quickest fighter
- *  that is on, admitted and reaches it (A.3), a gather at its lane's holder; else the fleet's (supply.ts fleetSec). */
+ *  that is on, admitted and reaches it (A.3), a gather at its lane's holder; else the fleet's (supply.ts fleetSec).
+ *  shortcut: with TRAIN_HUNT off no fighter hunts a training's kill (033b), yet it is priced here at the fighters' seconds, so a
+ *  recipe whose drop no worker is admitted to stays the pick and waits; upgrade when the chat asks it to take its next recipe. */
 export function supplierSec(w: Work, gates: Gate[], world: World): number {
   let m = supMemo.get(world);
   if (!m) supMemo.set(world, (m = new Map()));
