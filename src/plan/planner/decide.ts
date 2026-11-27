@@ -38,8 +38,8 @@
 // or an items task; its held task's monster joins pickMonster's bonus; coins a bill lacks are its src:tasks_coin step (the
 // held task's kills); a task worked on purpose (that step, the filler) is cancelled there when rule 4 says so.
 
-import { achievement as achievementOf, item, itemName, resource as resourceOf } from "../../catalog";
-import { CRAFT_SEC } from "../xp";
+import { achievement as achievementOf, item, itemName, monster as monsterOf, resource as resourceOf } from "../../catalog";
+import { CRAFT_SEC, fightXp } from "../xp";
 import { PINNED_ARTIFACTS, jobGear, ownedQtyOf } from "../jobgear";
 import { CHUNK_SEC, GATHER_LANES, GEAR_CRAFT, GEAR_FIRST, KITCHEN, TRAIN_HUNT, TRAIN_LANES } from "./config";
 import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
@@ -743,19 +743,22 @@ export function rank(name: string, world: World, free = false): Ranking {
     // game's level cap (docs/api: a character's level is at most 50, where the atlas's xpNeeded ends), today's rule over the
     // whole list (027b's free pass), kill objectives included
     const pick = (pool: Candidate[]): Candidate | undefined => top(pool, "fit") ?? top(pool, "any");
-    const first = pick(firsts);
+    const capped = ch.level >= cap;
+    const x = capped ? undefined : xpPick();
+    // task 035 (docs/season-plan.md 6): with an XP pick, a fight that gives this fighter no combat XP is no candidate,
+    // whatever asks for it — the next one by the order is taken, down to the pick (rule (5) without a pick stays as it is)
+    const pays = (c: Candidate): boolean => !x || !noXp(ch, c.step.work);
+    const first = pick(firsts.filter(pays));
     // task 032: a fighter buys only while no worker is on
     const buy = world.characters.some((c) => isOn(c.name, world) && roleOf(c.name, world) === "worker") ? undefined : buyStep();
     const forge = pick(all.filter((c) => c.step.work.kind !== "kill" && c.target.key !== "src:tasks_coin")); // 027d: a coins visit is fight work
-    const capped = ch.level >= cap;
-    const x = capped ? undefined : xpPick();
     // task 027g (A): a road need's kill whose monster is the pick comes along with it (the pick's step); another goes to a
     // worker that is on and admitted, to this fighter (before its pick) only when none is; 027d's coins stay a fighter's
     const mine = x?.work.kind === "kill" ? x.work.monster : undefined;
     // task 029 (A.3): a training's kill is a fighter's whoever else is admitted (TRAIN_HUNT); task 033b: off, never — only a
     // need of the road's gear work (a) or consumables is (`road`), whether or not a worker is admitted
     // task 033 (A.2): the coins only where the held task's monster is the pick (its ×1.25 among the bonus): they ride on it
-    const kill = pick(supply.filter((c) => (c.road || (trainHunt && c.train)) && (c.target.key === "src:tasks_coin" ? !!held && held === mine : c.step.work.kind === "kill" && c.step.work.monster !== mine && ((trainHunt && c.train) || !workerHunts(c.step.work.monster)))));
+    const kill = pick(supply.filter((c) => pays(c) && (c.road || (trainHunt && c.train)) && (c.target.key === "src:tasks_coin" ? !!held && held === mine : c.step.work.kind === "kill" && c.step.work.monster !== mine && ((trainHunt && c.train) || !workerHunts(c.step.work.monster)))));
     const trainKill = trainHunt && !!kill?.train;
     const c = first ?? forge ?? kill;
     if (!c && !x && !buy) {
@@ -845,6 +848,14 @@ function fallback(ch: Character, world: World, last: Step | undefined, lanes?: L
     reason: { rule: "fallback", goal: `${o.skill} ${levelOf(ch, o.skill)}`, because: [`nothing else is open to ${ch.name}${o.until ? "; every fallback is blocked, this one ends first" : ""}`, `${itemName(o.p.drop)}, ${o.c.units} now (${fmt(o.c.hours)} h)`], limits: [] },
   };
 }
+
+/** Task 035 (docs/season-plan.md 6: a fighter never takes a fight that gives it no XP): a kill of a monster that gives this
+ *  character no combat XP — the "0 combat XP a kill" of a why (fight XP's gap rule: more than 10 levels above it). */
+const noXp = (ch: Character, w: Work): boolean => {
+  if (w.kind !== "kill") return false;
+  const m = monsterOf(w.monster);
+  return !!m && fightXp(m.level, m.hp, m.type, ch.level) <= 0;
+};
 
 const unitWord = (w: Work): string =>
   w.kind === "kill" ? (w.drop ? itemName(w.drop) : `${monsterName(w.monster)} kills`)
