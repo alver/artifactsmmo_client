@@ -1,6 +1,8 @@
 // Task 028 (D.1): the data of the one page.
-//   A.1 the reason in parts — every step's why on the fixture Worlds is 033's to the letter (scripts/whys.mts against
-//       scripts/fixtures/whys-033.json — task 033: a fighter fights for XP, the crafts' kills the workers'; 032b held whys-032b.json, a boss admitted alone a source of its drops; 031b held whys-031b.json, the kitchen on; 031 held whys-031.json, 030 whys-030.json, 029 whys-029.json, 028 027g's, whys-027g.json, recorded on c03bff4), and its rule is the one the why's
+//   A.1 the reason in parts — every step's why on the fixture Worlds is 036's to the letter (scripts/whys.mts against
+//       scripts/fixtures/whys-036.json — task 036, B.1: a training's kill at a worker's seconds (five chains' hours; its stage
+//       code reads no stage on these Worlds: the whys of cc1a3a9 with B's train.ts and market.ts alone are these); 033 held
+//       whys-033.json, a fighter fights for XP, the crafts' kills the workers'; 032b held whys-032b.json, a boss admitted alone a source of its drops; 031b held whys-031b.json, the kitchen on; 031 held whys-031.json, 030 whys-030.json, 029 whys-029.json, 028 027g's, whys-027g.json, recorded on c03bff4), and its rule is the one the why's
 //       head names; a fighter's XP
 //       pick, a worker's need and a craft-ahead step carry the rule, the goal and the limits;
 //   A.2 the road's lines carry the levels and the gear made, and two cold runs (two processes) give the same lines;
@@ -51,9 +53,9 @@ const runs = Promise.all([cold(), cold()]);
 // ── A.1 ──
 const steps: { w: string; step: any }[] = [];
 const whys = await whysOf(".", 12, (w, step) => steps.push({ w, step }));
-const gold = JSON.parse(await readFile("scripts/fixtures/whys-033.json", "utf8")) as typeof whys;
+const gold = JSON.parse(await readFile("scripts/fixtures/whys-036.json", "utf8")) as typeof whys;
 const differ = whys.map((x, i) => (JSON.stringify(x) === JSON.stringify(gold[i]) ? -1 : i)).filter((i) => i >= 0);
-ok("A.1 every why is 033's to the letter", whys.length === gold.length && !differ.length, `${whys.length} whys, ${gold.length} recorded; differ: ${differ.slice(0, 3).map((i) => `${whys[i]?.key}: ${whys[i]?.why.slice(0, 80)}`).join(" | ")}`);
+ok("A.1 every why is 036's to the letter", whys.length === gold.length && !differ.length, `${whys.length} whys, ${gold.length} recorded; differ: ${differ.slice(0, 3).map((i) => `${whys[i]?.key}: ${whys[i]?.why.slice(0, 80)}`).join(" | ")}`);
 const HEAD: [RegExp, string][] = [[/^fighter: the XP pick/, "xp-pick"], [/^fighter, first/, "first"], [/^fighter, forging/, "forging"], [/^fighter, a need's kill/, "need-kill"], [/^fighter, a training's kill/, "train-kill"], [/^fighter, (no fight admitted|at the level cap)/, "free"],
   [/^worker, a batch from the bank/, "train"], [/^worker, the stock first/, "cook"], [/^worker, the kitchen to/, "craft-ahead"], [/^worker, a need \(consumables or a tool\)/, "need-cons"], [/^worker, a need/, "need"], [/^worker, done within/, "short"], [/^worker, craft to/, "craft-ahead"], [/^worker: fallback/, "fallback"], [/^worker: /, "today"], [/^tidy:/, "tidy"], [/^fallback/, "fallback"]];
 const wrong = steps.filter(({ step }) => {

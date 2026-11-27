@@ -10,6 +10,7 @@ import { CITY, staticTiles, travel } from "./reach";
 import { GUESS_KILL } from "./config";
 import { tradeOf } from "./supply";
 import type { AccountAchievement, AchievementObjectiveProgress } from "../../types/api";
+import { stageOf } from "./stage";
 import type { Gate, Input, Lane, Target, Work, World } from "./types";
 
 /** Actions per unit of `code` from a drop table ("1 in rate" ÷ mean quantity). */
@@ -181,11 +182,17 @@ export const isDone = (a: AccountAchievement): boolean => !!a.completed_at || a.
 
 export interface Unhandled { key: string; achievement: string; points: number; why: string }
 
-const built = new WeakMap<AccountAchievement[], WeakMap<object, { targets: Target[]; unhandled: Unhandled[] }>>();
-function build(world: World): { targets: Target[]; unhandled: Unhandled[] } {
+type Built = { targets: Target[]; unhandled: Unhandled[] };
+const built = new WeakMap<AccountAchievement[], WeakMap<object, Map<object, Built>>>();
+const ALL = {};
+function build(world: World, all = false): Built {
+  // task 036 (A.3): only an achievement the current stage lists is an objective (stage.ts); `all` — every open one
+  const list = all ? undefined : stageOf(world)?.achievements;
   let byCfg = built.get(world.achievements);
   if (!byCfg) built.set(world.achievements, (byCfg = new WeakMap()));
-  const hit = byCfg.get(world.config);
+  let byStage = byCfg.get(world.config);
+  if (!byStage) byCfg.set(world.config, (byStage = new Map()));
+  const hit = byStage.get(list ?? ALL);
   if (hit) return hit;
   const targets: Target[] = [];
   const unhandled: Unhandled[] = [];
@@ -196,6 +203,7 @@ function build(world: World): { targets: Target[]; unhandled: Unhandled[] } {
       if (o.progress >= o.total) return;
       const key = `ach:${a.code}:${i}`;
       if (world.config.exclude.includes(a.code)) return void unhandled.push({ key, achievement: a.code, points: a.points, why: "excluded by config" });
+      if (list && !list.includes(a.code)) return void unhandled.push({ key, achievement: a.code, points: a.points, why: "not in the stage" });
       const s = staticFor(o, !!(world.config.tolls ?? 1));
       if (typeof s === "string") return void unhandled.push({ key, achievement: a.code, points: a.points, why: s });
       const left = s.work.kind === "level" ? 1 : Math.ceil(o.total - o.progress); // the forward model's progress is fractional (expected drops)
@@ -210,11 +218,12 @@ function build(world: World): { targets: Target[]; unhandled: Unhandled[] } {
     targets.push({ key: `lvl:${lane}:${level}`, points: 0, work: { kind: "level", lane, to: level }, left: 1, gates: [], filler: false });
   }
   const out = { targets, unhandled };
-  byCfg.set(world.config, out);
+  byStage.set(list ?? ALL, out);
   return out;
 }
 
-/** Every open objective as a target, and the level gates behind which open achievements sit. */
-export const targetsOf = (world: World): Target[] => build(world).targets;
+/** Every open objective as a target, and the level gates behind which open achievements sit. Task 036: of the stage's
+ *  achievements; `all` — every open one (the tidy's verdicts, bank.ts). */
+export const targetsOf = (world: World, all = false): Target[] => build(world, all).targets;
 /** The objectives of open achievements that are not targets, with the reason. */
 export const unhandledOf = (world: World): Unhandled[] => build(world).unhandled;

@@ -20,13 +20,18 @@
 // the others' purchases in flight take from an order are not on sale to this one (`bestOrder`).
 // Pure.
 
-import { item, itemName } from "../../catalog";
-import { MARKET_DAY_GOLD, MARKET_FAIR, MARKET_MIN_TRADES, MARKET_PAYS, MARKET_PIECE_GOLD } from "./config";
+import { item, itemName, monster } from "../../catalog";
+import { fightXp } from "../xp";
+import { MARKET_DAY_GOLD, MARKET_FAIR, MARKET_MIN_TRADES, MARKET_PAYS, MARKET_PIECE_GOLD, TRAIN_HUNT } from "./config";
+import { bossWorld } from "./consumables";
 import { stepSec } from "./cost";
-import { CITY, nearestSpot, placeOf } from "./reach";
+import { isOn } from "./gates";
+import { CITY, admitted, nearestSpot, placeOf } from "./reach";
+import { roleOf } from "./roles";
 import { available } from "./stock";
-import { billOf } from "./supply";
-import type { MarketOrder, MarketRef, Place, World } from "./types";
+import { billOf, fleetSec } from "./supply";
+import type { Character } from "../../types/api";
+import type { Gate, MarketOrder, MarketRef, Place, Work, World } from "./types";
 
 /** A need as rank() hands it over: its key (gear:, mat:, src:), the units it is short of, its parent's label and score;
  *  `cons`: a potion, a food or their ingredient (rule 1). */
@@ -43,10 +48,22 @@ export const refText = (r: MarketRef): string => `${g(r.price)} (the median of $
  *  trades or more; else why not (undefined: it serves). */
 const thin = (r: MarketRef): string | undefined => (r.from === "trades" && r.n >= MARKET_MIN_TRADES ? undefined : `${r.from === "trades" ? r.n : 0} trade${r.from === "trades" && r.n === 1 ? "" : "s"} in 7 days, no price to hold the ask against`);
 
+/** Task 036 (B.2; 033b, 035): a kill of the own chain is priced as today (fleetSec) only where someone of ours hunts it — a
+ *  worker or a character with no role that is on and admitted, or a fighter admitted that gets combat XP from it (035) and
+ *  takes it for this need (033b: a training's alone only with TRAIN_HUNT); else ∞: no source of ours, rule 2 has no own
+ *  hours to compare with. */
+const huntedSec = (train: boolean) => (w: Work, gates: Gate[], world: World): number => {
+  if (w.kind !== "kill") return fleetSec(w, gates, world);
+  const m = monster(w.monster), bw = bossWorld(world, w.monster), th = world.config.trainHunt ?? TRAIN_HUNT;
+  const hunts = (c: Character): boolean => roleOf(c.name, world) !== "fighter" || ((!train || th) && !!m && fightXp(m.level, m.hp, m.type, c.level) > 0);
+  return world.characters.some((c) => isOn(c.name, world) && hunts(c) && admitted(c, bw, w.monster)) ? fleetSec(w, gates, world) : Infinity;
+};
+
 /** Hours the plan's own chain takes for `units` of a code from here: billOf as it prices today, the code itself opened (not
- *  taken from the bank), a level road left out; ∞ when it cannot be had or a road is all it lacks. */
-export function ownHours(world: World, name: string, code: string, units: number): number {
-  const b = billOf(world, name, [[code, units]], new Map([[code, 0]]), true, undefined, false); // the own chain: no market in it
+ *  taken from the bank), a level road left out; ∞ when it cannot be had or a road is all it lacks. Task 036 (B.2): `train` — a
+ *  need of a craft's training alone (its kills are hunted as huntedSec says). */
+export function ownHours(world: World, name: string, code: string, units: number, train = false): number {
+  const b = billOf(world, name, [[code, units]], new Map([[code, 0]]), true, huntedSec(train), false); // the own chain: no market in it
   if (b.out.length) return Infinity;
   const h = b.hours - b.gated.reduce((s, x) => s + x.hours, 0);
   return Number.isFinite(h) ? h : Infinity;
@@ -111,7 +128,7 @@ export function marketOffers(world: World, name: string, needs: MarketNeed[]): O
     const ask = order.price;
     const base = { ...n, order, ask, ref: m.refs[n.code], place: spot?.place };
     const judge = (units: number): { units: number; gold: number; buyH: number; ownH: number; pays: boolean } => {
-      const gold = ask * units, buyH = gold / cfg.goldPerHour + trip, ownH = n.bought ? Infinity : ownHours(world, name, n.code, units); // 032c: never made
+      const gold = ask * units, buyH = gold / cfg.goldPerHour + trip, ownH = n.bought ? Infinity : ownHours(world, name, n.code, units, !!n.via?.length && n.via.every((k) => k.startsWith("train:"))); // 032c: never made
       return { units, gold, buyH, ownH, pays: buyH <= MARKET_PAYS * ownH };
     };
     const at = (units: number): string => `${itemName(n.code)} ×${units} at ${g(ask)}`;

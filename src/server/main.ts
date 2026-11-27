@@ -11,7 +11,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { spawn } from "node:child_process";
-import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, watchFile, writeFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { constants, setPriority } from "node:os";
 import path from "node:path";
@@ -27,7 +27,8 @@ import { queues } from "../state/queue";
 import { setOutlookRunner } from "../state/outlook";
 import { startLeaders } from "../state/leaders";
 import { hydrateLast24 } from "../state/last24";
-import { service } from "../state/store";
+import { catalogReady, service } from "../state/store";
+import { setStageText } from "../state/stage";
 
 const PORT = Number(process.env.PORT) || 5173;
 const DEV = process.argv.includes("--dev");
@@ -62,6 +63,22 @@ setDevlogSink(fileSinks({
   list: (p) => (existsSync(p) ? readdirSync(p) : []),
   read: (p) => (existsSync(p) ? readFileSync(p, "utf8") : undefined),
 }, LOGS));
+
+// Task 036: the stage file (stage.json at the root, the planning chat's) — read once the catalog is loaded (its codes are checked
+// against it) and again whenever it changes, no restart; the service never writes it (state/stage.ts)
+const STAGE = path.join(ROOT, "stage.json");
+const readStage = (): void => {
+  if (!catalogReady.peek()) return;
+  let text: string | null = null;
+  try {
+    text = readFileSync(STAGE, "utf8");
+  } catch {
+    /* no file: no stage */
+  }
+  setStageText(text);
+};
+effect(() => void (catalogReady.value && readStage()));
+watchFile(STAGE, { interval: 2000 }, readStage);
 
 /** The commit the checkout stood on at boot, read from .git (no child process): HEAD, its ref or packed-refs. */
 function commitOf(): { commit?: string; branch?: string } {

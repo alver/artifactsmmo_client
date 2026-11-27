@@ -17,6 +17,7 @@ import { devlog } from "../lib/devlog";
 import { journal, runInfo, statusField } from "../lib/journal";
 import { achievements, characters, isOwned } from "./store";
 import { planner, worldOf } from "./planner";
+import { setStageNeeds, stageFile } from "./stage";
 import type { Completion, Levels, Made, NextStep, PickChange, RoadDay, RoadLine, Waiting } from "../plan/planner/road";
 import type { NeedRow } from "../plan/planner/needs";
 
@@ -202,6 +203,16 @@ if (IS_SERVER) {
     if (read || !achievements.value) return;
     read = true;
     plan(BOOT_MS, false);
+  });
+  // task 036: the Stage card reads the newest run's needs (a piece asked, what it waits for); a new stage file is a change of
+  // the plan like a config's
+  effect(() => setStageNeeds(outlook.value.needs, outlook.value.from));
+  let file = stageFile.peek();
+  effect(() => {
+    const f = stageFile.value;
+    if (f === file) return;
+    file = f;
+    if (read) plan(CONFIG_MS, true);
   });
   // a change of the planner's config, any key, once the achievements are read (before that the boot's run covers it)
   let cfg = planner.peek().config;

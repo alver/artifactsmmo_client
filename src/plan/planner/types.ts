@@ -172,6 +172,20 @@ export interface World {  // everything decide() reads — a snapshot, so it run
   /** Task 032: the Grand Exchange as the service last read it (state/market.ts) — the runtime's World only; the forward model
    *  has none, so it buys nothing (market.ts). */
   market?: Market;
+  /** Task 036: the plan's stages (stage.json, state/stage.ts) — the runtime's World and the forward model's; none: the World
+   *  of before (stage.ts). */
+  stages?: Stage[];
+}
+
+/** Task 036: a stage of the season plan (stage.json): it is current until every fighter has reached `fighters`. A field left
+ *  out narrows nothing (stage.ts). */
+export interface Stage {
+  name: string;
+  fighters: number;
+  crafts?: Record<string, number>;     // a gear craft trained to this level, not past it; one not named is not trained
+  gathering?: Record<string, number>;  // a gathering lane's level this stage aims at — shown on the Stage card, narrows nothing (A.4)
+  pieces?: string[];                   // the only wearables the fighters' gear work may ask for (made or bought)
+  achievements?: string[];             // the only achievements chased as objectives
 }
 
 /** Task 032: a sell order of the last read. */

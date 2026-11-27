@@ -70,7 +70,7 @@ const picksMemo = new Map<string, Map<string, string>>();
 function solvePicks(world: World, name: string): Map<string, string> {
   const on = world.characters.filter((c) => isOn(c.name, world));
   const kills = new Map<string, string>();
-  for (const t of targetsOf(world)) {
+  for (const t of targetsOf(world, true)) {
     if (t.achievement && t.work.kind === "kill" && t.left > 0 && !t.gates.some((g) => g.kind === "event") && !kills.has(t.work.monster)) kills.set(t.work.monster, t.achievement);
   }
   for (const s of supplyNeeds(world, name, baseParents(world, name), () => 0)) {
@@ -118,7 +118,7 @@ export function tidyVerdicts(world: World, name = ""): Verdict[] {
   const on = world.characters.filter((c) => isOn(c.name, world));
   const minCombat = on.length ? Math.min(...on.map((c) => c.level)) : -Infinity;
   const held = new Set(world.bank.filter((b) => b.quantity > 1e-9).map((b) => b.code));
-  const inputs = new Set(targetsOf(world).flatMap((t) => (t.achievement ? (t.inputs ?? []).map((i) => i.code) : [])));
+  const inputs = new Set(targetsOf(world, true).flatMap((t) => (t.achievement ? (t.inputs ?? []).map((i) => i.code) : [])));
   const bills = new Set(baseParents(world, name).flatMap((p) => p.demand.map(([c]) => c)));
   const pieces = gearPieces(world, name);
   const out: Verdict[] = [];

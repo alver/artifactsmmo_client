@@ -15,7 +15,8 @@
 // wins by its key, blocked for both):
 //   5. the training's King Slimeball → no fighter's step is the King Slime: Fifth's is its XP pick (First's another need of
 //      the road); on sale at an ask that passes the market's rules → a worker buys it; none on sale → nobody's step is it
-//      (the training waits on its recipe: train.ts supplierSec still prices the kill at the fighters' seconds);
+//      (task 036, B.1: and the training takes its next recipe — supplierSec prices the kill at a worker, none is admitted;
+//      033b had it wait on Skull Amulet). Cases 5, 7 and 8 read the training on Skull Amulet where it is bought (20, ref 20);
 // Task 035 (a fighter never takes a fight that gives it no XP — the guard on the outcome), the three King Slime steps of the
 // journal of 11-27 on the same World (none of those minutes is kept: logs/world holds 00:00's), each fighter's step a fight
 // that pays it XP:
@@ -123,16 +124,17 @@ const cases: [string, boolean, string][] = [];
   const sale = (price: number, ref: number): World["market"] => ({ orders: [{ id: "k1", code: "king_slimeball", price, quantity: 500, account: "someone" }], refs: { king_slimeball: { price: ref, n: 30, from: "trades" } }, spent: 0, account: "alverus" });
   const ALL = ["First", "Fifth", ...WORKERS];
   const steps = (w: World): Record<string, Step> => Object.fromEntries(ALL.map((n) => [n, rank(n, w).step]));
-  const w = liveOf();
+  const w = liveOf(), wf = liveOf({ market: sale(20, 20) });
   const adm = ALL.filter((n) => admitted(ch(w, n), bossWorld(w, "king_slime"), "king_slime"));
-  const train = trainParents(w, "Fourth", Infinity).find((p) => p.key === "train:jewelrycrafting");
-  const leaf = rank("First", w).supply.find((c) => c.target.key === KS);
-  const s = steps(w), fair = steps(liveOf({ market: sale(20, 20) })), live = steps(liveOf({ market: sale(272, 319) }));
+  const train = trainParents(wf, "Fourth", Infinity).find((p) => p.key === "train:jewelrycrafting");
+  const none = trainParents(w, "Fourth", Infinity).find((p) => p.key === "train:jewelrycrafting");
+  const leaf = rank("First", wf).supply.find((c) => c.target.key === KS);
+  const s = steps(w), fair = steps(wf), live = steps(liveOf({ market: sale(272, 319) }));
   const on = (x: Record<string, Step>): string[] => ALL.filter((n) => x[n].target === KS);
   const buys = WORKERS.filter((n) => fair[n].target === "buy:king_slimeball" && fair[n].reason?.rule === "market");
   cases.push(["5. a training's boss drop, a fighter admitted alone, no worker → the fighters' steps are not the kill (Fifth's XP pick); bought where the market's rules pass; none on sale → nobody's",
-    adm.join() === "First,Fifth" && !!train?.label.includes("Skull Amulet") && !!leaf?.train && !leaf.road && s.Fifth.reason?.rule === "xp-pick" && !on(s).length && buys.length > 0 && !on(fair).length,
-    `admitted alone ${adm.join(",")}; ${train?.label}; First: ${said(s.First)}; Fifth: ${said(s.Fifth)}; at 20 (ref 20): ${buys.join(",") || "nobody"} buys, fighters ${said(fair.First)} · ${said(fair.Fifth)}; at 272 (ref 319, as live): ${ALL.filter((n) => live[n].target === "buy:king_slimeball").join(",") || "nobody"} buys, on the kill ${on(live).join(",") || "nobody"}; none on sale: on the kill ${on(s).join(",") || "nobody"}`]);
+    adm.join() === "First,Fifth" && !!train?.label.includes("Skull Amulet") && !none?.label.includes("Skull Amulet") && !!leaf?.train && !leaf.road && s.Fifth.reason?.rule === "xp-pick" && !on(s).length && buys.length > 0 && !on(fair).length,
+    `admitted alone ${adm.join(",")}; at a fair ask ${train?.label}, none on sale ${none?.label}; First: ${said(s.First)}; Fifth: ${said(s.Fifth)}; at 20 (ref 20): ${buys.join(",") || "nobody"} buys, fighters ${said(fair.First)} · ${said(fair.Fifth)}; at 272 (ref 319, as live): ${ALL.filter((n) => live[n].target === "buy:king_slimeball").join(",") || "nobody"} buys, on the kill ${on(live).join(",") || "nobody"}; none on sale: on the kill ${on(s).join(",") || "nobody"}`]);
   // ── 6, 7, 8 (task 035) ──
   const xpOf = (x: World, n: string, s: Step): string => (mon(s) ? `${xpA(x, n, mon(s)!)} XP a kill` : "no fight");
   const pays = (x: World, f: Record<string, Step>): boolean => ["First", "Fifth"].every((n) => !!mon(f[n]) && !noXp(x, n, mon(f[n])!));
@@ -140,8 +142,8 @@ const cases: [string, boolean, string][] = [];
   const wh = liveOf({ config: { trainHunt: true } }), hunt = steps(wh);
   const lh = rank("First", wh).supply.find((c) => c.target.key === KS);
   cases.push(["6. 15:05 (TRAIN_HUNT on): the training's King Slimeball → each fighter's step a fight that pays it XP", noXp(wh, "First", "king_slime") && !!lh?.train && pays(wh, hunt), `leaf train ${!!lh?.train}; ${tell(wh, hunt)}`]);
-  cases.push(["7. 16:15 (TRAIN_HUNT off): the same → each fighter's step a fight that pays it XP", !!leaf?.train && pays(w, s), tell(w, s)]);
-  const wo = liveOf({ gone: "king_slimeball" }), own = steps(wo);
+  cases.push(["7. 16:15 (TRAIN_HUNT off): the same → each fighter's step a fight that pays it XP", !!leaf?.train && pays(wf, fair), tell(wf, fair)]);
+  const wo = liveOf({ gone: "king_slimeball", market: sale(20, 20) }), own = steps(wo);
   const of = rank("Fifth", wo).supply.find((c) => c.target.key === KS);
   cases.push(["8. 17:38 (033b): a leaf shared by the training and Fifth's own Greater Dreadful Amulet → each fighter's step a fight that pays it XP, no exception",
     !!of?.road && !!of.train && pays(wo, own), `Fifth's leaf for ${of?.step.parent} (road ${!!of?.road}, train ${!!of?.train}); ${tell(wo, own)}`]);

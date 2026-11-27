@@ -58,6 +58,7 @@ import { available, poolBank, setPoolOut } from "./stock";
 import { feedable, inStep, mayCraft, objectiveParents, recipeDemand, supplyNeeds } from "./supply";
 import { sourceFor, targetsOf } from "./targets";
 import { WORKER_CRAFT, craftTarget, trainParents, trainPlan } from "./train";
+import { stageCraft, stageOf } from "./stage";
 import { marketOffers } from "./market";
 import type { MarketNeed, Offer } from "./market";
 import { GEAR_SLOTS, slotCode } from "../../types/api";
@@ -426,6 +427,7 @@ export function rank(name: string, world: World, free = false): Ranking {
   const levelCand = (lane: Lane, to: number, fit: number, any: number, why: (what: string, p: Plan) => string, need: boolean, pt: (what: string) => Omit<Parts, "limits">, gear = false): void => {
     // task 027: a fighter's level is combat, a worker's never; 027b: and a fighter's own gear craft where a needed piece asks it
     if (fighter ? lane !== "combat" && !(need && GEAR_CRAFT.includes(lane)) : worker && lane === "combat") return;
+    if (to > (stageCraft(world, lane) ?? Infinity)) return; // task 036 (A.1): a gear craft is trained to the stage's number, not past it
     const t = targets.find((x) => x.key === `lvl:${lane}:${to}`) ?? { key: `lvl:${lane}:${to}`, points: 0, work: { kind: "level", lane, to }, left: 1, gates: [], filler: false };
     const had = levels.find((c) => c.target.key === t.key);
     if (had && need) had.need = true;
@@ -457,7 +459,7 @@ export function rank(name: string, world: World, free = false): Ranking {
   const roadPieces = new Set(gearNeeds(world, name).needs.filter((n) => n.offered && n.key.startsWith("lvl:combat:")).flatMap((n) => [...n.pieces.keys()])); // gear.ts (a)
   // Task 029 (A.1): a gear craft's next level under the target is a parent of supply, a need of the fighters' road (train.ts);
   // a worker's own craft in training has one train step (below): a piece's or a chain's level of it up to the target is that one
-  const target = craftTarget(world);
+  const target = (lane: Lane): number => craftTarget(world, lane); // task 036 (A.1): the stage's number of each craft
   const trains = trainParents(world, name, calH);
   const ownTrain = new Set(worker ? trains.map((p) => p.key.slice(6) as Lane).filter((l) => lanes.includes(l)) : []);
   const mneeds: MarketNeed[] = []; // task 032: the needs the market may serve — a piece one copy a wearer, a leaf's shortfall
@@ -478,7 +480,7 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (crafterOf(r.skill, world) !== name || (fighter && !need)) continue; // task 027b: a fighter forges only what a fighter needs (027c: or a tool)
     const why = `${itemName(code)} ×${qty} for ${[...works].map(([who, w]) => `${who} (${w})`).join(", ")} — the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`;
     if (levelOf(ch, r.skill as Lane) < r.level) {
-      if (!(ownTrain.has(r.skill as Lane) && r.level <= target)) levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key),
+      if (!(ownTrain.has(r.skill as Lane) && r.level <= target(r.skill as Lane))) levelCand(r.skill as Lane, r.level, n.fit, n.any, (what, p) => `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level} for gear: ${why}; ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key),
         (what) => ({ goal: `${r.skill} ${levelOf(ch, r.skill as Lane)} → ${r.level}`, for: n.for, because: [`for ${itemName(code)} ×${qty} (${n.work}): H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make; +${n.points} pts behind it`, what] }), gearSide.has(par.key));
       continue;
     }
@@ -579,7 +581,7 @@ export function rank(name: string, world: World, free = false): Ranking {
   // Task 012, settled point 8: a craft of a parent's chain gated at a level nobody that may craft it has — the level is
   // a candidate for this lane's role holders, carrying the parent's score (as a crafter's missing level for gear).
   for (const par of parents) for (const g of par.gated ?? []) {
-    if (!Number.isFinite(g.hours) || !lanes.includes(g.lane) || (ownTrain.has(g.lane) && g.level <= target)) continue;
+    if (!Number.isFinite(g.hours) || !lanes.includes(g.lane) || (ownTrain.has(g.lane) && g.level <= target(g.lane))) continue;
     levelCand(g.lane, g.level, par.fit, par.any, (what, p) => `${g.lane} ${levelOf(ch, g.lane)} → ${g.level} for ${itemName(g.code)} in the chain of ${par.label} (+${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}); ${what}, ${p.units} now (${fmt(p.hours)} h)`, needs.has(par.key),
       (what) => ({ goal: `${g.lane} ${levelOf(ch, g.lane)} → ${g.level}`, for: par.label, because: [`for ${itemName(g.code)} in its chain: +${par.points} pts, chain ~${fmt(par.hours)} h, of it the road ${fmt(g.hours)} h by ${g.who}`, what] }), gearSide.has(par.key));
   }
@@ -632,22 +634,23 @@ export function rank(name: string, world: World, free = false): Ranking {
   // task 027e (B.3): the gear craft ahead of the fighters — the tier they wear next: the highest fighter's combat level + 5,
   // down to a multiple of 5 (the gear's tiers), at least WORKER_CRAFT (task 029: train.ts craftTarget)
   const fighterTop = Math.max(0, ...world.characters.filter((c) => isOn(c.name, world) && roleOf(c.name, world) === "fighter").map((c) => c.level));
-  const craftLevel = target;
+  const stage = stageOf(world);
+  const ahead = (): Lane | undefined => lanes.find((l) => GEAR_CRAFT.includes(l) && levelOf(ch, l) < target(l));
   const craftTo = (): Step | undefined => {
-    const lane = lanes.find((l) => GEAR_CRAFT.includes(l) && levelOf(ch, l) < craftLevel);
+    const lane = ahead(), craftLevel = lane ? target(lane) : 0;
     const key = `lvl:${lane}:${craftLevel}`;
     const p = lane && !blocked(key) ? planLevel(lane, ch, world, bonus) : undefined;
     if (!lane || !p) return undefined;
     const t: Target = targets.find((x) => x.key === key) ?? { key, points: 0, work: { kind: "level", lane, to: craftLevel }, left: 1, gates: [], filler: false };
     const s = stepOf(t, p, "level", 0, `worker, craft to ${craftLevel}: ${lane} ${levelOf(ch, lane)} → ${craftLevel}: ${p.what}, ${p.units} now (${fmt(p.hours)} h)`, {},
-      parts(`${lane} ${levelOf(ch, lane)} → ${craftLevel}`, "the fighters' next tier", [`the top fighter's combat ${fighterTop} + 5`, p.what, `${p.units} now (${fmt(p.hours)} h)`]));
+      parts(`${lane} ${levelOf(ch, lane)} → ${craftLevel}`, "the fighters' next tier", [stageCraft(world, lane) != null ? `the stage ${stage!.name}` : `the top fighter's combat ${fighterTop} + 5`, p.what, `${p.units} now (${fmt(p.hours)} h)`]));
     return !stuck || !newCodes(s, world).length ? s : undefined;
   };
   // task 031 (B.4): the kitchen's fishing and cooking to the next food tier (consumables.ts nextFoodTier), beside its gear craft
   // in tier (3) — today's scoring among them (each lane's best level candidate of rule 3, fit then points per hour; none
   // scores: the gear craft first, as before)
   const tier3 = (): Step | undefined => {
-    const lane0 = lanes.find((l) => GEAR_CRAFT.includes(l) && levelOf(ch, l) < craftLevel);
+    const lane0 = ahead();
     const cands: { step: Step; lane: Lane }[] = [];
     const g = craftTo();
     if (g && lane0) cands.push({ step: g, lane: lane0 });
@@ -712,14 +715,14 @@ export function rank(name: string, world: World, free = false): Ranking {
     // the bank covers a batch (the crafts alone), else after the tier's other needs (what the bank lacks it sources itself)
     const trainC: Candidate[] = [];
     for (const par of trains) {
-      const lane = par.key.slice(6) as Lane, key = `lvl:${lane}:${target}`;
+      const lane = par.key.slice(6) as Lane, key = `lvl:${lane}:${target(lane)}`;
       const p = ownTrain.has(lane) && !blocked(key) ? planLevel(lane, ch, world, bonus) : undefined;
       if (!p) continue;
-      const t: Target = targets.find((x) => x.key === key) ?? { key, points: 0, work: { kind: "level", lane, to: target }, left: 1, gates: [], filler: false };
+      const t: Target = targets.find((x) => x.key === key) ?? { key, points: 0, work: { kind: "level", lane, to: target(lane) }, left: 1, gates: [], filler: false };
       const c: Candidate = {
         target: t, fit: par.fit, any: par.any, need: true, ...(p.covered ? { covered: true } : {}),
-        step: stepOf(t, p, "level", par.fit, `${lane} ${levelOf(ch, lane)} → ${target} for the fighters' next tier (+${par.points} pts behind it): ${p.what}, ${p.units} now (${fmt(p.hours)} h)`, {},
-          parts(`${lane} ${levelOf(ch, lane)} → ${target}`, "the fighters' next tier", [`+${par.points} pts behind it`, p.what, `${p.units} now (${fmt(p.hours)} h)`])),
+        step: stepOf(t, p, "level", par.fit, `${lane} ${levelOf(ch, lane)} → ${target(lane)} for the fighters' next tier (+${par.points} pts behind it): ${p.what}, ${p.units} now (${fmt(p.hours)} h)`, {},
+          parts(`${lane} ${levelOf(ch, lane)} → ${target(lane)}`, "the fighters' next tier", [`+${par.points} pts behind it`, p.what, `${p.units} now (${fmt(p.hours)} h)`])),
       };
       if (fresh(c)) trainC.push(c);
     }

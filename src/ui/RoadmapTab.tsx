@@ -19,6 +19,7 @@ import { outlook, refreshOutlook } from "../state/outlook";
 import { eventKey, liveEvents } from "../state/events";
 import { eventPlans } from "../state/eventorders";
 import { marketState } from "../state/market";
+import { stageView } from "../state/stage";
 import { itemName } from "../catalog";
 import { roleOfCh } from "../plan/planner/roles";
 import { LEVEL_KEYS } from "../plan/planner/road";
@@ -151,6 +152,48 @@ function Season() {
         <span>service: {svc ? <>run {svc.run} · {svc.commit ? svc.commit.slice(0, 7) : "no commit"}{svc.dev ? " (dev)" : ""} · up since {when(Date.parse(svc.up))}</> : "not told yet"}</span>
       </div>
       <Events />
+    </section>
+  );
+}
+
+/** Task 036 (C.1): the stage the engine follows (stage.json), read-only — its fighters against its end, its crafts and gathering
+ *  skills (holder, level against the number), its pieces (worn, in the bank, asked, what each waits for), its achievements. */
+function StageCard() {
+  const v = stageView.value;
+  if (!v) return null;
+  const mark = (ok: boolean): string => (ok ? "✓ " : "");
+  return (
+    <section class="ws-card">
+      <h3>Stage{v.name ? <> {v.name} <span class="muted">({v.index} of {v.of})</span></> : null}</h3>
+      {v.file.error ? <div class="small">⚠ stage.json does not parse ({v.file.error}): {v.of ? "the last good one is followed" : "no stage"}</div> : null}
+      {v.file.unknown.length ? <div class="small">⚠ left out: {v.file.unknown.join(" · ")}</div> : null}
+      {v.name ? (
+        <>
+          <div class="season-facts small">
+            <span>fighters to <b>{v.fighters}</b>: {v.heroes.map((h) => `${mark(h.level >= v.fighters!)}${h.name} ${h.level}`).join(" · ")}</span>
+          </div>
+          <div class="season-facts small">
+            {v.skills.map((s) => <span key={s.skill}>{mark((s.level ?? 0) >= s.to)}{s.skill} <b>{s.level ?? "–"}</b> / {s.to} <span class="muted">({s.kind}, {s.holder ?? "no holder"})</span></span>)}
+          </div>
+          {v.pieces.length ? (
+            <div class="small">
+              <div class="muted">pieces{v.needsFrom ? `, asked as the road of ${when(Date.parse(v.needsFrom))} has them` : ""}:</div>
+              {v.pieces.map((p) => (
+                <div key={p.code}>
+                  {mark(p.worn.length > 0)}<b>{itemName(p.code)}</b>
+                  {" — "}{p.worn.length ? `worn by ${p.worn.join(", ")}` : "worn by nobody"} · {p.bank} in the bank · {p.asked.length ? `asked for ${p.asked.join(", ")}: ${p.waits}` : p.waits}
+                </div>
+              ))}
+            </div>
+          ) : null}
+          {v.achievements.length ? (
+            <div class="season-facts small">
+              {v.achievements.map((a) => <span key={a.code}>{mark(a.done)}{nameOf(a.code)} {a.progress.toLocaleString("en-US")} / {a.total.toLocaleString("en-US")}</span>)}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+      <div class="small muted">stage.json read {v.file.at ? when(Date.parse(v.file.at)) : "never"}</div>
     </section>
   );
 }
@@ -353,6 +396,7 @@ export function RoadmapTab() {
   return (
     <div class="page">
       <Season />
+      <StageCard />
       <Heroes />
       <Plan />
       <Blocked />

@@ -56,6 +56,7 @@ import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
 import type { Parent } from "./supply";
 import { targetsOf } from "./targets";
+import { stageOf } from "./stage";
 import { bestOrder, marketQuote } from "./market";
 import { SLOTS_FOR_TYPE, slotCode } from "../../types/api";
 import type { Character } from "../../types/api";
@@ -106,8 +107,10 @@ export function candidatesOf(ch: Character, world: World): Cands {
   const worn = (type: string): number => Math.min(...(SLOTS_FOR_TYPE[type] ?? []).map((s) => item(slotCode(ch, s) ?? "")?.level ?? 0));
   const low = new Map<string, string[]>(), lowRejected = new Map<string, Rejected[]>();
   const buyIn = new Map<string, OnSale[]>(), buyLow = new Map<string, OnSale[]>(); // task 032c: bought, inside and below the window
+  const listed = stageOf(world)?.pieces; // task 036 (A.2): with a stage's pieces, only a wearable on the list (made or bought)
   for (const it of catalog().items.values()) {
     if (!SLOTS_FOR_TYPE[it.type] || ["utility", "bag", "rune", "artifact"].includes(it.type)) continue;
+    if (listed && it.subtype !== "tool" && !listed.includes(it.code)) continue;
     const order = world.market && it.subtype !== "tool" ? bestOrder(world, it.code, ch.name) : undefined; // task 032c: never a tool
     if (!it.craft && !order) continue;
     const below = it.level < ch.level - 10;

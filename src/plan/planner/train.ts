@@ -19,7 +19,9 @@
 import { catalog, item, itemName, resource as resourceOf } from "../../catalog";
 import { atlas } from "../../catalog/atlas";
 import { CRAFT_SEC, autoRecyclable, recycleReturn } from "../xp";
-import { CHUNK_SEC, GEAR_CRAFT } from "./config";
+import { CHUNK_SEC, GEAR_CRAFT, TRAIN_HUNT } from "./config";
+import { bossWorld } from "./consumables";
+import { stageCraft } from "./stage";
 import { actionSec, levelOf, stepSec } from "./cost";
 import { bundleOf, bundleScore } from "./bundle";
 import { gearPieces } from "./gear";
@@ -38,18 +40,23 @@ export const WORKER_CRAFT = 30;
 /** One run of a training: the craft and the recycle (one action each, the log's ~5 s). */
 const RUN_SEC = 2 * CRAFT_SEC;
 
-/** Task 027e (B.3), task 029 (A.6): the level the gear crafts are led to — the tier the fighters wear next. */
-export function craftTarget(world: World): number {
+/** Task 027e (B.3), task 029 (A.6): the level the gear crafts are led to — the tier the fighters wear next. Task 036 (A.1):
+ *  with a stage that names crafts, the stage's number for `lane` (0: not named, not trained — stage.ts stageCraft). */
+export function craftTarget(world: World, lane?: Lane): number {
+  const st = lane ? stageCraft(world, lane) : undefined;
+  if (st != null) return st;
   const cap = atlas()?.xpNeeded.length ?? Infinity;
   const top = Math.max(0, ...world.characters.filter((c) => isOn(c.name, world) && roleOf(c.name, world) === "fighter").map((c) => c.level));
   return Math.min(cap, Math.max(WORKER_CRAFT, Math.floor((top + 5) / 5) * 5));
 }
 
 const supMemo = new WeakMap<World, Map<string, number>>();
-/** A.2: a training's field action at the seconds of whoever supplies it under this task — a kill at the quickest fighter
- *  that is on, admitted and reaches it (A.3), a gather at its lane's holder; else the fleet's (supply.ts fleetSec).
- *  shortcut: with TRAIN_HUNT off no fighter hunts a training's kill (033b), yet it is priced here at the fighters' seconds, so a
- *  recipe whose drop no worker is admitted to stays the pick and waits; upgrade when the chat asks it to take its next recipe. */
+/** A.2: a training's field action at the seconds of whoever supplies it under this task — a kill at the quickest hunter that
+ *  is on, admitted and reaches it, a gather at its lane's holder; else the fleet's (supply.ts fleetSec). Task 036 (B.1; 033b:
+ *  with TRAIN_HUNT off no fighter hunts a training's kill): the hunters are the workers (the fighters with TRAIN_HUNT, A.3), and
+ *  a kill none of them makes has no fleet price — billOf prices the drop at its fair ask inside the purse (market.ts
+ *  marketQuote), else the recipe is no candidate and the picker takes its next. A World whose characters hold no role: as
+ *  before. */
 export function supplierSec(w: Work, gates: Gate[], world: World): number {
   let m = supMemo.get(world);
   if (!m) supMemo.set(world, (m = new Map()));
@@ -58,14 +65,16 @@ export function supplierSec(w: Work, gates: Gate[], world: World): number {
   if (s != null) return s;
   s = Infinity;
   const may = (c: Character): boolean => isOn(c.name, world) && gates.every((g) => g.kind === "win" || met(g, c, world));
+  const roles = world.characters.some((c) => roleOf(c.name, world));
   if (w.kind === "kill") {
-    for (const c of world.characters) if (roleOf(c.name, world) === "fighter" && may(c) && admitted(c, world, w.monster) && nearestSpot(placeOf(c), "monster", w.monster, world, c.name)) s = Math.min(s, actionSec(w, c, world));
+    const hunter = (world.config.trainHunt ?? TRAIN_HUNT) ? "fighter" : "worker", bw = bossWorld(world, w.monster);
+    for (const c of world.characters) if (roleOf(c.name, world) === hunter && may(c) && admitted(c, bw, w.monster) && nearestSpot(placeOf(c), "monster", w.monster, world, c.name)) s = Math.min(s, actionSec(w, c, world));
   } else if (w.kind === "gather") {
     const lane = resourceOf(w.resource)?.skill as Lane | undefined;
     const h = world.characters.find((c) => isOn(c.name, world) && !!lane && (rolesFor(world)[c.name] ?? []).includes(lane));
     if (h && may(h)) s = actionSec(w, h, world);
   }
-  if (!Number.isFinite(s)) s = fleetSec(w, gates, world);
+  if (!Number.isFinite(s) && (w.kind !== "kill" || !roles)) s = fleetSec(w, gates, world);
   m.set(k, s);
   return s;
 }
@@ -127,9 +136,9 @@ export function trainPick(lane: Lane, ch: Character, world: World, fixed?: strin
 
 /** A.1: the training parents — a gear craft's next level where its holder (a worker that is on) stands under the target. */
 export function trainParents(world: World, name: string, calH: number): Parent[] {
-  const target = craftTarget(world);
   const out: Parent[] = [];
   for (const lane of GEAR_CRAFT) {
+    const target = craftTarget(world, lane);
     const holder = crafterOf(lane, world);
     const h = holder ? world.characters.find((c) => c.name === holder) : undefined;
     if (!h || !isOn(h.name, world) || roleOf(h.name, world) !== "worker" || levelOf(h, lane) >= target) continue;

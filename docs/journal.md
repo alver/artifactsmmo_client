@@ -237,6 +237,13 @@ overworld with 1 HP (as play shows: every loss since 11-19), recover, walk back,
   "crosses the floor with it", or "no XP monster is admitted without it; with it …"), `held` (the fleet's runes before it).
   The purchase itself is the merchant interrupt's `buy` (a `spend` record with `what` `gold`) and a `gear` item that wears it.
 
+### `stage`: the current stage changed (task 036; `src/state/stage.ts stageTick`, at a status)
+- `name`: the stage now in force (`stage.json`, CLAUDE.md "The stage"; `null`: none — no file, or every stage gone); `from`: the
+  one before (`null` after a boot: the first record of a run names the stage in force); `fighters`: each fighter's combat level.
+```json
+{"t":"2026-11-27T18:56:17.758Z","run":"nic0","k":"stage","name":"1: fighters to 35","from":null,"fighters":{"First":31,"Fifth":31}}
+```
+
 ### `leaders`: the day's read of the leaders ended (task 025; `src/state/leaders.ts`)
 - `stamp`: the read's folder, `logs/leaders/<stamp>/` (`YYYY-MM-DDTHHMMZ`, the UTC start); `requests`: the requests made;
   `bytes`: their bodies' bytes; `seconds`: from the first request's start to the end; `status`: the first status that was

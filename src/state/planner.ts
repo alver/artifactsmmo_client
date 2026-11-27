@@ -21,6 +21,7 @@ import { achievements, achievementsError, bankDetails, bankItems, characterList,
 import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue } from "./queue";
 import { liveEvents } from "./events";
 import { marketOf, marketState, noteOffers } from "./market";
+import { stageTick, stagesNow } from "./stage";
 import { invCount, setFightBlocks, setMinWin } from "./exec";
 import { noSlotFor, setNoSlotHook } from "./loopkit";
 import { DEFAULTS } from "../plan/planner/config";
@@ -124,6 +125,7 @@ export function worldOf(now: number): World {
     bankSlots: bankDetails.value?.slots, nextExpansion: bankDetails.value?.next_expansion_cost,
     ...(st.hunted ? { hunted: st.hunted } : {}), // task 027
     ...((m) => (m ? { market: m } : {}))(marketOf(now)), // task 032: the last read's sell orders and the references
+    ...((s) => (s ? { stages: s } : {}))(stagesNow()), // task 036: the plan's stages (stage.json, state/stage.ts)
   };
 }
 
@@ -337,6 +339,7 @@ function statusOf(): void {
   const now = Date.now(), st = planner.value, d = bankDetails.value, info = runInfo();
   const done = achievements.value?.filter(isDone);
   const codes = new Set(bankItems.value.map((b) => b.code)).size;
+  const stage = stageTick(worldOf(now)); // task 036: the Stage card, and a stage record when the current stage changes
   writeStatus({
     t: iso(now), run: RUN, commit: info.commit, branch: info.branch, dev: info.dev, up: info.up,
     points: done ? done.reduce((s, a) => s + a.points, 0) : null,
@@ -354,6 +357,7 @@ function statusOf(): void {
     blocked: Object.entries(st.blocked).filter(([, b]) => b.until > now).map(([k, b]) => ({ k, until: iso(b.until), why: b.why })),
     events: liveEvents().map((e) => ({ code: e.code, at: [e.map.x, e.map.y, e.map.layer], until: e.expiration })),
     market: { ...marketState.value, budget: configOf(st.config).market }, // task 032 (B.7)
+    ...(stage ? { stage } : {}),
     last: lastRecords(),
   });
 }

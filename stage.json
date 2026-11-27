@@ -1,0 +1,40 @@
+{
+  "about": "The season plan's stages as data (docs/season-plan.md). Edited by the planning chat; the service reads it at boot and whenever it changes (task 036). A stage is current until every fighter has reached `fighters`; the last stage stays. A field left out of a stage narrows nothing. crafts / gathering: the level a skill is trained to in this stage, not past it. pieces: the only wearables the fighters' gear work may ask for (made or bought). achievements: the only achievements chased as objectives; any other still completes when it happens.",
+  "stages": [
+    {
+      "name": "1: fighters to 35",
+      "fighters": 35,
+      "crafts": { "weaponcrafting": 30, "gearcrafting": 30, "jewelrycrafting": 30 },
+      "gathering": { "fishing": 30, "mining": 38, "woodcutting": 37 },
+      "pieces": ["slime_shield"],
+      "achievements": ["ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman"]
+    },
+    {
+      "name": "2: fighters to 40",
+      "fighters": 40,
+      "crafts": { "weaponcrafting": 31, "gearcrafting": 31, "jewelrycrafting": 30 },
+      "gathering": { "fishing": 40, "mining": 40, "woodcutting": 40 },
+      "pieces": [
+        "slime_shield", "death_knight_sword", "royal_skeleton_pants", "gold_platelegs", "royal_skeleton_armor",
+        "gold_helm", "gold_shield", "conjurer_skirt", "greater_dreadful_amulet"
+      ],
+      "achievements": [
+        "ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman",
+        "lich_please", "cultist_purifier", "life_lover", "diamond_in_the_sky",
+        "professional_fisherman", "professional_lumberjack", "professional_miner"
+      ]
+    },
+    {
+      "name": "3: fighters to 45",
+      "fighters": 45,
+      "crafts": { "weaponcrafting": 35, "gearcrafting": 36, "jewelrycrafting": 35 },
+      "gathering": { "fishing": 44, "mining": 42, "woodcutting": 45 }
+    },
+    {
+      "name": "4: fighters to 50, the cap",
+      "fighters": 50,
+      "crafts": { "weaponcrafting": 38, "gearcrafting": 41, "jewelrycrafting": 39 },
+      "gathering": { "fishing": 48, "mining": 46, "woodcutting": 49 }
+    }
+  ]
+}
