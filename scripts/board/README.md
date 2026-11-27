@@ -9,6 +9,9 @@ dependency, no token.
 | `watch.mjs` | One read, then exit. `node scripts/board/watch.mjs [--no-guard]` |
 | `run.vbs` | The scheduled task's wrapper: starts `watch.mjs` with its console hidden (no window on the screen) |
 | `register.ps1` | Registers, re-registers (`-NoGuard` for a one-off test) or removes (`-Remove`) the scheduled task |
+| `derive.mjs` | Task 034: the reads taken apart — one small file a read, the page's data, the planning chat's summary |
+| `verify.mjs` | Task 034: replays the derived files and compares them field by field with every raw read |
+| `view/` | Task 034: the page's sources (`index.html`, `app.js`) and `build.mjs`, which puts the page beside its data |
 
 ## A read
 1. `GET /leaderboard/accounts?sort=achievements_points&size=100&page=N`, every page the first answer names (the whole
@@ -88,3 +91,18 @@ Register-ScheduledTask -TaskName 'ArtifactsMMO board watch' -Description '…' -
 `run.vbs` is VBScript (Windows Script Host). Windows 11 24H2 made VBScript an optional feature that Microsoft plans to
 remove; on Windows 10 it is part of the system. If it ever goes, the action can be `conhost.exe --headless "<node.exe>"
 "<project>\scripts\board\watch.mjs"` instead.
+
+## The dataset and the page (task 034)
+`npm run board:view` = `node scripts/board/derive.mjs` then `node scripts/board/view/build.mjs`. Offline, no request; the raw
+reads are only read. Everything it writes is under `logs/` (gitignored):
+- `logs/board/derived/reads/<day>-<HHMM>Z.json` — one file a whole read (whole.mjs's rule; 024's reads of 11-22 and 11-23 first):
+  what changed since the read before, codes through a dictionary (the format: `derive.mjs`'s header). A read already derived is
+  not opened again; a missing or older-format file makes it and every later one derived again (`--all`: all of them).
+- `logs/board/derived/data.js` — the page's data (the files in order and the catalog's names for their codes), a script.
+- `logs/board/derived/summary.json` — for the planning chat: a day a row for every account and character (levels, XP gained,
+  hours by monster, the set worn longest, points), at most 1 MB (the oldest days are left out first; `from` says where it starts).
+- `logs/board/view/index.html` — the page: double-click it (Chrome, `file://`, no network). Four views: everyone, an account,
+  a level, two accounts side by side; the state is in the URL's `#…`.
+
+`run.vbs` starts the same two steps after each read without waiting for them, so a failure there changes neither the read nor
+its exit code.

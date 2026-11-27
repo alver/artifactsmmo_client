@@ -17,4 +17,6 @@ Next
 On Error Resume Next
 rc = sh.Run(cmd, 0, True)
 If Err.Number <> 0 Then WScript.Quit 65
+' Task 034: rebuild the page (npm run board:view) after the read, not waited for: it changes neither the read nor rc
+sh.Run "cmd /c """"" & WScript.Arguments(0) & """ scripts\board\derive.mjs && """ & WScript.Arguments(0) & """ scripts\board\view\build.mjs""", 0, False
 WScript.Quit rc
