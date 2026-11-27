@@ -3,7 +3,19 @@
 The state of the rework, for a planning chat that starts fresh. Kept by the planning chat (Claude in the desktop
 app, with Alex); Claude Code reads it when a task says so and does not edit it.
 
-Last updated: 2026-11-27 (afternoon, later). **Report 032c read and accepted (decision 88): `05e15c4` on
+Last updated: 2026-11-27 (evening). **The approach changes (decision 89, Alex): levels first, by a plan written from
+the top — `docs/season-plan.md`. Read that file before anything below; the queue below is frozen until the plan is
+accepted and the engine is given its stages. Report 033 read and accepted the same evening: committed and
+pushed on top of `05e15c4`, 126 checks ok, `TRAIN_HUNT` off; its report says that on the live state of 15:57 UTC no fighter takes a
+training's kill. Its road: 71–98k combat XP a fighter a day with the bought weapons, 40 / 39 on day 3. Alex had restarted
+on it at 16:06:30 UTC (run `zft3`). In play that claim did not hold: at 16:15:08 First was given a new King Slime step,
+"fighter, a training's kill", 67 kills (1.5 h) for jewelrycrafting 26 → 27 — no worker is admitted against the King
+Slime, so 027g's rule hands it to the fighter; 454 kills short, eight to ten fighter-hours a jewelry level. **Task 033b
+is written (`tasks/033b-no-training-kill.md`): a fighter takes no training's kill; a restart after it. Task 034 is
+written (`tasks/034-board-viewer.md`, Alex's idea of the same evening): a dataset derived from the raw board reads and a
+page in the browser (everyone, an account over time, a level, two accounts side by side), with the season plan checked
+against the whole data; it runs in a second Claude Code session, writes no git, needs no restart. The engine's task
+(a stage's targets as data) waits for Alex's word on the plan.** Before that, the same afternoon: **Report 032c read and accepted (decision 88): `05e15c4` on
 `origin/rework`; Alex restarted on it before the chat asked — run `wi4r`, boot 14:40:44 UTC on 11-27, 42 points. The
 market's first hour on `122a769`: four purchases, 2,730 gold, each at or under its reference. Found in the journal:
 the fighters do not level — on 11-27 First and Fifth spent 85% of their hours on kills that give no XP (the crafts'
@@ -283,8 +295,8 @@ accepted, Alex restarted the service (run `[yewz]`,
 - Alex's words: feel free to rework the whole solution and to remove functionality.
 
 ## How we work
-- Planning happens in the desktop chat; work happens in Claude Code. One topic per chat; each report is discussed in
-  a new chat.
+- Planning happens in the desktop chat; work happens in Claude Code. One topic per chat; a topic stays in its chat
+  as long as it lasts (Alex, 11-27: no new chat for every report).
 - The planning chat writes task files straight into `tasks/` (it has file access to this project and to
   `G:\alex\hub`). Claude Code executes one task and writes `tasks/NNN-name.report.md`; the report is discussed in the
   chat; then the next task is written. Tasks, reports, docs, code and commits are in English.
@@ -306,7 +318,6 @@ accepted, Alex restarted the service (run `[yewz]`,
     To delete (Alex).
 - **Alex restarts the service himself (`npm start`). The planning chat tells him when** — after a task that changes
   the engine is accepted.
-- The planning chat tells Alex when it is time to start a new chat.
 - **The chat can read the service's state** (found 2026-11-21): copy `.ammo/storage.db` and `.ammo/storage.db-wal`
   to the chat's own machine and open the copy with sqlite (never the files in place). The same copy works for
   any file of about a megabyte (source files, a report, an hourly log file from task 016 on): copied, it can be
@@ -2737,6 +2748,25 @@ accepted, Alex restarted the service (run `[yewz]`,
       with the stock is Alex's.
     - **Order**: 033 on Alex's yes, a restart after it; then the one verdict (034), then the board's road (035).
 
+89. **Levels first, by a plan from the top** (2026-11-27, evening, Alex). After 43 tasks in ten days Alex: the work is
+    buried in details, the main thing — strategic planning — is not solved; planning is done in place, from what
+    the fleet does at the moment. His goal, restated: **a clear way to level the characters to a high level, the
+    achievements closed on the way where the level allows** ("better lose a week and then fly there in two hours");
+    the goal of 11-18 (points per hour down the whole list) was put wrongly. He cannot re-check the chat's
+    reasoning, so the references to the board's accounts are the check.
+    - **`docs/season-plan.md`** (written by the chat from the board read of 11-27 16:00 UTC, 026b's reading and
+      024's base): four stages by the fighters' level (31 → 35 → 40 → 45 → 50, at 30k combat XP a fighter a day:
+      1, 6, 13, 21 December), then the walk; a stage names the monsters, the set, the crafts' and gathering levels
+      and the achievements on the way, each line with its count and named characters.
+    - **What it settles**: two fighters now, Second the third at weaponcrafting 30, Third and Fourth workers for
+      good (Pischke: 78 points with four workers at combat 1); the crafts to 30 and no further before the fighters
+      pass 40 (Zetark: top combat 39 on 30 / 31 / 25); fishing is the gathering hole (27 against 38).
+    - **How we work from here**: the plan first, the engine follows its current stage (the stage's targets as data;
+      the task for it is written after Alex accepts the plan); what is seen in play goes to a list and is fixed in
+      batches, only where it costs the stage its hours; once a day four numbers against the plan.
+    - **Frozen**: the one verdict (034), the board's road (035, absorbed by the plan), the gear road and group
+      bosses (the plan's stages), the Lab. The chat's own proposal of a King Slime rule for 033 is withdrawn.
+
 ## Tasks
 | # | What | State |
 |---|---|---|
@@ -2782,7 +2812,9 @@ accepted, Alex restarted the service (run `[yewz]`,
 | 032 | The market, carefully (decision 83, Alex): a need's shortfall may be bought on the Grand Exchange — it pays in hours at `goldPerHour` (at most half the own chain), the ask within 1.25 × the 7-day trades' median, 10,000 gold a purchase and 25,000 a day, the order read again at the counter, a `spend` record; the live World carries the orders, the forward model none; read-only: the first shopping list, pieces the plan does not ask for, the bids, the Diamond; riding along (decision 84): a cooldown waited by the echo, not by the local clock | done, `d702672` on `rework`, pushed to `origin/rework`; accepted 2026-11-27 (decision 87). 121/121; the first list 5,356 gold for about 182 h of chains. **Engine change: Alex restarted the service on 2026-11-27 at 13:45:17 UTC** (run `1cxk`, one restart with 032b). |
 | 032b | A boss is a source of its drops, the market the other one (decision 86, Alex): a boss a character is admitted against alone is a source like any monster, so the slime shield (6 king slimeballs) is a candidate and a need; the market beside it by 032's rules; read-only: the neighbours' kit at 30–41 against today's plan, the King Slime's hours against the market, the cheapest set that admits the Death Knight, the other bosses | done, `d5fe240` and `122a769` (`032b: report`) on `rework`, pushed to `origin/rework`; accepted 2026-11-27 (decision 87). 122/122; the King Slime is no source potion-free, the slimeballs are bought (14 for 3,822). **Engine change: Alex restarted the service on 2026-11-27 at 13:45:17 UTC** (run `1cxk`). |
 | 032c | What the fleet cannot make is bought (decision 87): a wearable on sale with no recipe or chain in reach is a bought candidate — fair by trades, inside the purse, a need by today's rule, at most two a slot (the perfect bows: +66–74% XP for the fighters); with no chain to compare a purchase needs a reference from at least 3 trades; riding along: `QUEUE_KINDS` gets `claim` and `expand`; read-only: the fighters' weapons before and after, three days with the bows, the Death Knight with the market counted, the kills that rest on the bank's potions | done, `05e15c4` on `rework`, pushed to `origin/rework`; accepted 2026-11-27 (decision 88). 125/125; the first tick 13,415 gold (a Perfect Bow for Fifth, two Death Knight Swords). **Engine change: Alex restarted the service on 2026-11-27 at 14:40:44 UTC** (run `wi4r`). |
-| 033 | A fighter fights for XP (decision 88): `TRAIN_HUNT` off — a training's kill is a worker's where one is admitted (027g's rule); no fighter's step for coins on a task whose monster gives it no XP; a worker's fight step leaves the fighters' pick weapons in the bank; read-only: three days of road before and after, and with the market's weapons banked | written 2026-11-27, `tasks/033-fighters-fight.md`; runs on top of 032c; **waits for Alex's word**. **Engine change: a restart follows its acceptance.** |
+| 033 | A fighter fights for XP (decision 88): `TRAIN_HUNT` off — a training's kill is a worker's where one is admitted (027g's rule); no fighter's step for coins on a task whose monster gives it no XP; a worker's fight step leaves the fighters' pick weapons in the bank; read-only: three days of road before and after, and with the market's weapons banked | written 2026-11-27, `tasks/033-fighters-fight.md`; done: `033: a fighter fights for XP` on `rework`, pushed to `origin/rework` (126 checks ok); read and accepted on 2026-11-27 (decision 89). **Engine change: Alex restarted on 2026-11-27 at 16:06:30 UTC** (run `zft3`). In play a fighter still took a training's kill (the King Slime, 16:15:08): 033b. |
+| 033b | A fighter takes no training's kill (decision 89; the plan's section 6): the fighter's (3) is for a need of its own road only; with no worker admitted a training's leaf has no hunter of ours — the market by 032's rules, else the training's next recipe, else it waits; the filter only if the rest is more than the existing "no source of ours" path | written 2026-11-27, `tasks/033b-no-training-kill.md`; runs on top of `51928ef`, commits by path (034 may be running beside it). **Engine change: a restart follows its acceptance.** |
+| 034 | The board, seen (Alex, 11-27): `scripts/board/derive.mjs` — a compact dataset from the raw reads, a read a file, `summary.json` for the chat; a page built into `logs/board/view/` (everyone; an account over time with an activity ribbon and the set over time; a level; two accounts side by side), opened from `file://` with no network; read-only: the season plan's numbered claims against the whole data, and at most ten things it does not say | written 2026-11-27, `tasks/034-board-viewer.md`; **a second Claude Code session, no git writes, nothing under `src/`, no restart**; its files are committed by a later main task. |
 | 030… | **Renumbered on 11-25 (decision 78): the crafts are 029, the gear road 030, group bosses 031.** Before that, on 11-25 (decision 76): one page is 028, the gear road 029, group bosses 030. Before that, renumbered on 11-24: the roles are 027, the gear road 028, group bosses 029. As it stood before — 026 the roles (decisions 63, 64, Alex): First and Fifth fighters for good, Second at weaponcrafting 30, Third and Fourth — and Second until then — a lane and a craft each, the crafts to 30; the yardstick 33 → 41 points in four days; the details on the model (decision 62); the leaders' and neighbours' read every four hours if 025 did not take it. 027 the gear road — a look above a fighter's level, the set for the fleet, the gear crafts and their levels, tasks coins on purpose, a task for the monster that is farmed; 028 group boss fights, King Slime first (24 of the 25 leaders have it). Waiting besides: the needs that pay (decision 58: a need only for a work that completes); the leaders' days read on about 11-30. As it stood before report 023 — the gear road (decision 56): the planner aims at the set that needs no potions for the whole fleet, tasks coins earned on purpose, the healing rune bought and worn by the plan (Alex: up to 50,000 gold if it pays), the crafting level's price as measured; first on 022's harness, then built. Then: group boss fights (with decision 48's parked cuts), `use` objectives, the layers; the offerings round (the cheapest completable bracket, one hunter for the fleet); the Lab (decision 36). When it fits: the service's own checkout (decision 47); the market analysis | |
 
 ## Open questions
