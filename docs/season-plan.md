@@ -172,8 +172,14 @@ Four numbers against the table in section 2: each fighter's combat XP of the day
 levels, the crafts and gathering levels, the points. On the page: Everyone, sorted by "combat XP a day"; An account
 (alverus), the ribbons; Two accounts (alverus beside ShadyBliss, Zetark, sqidking).
 
+## Daily log
+| read | fighters | combat XP since the last line | crafts wc / gc / jc | fishing, mining, woodcutting | points | what stood out |
+|---|---|---|---|---|---|---|
+| 11-27 20:40 UTC (stage 1 goes live, run `qk2r`) | 31, 31 | — | 29 / 30 / 26 | 22, 37, 35 | 42 | — |
+| 11-28 08:20 UTC (11.7 h) | **35**, 33 | First 77.8k (159k a day), Fifth 40.5k (83k a day) | 30 / 30 / 29 | 23, 37, 35 | 46 | the_reaper and ecologist done; both slime shields worn; no fight at 0 XP; First 0.7 h at the demon event; **Fifth rests 50–65% of its fight time, First 30–36%: food** (task 038); 28 losses of Fifth at the Owlbear; fishing got 1.4 h, jewelrycrafting's materials about 20 h |
+
 ## Open
-1. The demon event: why none of ours is admitted (stage 2).
+1. The demon event: First is admitted with the gold sword (0.7 h there on the night of 11-27); how much of it to take is open.
 2. Whether the lich is taken by two fighters or waits for Second (stage 2).
 3. Whether a fighter's XP pick should wear the wisdom pieces the fleet owns (the solver's count, the engine's task).
 4. Stage 5.
