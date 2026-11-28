@@ -3,7 +3,8 @@
 Written 2026-11-27 (season day 35) by the planning chat with Alex; corrected the same evening from task 034's check.
 **The goal (Alex, 11-27): level the characters the way the board's fleets did; achievements are taken on the way,
 where the level already allows them.** Chasing achievements head-on costs more than walking through them with
-levelled characters.
+levelled characters. **Alex, 11-28: the target is the whole group at 50 in every category — combat and the eight
+skills — and then the achievements** (uaprsf on day 35: five characters at 50, six skills at 50).
 
 Alex does not re-check the reasoning, so **every line carries its reference**: a count over the board's data and
 named characters (`account/character`) that can be looked up — on the page `logs/board/view/index.html` (task 034:
@@ -45,7 +46,8 @@ Sources:
 | 2 | 35 → 40 | 6 Dec | 2 Dec |
 | 3 | 40 → 45 | 13 Dec | 5 Dec |
 | 4 | 45 → 50, the cap | 21 Dec | 9 Dec |
-| 5 | the walk at the cap | from there to the season's end (working deadline 2027-02-24) | |
+| 5 | every skill to the cap (the three crafts, gathering, alchemy, cooking) and the workers' combat with it | after the fighters; not dated yet | |
+| 6 | the walk through the achievements, at the cap | from there to the season's end (working deadline 2027-02-24) | |
 
 Reference for "50 is reachable in weeks": uaprsf has all five at 50 on day 35; Fox___ three at 50; Wudagem 50 49
 45 41 40 (S1).
@@ -64,13 +66,23 @@ Ours is the second family, and it works: workers need no combat level at all (Pi
 - **First and Fifth fight now. Second becomes the third fighter when weaponcrafting reaches 30** (Alex, 11-23).
 - **Third and Fourth are workers for good**: their gathering skills go to 40–50. Their combat is not levelled for
   fights, but it is worth 30 and later 40: a gathering tool asks its level of the character (gold 30, mithril 40),
-  and their monster tasks bring it.
+  and their monster tasks bring it. Alex's target of 11-28 takes them to 50 in the end, after the fighters — to
+  check then: a party's XP goes by its average level, so two fighters at the cap may carry a worker at a boss.
 - Twins to watch: **sqidking** (44 pts: two fighters at 41 and 40, three at 30, 29, 25 — our shape, ten levels on),
   **Zetark** (39 pts: 39 36 33 + 29, 27; its crafts are only wc 30, gc 31, jc 25) and **ShadyBliss**, the fastest
   now (48 pts, 38 37 35 33 33; +2–4 levels a character in 24 h). ShadyBliss's day of 11-27: the imp 6 h, the death
   knight 6–8 h, the demon 2 h, the bandit lizard 2–4 h.
 
 ## 4. The fighters, stage by stage
+
+**From about 36 the board does not level alone: it levels in a party at a boss** (checked 11-28 over all reads to
+11-28 12:00; XP an hour of a member standing on the boss's tile at two reads running; alone, the fastest quarter at
+36–45 makes 3,100–4,500 an hour). The lich (30): _zero_'s trio at 39, 41, 42 makes 8,800–9,200 each, ront_tv's pair
+at 38 and 38 makes 8,900 each. The goblin priestess (35): Alrick00's trio at 43, 43, 44 makes 10,300–11,500 each.
+Rosenblood (40): Wudagem's members at 41–43, beside a 46 and a 49, make **22,400–25,800**, its 46 and 49 make
+13,000–14,300; Fox___'s trio at 47–49 makes 12,500–15,500. A lower member is carried and gains the most. A party
+is three on the tile in 42 of 52 reads, with a healing_aura_rune on one member and, unlike plain farming, potions.
+The stage lines below name the monsters fought alone; **the party (tasks 039–042) is the main road from here.**
 
 ### Stage 1 — 31 → 35
 - **Fight the imp (28)**; the death knight (28) and the owlbear (30) from 34. S4: the imp ×19 of 141 at 31 (second
@@ -161,6 +173,12 @@ ends, from what the leaders have done by then — nobody has walked it yet.
 - **Tasks** (S4): the median account turns in 11.6 tasks a day, the fastest quarter 23.6; ours 1.4 (403 → 409 since
   11-23). A worker holds and works a task all the time.
 - **Crafts**: to 30 in stage 1, held until stage 3.
+- **How the board levels the skills** (checked 11-28, the same reads): gathering is the tier's own resource and
+  hours — gold rocks to 40 then mithril (a median 3,100–5,000 XP an hour), the dead tree to 40 then the maple
+  (3,400–6,500), bass to 40 then salmon (3,000–3,600), glowstem for alchemy from 40 (6,500). **Alchemy and cooking
+  are levelled at the workshop, in bulk from a stock**: bursts of 10,000–70,000 XP an hour (cooking to 170,000), so
+  alchemy 37 → 40 (about 99,000 XP) is a few hours of brewing once the plants are banked. The gear crafts are slow
+  for everyone: a median 1,200 XP an hour at 30–34, the fast quarter 3,000–15,000 in bursts.
 
 ## 6. What we stop doing
 - No achievement is chased ahead of its stage.
