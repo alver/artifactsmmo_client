@@ -1,0 +1,66 @@
+{
+ "w26": [
+  {
+   "who": "First",
+   "target": "lvl:combat:39",
+   "units": 32,
+   "why": "fighter: the XP pick: combat 29 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 333 h to the gate at the pace before it); Rat at 0.97 XP/s, 32 now (0.5 h) with 77 Cooked Trout from the bank; the bag caps it at 32 kills (2 Cooked Trout a kill, 78 is half of 156); wins 100% of fights, 61 s a win"
+  },
+  {
+   "who": "Second",
+   "target": "mat:hardwood_plank",
+   "units": 11,
+   "why": "worker, a need: supply: Hardwood Plank: 121 short for weaponcrafting 24 → 25 (Battlestaff ×19) (+3 pts, chain ~8.9 h); 11 made now (0.1 h)"
+  },
+  {
+   "who": "Third",
+   "target": "mat:cooked_gudgeon",
+   "units": 1080,
+   "why": "worker, the stock first: supply: Cooked Gudgeon ×1080 from the bank's raw for Fifth: their fight steps rest or take too little food; 1080 made now (1.5 h)"
+  },
+  {
+   "who": "Fourth",
+   "target": "src:iron_ore",
+   "units": 190,
+   "why": "worker, a need: supply: Iron Ore: 917 actions short for Piggy Helmet for First (the_reaper (death_knight)) (+3 pts, chain ~23 h); Iron Rocks: 0 mining XP a gather; 190 gathers now (1.5 h)"
+  },
+  {
+   "who": "Fifth",
+   "target": "lvl:combat:39",
+   "units": 32,
+   "why": "fighter: the XP pick: combat 30 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 295 h to the gate at the pace before it); Rat at 0.97 XP/s, 32 now (0.5 h) with 77 Cooked Trout from the bank; the bag caps it at 32 kills (2 Cooked Trout a kill, 79 is half of 158); wins 100% of fights, 60 s a win"
+  }
+ ],
+ "w27": [
+  {
+   "who": "First",
+   "target": "lvl:combat:39",
+   "units": 54,
+   "why": "fighter: the XP pick: combat 31 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 455 h to the gate at the pace before it); Vampire at 0.36 XP/s, 54 now (1.5 h); rests (no food in the bank; raw for Cooked Rat Meat waits for the cook); wins 100% of fights, 100 s a win"
+  },
+  {
+   "who": "Second",
+   "target": "src:ogre_skin",
+   "units": 60,
+   "why": "worker, a need: supply: Ogre Skin: 152 actions short for Royal Skeleton Ring for Fifth (cultist_purifier (cultist_acolyte)) (+4 pts, chain ~299 h); Ogre: 33 combat XP a kill, 52% of the lane's best; 60 kills now (1.5 h); rests (no food in the bank; raw for Apple Pie waits for the cook); wins 100% of fights, 88 s a win"
+  },
+  {
+   "who": "Third",
+   "target": "mat:cooked_rat_meat",
+   "units": 424,
+   "why": "worker, the stock first: supply: Cooked Rat Meat ×424 from the bank's raw for First, Fifth: their fight steps rest or take too little food; 424 made now (0.6 h)"
+  },
+  {
+   "who": "Fourth",
+   "target": "src:iron_ore",
+   "units": 27,
+   "why": "worker, a need: supply: Iron Ore: 27 actions short for gearcrafting 28 → 29 (Steel Armor ×29) (+4 pts, chain ~4.5 h); Iron Rocks: 0 mining XP a gather; 27 gathers now (0.2 h)"
+  },
+  {
+   "who": "Fifth",
+   "target": "lvl:combat:39",
+   "units": 56,
+   "why": "fighter: the XP pick: combat 31 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 453 h to the gate at the pace before it); Vampire at 0.37 XP/s, 56 now (1.5 h); rests (no food in the bank; raw for Cooked Rat Meat waits for the cook); wins 100% of fights, 97 s a win"
+  }
+ ]
+}

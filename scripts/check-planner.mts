@@ -28,7 +28,7 @@ import { trainParents } from "../src/plan/planner/train";
 import { CHUNK_SEC, DEFAULTS, GATHER_LANES, GEAR_CRAFT, KILL_LOG, KILL_LOG_013, KITCHEN, POTIONS, SPAWN_LOG, STEP_BANK_SEC, TRAIN_LANES } from "../src/plan/planner/config";
 import { actionSec, bagActions, fareSec, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec, unitSec } from "../src/plan/planner/cost";
 import { bundleOf, bundleScore } from "../src/plan/planner/bundle";
-import { chainSec, consFree, consParents, consumableNeeds, fightTake, gearWorld, hungry, poolFood, poolFoods, reservable } from "../src/plan/planner/consumables";
+import { chainSec, consFree, consParents, consumableNeeds, fedParents, fightTake, gearWorld, hungry, poolFood, poolFoods, reservable } from "../src/plan/planner/consumables";
 import { EXPAND_BELOW, TIDY_BELOW, backText, bankStuck, expansionOk, freeSlots, isGear, newCodes, tidyLeft, tidyStep, tidyVerdicts, usedSlots } from "../src/plan/planner/bank";
 import { SELL_FLOORS, merchantOrder } from "../src/plan/events";
 import { calendar, contentOf, eventDemand, eventMembers, eventOf, eventPlans, gapSec, possibleMembers, spawnOf, usableSec } from "../src/plan/planner/events";
@@ -127,7 +127,7 @@ const INV = [
   "11 the roles are the same as at the start (task 027: until a character's role changes — Second at weaponcrafting 30)",
   "12 no piece in two sets, no stock another reserved",
   "13 no step over 2 chunks but a train level, a task, one item of a drop or one kill",
-  "14 a supply step has an open parent, its crafter on (task 031: the stock's cook step, a fighter that still rests)",
+  "14 a supply step has an open parent, its crafter on (task 031: the stock's cook step, a fighter that still rests; task 038: the kitchen's ask)",
   "15 bank stock never below zero or a floor",
   "16 a piece made is worn by its fighter within a day",
   "17 a craft, trade or gear step costs its fixed seconds",
@@ -307,6 +307,7 @@ function verify(w: World, step: Step, run: Run): void {
       step.reason?.rule === "cook" ? hungry(w).some((f) => f.code === step.target.slice(4)) // task 031 (B.3): the stock first — a fighter still rests
       : par.startsWith("lvl:") ? levelOf(forCh, par.split(":")[1] as Lane) < Number(par.split(":")[2])
       : par.startsWith("gear:") ? gearNeeds(w, ch.name).needs.some((n) => n.offered && n.pieces.has(par.slice(5)))
+      : par.endsWith(":fed") ? fedParents(w).some((p) => p.key === par) // task 038 (A.1): the kitchen's ask for the fighters' food
       : par.startsWith("cons:") ? consumableNeeds(w, ch.name).some((n) => n.key === par) // task 014: a potion or a food by need
       : par.startsWith("train:") ? trainParents(w, ch.name, Infinity).some((p) => p.key === par) // task 029: a craft's training
       : targetsOf(w).some((x) => x.key === par);
@@ -317,8 +318,10 @@ function verify(w: World, step: Step, run: Run): void {
     // (each parent's bill makes whole runs: supply.ts billOf rounds a parent's demand up to the recipe's quantity)
     const cn = par.startsWith("cons:") && step.target.startsWith("mat:") ? consumableNeeds(w, ch.name).filter((n) => n.code === step.target.slice(4)) : [];
     const q = Math.max(1, item(step.target.slice(4))?.craft?.quantity ?? 1);
-    const horizon = cn.reduce((s, n) => s + Math.ceil(n.demand / q - 1e-9) * q, 0);
-    if (cn.length) check(INV[19], step.units <= horizon, () => `${tag()}: ${step.units} of ${f1(horizon)} for ${par}`);
+    // task 038: and the kitchen's ask for the fighters' food, its demand sized to their burn over the horizon
+    const fed = par.startsWith("cons:") && step.target.startsWith("mat:") ? fedParents(w).filter((p) => p.demand[0][0] === step.target.slice(4)) : [];
+    const horizon = cn.reduce((s, n) => s + Math.ceil(n.demand / q - 1e-9) * q, 0) + fed.reduce((s, p) => s + Math.ceil(p.demand[0][1] / q - 1e-9) * q, 0);
+    if (cn.length || fed.length) check(INV[19], step.units <= horizon, () => `${tag()}: ${step.units} of ${f1(horizon)} for ${par}`);
   }
   // records for the tables
   // task 014: the consumable hours by kind, made for whom, a road waiting for its stock, a work refused stock

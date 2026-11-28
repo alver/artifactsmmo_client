@@ -46,7 +46,7 @@ import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf
 import { achHours, bundleOf, bundleScore } from "./bundle";
 import { bankStuck, newCodes, tidyStep } from "./bank";
 import { isOn, met } from "./gates";
-import { consFree, consParents, consumableNeeds, fightTake, gearWorld, kitchenOn, nextFoodTier, stockCook } from "./consumables";
+import { consFree, consParents, consumableNeeds, fedParents, fightTake, gearWorld, kitchenOn, nextFoodTier, stockCook } from "./consumables";
 import type { Take } from "./consumables";
 import { candidatesOf, gearNeeds, gearPieces, pieceParent } from "./gear";
 import { atlas } from "../../catalog/atlas";
@@ -95,7 +95,9 @@ export const ORDER: Record<"fighter" | "worker" | "none", [Rule, string][]> = {
   fighter: [["first", "an achievement on ⭐ first"], ["market", "a need bought on the Grand Exchange, with no worker on"], ["forging", "forging by need"], ["need-kill", "a kill a need of the road asks"], ["train-kill", "a kill a craft's training asks"], ["xp-pick", "the XP pick"], ["free", "no fight admitted, or the level cap: today's rule"]],
   // task 030: GEAR_FIRST on — tier (1) in two halves, weapons and armour first
   // task 031 (KITCHEN): the stock's cook step before the rest of (1a); the road's food in (1a); the kitchen's levels in (3)
-  worker: [["market", "a need bought on the Grand Exchange"], ["train", "its gear craft: a batch from the bank"], ...(KITCHEN ? [["cook", "the bank's raw food, while a fighter rests"]] as [Rule, string][] : []), ...(GEAR_FIRST === "off" ? [["need", "a need of the fighters' road, or a tool"]] as [Rule, string][]
+  // task 038 (docs/season-plan.md 5: the workers are for the fighters' food first): the stock's cook step and the fighters' food
+  // (a stage piece beside it) before the craft's batch
+  worker: [["market", "a need bought on the Grand Exchange"], ...(KITCHEN ? [["cook", "the bank's raw food, while a fighter rests"]] as [Rule, string][] : []), ["fed", "the fighters' food, a piece of their stage set beside it"], ["train", "its gear craft: a batch from the bank"], ...(GEAR_FIRST === "off" ? [["need", "a need of the fighters' road, or a tool"]] as [Rule, string][]
     : [["need", `weapons and armour for the fighters' road${KITCHEN ? ", its food" : ""}${GEAR_FIRST === "pick" ? ", the XP pick's consumables" : ""}`], ["need-cons", `the road's ${GEAR_FIRST === "pick" || KITCHEN ? "other " : ""}consumables, or a tool`]] as [Rule, string][]), ["short", `an objective done within ${WORKER_SHORT_H} h`], ["craft-ahead", KITCHEN ? "its gear craft ahead of the fighters, the kitchen's next food tier" : "its gear craft ahead of the fighters"], ["today", "today's rule in its lanes"], ["fallback", "the fallback: gather in its lanes"]],
   none: [["first", "an achievement on ⭐ first"], ["today", "today's rule"], ["fallback", "the fallback: gather"]],
 };
@@ -279,7 +281,9 @@ function wearOf(w: Work, ch: Character, world: World): Record<string, string> | 
  *  outside its lanes — its second tier only. */
 /** Task 029: `train` — a leaf of a craft's training (train.ts); `covered` — a worker's train step whose batch the bank covers. */
 /** Task 030: `gear` — a need of weapons and armour (a worker's tier (1a), GEAR_FIRST): a piece of gear work (a), a craft's training. */
-export interface Candidate { target: Target; step: Step; fit: number; any: number; need?: boolean; out?: boolean; road?: boolean; train?: boolean; covered?: boolean; gear?: boolean }
+/** Task 038: `fed` — a leaf of the kitchen's ask for the fighters' food (consumables.ts fedParents); `staged` — a piece on the
+ *  stage's list, or a leaf of one (a worker's tier with the food). */
+export interface Candidate { target: Target; step: Step; fit: number; any: number; need?: boolean; out?: boolean; road?: boolean; train?: boolean; covered?: boolean; gear?: boolean; fed?: boolean; staged?: boolean }
 /** Task 032: `market` — every need with a sell order and the market's verdict (market.ts), with a market only. */
 export interface Ranking { step: Step; objectives: Candidate[]; levels: Candidate[]; supply: Candidate[]; fillers: Candidate[]; lanes: Lane[]; market?: Offer[] }
 
@@ -455,7 +459,10 @@ export function rank(name: string, world: World, free = false): Ranking {
   const gearSide = new Set<string>(); // task 030: the parents of weapons and armour (a worker's tier (1a))
   /** A leaf's flags by every parent it serves (supply.ts `via`): a need, the fighters' road, weapons and armour. Task 033b:
    *  `road` (a fighter's kill in (3)) is a parent of the road but a craft's training — a leaf of a training alone is no fighter's. */
-  const flags = (via: string[]): Partial<Candidate> => ({ ...(via.some((k) => needs.has(k)) ? { need: true } : {}), ...(via.some((k) => road.has(k) && !k.startsWith("train:")) ? { road: true } : {}), ...(via.some((k) => gearSide.has(k)) ? { gear: true } : {}) });
+  const fedKeys = new Set<string>(); // task 038 (A.2): the kitchen's ask for the fighters' food — a worker's tier before the craft's
+  const listed = new Set(stageOf(world)?.pieces ?? []); // task 038 (A.2): a piece of the fighters' stage set stands beside it
+  const staged = (keys: string[]): boolean => keys.some((k) => k.startsWith("gear:") && listed.has(k.slice(5)));
+  const flags = (via: string[]): Partial<Candidate> => ({ ...(via.some((k) => needs.has(k)) ? { need: true } : {}), ...(via.some((k) => road.has(k) && !k.startsWith("train:")) ? { road: true } : {}), ...(via.some((k) => gearSide.has(k)) ? { gear: true } : {}), ...(via.some((k) => fedKeys.has(k)) ? { fed: true } : {}), ...(staged(via) ? { staged: true } : {}) });
   const roadPieces = new Set(gearNeeds(world, name).needs.filter((n) => n.offered && n.key.startsWith("lvl:combat:")).flatMap((n) => [...n.pieces.keys()])); // gear.ts (a)
   // Task 029 (A.1): a gear craft's next level under the target is a parent of supply, a need of the fighters' road (train.ts);
   // a worker's own craft in training has one train step (below): a piece's or a chain's level of it up to the target is that one
@@ -491,7 +498,7 @@ export function rank(name: string, world: World, free = false): Ranking {
     const t: Target = { key, points: 0, work: { kind: "craft", code }, left: qty, gates: [], filler: false };
     const p: Plan = { work: t.work, units: runs, hours: (runs * CRAFT_SEC + stepSec(spot.place, placeOf(ch))) / 3600, place: spot.place, withdraw: Object.fromEntries(recipeDemand(code, runs)) };
     const pt = parts(`${itemName(code)} ×${qty}`, [...works.keys()].join(", "), [`the best: ${n.for}, ${n.work}: H0 ${fmt(n.H0)} h, with it ${fmt(n.H1)} h + ${fmt(n.G)} h to make`, `+${n.points} pts behind it`, `${runs} now`]);
-    supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }, pt), fit: n.fit * boost(key), any: n.any * boost(key), ...(needs.has(par.key) ? { need: true } : {}), ...(gearSide.has(par.key) ? { gear: true } : {}) });
+    supply.push({ target: t, step: stepOf(t, p, "supply", n.fit * boost(key), `gear: ${why}; ${runs} now`, { parent: n.key, for: n.for }, pt), fit: n.fit * boost(key), any: n.any * boost(key), ...(needs.has(par.key) ? { need: true } : {}), ...(gearSide.has(par.key) ? { gear: true } : {}), ...(staged([key]) ? { staged: true } : {}) });
   }
   // task 014, settled point 3: potions and food by need, parents of supply with the score of the work they are for
   for (const p of consParents(world, name)) {
@@ -502,6 +509,9 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (r && kitchen && item(p.key.split(":")[1])?.type === "consumable") gearSide.add(p.key); // task 031 (B.2): the road's food is (1a)
   }
   for (const p of trains) { parents.push(p); needs.add(p.key); road.add(p.key); gearSide.add(p.key); }
+  // task 038 (A.1): short of what the fighters' picks burn over the kitchen's horizon, the raw of the food with the most healing
+  // a worker-second — a worker's (a fighter fights for XP or its stage set: no fighter's step)
+  if (!fighter) for (const p of fedParents(world)) { parents.push(p); fedKeys.add(p.key); }
   const leaves = supplyNeeds(world, name, parents, srcInFlight);
   // task 032: a leaf's shortfall in items (a src: leaf's is actions); the leaf of a consumables parent or of an objective that
   // makes a potion or a food is their ingredient (rule 1)
@@ -697,7 +707,8 @@ export function rank(name: string, world: World, free = false): Ranking {
     return !stuck || !newCodes(s, world).length ? s : undefined;
   };
   const xpPick = (): Step | undefined => {
-    const c = levels.find((x) => x.target.key.startsWith("lvl:combat:")); // the combat level's candidate: the same pick
+    // the combat level's candidate: the same pick — task 038: a fresh one (no slot, nothing to tidy: no new code), as every tier
+    const c = levels.find((x) => x.target.key.startsWith("lvl:combat:") && fresh(x));
     const goal = `combat ${levelOf(ch, "combat")} → ${Number.isFinite(cap) ? cap : levelOf(ch, "combat") + 1}`; // 027e: a fighter's level is a goal in itself
     if (c) return { ...c.step, why: `the XP pick: ${c.step.why}`, ...(c.step.reason ? { reason: { ...c.step.reason, goal, for: name } } : {}) };
     const L = levelOf(ch, "combat"), key = `lvl:combat:${L + 1}`;
@@ -707,7 +718,8 @@ export function rank(name: string, world: World, free = false): Ranking {
     if (p0 && !p) p = (p0 = planLevel("combat", ch, gearWorld(world), bonus)) && fightPlan(p0, 1, 0, 0, Infinity);
     if (!p0 || !p) return undefined;
     const t: Target = { key, points: 0, work: { kind: "level", lane: "combat", to: L + 1 }, left: 1, gates: [], filler: false };
-    return stepOf(t, p, "level", 0, `the XP pick: combat ${L}: ${p0.what}, ${p.units} now (${fmt(p.hours)} h)${p.note}`, {}, parts(goal, name, [p0.what, `${p.units} now (${fmt(p.hours)} h)`], p.note));
+    const s = stepOf(t, p, "level", 0, `the XP pick: combat ${L}: ${p0.what}, ${p.units} now (${fmt(p.hours)} h)${p.note}`, {}, parts(goal, name, [p0.what, `${p.units} now (${fmt(p.hours)} h)`], p.note));
+    return !stuck || !newCodes(s, world).length ? s : undefined;
   };
   let step: Step, rule: Rule;
   if (worker) {
@@ -728,16 +740,21 @@ export function rank(name: string, world: World, free = false): Ranking {
     }
     const short = objectives.filter((c) => fresh(c) && achHours(c.target.achievement!, name, world) <= WORKER_SHORT_H);
     const buy = buyStep(); // task 032: a need bought on the Grand Exchange, before all else
-    const batch = tier(trainC.filter((c) => c.covered), "a batch from the bank");
-    const cook = batch || !kitchen ? undefined : cookStep(); // task 031 (B.3)
+    // task 038 (A.2): the fighters' food first — the stock's cook step (task 031, B.3), then the kitchen's ask for raw with a
+    // piece of the fighters' stage set beside it (today's scoring; a food leaf with no score is taken by its key)
+    const cook = !kitchen ? undefined : cookStep();
+    const fedC = all.filter((c) => c.fed || c.staged);
+    const fc = cook ? undefined : top(fedC, "fit") ?? top(fedC, "any") ?? fedC.filter((c) => c.fed).sort((a, b) => (a.target.key < b.target.key ? -1 : 1))[0];
+    const feed = fc && { ...fc.step, why: `worker, the fighters' food: ${fc.step.as}: ${fc.step.why}` };
+    const batch = cook || feed ? undefined : tier(trainC.filter((c) => c.covered), "a batch from the bank");
     // task 030 (A): GEAR_FIRST on — (1a) weapons and armour, its own train step last; (1b) the rest only when (1a) has none
     const needC = all.filter((c) => c.need), off = gearFirst === "off";
-    const need = batch || cook ? undefined : tier(off ? needC : needC.filter((c) => c.gear), "a need") ?? tier(trainC, "a need");
-    const cons = batch || cook || need || off ? undefined : tier(needC.filter((c) => !c.gear), "a need (consumables or a tool)");
-    const sh = batch || cook || need || cons ? undefined : tier(short, `done within ${WORKER_SHORT_H} h`);
-    const ca = batch || cook || need || cons || sh ? undefined : tier3();
-    step = (buy && { ...buy, why: `worker, the market: ${buy.as}: ${buy.why}` }) ?? batch ?? cook ?? need ?? cons ?? sh ?? ca ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
-    rule = buy ? "market" : batch ? "train" : cook ? "cook" : need ? "need" : cons ? "need-cons" : sh ? "short" : ca ? "craft-ahead" : todayRule();
+    const need = batch || cook || feed ? undefined : tier(off ? needC : needC.filter((c) => c.gear), "a need") ?? tier(trainC, "a need");
+    const cons = batch || cook || feed || need || off ? undefined : tier(needC.filter((c) => !c.gear), "a need (consumables or a tool)");
+    const sh = batch || cook || feed || need || cons ? undefined : tier(short, `done within ${WORKER_SHORT_H} h`);
+    const ca = batch || cook || feed || need || cons || sh ? undefined : tier3();
+    step = (buy && { ...buy, why: `worker, the market: ${buy.as}: ${buy.why}` }) ?? cook ?? feed ?? batch ?? need ?? cons ?? sh ?? ca ?? (({ why, ...s }) => ({ ...s, why: `worker: ${why}` }))(today());
+    rule = buy ? "market" : cook ? "cook" : feed ? "fed" : batch ? "train" : need ? "need" : cons ? "need-cons" : sh ? "short" : ca ? "craft-ahead" : todayRule();
   } else if (fighter) {
     // task 027e (Alex: a fighter's level is a goal in itself), an order of work: (1) an achievement on config.first; (2)
     // forging by need (027b: one weapon speeds every fighter); (3) a kill a need of a fighter's road asks (a src: kill or
@@ -811,7 +828,9 @@ export function rank(name: string, world: World, free = false): Ranking {
   const noTake = !(cfg.consumables ?? 1) || consFree(world);
   const pots = step.work.kind !== "kill" ? [] : noTake ? (["utility1", "utility2"] as const).map((g) => fightRec(ch, world, (step.work as { monster: string }).monster)?.slots[g]).filter((c): c is string => !!c)
     : Object.keys(step.withdraw ?? {}).filter((c) => item(c)?.type === "utility");
-  const fight = step.work.kind === "kill" ? verdictOf(ch, world, step.work.monster, [...Object.values(wear ?? {}), ...pinned, ...pots]) : undefined;
+  // task 038 (B): its seconds with the food it is sent with — the take's food for its kills, rest past them
+  const kills = step.work.kind !== "kill" ? 0 : step.as === "supply" ? step.units : step.units * perOf(step.work);
+  const fight = step.work.kind === "kill" ? verdictOf(ch, world, step.work.monster, [...Object.values(wear ?? {}), ...pinned, ...pots], noTake ? undefined : { withdraw: step.withdraw, kills }) : undefined;
   const why = fight ? `${step.why}; wins ${Math.round(fight.p * 100)}% of fights, ${Math.round(fight.sec)} s a win` : step.why;
   if (fight) because.push(`wins ${Math.round(fight.p * 100)}% of fights, ${Math.round(fight.sec)} s a win`);
   // task 028 (A.1): the reason in parts — the rule that took it, and the three candidates ranked next by today's scoring

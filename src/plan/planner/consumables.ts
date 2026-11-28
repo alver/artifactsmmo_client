@@ -52,7 +52,7 @@ import type { Price } from "./reach";
 import type { Character } from "../../types/api";
 import type { GearRecommendation } from "../types";
 import type { FightForecast } from "../../sim/combat";
-import type { Lane, Step, World } from "./types";
+import type { Gate, Lane, Step, Work, World } from "./types";
 
 /** What a utility slot holds (src/plan/jobgear.ts UTILITY_STACK; the game answers 484 above it). */
 /** A utility slot's stack (the game's 484); task 023: an event member's take caps at it too (events.ts). */
@@ -590,20 +590,22 @@ export function fightTake(world: World, ch: Character, monster: string, kills: n
   // fight's loss covers at least once; at most half the bag (task 029, B.3; a third before), and the kills are capped by it as
   // by a potion stack
   const lost = lostOf(r.forecast);
-  // task 025, settled point 5: the food the price chooses (eating beats resting at its chain), when this work may reserve it
-  const pick0 = potionPrice(world, ch.name).food?.(lost, r.forecast.maxHp);
-  const food = pick0 && reservable(world, ch.name, pick0.code, fit, any, monster) >= 1 ? pick0 : undefined;
+  // task 025, settled point 5: the food the price chooses (eating beats resting at its chain), when this work may reserve it —
+  // task 038 (A.3, B): the one that leaves the step the least rest, out of this fighter's share of it (fedPlan)
+  const plan = fedPlan(world, ch, monster, r);
+  const food = plan.food && plan.share >= 1 ? plan.food : undefined;
+  const share = plan.share;
   const n = food ? foodPerWin(r, food) : 0;
   const bag = Math.floor(ch.inventory_max_items / 2);
   let capped = false;
-  if (food && n > 0 && Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(reservable(world, ch.name, food.code, fit, any, monster))) > bag) {
+  if (food && n > 0 && Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(share + 1e-9)) > bag) {
     const Kf = Math.floor(bag / (n * MARGIN) + 1e-9);
     if (Kf >= 1 && Kf < K) { K = Kf; capped = true; }
   }
   const withdraw: Record<string, number> = { ...insure };
   for (const [p, u] of used) withdraw[p] = Math.min(Math.ceil(u * K * MARGIN - 1e-9), Math.floor((res.get(p) ?? Infinity) + 1e-9)); // whole units the stock holds
   if (food && n > 0) {
-    const q = Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(reservable(world, ch.name, food.code, fit, any, monster)), bag);
+    const q = Math.min(Math.ceil(n * K * MARGIN - 1e-9), Math.floor(share + 1e-9), bag);
     if (q > 0) withdraw[food.code] = q;
   }
   const took = Object.entries(withdraw).map(([c, q]) => `${q} ${itemName(c)}`);
@@ -611,7 +613,7 @@ export function fightTake(world: World, ch: Character, monster: string, kills: n
   const why = (): string => `; rests (${restWhy(world, ch, lost, r.forecast.maxHp)})`;
   const note = took.length ? ` with ${took.join(" and ")} from the bank` + (withdraw[food?.code ?? ""] ? bagNote : lost > 0 ? why() : "")
     : lost > 0 ? why() : "";
-  return { kills: K, stocks, ...(changed ? { sec: freeSec(r, ch, w, monster, food), rec: r } : {}), withdraw: took.length ? withdraw : undefined, note };
+  return { kills: K, stocks, ...(changed ? { sec: fedPlan(world, ch, monster, r).sec + killWalk(ch, w, monster), rec: r } : {}), withdraw: took.length ? withdraw : undefined, note };
 }
 /** Task 027g (C): whether the set without `codes` (its potions the take cannot carry) is still admitted — the step's verdict. */
 function admittedWithout(ch: Character, world: World, monster: string, r: GearRecommendation, codes: string[]): boolean {
@@ -697,8 +699,9 @@ export function hungry(world: World): { code: string; hp: number; for: string[] 
     const want = (f: Food): number => Math.min(Math.ceil(foodPerWin({ forecast: fo, p } as GearRecommendation, f) * kills * MARGIN - 1e-9), Math.floor(ch.inventory_max_items / 2));
     const hp = took && healingFoods(ch).find((f) => f.it.code === took[0])?.heal;
     if (took && hp && took[1] >= want({ code: took[0], hp })) continue;
-    // what it would eat already waits in the bank (its next step takes it): no cook step for it
-    if (eat.reduce((t, f) => t + available(f.code, world, ch.name) * f.hp, 0) >= want(eat[0]) * eat[0].hp) continue;
+    // what it would eat already waits in the bank (its next step takes it): no cook step for it — task 038: its share of it
+    const rate = burnOf(world, ch, fo, p, m.code, codes).rate;
+    if (eat.reduce((t, f) => t + foodShare(world, ch.name, f.code, rate) * f.hp, 0) >= want(eat[0]) * eat[0].hp) continue;
     for (const f of eat) { const e = out.get(f.code); if (e) e.for.push(ch.name); else out.set(f.code, { ...f, for: [ch.name] }); }
   }
   return [...out.values()].sort((a, b) => b.hp - a.hp || (a.code < b.code ? -1 : 1));
@@ -714,6 +717,170 @@ export function stockCook(world: World, name: string): { code: string; runs: num
     if (runs >= 1) return { code: f.code, runs, for: f.for };
   }
   return undefined;
+}
+
+// ── task 038: the fighters fight fed ─────────────────────────────────────────
+
+/** A fighter's burn at a fight (A.1): the HP a win loses — the fight's loss and, (1 − p) ÷ p times, waking at 1 HP — and the
+ *  seconds a win fed (the most healing food its loss covers once, eaten free); `rate` is HP a second of that fighting. */
+export interface Burn { lost: number; sec: number; rate: number }
+export function burnOf(world: World, ch: Character, f: FightForecast, p: number, monster: string, codes: string[] = []): Burn {
+  const lost = lostOf(f), q = p > 0 ? p : 1;
+  const win = lost + ((1 - q) / q) * (f.maxHp - 1);
+  const eat = foodCands(ch).find((x) => x.hp <= lost); // best heal first (healingFoods' order)
+  const base = potionPrice(world, ch.name).price;
+  const sec = winSecOf({ codes, forecast: f, p: q } as GearRecommendation, world, ch.name, monster, (c) => (isFood(c) ? 0 : base(c)), () => eat);
+  return { lost: win, sec, rate: win > 0 && sec > 0 ? win / sec : 0 };
+}
+const heldMemo = new WeakMap<World, Map<string, Burn>>();
+let judging = false; // the fighters' picks are being priced (burns): a share is the bank's then
+/** The burns of the fights that eat (A.3), memoised per World: every running kill step's on the set it wears (hungry's
+ *  reading), an idle fighter's at its XP pick (priced while `judging`: each share the bank's). */
+function burns(world: World): Map<string, Burn> {
+  let m = heldMemo.get(world);
+  if (m) return m;
+  heldMemo.set(world, (m = new Map()));
+  judging = true;
+  try {
+    for (const ch of world.characters) {
+      if (!isOn(ch.name, world)) continue;
+      const s = world.current[ch.name], mon = s?.work.kind === "kill" ? monsterOf(s.work.monster) : undefined;
+      if (s && mon) {
+        const codes = [...Object.values(s.wear ?? {}), ...Object.keys(s.withdraw ?? {}).filter((c) => item(c)?.type === "utility")];
+        const fo = simulate(applyGear(baseStats(ch), codes), mon);
+        m.set(ch.name, burnOf(world, ch, fo, s.fight?.p ?? (fo.win ? 1 : 0), mon.code, codes));
+        continue;
+      }
+      if (s || roleOf(ch.name, world) !== "fighter") continue; // on other work, or a worker between steps: no food for now
+      const p = pickMonster(ch, world, new Set()), r = p && fightRec(ch, world, p.monster);
+      if (p && r && admits(r, world)) m.set(ch.name, burnOf(world, ch, r.forecast, r.p, p.monster, r.codes));
+    }
+  } finally { judging = false; }
+  return m;
+}
+/**
+ * A.3, both fighters are fed — a fight step is sent with food in proportion to what its fights lose: a character's share of
+ * the bank's `code` is the stock it may plan with and what the others' running steps took of it, split by the HP their fights
+ * lose a second fed (its own at `rate`; the others' at their running kill steps, an idle fighter's at its pick); never more
+ * than the bank leaves it. Nobody else burning: the bank's, as before (available).
+ */
+export function foodShare(world: World, name: string, code: string, rate: number): number {
+  const free = available(code, world, name);
+  if (free < 1 || judging) return free;
+  let held = 0, others = 0;
+  for (const [n, b] of burns(world)) if (n !== name) { held += world.current[n]?.withdraw?.[code] ?? 0; others += b.rate; }
+  return others > 0 && rate > 0 ? Math.min(free, ((free + held) * rate) / (rate + others)) : free;
+}
+/** The expected seconds a win of `kills` kills of which `fedKills` are fed (`secF`) and the rest rest (`secR`). */
+const mix = (secF: number, secR: number, fedKills: number, kills: number): number =>
+  kills > 0 && fedKills < kills ? (Math.max(0, fedKills) * secF + (kills - Math.max(0, fedKills)) * secR) / kills : secF;
+/** B: the food a kill step of set `r` is sent with and its expected seconds a win over a chunk. Of the foods the pool holds
+ *  that the fight's loss covers once and that heal faster than resting, the one that leaves the least rest: its share (A.3)
+ *  feeds `share ÷ n` kills at the fed seconds, the rest of the chunk rests. `sec` is that chunk's seconds a win. */
+export interface FedPlan { sec: number; secR: number; food?: Food; n: number; share: number; secF: number }
+export function fedPlan(world: World, ch: Character, monster: string, r: GearRecommendation): FedPlan {
+  const pr = potionPrice(world, ch.name), f = r.forecast, lost = lostOf(f);
+  const secR = winSecOf(r, world, ch.name, monster, pr.price, () => undefined);
+  let best: FedPlan = { sec: secR, secR, n: 0, share: 0, secF: secR };
+  if (!cons(world) || consFree(world) || !(lost > 0)) return { ...best, sec: winSecOf(r, world, ch.name, monster), secF: winSecOf(r, world, ch.name, monster) };
+  const rate = burnOf(world, ch, f, r.p, monster, r.codes).rate;
+  for (const food of poolFoods(world, ch.name)) {
+    if (food.hp > lost) continue;
+    const secF = winSecOf(r, world, ch.name, monster, pr.price, () => food), n = foodPerWin(r, food);
+    if (!(secF < secR) || !(n > 0)) continue;
+    const share = foodShare(world, ch.name, food.code, rate), fedK = share / n;
+    // the chunk: fed kills at secF, then the rest of CHUNK_SEC at secR
+    const sec = fedK * secF >= CHUNK_SEC ? secF : CHUNK_SEC / (fedK + (CHUNK_SEC - fedK * secF) / secR);
+    if (sec < best.sec - 1e-9) best = { sec, secR, food, n, share, secF };
+  }
+  return best;
+}
+/** B: the expected seconds a win of a kill step as it is sent — `kills` kills with the food of its take (`withdraw`). */
+export function sentSec(world: World, ch: Character, monster: string, r: GearRecommendation, withdraw: Record<string, number> | undefined, kills: number): number {
+  const pr = potionPrice(world, ch.name);
+  const secR = winSecOf(r, world, ch.name, monster, pr.price, () => undefined);
+  const code = Object.keys(withdraw ?? {}).find(isFood), hp = code && healingFoods(ch).find((x) => x.it.code === code)?.heal;
+  if (!code || !hp) return secR;
+  const food = { code, hp }, n = foodPerWin(r, food);
+  return n > 0 ? mix(winSecOf(r, world, ch.name, monster, pr.price, () => food), secR, withdraw![code] / n, kills) : secR;
+}
+
+/** A.1: what the kitchen knows — per fighter its burn at its pick over the kitchen's horizon (HORIZON chunks, the demand a
+ *  consumables need takes), the food the bank holds for them in HP (cooked, and the raw the kitchen cooks now), and short of
+ *  it the food with the most healing a worker-second that the fighters eat and a worker gets now, and how many. */
+export interface Fed { burn: Record<string, number>; stock: number; code?: string; hp?: number; units: number; demand: number; secUnit?: number; hours: number; why: string }
+const fedMemo = new WeakMap<World, Fed | null>();
+export function fedNeed(world: World): Fed | undefined {
+  const hit = fedMemo.get(world);
+  if (hit !== undefined) return hit ?? undefined;
+  fedMemo.set(world, null); // re-entered (a kill priced inside it): none for that turn
+  const out = judgeFed(world);
+  fedMemo.set(world, out ?? null);
+  return out;
+}
+function judgeFed(world: World): Fed | undefined {
+  if (!cons(world) || consFree(world) || !kitchenOn(world)) return undefined;
+  const cap = atlas()?.xpNeeded.length ?? Infinity;
+  const fighters = world.characters.filter((c) => isOn(c.name, world) && roleOf(c.name, world) === "fighter" && c.level < cap);
+  if (!fighters.length) return undefined;
+  // the foods every fighter may eat; each fighter's pick as it would be fed (short of food a pick moves to a monster that loses
+  // little — the burn of the pick it rests at would never ask for the food that moves it back)
+  const eat = foodCands(fighters[0]).filter((x) => fighters.every((c) => foodCands(c).some((y) => y.code === x.code)));
+  const fedW: World = { ...world, bank: [...world.bank, ...eat.map((x) => ({ code: x.code, quantity: 1e6 }))] };
+  const burn: Record<string, number> = {};
+  let total = 0, minLost = Infinity;
+  for (const f of fighters) {
+    const p = pickMonster(f, fedW, new Set()), r = p && fightRec(f, fedW, p.monster);
+    if (!p || !r || !admits(r, fedW)) continue;
+    const b = burnOf(world, f, r.forecast, r.p, p.monster, r.codes);
+    if (!(b.sec > 0) || !(b.lost > 0)) continue;
+    burn[f.name] = (b.lost * HORIZON * CHUNK_SEC) / b.sec;
+    total += burn[f.name];
+    minLost = Math.min(minLost, lostOf(r.forecast));
+  }
+  if (!(total > 0)) return undefined;
+  // the HP the bank holds of the foods every fighter eats — the raw counted where the kitchen cooks it now
+  const q = (code: string): number => Math.max(1, item(code)?.craft?.quantity ?? 1);
+  const held = (code: string): number => available(code, world, "") + (cookable(world, code) ? feedable(code, world, "") * q(code) : 0);
+  const stock = eat.reduce((t, x) => t + held(x.code) * x.hp, 0);
+  const said = `${Object.entries(burn).map(([n, h]) => `${n} ${Math.round(h / 1000)}k`).join(", ")} HP over ${HORIZON * CHUNK_SEC / 3600} h, the bank ${Math.round(stock / 1000)}k`;
+  if (stock >= total) return { burn, stock, units: 0, demand: 0, hours: 0, why: said };
+  // the food with the most healing a worker-second: its chain from the field at a worker's seconds (a kill a worker is
+  // admitted to, a gather a worker has the level for), its cook at the level now; each eaten once a win at least
+  const codes = [...new Set(eat.flatMap((x) => [x.code, ...(item(x.code)?.craft?.items ?? []).map((g) => g.code)]))];
+  const bare = noStock(world, codes);
+  /** A field action's seconds at the quickest worker that is on and meets its gates (a kill: admitted to it and reaching it). */
+  const workerSec = (w: Work, gates: Gate[], wx: World): number => {
+    let s = Infinity;
+    for (const c of wx.characters) {
+      if (!isOn(c.name, wx) || roleOf(c.name, wx) !== "worker" || !gates.every((g) => g.kind === "win" || met(g, c, wx))) continue;
+      if (w.kind === "kill" && !(admitted(c, wx, w.monster) && nearestSpot(placeOf(c), "monster", w.monster, wx, c.name))) continue;
+      s = Math.min(s, actionSec(w, c, wx));
+    }
+    return s;
+  };
+  let best: { code: string; hp: number; s: number } | undefined;
+  for (const x of eat) {
+    if (x.hp > minLost || !cookable(world, x.code)) continue;
+    const b = billOf(bare, "", [[x.code, UNITS]], new Map(), true, workerSec, false);
+    if (b.out.length || b.gated.length || !Number.isFinite(b.hours) || !(b.hours > 0)) continue;
+    const s = (b.hours * 3600) / UNITS;
+    if (!best || x.hp / s > best.hp / best.s) best = { code: x.code, hp: x.hp, s };
+  }
+  if (!best) return { burn, stock, units: 0, demand: 0, hours: 0, why: `${said}: no food a worker gets now` };
+  const units = Math.ceil((total - stock) / best.hp - 1e-9);
+  return { burn, stock, code: best.code, hp: best.hp, units, demand: held(best.code) + units, secUnit: best.s, hours: (units * best.s) / 3600, why: `${said}; ${itemName(best.code)} ${Math.round((10 * best.hp) / best.s) / 10} HP a worker-second` };
+}
+/** A.1, A.2: the kitchen's ask as a parent of supply (`cons:<code>:fed`, never bought: market.ts rule 1) — its leaves open the
+ *  field (a worker's gather or kill for the raw) and the cook's craft as the raw comes; scored by the fighters' road (the
+ *  best of their combat bundles) over its making hours. */
+export function fedParents(world: World): Parent[] {
+  const n = fedNeed(world);
+  if (!n?.code || !(n.units > 0)) return [];
+  const calH = calHOf(world);
+  const pts = Math.max(0, ...Object.keys(n.burn).map((f) => bundleOf("combat", f, world)?.behind.reduce((s, x) => s + x.points, 0) ?? 0));
+  const h = Math.max(0.01, n.hours);
+  return [{ key: `cons:${n.code}:fed`, label: `${itemName(n.code)} ×${n.units} more for the fighters (${n.why})`, points: pts, fit: h <= calH ? pts / h : 0, any: pts / h, hours: h, demand: [[n.code, n.demand]] }];
 }
 
 /** Settled point 8: what a step's fights drink and eat in the forward model — its consumables (a kill step's `withdraw`,

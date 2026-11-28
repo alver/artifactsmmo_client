@@ -72,10 +72,12 @@ const cases: [string, boolean, string][] = [];
   const theirs = !!m && WORKERS.some((n) => rank(n, off).supply.some((c) => c.target.key === s.target && monsterOf(c.step) === m));
   cases.push(["…TRAIN_HUNT off → a worker's (027g's rule)", !!m && so.target !== s.target && !so.why.startsWith("fighter, a training's kill") && theirs, `First: ${said(so)}; a worker's candidate ${s.target}: ${theirs}`]);
   // the weapon training's Battlestaff asks Wolf Bone (the bank holds the rest, and no drop another recipe of the level asks) —
-  // the wolf is within 25% of First's pick (the rat): the pick is the wolf, the bones come along
+  // the wolf is within 25% of First's pick (the rat; task 038: a fighter's kill priced with the food it is sent with — with the
+  // bank's 1,127 Cooked Trout the Ogre beyond the band, with 300 the Ogre and the wolf within it): the pick is the wolf, the
+  // bones come along
   const DROPS = new Set(["skeleton_skull", "skeleton_bone", "wolf_bone", "wolf_hair", "ogre_eye", "ogre_skin", "flying_wing", "pig_skin", "spider_leg", "snake_hide", "wool", "king_slimeball", "green_cloth"]);
   const bk = Object.fromEntries(w25.bank.filter((b) => !DROPS.has(b.code)).map((b) => [b.code, b.quantity]));
-  const wb = worldOf({ Third: { gearcrafting_level: 30 }, Fourth: { jewelrycrafting_level: 30 } }, { ...bk, hardwood_plank: 500, steel_bar: 500, blue_slimeball: 500 });
+  const wb = worldOf({ Third: { gearcrafting_level: 30 }, Fourth: { jewelrycrafting_level: 30 } }, { ...bk, hardwood_plank: 500, steel_bar: 500, blue_slimeball: 500, cooked_trout: 300 });
   const sb = rank("First", wb).step, p0 = pickMonster(ch(wb, "First"), wb, new Set()), pw = pickMonster(ch(wb, "First"), wb, new Set(["wolf"]));
   const leaf = rank("First", wb).supply.find((c) => c.target.key === "src:wolf_bone");
   cases.push(["…a training's kill monster within 25% of the pick's rate → the pick is that monster", p0?.monster !== "wolf" && pw?.monster === "wolf" && monsterOf(sb) === "wolf" && sb.why.startsWith("fighter: the XP pick") && !!(leaf as { train?: boolean } | undefined)?.train, `the pick ${p0?.monster} (${p0 ? (p0.xp / p0.sec).toFixed(3) : "—"} XP/s), with the ×1.25 ${pw?.monster}; First: ${said(sb)}; src:wolf_bone a training's: ${!!(leaf as { train?: boolean } | undefined)?.train}`]);

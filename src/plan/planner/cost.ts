@@ -11,7 +11,7 @@ import { COINS_PER_TASK, GATHER_LANES, GATHER_LOG, GEAR_CRAFT, STEP_BANK_SEC, TA
 import { craftXpOf } from "./xp";
 import { CITY, bankSec, chAt, fightRec, fightSecOf, firstWin, gatherCut, nearestSpot, openOf, placeOf, planRec, setWisdom } from "./reach";
 import { hasNode, pickMonster, pickRecipe } from "./pick";
-import { rolesFor } from "./roles";
+import { roleOf, rolesFor } from "./roles";
 import { atlasKillSec, perUnit, sourceFor } from "./targets";
 import { available } from "./stock";
 import { coinsOn, tradeOf } from "./supply";
@@ -36,6 +36,11 @@ const measured = (costs: Costs, key: string | undefined): number | undefined => 
   const c = key ? costs[key] : undefined;
   return c && c.n >= 3 ? c.sec : undefined;
 };
+/** Task 038 (B): a fighter's kill is priced by the model with the food it is sent with (reach.ts fightSecOf), not by the
+ *  measured mean — one mean a monster mixes the fighters' fed and unfed steps (11-28: kill:owlbear 81 s of First's 63–69 s
+ *  fed and Fifth's 110–162 s resting). Consumables 0 or free, or anyone else: the measured mean, as before. */
+const measuredFor = (world: World, ch: Character, w: Work): number | undefined =>
+  w.kind === "kill" && (world.config.consumables ?? 1) && (world.config.potionK ?? 1) !== 0 && roleOf(ch.name, world) === "fighter" ? undefined : measured(world.costs, costKey(w));
 
 /** One sample into the table: an exponential mean (weight 0.3), only from a step of at least 5 units. */
 export function sample(costs: Costs, key: string, sec: number, n: number, at = 0): Costs {
@@ -94,7 +99,7 @@ export const killWalk = (ch: Character, world: World, monster: string): number =
 
 /** Seconds one kill or one gather takes (measured, else the estimate). Infinity = not a work of actions. */
 export function actionSec(w: Work, ch: Character, world: World): number {
-  const m = measured(world.costs, costKey(w));
+  const m = measuredFor(world, ch, w);
   if (m != null) return m;
   if (w.kind === "kill") {
     const mon = monsterOf(w.monster);
@@ -233,7 +238,7 @@ function roadRate(ch: Character, world: World, L: number): number {
       const at = firstWin(ch, world, m.code);
       if (at == null) continue;
       const r = planRec(chAt(ch, at), world, m.code)!;
-      const sec = measured(world.costs, `kill:${m.code}`) ?? fightSecOf(r, world, ch.name, m.code) + killWalk(ch, world, m.code);
+      const sec = measuredFor(world, ch, { kind: "kill", monster: m.code }) ?? fightSecOf(r, world, ch.name, m.code) + killWalk(ch, world, m.code);
       road.push({ code: m.code, at, sec, wis: setWisdom(chAt(ch, at), r) }); // task 012: the XP with the wisdom of that set
     }
     byName.set(k, road);

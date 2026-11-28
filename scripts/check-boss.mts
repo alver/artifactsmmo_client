@@ -13,7 +13,8 @@
 //      leaf, the fighters' whys say the market's answer;
 //   4. nobody admitted alone and no market → every decision is 032's tree's (scripts/fixtures/boss-none-032.json, recorded
 //      by this file's `--record <tree> <out>` on 163d6c3); task 033 (the fighters' XP pick where they took a training's kill):
-//      033's tree's, scripts/fixtures/boss-none-033.json.
+//      033's tree's, scripts/fixtures/boss-none-033.json; task 038 (a fighter's kill priced with the food it is sent with):
+//      038's tree's, scripts/fixtures/boss-none-038.json.
 // On 032's tree (163d6c3) cases 1–3 fail: a boss is no source (`a boss (group fight)`).
 //   node --import tsx scripts/check-boss.mts [--record <tree> <out.json>]
 import { readFile, writeFile } from "node:fs/promises";
@@ -108,10 +109,10 @@ const cases: [string, boolean, string][] = [];
 
 // ── 4. nobody admitted, no market: 032's decisions ──
 {
-  const gold = JSON.parse(await readFile("scripts/fixtures/boss-none-033.json", "utf8")) as ReturnType<typeof stepsOf>;
+  const gold = JSON.parse(await readFile("scripts/fixtures/boss-none-038.json", "utf8")) as ReturnType<typeof stepsOf>;
   const now = stepsOf(NONE);
   const moved = now.filter((s, i) => JSON.stringify(s) !== JSON.stringify(gold[i]));
-  cases.push(["4. nobody admitted alone, no market → every decision is 033's tree's", !moved.length && now.length === gold.length, moved.map((s) => `${s.who}: ${s.target} — ${s.why.slice(0, 100)}`).join(" | ") || `${now.length} decisions equal`]);
+  cases.push(["4. nobody admitted alone, no market → every decision is 038's tree's", !moved.length && now.length === gold.length, moved.map((s) => `${s.who}: ${s.target} — ${s.why.slice(0, 100)}`).join(" | ") || `${now.length} decisions equal`]);
 }
 
 let bad = 0;

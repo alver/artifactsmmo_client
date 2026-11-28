@@ -1,0 +1,562 @@
+[
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#1",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 264 h to the gate at the pace before it); Ogre at 1.20 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); task: cancels 222 of 386 gudgeon (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:weaponcrafting:30@Second#1",
+  "why": "worker, a batch from the bank: level: weaponcrafting 20 → 30 for the fighters' next tier (+3 pts behind it): Battlestaff ×2 (596 XP a run), a batch from the bank, 2 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Third#1",
+  "why": "worker, a need: supply: Hard Leather: 25 short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.7 h); 2 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fourth#1",
+  "why": "worker, a need: supply: Cowhide: 395 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.9 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#1",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 244 h to the gate at the pace before it); Vampire at 1.34 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); task: cancels 0 of 120 spruce_wood (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Third#1",
+  "why": "worker, a need: supply: Cowhide: 161 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~6.7 h); Cow: 0 combat XP a kill; 161 kills now (1.2 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:blue_slimeball@Second#1",
+  "why": "worker, a need: supply: Blue Slimeball: 568 actions short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~6.3 h); Blue Slime: 0 combat XP a kill; 259 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#2",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 314 h to the gate at the pace before it); Spider at 1.21 XP/s, 30 now (0.3 h) with 73 Cooked Trout from the bank; the bag caps it at 30 kills (2.01 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 39 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#2",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 244 h to the gate at the pace before it); Vampire at 1.34 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#3",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 314 h to the gate at the pace before it); Spider at 1.21 XP/s, 30 now (0.3 h) with 73 Cooked Trout from the bank; the bag caps it at 30 kills (2.01 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 39 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#1",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 387 h to the gate at the pace before it); Vampire at 1.32 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#4",
+  "why": "fighter: the XP pick: combat 25 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 314 h to the gate at the pace before it); Spider at 1.21 XP/s, 30 now (0.3 h) with 73 Cooked Trout from the bank; the bag caps it at 30 kills (2.01 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 39 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#2",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 387 h to the gate at the pace before it); Vampire at 1.32 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Third#2",
+  "why": "worker, a need: supply: Cowhide: 688 actions short for gearcrafting 25 → 26 (Hard Leather Boots ×19) (+3 pts, chain ~8.3 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#5",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 310 h to the gate at the pace before it); Rat at 0.90 XP/s, 30 now (0.6 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 68 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#3",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 387 h to the gate at the pace before it); Vampire at 1.32 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fourth#2",
+  "why": "worker, a need: supply: Cowhide: 486 actions short for gearcrafting 25 → 26 (Hard Leather Boots ×19) (+3 pts, chain ~6.8 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:blue_slimeball@Second#2",
+  "why": "worker, a need: supply: Blue Slimeball: 309 actions short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~4.9 h); Blue Slime: 0 combat XP a kill; 259 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#4",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 387 h to the gate at the pace before it); Vampire at 1.32 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#6",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 310 h to the gate at the pace before it); Rat at 0.90 XP/s, 30 now (0.6 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 68 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#5",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 392 h to the gate at the pace before it); Vampire at 1.19 XP/s, 30 now (0.4 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#7",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 320 h to the gate at the pace before it); Rat at 0.83 XP/s, 30 now (0.6 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 68 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#6",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 400 h to the gate at the pace before it); Vampire at 1.04 XP/s, 30 now (0.4 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Third#3",
+  "why": "worker, a need: supply: Cowhide: 332 actions short for gearcrafting 25 → 26 (Hard Leather Boots ×19) (+3 pts, chain ~5.3 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fourth#3",
+  "why": "worker, a need: supply: Cowhide: 130 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+3 pts, chain ~4.7 h); Cow: 0 combat XP a kill; 130 kills now (1.0 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#7",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 421 h to the gate at the pace before it); Vampire at 0.97 XP/s, 30 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:blue_slimeball@Second#3",
+  "why": "worker, a need: supply: Blue Slimeball: 50 actions short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~3.4 h); Blue Slime: 0 combat XP a kill; 50 kills now (0.3 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#8",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 391 h to the gate at the pace before it); Rat at 0.67 XP/s, 59 now (1.5 h) with 73 Cooked Trout from the bank; wins 100% of fights, 91 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Second#1",
+  "why": "worker, a need: supply: Hard Leather: 66 short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+4 pts, chain ~4.7 h); 37 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Second#2",
+  "why": "worker, a need: supply: Hard Leather: 75 short for gearcrafting 25 → 26 (Hard Leather Armor ×19) (+3 pts, chain ~7.0 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#1",
+  "why": "worker, a need: supply: Iron Ore: 534 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+4 pts, chain ~4.7 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#8",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 476 h to the gate at the pace before it); Vampire at 0.84 XP/s, 30 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Fourth#1",
+  "why": "worker, a need: supply: Iron Ore: 358 actions short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+4 pts, chain ~4.7 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#1",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 380 h to the gate at the pace before it); Skeleton at 0.64 XP/s, 120 now (1.5 h); rests (the bank's food heals more than a fight loses); task: 0 of 225 Skeleton; wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:cooked_trout@Third#1",
+  "why": "worker, the stock first: supply: Cooked Trout ×1080 from the bank's raw for First: their fight steps rest or take too little food; 1080 made now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#9",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 482 h to the gate at the pace before it); Pig at 0.66 XP/s, 127 now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Second#2",
+  "why": "worker, a need: supply: Iron Ore: 149 actions short for weaponcrafting 21 → 22 (Battlestaff ×16) (+4 pts, chain ~2.6 h); Iron Rocks: 0 mining XP a gather; 149 gathers now (1.3 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Fourth#1",
+  "why": "worker, a need: supply: Steel Bar: 167 short for jewelrycrafting 23 → 24 (Steel Ring ×12) (+4 pts, chain ~3.8 h); 117 made now (0.2 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#1",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 504 h to the gate at the pace before it); Skeleton at 0.65 XP/s, 125 now (1.5 h); rests (the bank's food heals more than a fight loses); task: 120 of 225 Skeleton; wins 100% of fights, 43 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:cooked_chicken@Third#1",
+  "why": "worker, the stock first: supply: Cooked Chicken ×1080 from the bank's raw for First, Fifth: their fight steps rest or take too little food; 1080 made now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, a batch from the bank: level: jewelrycrafting 23 → 30 for the fighters' next tier (+3 pts behind it): Steel Ring ×6 (550 XP a run), a batch from the bank, 6 now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Fourth#1",
+  "why": "worker, a need: supply: Hard Leather: 64 short for gearcrafting 25 → 26 (Hard Leather Armor ×19) (+3 pts, chain ~5.1 h); 21 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fourth#1",
+  "why": "worker, a need: supply: Cowhide: 688 actions short for gearcrafting 25 → 26 (Hard Leather Armor ×19) (+3 pts, chain ~3.6 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#10",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 339 h to the gate at the pace before it); Vampire at 0.91 XP/s, 28 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 28 kills (2.13 Cooked Trout a kill, 74 is half of 148); wins 96% of fights, 60 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Second#1",
+  "why": "worker, a need: supply: Steel Bar: 54 short for weaponcrafting 21 → 22 (Battlestaff ×16) (+3 pts, chain ~2.5 h); 50 made now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Second#1",
+  "why": "worker, a need: supply: Cowhide: 486 actions short for gearcrafting 25 → 26 (Hard Leather Armor ×19) (+3 pts, chain ~3.6 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#11",
+  "why": "fighter: the XP pick: combat 26 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 339 h to the gate at the pace before it); Vampire at 0.91 XP/s, 28 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 28 kills (2.13 Cooked Trout a kill, 74 is half of 148); wins 96% of fights, 60 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#12",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 343 h to the gate at the pace before it); Rat at 0.87 XP/s, 30 now (0.6 h) with 74 Cooked Trout from the bank; the bag caps it at 30 kills (2.05 Cooked Trout a kill, 74 is half of 148); wins 99% of fights, 73 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#2",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 348 h to the gate at the pace before it); Vampire at 1.30 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); task: turns in 225 of 225 Skeleton, then takes a monsters task at the master first; wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, a batch from the bank: level: gearcrafting 25 → 30 for the fighters' next tier (+3 pts behind it): Hard Leather Armor ×10 (546 XP a run), a batch from the bank, 10 now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#1",
+  "why": "worker, a need: supply: Iron Ore: 177 actions short for weaponcrafting 21 → 22 (Skull Staff ×17) (+3 pts, chain ~5.2 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, a batch from the bank: level: jewelrycrafting 23 → 30 for the fighters' next tier (+3 pts behind it): Steel Ring ×6 (550 XP a run), a batch from the bank, 6 now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Fourth#1",
+  "why": "worker, a need: supply: Hard Leather: 61 short for gearcrafting 25 → 26 (Hard Leather Boots ×9) (+3 pts, chain ~3.0 h); 12 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fourth#1",
+  "why": "worker, a need: supply: Cowhide: 572 actions short for gearcrafting 25 → 26 (Hard Leather Boots ×9) (+3 pts, chain ~2.6 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#3",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 320 h to the gate at the pace before it); Vampire at 1.30 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#13",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 283 h to the gate at the pace before it); Rat at 0.95 XP/s, 30 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 63 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Second#2",
+  "why": "worker, a need: supply: Cowhide: 722 actions short for gearcrafting 25 → 26 (Hard Leather Armor ×9) (+3 pts, chain ~1.8 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#1",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 231 h to the gate at the pace before it); Vampire at 1.30 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#14",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 283 h to the gate at the pace before it); Rat at 0.95 XP/s, 30 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 63 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#2",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 231 h to the gate at the pace before it); Vampire at 1.30 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#3",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 231 h to the gate at the pace before it); Vampire at 1.30 XP/s, 30 now (0.3 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#15",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 283 h to the gate at the pace before it); Rat at 0.95 XP/s, 30 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 63 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Third#2",
+  "why": "worker, a need: supply: Iron Ore: 301 actions short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+3 pts, chain ~12 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#4",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 232 h to the gate at the pace before it); Vampire at 1.28 XP/s, 30 now (0.4 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fourth#2",
+  "why": "worker, a need: supply: Cowhide: 520 actions short for gearcrafting 25 → 26 (Hard Leather Armor ×9) (+3 pts, chain ~0.3 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#16",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 283 h to the gate at the pace before it); Rat at 0.95 XP/s, 30 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 63 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#5",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 233 h to the gate at the pace before it); Vampire at 1.14 XP/s, 12 now (0.2 h) with 72 Cooked Chicken from the bank; the bag caps it at 12 kills (5 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Second#3",
+  "why": "worker, a need: supply: Cowhide: 318 actions short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+3 pts, chain ~11 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#6",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 238 h to the gate at the pace before it); Vampire at 1.12 XP/s, 30 now (0.4 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#17",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 292 h to the gate at the pace before it); Rat at 0.86 XP/s, 10 now (0.2 h) with 72 Cooked Chicken from the bank; the bag caps it at 10 kills (6 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 59 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#7",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 239 h to the gate at the pace before it); Vampire at 1.11 XP/s, 12 now (0.2 h) with 72 Cooked Chicken from the bank; the bag caps it at 12 kills (5 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#18",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 300 h to the gate at the pace before it); Skeleton at 0.68 XP/s, 30 now (0.3 h) with 72 Cooked Chicken from the bank; the bag caps it at 30 kills (2 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 40 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#8",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 241 h to the gate at the pace before it); Vampire at 1.10 XP/s, 12 now (0.2 h) with 72 Cooked Chicken from the bank; the bag caps it at 12 kills (5 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#9",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 248 h to the gate at the pace before it); Vampire at 1.07 XP/s, 12 now (0.2 h) with 72 Cooked Chicken from the bank; the bag caps it at 12 kills (5 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#19",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 325 h to the gate at the pace before it); Skeleton at 0.66 XP/s, 30 now (0.3 h) with 72 Cooked Chicken from the bank; the bag caps it at 30 kills (2 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 40 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Third#1",
+  "why": "worker, a need: supply: coins: 120 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~607 h); cancels task 125 of 374 shrimp (items) for a coin (a fighter's items task), takes a monsters task at the master (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Third#2",
+  "why": "worker, a need: supply: coins: 121 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~607 h); cancels task 0 of 225 Vampire for a coin (not admitted to Vampire), takes a monsters task at the master (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:tasks_coin@Third#3",
+  "why": "worker, a need: supply: coins: 122 short for Steel Axe for Second (woodcutting 35 → 50 and 3 gathering objectives (tool: 75.5 h saved)) (+1 pts, chain ~608 h); task: 0 of 225 Flying Snake, 61 kills now (0.8 h) with 74 Cooked Chicken from the bank; the bag caps it at 61 kills (1 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 26 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#10",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 280 h to the gate at the pace before it); Vampire at 0.94 XP/s, 12 now (0.2 h) with 72 Cooked Chicken from the bank; the bag caps it at 12 kills (5 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Fourth#3",
+  "why": "worker, a need: supply: Cowhide: 68 actions short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+3 pts, chain ~11 h); Cow: 0 combat XP a kill; 68 kills now (0.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@Fifth#11",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 280 h to the gate at the pace before it); Vampire at 0.93 XP/s, 30 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#20",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 352 h to the gate at the pace before it); Pig at 0.75 XP/s, 61 now (0.6 h) with 74 Cooked Chicken from the bank; the bag caps it at 61 kills (1 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 36 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Second#1",
+  "why": "worker, a need: supply: Hard Leather: 68 short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+4 pts, chain ~10 h); 37 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:steel_bar@Second#1",
+  "why": "worker, a need: supply: Steel Bar: 134 short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+4 pts, chain ~10 h); 117 made now (0.2 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:iron_ore@Fourth#1",
+  "why": "worker, a need: supply: Iron Ore: 401 actions short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+4 pts, chain ~11 h); Iron Rocks: 0 mining XP a gather; 176 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#1",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 378 h to the gate at the pace before it); Vampire at 0.95 XP/s, 12 now (0.2 h) with 72 Cooked Chicken from the bank; the bag caps it at 12 kills (5 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, a batch from the bank: level: gearcrafting 25 → 30 for the fighters' next tier (+3 pts behind it): Hard Leather Armor ×8 (546 XP a run), a batch from the bank, 8 now (0.1 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "mat:hard_leather@Second#1",
+  "why": "worker, a need: supply: Hard Leather: 37 short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+4 pts, chain ~9.5 h); 31 made now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#2",
+  "why": "worker, a batch from the bank: level: gearcrafting 25 → 30 for the fighters' next tier (+3 pts behind it): Magic Wizard Hat ×1 (585 XP a run), a batch from the bank, 1 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:blue_slimeball@Second#1",
+  "why": "worker, a need: supply: Blue Slimeball: 60 actions short for weaponcrafting 21 → 22 (Battlestaff ×16) (+4 pts, chain ~2.9 h); Blue Slime: 0 combat XP a kill; 60 kills now (0.3 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 9 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:gearcrafting:30@Third#3",
+  "why": "worker, a batch from the bank: level: gearcrafting 26 → 30 for the fighters' next tier (+3 pts behind it): Hard Leather Armor ×7 (545 XP a run), a batch from the bank, 7 now (0.0 h)"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Third#1",
+  "why": "worker, a need: supply: Cowhide: 400 actions short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+4 pts, chain ~14 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#21",
+  "why": "fighter: the XP pick: combat 27 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 369 h to the gate at the pace before it); Pig at 0.74 XP/s, 61 now (0.6 h) with 74 Cooked Chicken from the bank; the bag caps it at 61 kills (1 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 36 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#2",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 385 h to the gate at the pace before it); Vampire at 0.91 XP/s, 30 now (0.5 h) with 72 Cooked Trout from the bank; the bag caps it at 30 kills (2 Cooked Trout a kill, 74 is half of 148); wins 100% of fights, 42 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "src:cowhide@Second#1",
+  "why": "worker, a need: supply: Cowhide: 246 actions short for jewelrycrafting 24 → 25 (Steel Ring ×23) (+4 pts, chain ~12 h); Cow: 0 combat XP a kill; 202 kills now (1.5 h); rests (the bank's food heals more than a fight loses); wins 100% of fights, 17 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:39@Fifth#3",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 39 (no XP source there; 408 h to the gate at the pace before it); Skeleton at 0.70 XP/s, 61 now (0.7 h) with 74 Cooked Chicken from the bank; the bag caps it at 61 kills (1 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 39 s a win"
+ },
+ {
+  "w": "11-25 road",
+  "key": "lvl:combat:36@First#22",
+  "why": "fighter: the XP pick: combat 28 → 50: +3 pts behind it (grand_master), its road ends at 36 (no XP source there; 398 h to the gate at the pace before it); Skeleton at 0.59 XP/s, 30 now (0.4 h) with 2 Minor Health Potion and 72 Cooked Chicken from the bank; the bag caps it at 30 kills (2 Cooked Chicken a kill, 74 is half of 148); wins 100% of fights, 43 s a win"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@First#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Second#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Third#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Fourth#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-24",
+  "key": "mat:astralyte_crystal@Fifth#1",
+  "why": "supply: Astralyte Crystal: 14 short for Steel Pickaxe for First (mining 33 → 50 and 2 gathering objectives (tool: 78.1 h saved)) (+5 pts, chain ~1098 h); 11 made now (0.0 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:golden_egg@First#1",
+  "why": "fighter, no fight admitted: supply: Golden Egg: 2000 actions short for turning_treasures_to_gold (+2 pts, chain ~5.1 h); Chicken: 0 combat XP a kill; 119 kills now (1.5 h); rests (no food heals so little); wins 100% of fights, 45 s a win"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:pig_skin@Second#1",
+  "why": "fighter, a need's kill: supply: Pig Skin: 120 actions short for Steel Gloves for Third (alchemy 34 → 50 and 3 gathering objectives (tool: 197.0 h saved)) (+1 pts, chain ~561 h); Pig: 26 combat XP a kill, 97% of the lane's best; 82 kills now (1.5 h); rests (no food in the bank, nor raw food to cook); wins 100% of fights, 65 s a win"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:coal@Third#1",
+  "why": "worker, a need: supply: Coal: 623 actions short for Steel Gloves for Third (alchemy 34 → 50 and 3 gathering objectives (tool: 197.0 h saved)) (+1 pts, chain ~561 h); Coal Rocks: 20 mining XP a gather; 178 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "lvl:mining:30@Fourth#1",
+  "why": "worker, a need: level: mining 29 → 30 for Gold Ore in the chain of worker (+1 pts, chain ~47 h, of it the road 7.3 h by Fourth); Coal at 2259 XP/h, 178 now (1.5 h)"
+ },
+ {
+  "w": "11-21 unarmed",
+  "key": "src:trout@Fifth#1",
+  "why": "fighter, no fight admitted: supply: Trout: 299 actions short for Cooked Trout ×299 more for the fighters (Second 67k HP over 3 h, the bank 0k; Cooked Trout 5.9 HP a worker-second) (+3 pts, chain ~3.2 h); Trout Spot: 21 fishing XP a gather; 167 gathers now (1.5 h)"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:combat:24@First#1",
+  "why": "fighter: the XP pick: combat 23: Pig at 0.58 XP/s, 80 now (1.5 h) with 2 Minor Health Potion from the bank; rests (no food in the bank; raw for Cooked Beef waits for the cook); task: cancels 222 of 386 gudgeon (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 67 s a win"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:weaponcrafting:30@Second#1",
+  "why": "worker, craft to 30: weaponcrafting 20 → 30: Battlestaff ×3 (596 XP a run), a batch from the bank, 3 now (0.0 h)"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:gearcrafting:30@Third#1",
+  "why": "worker, craft to 30: gearcrafting 22 → 30: Skeleton Helmet ×8 (523 XP a run), a batch from the bank, 8 now (0.1 h)"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:jewelrycrafting:30@Fourth#1",
+  "why": "worker, craft to 30: jewelrycrafting 20 → 30: Air & Water Amulet ×10 (195 XP a run), a batch from the bank, 10 now (0.1 h)"
+ },
+ {
+  "w": "11-21 no achievement",
+  "key": "lvl:combat:24@Fifth#1",
+  "why": "fighter: the XP pick: combat 23: Pig at 0.58 XP/s, 80 now (1.5 h) with 2 Minor Health Potion from the bank; rests (no food in the bank; raw for Cooked Beef waits for the cook); task: cancels 0 of 120 spruce_wood (items) for a coin, then takes a monsters task at the master first; wins 100% of fights, 67 s a win"
+ }
+]

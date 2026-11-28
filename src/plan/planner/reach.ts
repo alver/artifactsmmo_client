@@ -16,7 +16,7 @@ import type { BisOptions, Food } from "../bis";
 import { killLog } from "./config";
 import { potionPriceOf, potionSec, wisdomOf } from "../xp";
 import { PINNED_ARTIFACTS, jobGear, ownedQtyOf } from "../jobgear";
-import { consPrice, potionCands } from "./consumables";
+import { consPrice, fedPlan, potionCands, sentSec } from "./consumables";
 import { available, poolBank } from "./stock";
 import { roleOfCh } from "./roles";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../types/api";
@@ -479,7 +479,7 @@ export function winSecOf(r: GearRecommendation, world: World, name: string, mons
 }
 /** Task 025: the verdict on a kill step's set — the codes it wears (its `wear` and the potions of its take): p and the
  *  expected seconds a win of exactly that set, and the fares its losses' way back takes. */
-export function verdictOf(ch: Character, world: World, monster: string, codes: string[]): FightVerdict | undefined {
+export function verdictOf(ch: Character, world: World, monster: string, codes: string[], sent?: { withdraw?: Record<string, number>; kills: number }): FightVerdict | undefined {
   const m = monsterOf(monster);
   if (!m) return undefined;
   const fighter = applyGear(baseStats(ch), codes);
@@ -487,11 +487,17 @@ export function verdictOf(ch: Character, world: World, monster: string, codes: s
   const p = forecast.win && !forecast.timedOut ? winRate(fighter, m) : 0;
   const b = wayBack(world, ch.name, monster);
   const back = b && (b.gold || Object.keys(b.keys).length) ? { gold: b.gold, keys: b.keys } : undefined;
-  const sec = winSecOf({ slots: {} as GearRecommendation["slots"], codes, forecast, worst: forecast, p, score: 0 }, world, ch.name, monster);
+  const r = { slots: {} as GearRecommendation["slots"], codes, forecast, worst: forecast, p, score: 0 };
+  // task 038 (B): a step's verdict counts the rest it will take with the food it is sent with (`sent`: its take, its kills)
+  const sec = sent ? sentSec(world, ch, monster, r, sent.withdraw, sent.kills) : winSecOf(r, world, ch.name, monster);
   return { p, sec, ...(back ? { back } : {}) };
 }
-/** A kill's seconds as the planner prices it (task 025: the expected seconds a win, winSecOf), the walks left out. */
-export const fightSecOf = (r: GearRecommendation, world: World, name: string, monster: string): number => winSecOf(r, world, name, monster);
+/** A kill's seconds as the planner prices it (task 025: the expected seconds a win, winSecOf), the walks left out — task 038
+ *  (B): over a chunk, fed as far as the character's share of the bank's food goes and resting past it (consumables.ts fedPlan). */
+export const fightSecOf = (r: GearRecommendation, world: World, name: string, monster: string): number => {
+  const ch = world.characters.find((c) => c.name === name);
+  return ch ? fedPlan(world, ch, monster, r).sec : winSecOf(r, world, name, monster);
+};
 /** Task 014: row B (consumables free) — every potion the character may drink is at hand, as an extra candidate. */
 const freeExtra = (ch: Character, world: World, extra: string[]): string[] =>
   (world.config.consumables ?? 1) && (world.config.potionK ?? 1) === 0 ? [...new Set([...extra, ...potionCands(ch)])] : extra;

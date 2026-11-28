@@ -18,7 +18,9 @@ await scenario(
     planner: { on: { Pia: true, Wes: true }, roles: { Pia: { role: "fighter" }, Wes: { role: "worker", craft: ["gearcrafting"], gather: ["mining"] } } },
     characters: [{ name: "Pia", level: 25, x: 4, y: 1, ...IRON, rune_slot: "healing_rune" }, { name: "Wes", level: 10, x: 4, y: 1 }], // on the bank
     // the armour her solve picks with the club beside it is in the bank already: the club is the one new piece
-    bank: { mushmush_wizard_hat: 1, mushmush_jacket: 1, snakeskin_legs_armor: 1, adventurer_pants: 1, adventurer_boots: 1, fire_ring: 2, earth_ring: 2, fire_and_earth_amulet: 1 },
+    // task 038: and the pieces her solve at the pig adds beside it now (a fighter's kill priced with its food: she stays at the
+    // pig, where on 0a38c06 her pick moved to the wolf after five hours)
+    bank: { mushmush_wizard_hat: 1, mushmush_jacket: 1, snakeskin_legs_armor: 1, adventurer_pants: 1, adventurer_boots: 1, fire_ring: 2, earth_ring: 2, fire_and_earth_amulet: 1, skeleton_helmet: 1, hard_leather_pants: 1, steel_ring: 2 },
     gold: 50_000, // over the floor (20,000) and the next expansion, which the purse keeps
     achievements: [achievement("made_up_level", 5, ["combat_level", null, 26])],
     limits: { actions: 3000, minutes: 600 },

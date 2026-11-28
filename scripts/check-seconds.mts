@@ -63,8 +63,10 @@ const workerAdmitted = (w: World, m: string): boolean => WORKERS.some((n) => adm
 // ── A. a need's kill is a worker's ───────────────────────────────────────────
 {
   // (a) and (b): the drops of the road's monsters no worker is admitted to in the bank, but the wolf's — the wolf and the
-  // skeleton within 25% of Second's pick (the vampire), the slimes Fourth's
-  const wa = worldOf([LEVEL], UNARMED, { cowhide: 1000, pig_skin: 1000, green_cloth: 1000, snake_hide: 1000, flying_wing: 1000, skeleton_bone: 1000, skeleton_skull: 1000 });
+  // skeleton within 25% of Second's pick (the vampire; task 038: the Pig), the slimes Fourth's
+  // task 038: and 20 Cooked Trout — a fighter's kill is priced with the food it is sent with: with none Second's plain pick is
+  // the Wolf itself (a road kill), with 60 and more the Pig beyond 25% of the Wolf; with 20 the Pig, the Wolf within 25%
+  const wa = worldOf([LEVEL], UNARMED, { cowhide: 1000, pig_skin: 1000, green_cloth: 1000, snake_hide: 1000, flying_wing: 1000, skeleton_bone: 1000, skeleton_skull: 1000, cooked_trout: 20 });
   const second = ch(wa, "Second"), plain = pickMonster(second, wa, new Set());
   const ra = rank("Second", wa), sa = ra.step;
   const roadKills = new Set(ra.supply.filter((c) => c.road && c.step.work.kind === "kill").map((c) => monsterOf(c.step)!));
@@ -105,7 +107,11 @@ const workerAdmitted = (w: World, m: string): boolean => WORKERS.some((n) => adm
   cases.push(["…a potion under an event's reserve is still held", !!ev && held >= Math.min(available(ev.code, evW, "First"), ev.demand) - 1e-6, ev ? `${ev.key}: ${Math.ceil(ev.demand)} reserved; ${held.toFixed(0)} of ${available(ev.code, evW, "First")} held back` : "no event reserve of a potion"]);
   // (c) raw food in the bank, none cooked → the cook's first-tier candidate cooks a food the raw makes, a chunk of it (not a
   // horizon's demand)
-  const noCooked: World = { ...base, bank: base.bank.filter((b) => item(b.code)?.subtype !== "food" || !item(b.code)?.craft) };
+  // task 038: (c) and (d) on 027g's reading — First and Fifth with no role, so their kills are priced by the measured means as
+  // before (a fighter's is the model with the food it is sent with now; on this World food then saves 13% of Fifth's road at the
+  // Spider, under NEED_RATIO's 15%, and no road food need is left to test the switch on)
+  const base0: World = { ...base, config: { ...base.config, roles: { ...base.config.roles, First: {}, Fifth: {} } } as World["config"] };
+  const noCooked: World = { ...base0, bank: base0.bank.filter((b) => item(b.code)?.subtype !== "food" || !item(b.code)?.craft) };
   const third = rank("Third", noCooked);
   const cook = third.supply.find((c) => c.target.key.startsWith("mat:") && item(c.target.key.slice(4))?.subtype === "food" && !!c.need && !!c.road);
   const makes = cook ? feedable(cook.target.key.slice(4), noCooked, "Third") * (item(cook.target.key.slice(4))?.craft?.quantity ?? 1) : 0;
@@ -113,7 +119,7 @@ const workerAdmitted = (w: World, m: string): boolean => WORKERS.some((n) => adm
   // (d) the switch: 100 raw trout, no other raw food, none cooked — FOOD_FISHING off, every food parent opens no field step
   // (no gather or kill for food alone: none for anyone); on, today's chain — a food parent's bill short of raw fishes for it
   const ingr = new Set([...catalog().items.values()].flatMap((it) => (it.craft?.skill === "cooking" ? [it.code, ...it.craft.items.map((g) => g.code)] : [])));
-  const low: World = { ...base, bank: [...base.bank.filter((b) => !ingr.has(b.code)), { code: "trout", quantity: 100 }] };
+  const low: World = { ...base0, bank: [...base0.bank.filter((b) => !ingr.has(b.code)), { code: "trout", quantity: 100 }] };
   const isFoodParent = (p: Parent): boolean => item(p.key.split(":")[1])?.type === "consumable";
   const fieldFood = (w: World): string[] => ALL.flatMap((n) => rank(n, w).supply.filter((c) => c.target.key.startsWith("src:") && /^cons:/.test(c.step.parent ?? "") && item((c.step.parent ?? "").split(":")[1])?.type === "consumable").map((c) => `${n} ${c.target.key} for ${c.step.parent}`));
   const off = consParents(low, "Third").filter(isFoodParent), on = consParents({ ...low, config: { ...low.config, foodFishing: true } as World["config"] }, "Third").filter(isFoodParent);

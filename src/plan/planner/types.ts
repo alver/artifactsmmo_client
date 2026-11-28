@@ -84,7 +84,7 @@ export interface Step {
 /** Task 028: the rule of a role's order that took a step (decide.ts ORDER): a fighter's first · forging · a need's kill ·
  *  the XP pick · the free pass; a worker's need · short · craft ahead · today · fallback; anyone's tidy. Task 029: a fighter's
  *  training's kill (`train-kill`), a worker's batch from the bank (`train`). */
-export type Rule = "first" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy" | "cook" | "market";
+export type Rule = "first" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy" | "cook" | "market" | "fed";
 /** Task 028 (A.1): a step's reason in parts. */
 export interface Reason {
   role?: "fighter" | "worker";

@@ -20,7 +20,8 @@
 // Task 035 (a fighter never takes a fight that gives it no XP — the guard on the outcome), the three King Slime steps of the
 // journal of 11-27 on the same World (none of those minutes is kept: logs/world holds 00:00's), each fighter's step a fight
 // that pays it XP:
-//   6. 15:05, 032c's code (TRAIN_HUNT on): "fighter, a training's kill" → with trainHunt on;
+//   6. 15:05, 032c's code (TRAIN_HUNT on): "fighter, a training's kill" → with trainHunt on (task 038: the training's no-XP
+//      kills, whichever recipe it is on);
 //   7. 16:15:08, 033's code (TRAIN_HUNT off): "fighter, a training's kill … Skull Amulet ×24" → under DEFAULTS;
 //   8. 17:38:32, 033b's code: "fighter, a need's kill … for jewelrycrafting 26 → 27" — the leaf shared by the training and
 //      Fifth's own Greater Dreadful Amulet (the bank and the bags without King Slimeballs) → no exception for a fighter's
@@ -140,8 +141,10 @@ const cases: [string, boolean, string][] = [];
   const pays = (x: World, f: Record<string, Step>): boolean => ["First", "Fifth"].every((n) => !!mon(f[n]) && !noXp(x, n, mon(f[n])!));
   const tell = (x: World, f: Record<string, Step>): string => ["First", "Fifth"].map((n) => `${n}: ${said(f[n])}, ${xpOf(x, n, f[n])}`).join("; ");
   const wh = liveOf({ config: { trainHunt: true } }), hunt = steps(wh);
-  const lh = rank("First", wh).supply.find((c) => c.target.key === KS);
-  cases.push(["6. 15:05 (TRAIN_HUNT on): the training's King Slimeball → each fighter's step a fight that pays it XP", noXp(wh, "First", "king_slime") && !!lh?.train && pays(wh, hunt), `leaf train ${!!lh?.train}; ${tell(wh, hunt)}`]);
+  // task 038: a fighter's kill priced by the model with its food (no measured mean) moves the training off Skull Amulet here —
+  // it asks Skeleton Bone, Wolf Bone and Snake Hide, kills of no XP to the fighters as the King Slimeball was
+  const lh = rank("First", wh).supply.filter((c) => c.train && !!mon(c.step) && noXp(wh, "First", mon(c.step)!));
+  cases.push(["6. 15:05 (TRAIN_HUNT on): the training's no-XP kills → each fighter's step a fight that pays it XP", lh.length > 0 && pays(wh, hunt), `the training's no-XP kills ${lh.map((c) => c.target.key).join(", ") || "none"}; ${tell(wh, hunt)}`]);
   cases.push(["7. 16:15 (TRAIN_HUNT off): the same → each fighter's step a fight that pays it XP", !!leaf?.train && pays(wf, fair), tell(wf, fair)]);
   const wo = liveOf({ gone: "king_slimeball", market: sale(20, 20) }), own = steps(wo);
   const of = rank("Fifth", wo).supply.find((c) => c.target.key === KS);

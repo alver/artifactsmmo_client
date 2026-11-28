@@ -61,8 +61,10 @@ const LEVEL = made("made_up_level", 5, "combat_level", "", 30); // a combat gate
   const r = rank("First", w), obj = r.objectives.find((c) => c.target.key === "ach:made_up_kill:0");
   const pick = pickMonster(first, w, new Set(["highwayman"]));
   cases.push(["a fighter with a ranked kill objective and an admitted XP fight → the XP pick", !!obj && obj.any > 0 && !!pick && pick.monster !== "highwayman" && monsterOf(r.step) === pick.monster && r.step.why.startsWith("fighter: the XP pick"), `objective ranked ${obj ? obj.any.toPrecision(3) : "no"}; pick ${pick?.monster}; First: ${said(r.step)}`]);
-  // (b) the objective's monster within 25% of the pick's rate (the pig against the skeleton) → that monster, as the XP pick
-  const wp = worldOf([LEVEL, made("made_up_pigs", 10, "combat_kill", "pig", 200)]);
+  // (b) the objective's monster within 25% of the pick's rate (the pig against the skeleton) → that monster, as the XP pick —
+  // task 038: with 100 Cooked Trout (a fighter's kill is priced with the food it is sent with: with none the pig is the plain
+  // pick itself, with 200 the skeleton beyond the band)
+  const wp = worldOf([LEVEL, made("made_up_pigs", 10, "combat_kill", "pig", 200)], {}, withBank({ cooked_trout: 100 }));
   const p0 = pickMonster(first, wp, new Set()), pb = pickMonster(first, wp, new Set(["pig"]));
   const sp = step(wp, "First");
   cases.push(["…the objective's monster within 25% of the pick's rate → that monster", !!p0 && p0.monster !== "pig" && pb?.monster === "pig" && monsterOf(sp) === "pig" && sp.why.startsWith("fighter: the XP pick"), `pick ${p0?.monster} ${p0 ? (p0.xp / p0.sec).toFixed(3) : ""} XP/s, with the ×1.25 ${pb?.monster}; First: ${said(sp)}`]);
@@ -119,17 +121,18 @@ const LEVEL = made("made_up_level", 5, "combat_level", "", 30); // a combat gate
   const named = Object.keys(fightRec(first0, w, "ogre")?.forecast.used ?? {}).includes("small_health_potion");
   const c = rank("First", w).objectives.find((x) => x.target.key === "ach:made_up_ogres:0");
   cases.push(["the sliver: the kill step stands without that potion, where the set without it is admitted", named && admitted(first0, noStock(w, ["small_health_potion"]), "ogre") && !!c && !c.step.withdraw?.small_health_potion && c.step.units > 2, `the set names Small Health Potion ${named}; First's objective: ${c ? `${c.step.units} kills, withdraw ${JSON.stringify(c.step.withdraw ?? {})}` : "no candidate"}`]);
-  // (b) First at 31: its XP pick (the vampire) is admitted only with Minor Health Potions, the bank holds 12 → a potion of
-  // that fight (the one its chain prices best) is a need of the road, in the alchemist's first tier
+  // (b) First at 31: its XP pick (the vampire; task 038: the rat, a fighter's kill priced by the model with its food, not the
+  // measured means) is admitted only with Minor Health Potions, the bank holds 12 → a potion of that fight (the one its chain
+  // prices best) is a need of the road, in the alchemist's first tier
   const wp = worldOf([made("made_up_level", 5, "combat_level", "", 40)], { First: { level: 31 } }, withBank({ minor_health_potion: 12 }));
   const first = wp.characters.find((x) => x.name === "First")!;
   const pick = pickMonster(first, wp, new Set()), bare = pickMonster(first, gearWorld(wp), new Set());
-  const need = consumableNeeds(wp, "Third").find((n) => n.monster === "vampire" && n.workKey.startsWith("lvl:combat:") && n.for.includes("First"));
+  const need = consumableNeeds(wp, "Third").find((n) => n.monster === pick?.monster && n.workKey.startsWith("lvl:combat:") && n.for.includes("First"));
   // its leaves are the alchemist's first tier, though an event's reserve shares them and names them (supply.ts `via`)
   const par = need && consParents(wp, "Third").find((p) => p.key === need.key);
   const keys = par ? supplyNeeds(wp, "Third", [par], () => 0).map((x) => x.key) : [];
   const leaves = rank("Third", wp).supply.filter((c) => keys.includes(c.target.key));
-  cases.push(["…a potion-only XP fight → the potion is a need of the road, a worker's first tier", pick?.monster === "vampire" && !bare && !!need && Number.isFinite(need.any) && need.any > 0 && leaves.length > 0 && leaves.every((c) => c.need), `pick ${pick?.monster}, bare ${bare?.monster ?? "none"}; need ${need ? `${need.key}, any ${need.any.toPrecision(3)}` : "none"}; Third's leaves: ${leaves.map((c) => `${c.target.key} (parent ${c.step.parent}, first tier ${!!c.need})`).join(", ") || "none"}`]);
+  cases.push(["…a potion-only XP fight → the potion is a need of the road, a worker's first tier", !!pick && !bare && !!need && Number.isFinite(need.any) && need.any > 0 && leaves.length > 0 && leaves.every((c) => c.need), `pick ${pick?.monster}, bare ${bare?.monster ?? "none"}; need ${need ? `${need.key}, any ${need.any.toPrecision(3)}` : "none"}; Third's leaves: ${leaves.map((c) => `${c.target.key} (parent ${c.step.parent}, first tier ${!!c.need})`).join(", ") || "none"}`]);
 }
 
 // ── 4. a walled road ─────────────────────────────────────────────────────────
