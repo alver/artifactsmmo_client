@@ -508,7 +508,36 @@ party's step** — a boss's kill objective keeps its `group` gate (`targets.ts`)
 - **What the lich asks (report 039c)**: the trio wins it only with Greater Health Potions — its tank drinks 13–15 a win at
   every level from 30 to 42 in the stage's pieces, and without any potion the trio wins 0%; the bank held 50 on 11-28 and
   `POTIONS` is off, so the fighters' solo steps drink them and nothing brews more.
-- **Checks**: `check-party` (the solo equivalence, a turn an actor, whom the boss strikes, a pair where one loses, the
+- **The kit (task 042, A)**: the party's fight plays what a party wears — `healing_aura` (every 2 of the bearer's own turns the
+  other members standing heal value% of their max HP; never the bearer), `splash_restore` (at the start of the bearer's turn,
+  the other member that has lost the most HP gets value HP if it is under half its HP; one potion a proc, in `used`), `shell`
+  (below 40% HP, +value res on every element through the hits of 3 own turns, once a fight, boss fights only — a solo fight
+  against a boss too), two members' `burn` adding up; `lifesteal` and the boosts worked already; readings in `sim/effects.ts`.
+  So the bank's 358 health splash potions, which the solo solves wear as slot fillers, heal in a party now (`check-third` case
+  6 takes them out of the bank). **`partyPlan(…, kit)`**: every member may also wear the kit (`party.ts kitOf`: a rune a
+  merchant sells for gold, a potion the fleet's alchemy brews now — `brews`, the highest alchemy of those on — and the bank's
+  potions), placed on each of the 2^n parties' solo-solved sets by `kitPass` (a member's rune, a utility slot, a potion off —
+  one change at a time, kept when `kitBetter`: at the floor first, then the fewest units a win of potions nobody brews — the
+  bank's greater health potions —, then the fewest seconds a win, `kitSec`: the fight, the slowest member's rest, a fall priced
+  as a beaten fighter's way back — 039's unread rule taken so —, the potions at their chain), the best party kept by the same
+  rule. Only the table asks for it now (`scripts/party-kit.mts`,
+  below): the party's step keeps what the members hold (the bank's potions are in their pools either way: for a party potions
+  are allowed; `POTIONS` stays off for a fight alone — no kit in `fightOptions`). `partyCycle` is the party's seconds a win
+  (the step's and the table's).
+- **The table (task 042, D)**: `scripts/party-kit.mts --snap <events.json> [--boss a,b] [--levels 36,38]` (read-only, a few
+  minutes) — the lich, the priestess and rosenblood against First, Fifth, Second now and all three at 36–46 with the kit: p,
+  turns, each member's XP an hour there (the party's average level rounded down, its set's wisdom, over `partyCycle`) against
+  its own pick alone (at that level in the bank's gear, at least its pick today), the previous row's sets rolled again where
+  they do better (the solver's sets are solo solves, and a stage with no list can lead it to a weaker party), the runes and
+  potions a win, what is missing (pieces with `gear.ts makeHours` for all three at once, runes
+  with their gold, potions against the bank's stock with their brewing hours a win) and the first that pays, dated by the
+  snapshot's last road. **The XP rule for a party** (docs `concepts/stats_and_fights`, read again in 042): every member's base
+  and level penalty at the party's average level rounded down, its own wisdom on top — so ×0.7 at an average 6–10 above the
+  boss and nothing past 10 (fightXp's rule as task 012 measured it, at the average): _zero_'s 39/41/42 average 40 at the lich
+  and make about 9,000 an hour each; 035's guard and `partyChoice` already read it.
+- **Checks**: `check-party-kit` (task 042: the aura turns a loss into a win and heals no caster; the splash heals the other
+  member that lost the most, under half its HP; shell against a boss only; the solver's kit admits the trio of 14:04 where its
+  pool does not, healing_rune in place of the aura loses; `POTIONS` off keeps the kit out of a fight alone); `check-party` (the solo equivalence, a turn an actor, whom the boss strikes, a pair where one loses, the
   solver's party on the World of 09:46 on 11-28 and Second's lowest level); `check-third` (task 039b, the World of 14:04 on
   11-28, `scripts/fixtures/world-2026-11-28-1404.json`: Second a fighter, its batch from the bank, the party's needs);
   `check-party-step` (task 039c: the first kill, every member's share and key, the boss as every member's pick, none at 45 or
@@ -521,7 +550,7 @@ party's step** — a boss's kill objective keeps its `group` gate (`targets.ts`)
 
 ## The fight simulator's effects
 
-`src/sim/combat.ts` (`simulate`) models every solo-relevant combat effect (task 027: **restore potions** one entry each in slot order — the second fires only while HP is still under half after the first — and a worn stack with a quantity stops when it is spent: `EffectEntry.qty`, set by `stats.ts currentFighter` for a stack shorter than 50, a side's turns in a fight, so the executor's gate sees a short stack; the planner's solves pass none; `fightKey` carries it); `src/sim/effects.ts` (`MODELED`) is the audit list and records the reading taken for each one the docs leave ambiguous (2026-11-17: antipoison, corrupted, protective bubble, sun shield, greed, frenzy, enchanted mirror, void drain — plus poison/burn now land at the start of the BEARER's first turn). Only `christmas_magic` (no item or monster carries it) is unmodeled; ally-only effects are `SOLO_NOOP`. Hits are cached per side and recomputed only when an effect changes them (`dynamic`), and the turn mechanics are module-level functions (no per-call closures): ~2 µs per fight, half the pre-2026-11-17 cost — keep it that way, BIS searches and the atlas call it hundreds of thousands of times. Plain fights compute exactly as before. The fight-log check (`sim/validate.ts`) is the arbiter of those readings; `scripts/check-effects.mts` pins each mechanic on synthetic fights.
+`src/sim/combat.ts` (`simulate`) models every solo-relevant combat effect (task 027: **restore potions** one entry each in slot order — the second fires only while HP is still under half after the first — and a worn stack with a quantity stops when it is spent: `EffectEntry.qty`, set by `stats.ts currentFighter` for a stack shorter than 50, a side's turns in a fight, so the executor's gate sees a short stack; the planner's solves pass none; `fightKey` carries it); `src/sim/effects.ts` (`MODELED`) is the audit list and records the reading taken for each one the docs leave ambiguous (2026-11-17: antipoison, corrupted, protective bubble, sun shield, greed, frenzy, enchanted mirror, void drain — plus poison/burn now land at the start of the BEARER's first turn). Only `christmas_magic` (no item or monster carries it) is unmodeled; ally-only effects are `SOLO_NOOP` (task 042: `shell` is modeled — in a boss fight —, `healing_aura` and `splash_restore` are played in a party's fight, `simulateParty`; "A party"). Hits are cached per side and recomputed only when an effect changes them (`dynamic`), and the turn mechanics are module-level functions (no per-call closures): ~2 µs per fight, half the pre-2026-11-17 cost — keep it that way, BIS searches and the atlas call it hundreds of thousands of times. Plain fights compute exactly as before. The fight-log check (`sim/validate.ts`) is the arbiter of those readings; `scripts/check-effects.mts` pins each mechanic on synthetic fights.
 
 ## Static catalog
 

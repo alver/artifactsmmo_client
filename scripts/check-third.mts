@@ -8,7 +8,8 @@
 //      stays a parent the workers supply;
 //   3. B: Second at combat 30 and stage 1 listing the lich trio's pieces → the trio passes; the pieces its members lack are needs,
 //      each on the stage's list and not in the bank, the cheapest chain first; a piece off the list is asked for nobody; with
-//      stage 1's list as committed the party does not pass and nothing is asked; no stages → nothing.
+//      stage 1's list as committed and no splash potion in the bank (task 042: they heal in a party) the party does not pass
+//      and nothing is asked; no stages → nothing.
 // On be6a919 (039) cases 1–3 fail. node --import tsx scripts/check-third.mts
 import { readFile } from "node:fs/promises";
 import { setDataReader } from "../src/catalog/load";
@@ -87,8 +88,9 @@ const ch = (w: World, n: string): Character => w.characters.find((c) => c.name =
     `${needs.length} needs: ${needs.map((n) => `${n.for} ${[...n.pieces.keys()].join("")} ${n.G.toFixed(2)} h`).join(", ")}`]);
   const off = party(worldOf({ stages: listed(["emerald_ring"]), second: at30 }));
   cases.push(["…emerald_ring off the list → asked for nobody", !off.some((n) => n.pieces.has("emerald_ring")), `${off.length} needs: ${[...new Set(off.flatMap((n) => [...n.pieces.keys()]))].join(", ")}`]);
-  const asIs = party(worldOf({ second: at30 })), noStage = party({ ...worldOf({ stages: listed(), second: at30 }), stages: undefined });
-  cases.push(["…stage 1's list as committed → the party does not pass, nothing asked; no stages → nothing", asIs.length === 0 && noStage.length === 0, `as committed ${asIs.length}, no stages ${noStage.length}`]);
+  // task 042: the bank's 358 health splash potions heal in a party now, and the trio passes on stage 1's list with them
+  const asIs = party(worldOf({ second: at30, bank: { health_splash_potion: 0 } })), noStage = party({ ...worldOf({ stages: listed(), second: at30 }), stages: undefined });
+  cases.push(["…stage 1's list as committed, no splash potion in the bank → the party does not pass, nothing asked; no stages → nothing", asIs.length === 0 && noStage.length === 0, `as committed ${asIs.length}, no stages ${noStage.length}`]);
 }
 
 let failed = 0;

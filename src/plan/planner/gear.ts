@@ -164,7 +164,7 @@ export function candidatesOf(ch: Character, world: World): Cands {
 }
 
 /** G: the hours to make these pieces — their bill (supply), the crafts, and each crafter's levels where its skill is short. */
-function makeHours(pieces: Map<string, number>, ch: Character, world: World): { G: number; parts: Need["parts"]; offered: boolean } {
+export function makeHours(pieces: Map<string, number>, ch: Character, world: World): { G: number; parts: Need["parts"]; offered: boolean } {
   const demand: [string, number][] = [];
   let crafts = 0, offered = true;
   const lv = new Map<string, number>(); // crafter|skill → the highest recipe level asked

@@ -111,6 +111,14 @@ interface Combatant {
   mirror: number; // enchanted mirror: % of a hit taken dealt back
   mirrorLast: number; // fight turn of the last reflection
   voidDrain: number; // % of the opponent's current HP drained every 4 own turns
+  // task 042: a party's kit
+  aura: number; // healing aura: every 2 own turns, the other members standing +value% of their max HP
+  splashes: { v: number; left: number; n: number }[] | null; // splash restore potions, one an entry (value, units left, procs)
+  shell: number; // shell: +value% res to every element for 3 own turns, once, below 40% HP — boss fights only
+  shellLeft: number; // own turns the shell still holds (0: none up)
+  shellUsed: boolean;
+  shellFlip: boolean; // the shell went up or down: its attackers' cached hits are stale
+  boss: boolean; // the fight is against a boss (shell's condition)
 }
 
 /** Player NON-CRIT damage per element vs a monster's resistances (raw→resist). */
@@ -193,6 +201,7 @@ function newSide(hp: number, atk: Record<Element, number>, dmgPct: Record<Elemen
     antipoison: 0, corrupted: 0, bubble: 0, bubbleEl: null, sunShield: 0,
     greed: 0, greedStacks: 0, damageTaken: 0, frenzy: 0, frenzyOn: false,
     mirror: 0, mirrorLast: -Infinity, voidDrain: 0,
+    aura: 0, splashes: null, shell: 0, shellLeft: 0, shellUsed: false, shellFlip: false, boss: false,
   };
 }
 
@@ -217,6 +226,9 @@ function applyEffects(c: Combatant, effects: { code: string; value: number; qty?
       case "frenzy": c.frenzy += v; break;
       case "enchanted_mirror": c.mirror += v; break;
       case "void_drain": c.voidDrain += v; break;
+      case "healing_aura": c.aura += v; break;
+      case "splash_restore": (c.splashes ??= []).push({ v, left: e.qty ?? Infinity, n: 0 }); break;
+      case "shell": c.shell += v; break;
     }
   }
 }
@@ -254,9 +266,16 @@ function refreshHit(a: Combatant, d: Combatant, roll: boolean): void {
   a.hitEV = normal * (1 + 0.5 * a.crit);
 }
 
-/** Every HP loss goes through here: greed counts each 10% of max HP lost. */
+/** Shell (task 042) up or down: its value on every element's resistance. */
+function setShell(c: Combatant, up: boolean): void {
+  for (const el of ELEMENTS) c.res[el] += up ? c.shell : -c.shell;
+  c.shellFlip = true;
+}
+
+/** Every HP loss goes through here: greed counts each 10% of max HP lost; task 042: a shell goes up below 40% HP. */
 function hurt(c: Combatant, dmg: number): void {
   c.hp -= dmg;
+  if (c.shell && !c.shellUsed && c.boss && c.hp > 0 && c.hp < 0.4 * c.maxHp) { c.shellUsed = true; c.shellLeft = 3; setShell(c, true); }
   if (!c.greed || dmg <= 0) return;
   c.damageTaken += dmg;
   const stacks = Math.floor(c.damageTaken / (0.1 * c.maxHp));
@@ -285,13 +304,25 @@ function checkBerserk(c: Combatant): void {
 // Start of a combatant's own turn: DoTs it applies (first turn), self regen,
 // antipoison, then suffered DoTs. Returns false if it died from a DoT.
 // `all` (task 039, a party): every enemy standing is drained ("drains X% HP from each enemy"); the DoTs go to `opp`.
-function startOfTurn(c: Combatant, opp: Combatant, all?: Combatant[]): boolean {
+// `allies` (task 042, a party member): the party, itself included — its healing aura and splash potions heal the others.
+function startOfTurn(c: Combatant, opp: Combatant, all?: Combatant[], allies?: Combatant[]): boolean {
   c.turns++;
   if (c.turns === 1) {
     if (c.poisonApply > 0) opp.poison += c.poisonApply;
     if (c.burnApply > 0) {
-      opp.burnCur = (c.burnApply / 100) * c.totalAtk;
+      opp.burnCur += (c.burnApply / 100) * c.totalAtk; // task 042: two members' burns add up (a reading: the docs say nothing)
       opp.burnActive = true;
+    }
+  }
+  if (c.shellLeft > 0 && --c.shellLeft === 0) setShell(c, false); // up through the hits of 3 own turns
+  if (allies) {
+    // "every 2 played turns" read as the bearer's own turns, as a boss's effects count its own (report 039)
+    if (c.aura > 0 && c.turns % 2 === 0) for (const a of allies) if (a !== c && a.hp > 0) a.hp = Math.min(a.maxHp, a.hp + (a.maxHp * c.aura) / 100);
+    if (c.splashes) for (const r of c.splashes) {
+      if (r.left <= 0) continue;
+      let t: Combatant | undefined; // the other member that has lost the most HP, if under half its HP
+      for (const a of allies) if (a !== c && a.hp > 0 && (!t || a.maxHp - a.hp > t.maxHp - t.hp)) t = a;
+      if (t && t.hp < 0.5 * t.maxHp) { t.hp = Math.min(t.maxHp, t.hp + r.v); r.left--; r.n++; }
     }
   }
   if (c.reconstitution > 0 && c.turns % c.reconstitution === 0) c.hp = c.maxHp;
@@ -325,6 +356,7 @@ function drain(c: Combatant, o: Combatant): void {
 function attack(a: Combatant, d: Combatant, turn: number, rng: (() => number) | undefined, dynamic: boolean): { dmg: number; crit: boolean } {
   if (dynamic) {
     setBonus(a, !!rng);
+    if (d.shellFlip) { d.shellFlip = false; a.dirty = true; }
     refreshHit(a, d, !!rng);
   }
   let crit = false;
@@ -364,8 +396,8 @@ function attack(a: Combatant, d: Combatant, turn: number, rng: (() => number) | 
 /** The `used` of a fight with no potion worn: one shared object, so the solver's hot loop allocates nothing for it. */
 const NO_USE: Record<string, number> = Object.freeze({}) as Record<string, number>;
 
-/** A player's side of a fight: its opening boosts folded in, its effects applied. */
-function playerSide(player: Fighter, pessimistic?: boolean): Combatant {
+/** A player's side of a fight: its opening boosts folded in, its effects applied; `boss`: a boss fight (shell holds only there). */
+function playerSide(player: Fighter, pessimistic?: boolean, boss = false): Combatant {
   const { boostDmg, pMaxHp, pRes } = opening(player);
   const st = player.stats;
   const P = newSide(
@@ -374,9 +406,11 @@ function playerSide(player: Fighter, pessimistic?: boolean): Combatant {
     { fire: st.dmg + st.dmg_fire + boostDmg.fire, earth: st.dmg + st.dmg_earth + boostDmg.earth, water: st.dmg + st.dmg_water + boostDmg.water, air: st.dmg + st.dmg_air + boostDmg.air },
     pRes, pessimistic ? 0 : Math.max(0, Math.min(1, st.critical_strike / 100)), st.initiative,
   );
+  P.boss = boss;
   applyEffects(P, player.effects);
   return P;
 }
+const isBoss = (m: Monster): boolean => m.type === "boss" || m.type === "raid_boss";
 
 function monsterSide(monster: Monster, pessimistic?: boolean): Combatant {
   const M = newSide(
@@ -390,12 +424,14 @@ function monsterSide(monster: Monster, pessimistic?: boolean): Combatant {
   return M;
 }
 
-/** The potions a fight drank (FightForecast.used) — the restore entries are in the order of the player's restore effects. */
-function usedOf(player: Fighter, P: Combatant): Record<string, number> {
+/** The potions a fight drank (FightForecast.used) — the restore entries are in the order of the player's restore effects.
+ *  Task 042: a splash potion one a proc with allies; alone, one a fight as before — a set that wears one it cannot drink pays
+ *  for it, so a solo solve never takes it as a slot filler. */
+function usedOf(player: Fighter, P: Combatant, allies = false): Record<string, number> {
   let used = NO_USE;
-  let ri = 0;
+  let ri = 0, si = 0;
   for (const e of player.effects) {
-    const n = e.code === "restore" ? P.restores![ri++].n : 1;
+    const n = e.code === "restore" ? P.restores![ri++].n : e.code === "splash_restore" && allies ? P.splashes![si++].n : 1;
     if (!e.potion) continue;
     if (used === NO_USE) used = {};
     used[e.potion] = Math.max(used[e.potion] ?? 0, n);
@@ -405,11 +441,11 @@ function usedOf(player: Fighter, P: Combatant): Record<string, number> {
 
 export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {}): FightForecast {
   const rng = opts.rng;
-  const P = playerSide(player, opts.pessimistic), M = monsterSide(monster, opts.pessimistic);
+  const P = playerSide(player, opts.pessimistic, isBoss(monster)), M = monsterSide(monster, opts.pessimistic);
   const pMaxHp = P.maxHp;
   // Anything that changes a hit mid-fight; without it the opening hits hold all fight.
   const bubbles = !!rng && !!(P.bubble || M.bubble);
-  const dynamic = bubbles || !!(P.greed || P.frenzy || M.greed || M.frenzy || P.corrupted || M.corrupted);
+  const dynamic = bubbles || !!(P.greed || P.frenzy || M.greed || M.frenzy || P.corrupted || M.corrupted || (P.shell && P.boss));
   if (bubbles) {
     rollBubble(P, rng);
     rollBubble(M, rng);
@@ -527,10 +563,10 @@ function targetOf(P: Combatant[], threat: number[], rng?: () => number): number 
  */
 export function simulateParty(members: PartyMember[], monster: Monster, opts: SimOptions = {}): PartyForecast {
   const rng = opts.rng, roll = !!rng;
-  const P = members.map((m) => playerSide(m.fighter, opts.pessimistic)), M = monsterSide(monster, opts.pessimistic);
+  const P = members.map((m) => playerSide(m.fighter, opts.pessimistic, isBoss(monster))), M = monsterSide(monster, opts.pessimistic);
   const threat = members.map((m) => m.threat);
   const bubbles = roll && (!!M.bubble || P.some((p) => p.bubble));
-  const dynamic = bubbles || !!(M.greed || M.frenzy || M.corrupted) || P.some((p) => p.greed || p.frenzy || p.corrupted);
+  const dynamic = bubbles || !!(M.greed || M.frenzy || M.corrupted) || P.some((p) => p.greed || p.frenzy || p.corrupted || (p.shell && p.boss));
   if (bubbles) { for (const p of P) rollBubble(p, rng!); rollBubble(M, rng!); }
   for (const p of P) refreshHit(p, M, roll);
   // the order: -1 the boss, i the i-th member; a full tie is shuffled (Fisher–Yates from its end, the boss first before it,
@@ -559,7 +595,7 @@ export function simulateParty(members: PartyMember[], monster: Monster, opts: Si
       if (M.hp <= 0) { win = true; break; } // its own reflected hit
     } else {
       const p = P[a];
-      if (!startOfTurn(p, M)) { if (--standing === 0) break; continue; }
+      if (!startOfTurn(p, M, undefined, all)) { if (--standing === 0) break; continue; }
       attack(p, M, turn, rng, dynamic);
       if (M.corrupted) for (const q of P) q.dirty = true; // its resistances moved for every member's hit
       if (M.hp <= 0) { win = true; break; }
@@ -567,5 +603,5 @@ export function simulateParty(members: PartyMember[], monster: Monster, opts: Si
     }
   }
   if (turn > MAX_TURNS) { win = false; timedOut = true; turn = MAX_TURNS; }
-  return { win, turns: turn, timedOut, hp: P.map((p) => Math.max(0, Math.round(p.hp))), maxHp: P.map((p) => p.maxHp), used: members.map((m, i) => usedOf(m.fighter, P[i])), bossHp: Math.max(0, Math.round(M.hp)) };
+  return { win, turns: turn, timedOut, hp: P.map((p) => Math.max(0, Math.round(p.hp))), maxHp: P.map((p) => p.maxHp), used: members.map((m, i) => usedOf(m.fighter, P[i], P.length > 1)), bossHp: Math.max(0, Math.round(M.hp)) };
 }

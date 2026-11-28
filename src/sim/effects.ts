@@ -39,6 +39,9 @@ import { isCombatEffect } from "./types";
  *                     once per 3 FIGHT turns; attacks only, not DoTs
  *  - void_drain     : every 4 of the bearer's own turns, value% of the
  *                     opponent's CURRENT HP moves to the bearer
+ *  - shell (task 042): below 40% HP, +value res on every element through the
+ *                     hits of its next 3 own turns, once a fight, in a boss
+ *                     fight only (a solo fight against a boss too)
  */
 export const MODELED = new Set<string>([
   "poison", "burn", "barrier", "healing", "reconstitution", "berserker_rage", "lifesteal",
@@ -47,15 +50,19 @@ export const MODELED = new Set<string>([
   "boost_res_fire", "boost_res_earth", "boost_res_water", "boost_res_air",
   "restore",
   "antipoison", "corrupted", "protective_bubble", "sun_shield", "greed", "frenzy", "enchanted_mirror", "void_drain",
+  "shell",
 ]);
 
 /**
  * Effects that require *allies* and are therefore inert in a solo (1 character vs
  * 1 monster) fight — the only kind this client's loops run. Treated as no-ops,
  * not as "unmodeled unknowns", so they don't pollute the confidence flag.
+ * Task 042: healing_aura and splash_restore are played in a party's fight (combat.ts simulateParty): every 2 of the
+ * bearer's own turns the other members standing heal value% of their max HP; at the start of the bearer's turn the other
+ * member that has lost the most HP, if under half its HP, gets value HP (one potion a proc).
  */
 export const SOLO_NOOP = new Set<string>([
-  "guard", "healing_aura", "splash_restore", "vampiric_strike", "shell",
+  "guard", "healing_aura", "splash_restore", "vampiric_strike",
 ]);
 
 /**

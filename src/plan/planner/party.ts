@@ -12,14 +12,17 @@
 // shortcut: no search over the party's sets as one (threat and HP as a tank's), and the best of 2^n by p is a little
 // optimistic (each p has 2.2 points of standard error at 0.75); upgrade if a boss sits on the floor.
 
-import { item, monster as monsterOf } from "../../catalog";
-import { bestInSlot } from "../bis";
+import { catalog, item, monster as monsterOf } from "../../catalog";
+import { bestInSlot, canEquip } from "../bis";
 import { applyGear, baseStats } from "../../sim/stats";
 import { partyRate } from "../../sim/monte";
+import type { PartyRate } from "../../sim/monte";
 import type { PartyMember } from "../../sim/combat";
+import { restSeconds } from "../../sim/cost";
+import { potionSec } from "../xp";
 import { ownedQtyOf } from "../jobgear";
 import { candidatesOf } from "./gear";
-import { MEMO_CAP, chAt, fightOptions, minWinOf, nearestSpot, placeOf, potionPrice, withToll } from "./reach";
+import { MEMO_CAP, chAt, fightOptions, minWinOf, nearestSpot, placeOf, potionPrice, wayBackSec, withToll } from "./reach";
 import { healSeconds } from "../bis";
 import { fightSec, fightXp, wisdomOf } from "../xp";
 import { CHUNK_SEC, MARGIN } from "./config";
@@ -62,6 +65,20 @@ function stagePieces(ch: Character, world: World): string[] {
   return candidatesOf(ch, world).fight.filter((c) => { const r = item(c)?.craft; return !r || !crafts?.[r.skill] || r.level <= crafts[r.skill]; });
 }
 
+/** Task 042 (A.2): a party's kit beside its pool — every rune a merchant sells for gold and every potion the fleet's alchemy
+ *  brews now (the highest alchemy of the characters that are on); the bank's potions are in each member's pool already. */
+export function kitOf(world: World): string[] {
+  const out = new Set<string>();
+  for (const n of catalog().npcs.values()) for (const o of n.items ?? []) if (o.currency === "gold" && o.buy_price != null && item(o.code)?.type === "rune") out.add(o.code);
+  for (const it of catalog().items.values()) if (it.type === "utility" && it.craft?.skill === "alchemy" && brews(world, it.code)) out.add(it.code);
+  return [...out].sort();
+}
+/** Task 042: whether the fleet's alchemy brews a potion now — its recipe's level at most the highest alchemy of those on. */
+export const brews = (world: World, code: string): boolean =>
+  (item(code)?.craft?.level ?? Infinity) <= Math.max(0, ...world.characters.filter((c) => isOn(c.name, world)).map((c) => c.alchemy_level ?? 0));
+/** Task 042: what a potion costs a party — its chain from the field (xp.ts potionSec), whoever brews it: alchemy is nobody's
+ *  lane (task 031), so the planner's price (consPrice) is ∞ for every potion. One nobody brews is counted apart (Kitted.dear). */
+
 const memo = new WeakMap<World, Map<string, string[]>>();
 const slotMemo = new WeakMap<World, Map<string, Partial<Record<GearSlot, string>>>>();
 /** One member's set: the solver on its pool less what the members before it took (`taken`); its slots kept beside (slotsOf). */
@@ -78,10 +95,74 @@ function setOf(ch: Character, world: World, base: World, m: Monster, taken: Map<
   const r = bestInSlot(ch, m, { ...o, owned: new Set(qty.keys()), ownedQty: qty, extraCandidates: [...(o.extraCandidates ?? []), ...extra], wayBack: 0 })[0];
   const codes = r?.codes ?? [];
   byKey.set(key, codes);
+  keepSlots(base, codes, r?.slots ?? {});
+  return codes;
+}
+const keepSlots = (base: World, codes: string[], s: Partial<Record<GearSlot, string>>): void => {
   let slots = slotMemo.get(base);
   if (!slots) slotMemo.set(base, (slots = new Map()));
-  slots.set(codes.join(","), r?.slots ?? {});
-  return codes;
+  slots.set(codes.join(","), s);
+};
+
+/** Task 042: the seconds a party's win takes for its verdict — the fight (each member's cooldown, turns × 2 s), the slowest
+ *  member's rest from its loss, a member's fall priced as a lost fighter's (the share of wins it falls in × its way back from
+ *  where a beaten character wakes, reach.ts wayBackSec) and the potions the party drinks at their chain — over p (∞ for a party
+ *  that never wins).
+ *  shortcut: a member that falls in a won fight is taken to wake at (0, 0) as a beaten one does (039's unread rule 1); upgrade
+ *  from the first party record where one falls. */
+function kitSec(world: World, r: PartyRate, maxHp: number[], back: number[]): number {
+  if (r.p <= 0) return Infinity;
+  const rest = Math.max(...r.lost.map((l, i) => restSeconds(l, maxHp[i])));
+  const falls = r.fell.reduce((s, f, i) => s + f * back[i], 0);
+  const pots = r.used.reduce((s, u) => s + Object.entries(u).reduce((t, [c, q]) => t + (q > 0 && brews(world, c) ? q * potionSec(c) : 0), 0), 0);
+  return (fightSec(r.turns) + rest + falls + pots) / r.p;
+}
+/** Task 042: the units a win of potions nobody brews (the bank's stock only: greater health potions at alchemy 37). */
+const dearOf = (world: World, r: PartyRate): number => r.used.reduce((s, u) => s + Object.entries(u).reduce((t, [c, q]) => t + (brews(world, c) ? 0 : q), 0), 0);
+interface Kitted { slots: Partial<Record<GearSlot, string>>[]; r: PartyRate; party: PartyMember[]; sec: number; dear: number }
+/** Task 042: of two kitted parties, the better — the one at the floor; of two at it, the fewer potions a win nobody brews, then the
+ *  fewer seconds a win; of two under it, the higher p. */
+const kitBetter = (floor: number, a: Kitted, b: Kitted): boolean =>
+  a.r.p >= floor !== b.r.p >= floor ? a.r.p >= floor : a.r.p < floor ? a.r.p > b.r.p + 0.005 : Math.abs(a.dear - b.dear) > 0.05 ? a.dear < b.dear : a.sec < b.sec - 0.5;
+/**
+ * Task 042 (A.2): the kit on the party — what a solo solve cannot value (a healing aura heals the others, a splash potion the
+ * member that lost the most, a member's potions and rune as the party fights): for each member, its rune to any of the kit's,
+ * a utility slot to any potion of the kit or the bank, or a potion off; a change is kept when it is better (kitBetter, the
+ * potions at their chain). Passes until none is (at most four).
+ * shortcut: one change at a time on each of the 2^n parties' solo-solved sets, threat not searched (039's decision 4);
+ * upgrade if a kit should change who tanks.
+ */
+function kitPass(world: World, base: World, chars: Character[], m: Monster, slots: Partial<Record<GearSlot, string>>[]): Kitted {
+  const floor = minWinOf(world), back = chars.map((c) => wayBackSec(world, c.name, m.code));
+  const rate = (ss: Partial<Record<GearSlot, string>>[]): Kitted => {
+    const party = chars.map((c, i) => { const codes = Object.values(ss[i]).filter((x): x is string => !!x); return { fighter: applyGear(baseStats(c), codes), threat: threatOf(codes) }; });
+    const r = partyRate(party, m);
+    return { slots: ss, r, party, sec: kitSec(world, r, party.map((x) => x.fighter.stats.hp), back), dear: dearOf(world, r) };
+  };
+  const kit = kitOf(world);
+  const runes = kit.filter((c) => item(c)?.type === "rune");
+  const potions = [...new Set([...kit, ...base.bank.map((b) => b.code)])].filter((c) => item(c)?.type === "utility" && item(c)!.effects?.some((e) => e.code !== "heal")).sort();
+  let now = rate(slots.map((s) => ({ ...s })));
+  for (let pass = 0; pass < 4; pass++) {
+    let moved = false;
+    for (let i = 0; i < chars.length; i++) {
+      const moves: Partial<Record<GearSlot, string | undefined>>[] = runes.map((rune) => ({ rune }));
+      for (const g of ["utility1", "utility2"] as const) {
+        for (const s of potions) moves.push({ [g]: s });
+        if (now.slots[i][g]) moves.push({ [g]: undefined });
+      }
+      for (const mv of moves) {
+        if (Object.entries(mv).every(([g, c]) => now.slots[i][g as GearSlot] === c)) continue;
+        const u = { ...now.slots[i], ...mv };
+        if (u.utility1 && u.utility1 === u.utility2) continue; // one potion in both slots: the game refuses it
+        if (Object.values(mv).some((c) => c && !canEquip(chars[i], item(c)!))) continue;
+        const t = rate(now.slots.map((s, j) => (j === i ? { ...s, ...mv } : s)));
+        if (kitBetter(floor, t, now)) { now = t; moved = true; }
+      }
+    }
+    if (!moved) break;
+  }
+  return now;
 }
 /** Task 039c: the slots of a set setOf solved (the step's `wear`). */
 const slotsOf = (base: World, codes: string[]): Partial<Record<GearSlot, string>> => slotMemo.get(base)?.get(codes.join(",")) ?? {};
@@ -90,8 +171,11 @@ const slotsOf = (base: World, codes: string[]): Partial<Record<GearSlot, string>
  * The party of `names` against a boss (a catalog code, or a made-up monster), each member at its level now or at `levels`'
  * (chAt: the same character at another combat level; a member given a level may wear the stage's craftable pieces of that
  * level — the stage in force with the members at their levels). Undefined for a monster the catalog does not know.
+ * `kit` (task 042, A.2): every member may also wear the kit (kitOf: a rune a merchant sells for gold, a potion the fleet's alchemy
+ * brews now or the bank holds), placed on each of the 2^n parties as the party fights (kitPass), the best kept by kitBetter.
+ * For a party potions are allowed: the bank's are in the pool either way (POTIONS stays off for a fight alone).
  */
-export function partyPlan(world: World, names: string[], boss: Monster | string, levels: Record<string, number> = {}): PartyPlan | undefined {
+export function partyPlan(world: World, names: string[], boss: Monster | string, levels: Record<string, number> = {}, kit = false): PartyPlan | undefined {
   const m = typeof boss === "string" ? monsterOf(boss) : boss;
   if (!m) return undefined;
   // task 039b (B): the members at their own levels are the World's (its market's bought candidates too, as gear by need has them)
@@ -115,11 +199,11 @@ export function partyPlan(world: World, names: string[], boss: Monster | string,
   const key = `${m.code}:${m.hp}#` + chars.map((c, i) => {
     const o = fightOptions(c, at, m.code), stock = ownedQtyOf(c, poolBank(at, c.name));
     return [c.name, c.level, Object.values(baseStats(c)).join(","), [...o.ownedQty!.keys()].sort().map((k) => `${k}:${stock.get(k)}`).join(","), (o.extraCandidates ?? []).join(","), potionPrice(at, c.name).key, (o.fixed ?? []).join(","), o.minWin, extras[i].join(",")].join("|");
-  }).join("&");
+  }).join("&") + (kit ? "#kit" : "");
   if (plans.has(key)) return plans.get(key);
   if (plans.size >= MEMO_CAP) plans.clear();
   const modes = [m, share(m, chars.length)];
-  let best: PartyPlan | undefined;
+  let best: PartyPlan | undefined, bestK: Kitted | undefined;
   for (let combo = 0; combo < 1 << chars.length; combo++) {
     const taken = new Map<string, number>();
     const sets = chars.map((c, i) => {
@@ -127,15 +211,29 @@ export function partyPlan(world: World, names: string[], boss: Monster | string,
       for (const x of codes) taken.set(x, (taken.get(x) ?? 0) + 1);
       return codes;
     });
+    if (kit) { // task 042: the kit placed on each party, the best by kitBetter
+      const k = kitPass(world, at, chars, m, sets.map((s) => slotsOf(world, s)));
+      if (bestK && !kitBetter(minWinOf(world), k, bestK)) continue;
+      bestK = k;
+      best = planOf(world, m, chars, combo, k.slots, k.party, k.r);
+      continue;
+    }
     const party: PartyMember[] = chars.map((c, i) => ({ fighter: applyGear(baseStats(c), sets[i]), threat: threatOf(sets[i]) }));
     const r = partyRate(party, m);
     if (best && (r.p < best.p || (r.p === best.p && (r.p > 0 ? r.turns >= best.turns : r.left >= best.left)))) continue;
-    const members = chars.map((c, i) => ({ name: c.name, level: c.level, as: (((combo >> i) & 1) ? "striker" : "tank") as "tank" | "striker", codes: sets[i], slots: slotsOf(world, sets[i]), threat: party[i].threat, maxHp: party[i].fighter.stats.hp, lost: r.lost[i], fell: r.fell[i], use: r.used[i] }));
-    const wake = r.p > 0 ? (1 - r.p) / r.p : Infinity;
-    best = { boss: m.code, p: r.p, admitted: r.p >= minWinOf(world), turns: r.turns, members, hpPerWin: members.reduce((t, x) => t + x.lost + wake * (x.maxHp - 1), 0), left: r.left };
+    best = planOf(world, m, chars, combo, sets.map((s) => slotsOf(world, s)), party, r);
   }
   plans.set(key, best);
   return best;
+}
+function planOf(world: World, m: Monster, chars: Character[], combo: number, slots: Partial<Record<GearSlot, string>>[], party: PartyMember[], r: PartyRate): PartyPlan {
+  const members = chars.map((c, i) => {
+    const codes = Object.values(slots[i]).filter((x): x is string => !!x);
+    keepSlots(world, codes, slots[i]);
+    return { name: c.name, level: c.level, as: (((combo >> i) & 1) ? "striker" : "tank") as "tank" | "striker", codes, slots: slots[i], threat: party[i].threat, maxHp: party[i].fighter.stats.hp, lost: r.lost[i], fell: r.fell[i], use: r.used[i] };
+  });
+  const wake = r.p > 0 ? (1 - r.p) / r.p : Infinity;
+  return { boss: m.code, p: r.p, admitted: r.p >= minWinOf(world), turns: r.turns, members, hpPerWin: members.reduce((t, x) => t + x.lost + wake * (x.maxHp - 1), 0), left: r.left };
 }
 const plans = new Map<string, PartyPlan | undefined>();
 
@@ -166,6 +264,13 @@ export function lowestThird(world: World, pair: string[], third: string, boss: M
   const from = world.characters.find((c) => c.name === third)?.level ?? 1;
   for (let k = from; k <= 50; k++) if (partyPlan(world, [...pair, third], boss, { ...levels, [third]: k })?.admitted) return k;
   return undefined;
+}
+
+/** Task 039c: the seconds a party's win takes — the fight and the slowest member's healing as 038 counts it (its food, else
+ *  rest), over p. Task 042: the table's XP an hour (scripts/party-kit.mts) reads it too. */
+export function partyCycle(world: World, plan: PartyPlan): number {
+  const heal = plan.members.map((x) => { const pr = potionPrice(world, x.name); return healSeconds(x.lost, x.maxHp, pr.price, pr.food?.(x.lost, x.maxHp)); });
+  return (fightSec(plan.turns) + Math.max(...heal)) / plan.p;
 }
 
 /** Task 039c: the party's step as decide.ts takes it — the boss, the plan, the first kill or a chunk, and each member's share. */
@@ -213,8 +318,7 @@ export function partyChoice(world: World, name: string): PartyChoice | undefined
     const spots = chs.map((c) => nearestSpot(placeOf(c), "monster", boss, world, c.name));
     const xps = plan.members.map((x) => fightXp(m.level, m.hp, m.type, avg, wisdomOf(x.codes)));
     if (spots.some((s) => !s) || xps.some((x) => !(x > 0))) continue;
-    const heal = plan.members.map((x) => { const pr = potionPrice(world, x.name); return healSeconds(x.lost, x.maxHp, pr.price, pr.food?.(x.lost, x.maxHp)); });
-    const cycle = (fightSec(plan.turns) + Math.max(...heal)) / plan.p;
+    const cycle = partyCycle(world, plan);
     const firstT = ts.find((t) => t.work.kind === "kill" && !t.work.drop && t.left - inFlight(t.key) > 0);
     const bonus = ts.some((t) => t !== firstT) ? 1.25 : 1;
     const rates = xps.map((x) => (x / cycle) * bonus);
