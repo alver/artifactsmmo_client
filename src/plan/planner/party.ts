@@ -18,7 +18,7 @@ import { partyRate } from "../../sim/monte";
 import type { PartyMember } from "../../sim/combat";
 import { ownedQtyOf } from "../jobgear";
 import { candidatesOf } from "./gear";
-import { chAt, fightOptions, minWinOf } from "./reach";
+import { MEMO_CAP, chAt, fightOptions, minWinOf, potionPrice } from "./reach";
 import { stageOf } from "./stage";
 import { poolBank } from "./stock";
 import type { Character } from "../../types/api";
@@ -75,7 +75,9 @@ function setOf(ch: Character, world: World, base: World, m: Monster, taken: Map<
 export function partyPlan(world: World, names: string[], boss: Monster | string, levels: Record<string, number> = {}): PartyPlan | undefined {
   const m = typeof boss === "string" ? monsterOf(boss) : boss;
   if (!m) return undefined;
-  const at = Object.keys(levels).length ? { ...world, market: undefined, characters: world.characters.map((c) => (levels[c.name] != null ? chAt(c, levels[c.name]) : c)) } : world;
+  // task 039b (B): the members at their own levels are the World's (its market's bought candidates too, as gear by need has them)
+  const own = Object.entries(levels).every(([n, L]) => world.characters.find((c) => c.name === n)?.level === L);
+  const at = own ? world : { ...world, market: undefined, characters: world.characters.map((c) => (levels[c.name] != null ? chAt(c, levels[c.name]) : c)) };
   const chars = names.map((n) => at.characters.find((c) => c.name === n)).filter((c): c is Character => !!c);
   if (chars.length !== names.length) return undefined;
   // a member's craftable pieces on a World of its own (candidatesOf keeps one answer per World and name), once a level and stage
@@ -85,9 +87,18 @@ export function partyPlan(world: World, names: string[], boss: Monster | string,
     if (levels[c.name] == null) return [];
     const k = `pieces|${c.name}@${c.level}|${stageOf(at)?.name ?? ""}`;
     let v = byKey!.get(k);
-    if (!v) byKey!.set(k, (v = stagePieces(c, { ...at })));
+    if (!v) byKey!.set(k, (v = stagePieces(c, at === world ? world : { ...at })));
     return v;
   });
+  // task 039b (B): one answer a party's content — what each member's solves read (its base stats, its pool and the stock behind
+  // it, the free extras, the potions' prices, the pinned artifacts, the floor, the stage's pieces) — so the forward model, a new
+  // World every decision, solves a party again only when one of them moves
+  const key = `${m.code}:${m.hp}#` + chars.map((c, i) => {
+    const o = fightOptions(c, at, m.code), stock = ownedQtyOf(c, poolBank(at, c.name));
+    return [c.name, c.level, Object.values(baseStats(c)).join(","), [...o.ownedQty!.keys()].sort().map((k) => `${k}:${stock.get(k)}`).join(","), (o.extraCandidates ?? []).join(","), potionPrice(at, c.name).key, (o.fixed ?? []).join(","), o.minWin, extras[i].join(",")].join("|");
+  }).join("&");
+  if (plans.has(key)) return plans.get(key);
+  if (plans.size >= MEMO_CAP) plans.clear();
   const modes = [m, share(m, chars.length)];
   let best: PartyPlan | undefined;
   for (let combo = 0; combo < 1 << chars.length; combo++) {
@@ -104,7 +115,29 @@ export function partyPlan(world: World, names: string[], boss: Monster | string,
     const wake = r.p > 0 ? (1 - r.p) / r.p : Infinity;
     best = { boss: m.code, p: r.p, admitted: r.p >= minWinOf(world), turns: r.turns, members, hpPerWin: members.reduce((t, x) => t + x.lost + wake * (x.maxHp - 1), 0), left: r.left };
   }
+  plans.set(key, best);
   return best;
+}
+const plans = new Map<string, PartyPlan | undefined>();
+
+/** Task 039b (B, C.1): the smallest party of `members` (two, then three) admitted against the boss, each at its own level in
+ *  the stage's pieces; of one size the highest p, then the fewest turns. */
+export function smallestParty(world: World, boss: Monster | string, members: Character[]): PartyPlan | undefined {
+  const names = members.map((c) => c.name);
+  for (const n of [2, 3]) {
+    const parties: string[][] = [];
+    for (let i = 0; i < names.length; i++) for (let j = i + 1; j < names.length; j++) {
+      if (n === 2) parties.push([names[i], names[j]]);
+      else for (let k = j + 1; k < names.length; k++) parties.push([names[i], names[j], names[k]]);
+    }
+    let best: PartyPlan | undefined;
+    for (const party of parties) {
+      const r = partyPlan(world, party, boss, Object.fromEntries(members.filter((c) => party.includes(c.name)).map((c) => [c.name, c.level])));
+      if (r?.admitted && (!best || r.p > best.p || (r.p === best.p && r.turns < best.turns))) best = r;
+    }
+    if (best) return best;
+  }
+  return undefined;
 }
 
 /** The lowest level of `third` — from its own to the level cap (50) — at which it and `pair` are admitted against the boss,

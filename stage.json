@@ -1,14 +1,26 @@
 {
-  "about": "The season plan's stages as data (docs/season-plan.md). Edited by the planning chat; the service reads it at boot and whenever it changes (task 036). A stage is current until every fighter has reached `fighters`; the last stage stays. A field left out of a stage narrows nothing. crafts / gathering: the level a skill is trained to in this stage, not past it. pieces: the only wearables the fighters' gear work may ask for (made or bought). achievements: the only achievements chased as objectives; any other still completes when it happens. The professional_ and master_ gathering achievements are listed in every stage on purpose: they are the far gates of the workers' lanes, so a lane's tool (steel axe, steel pickaxe, steel fishing rod) still pays over its road (036's report, D.4). grand_master (combat 50) is listed in every stage for the same reason: it is the fighters' far gate, without it a fighter has no road for a listed piece to pay over and a training has no points (037's report, decision 1).",
+  "about": "The season plan's stages as data (docs/season-plan.md). Edited by the planning chat; the service reads it at boot and whenever it changes (task 036). A stage is current until every fighter has reached `fighters`; the last stage stays. A field left out of a stage narrows nothing. crafts / gathering: the level a skill is trained to in this stage, not past it. pieces: the only wearables the fighters' gear work may ask for (made or bought). achievements: the only achievements chased as objectives; any other still completes when it happens. The professional_ and master_ gathering achievements are listed in every stage on purpose: they are the far gates of the workers' lanes, so a lane's tool (steel axe, steel pickaxe, steel fishing rod) still pays over its road (036's report, D.4). grand_master (combat 50) is listed in every stage for the same reason: it is the fighters' far gate, without it a fighter has no road for a listed piece to pay over and a training has no points (037's report, decision 1). The lich's pieces (greater_dreadful_staff, conjurer_cloak, flying_boots, emerald_ring, obsidian_helmet) and lich_please / life_lover are listed in stages 1 and 2 since 039's table: only a trio takes the lich, in these level-30 pieces, from Second at combat 30; the party's step and its needs come with 039b.",
+  "aboutGold": "Task 041 (report 040, Alex 11-28). sell: a code the merchants' standing order sells down to the count kept in the bank, to the merchant that buys it; nothing off this list is sold. Sap is not on it on purpose (Alex: little to earn, it stays). Diamonds, small pearls (the perfect pearl), strange ore and wolf ears are kept. The 8 gems of a kind cover the stage's pieces (5 emeralds, 2 sapphires) and the gold tools. cut: products of one material the mining holder makes from the bank's stock (24 stones a gem). Until task 041 is in, the service ignores both.",
+  "sell": {
+    "ruby": 8, "sapphire": 8, "emerald": 8, "topaz": 8,
+    "shell": 0,
+    "golden_egg": 0, "golden_shrimp": 0,
+    "highwayman_dagger": 0, "forest_staff": 0, "forest_ring": 0, "wooden_club": 0
+  },
+  "cut": ["ruby", "sapphire", "emerald", "topaz"],
   "stages": [
     {
       "name": "1: fighters to 35",
       "fighters": 35,
       "crafts": { "weaponcrafting": 30, "gearcrafting": 30, "jewelrycrafting": 30 },
       "gathering": { "fishing": 30, "mining": 38, "woodcutting": 37 },
-      "pieces": ["slime_shield"],
+      "pieces": [
+        "slime_shield",
+        "greater_dreadful_staff", "conjurer_cloak", "flying_boots", "emerald_ring", "obsidian_helmet"
+      ],
       "achievements": [
         "ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman",
+        "lich_please", "life_lover",
         "professional_fisherman", "professional_lumberjack", "professional_miner",
         "master_fisherman", "master_lumberjack", "master_miner", "grand_master"
       ]
@@ -20,11 +32,12 @@
       "gathering": { "fishing": 40, "mining": 40, "woodcutting": 40 },
       "pieces": [
         "slime_shield", "death_knight_sword", "royal_skeleton_pants", "gold_platelegs", "royal_skeleton_armor",
-        "gold_helm", "gold_shield", "conjurer_skirt", "greater_dreadful_amulet"
+        "gold_helm", "gold_shield", "conjurer_skirt", "greater_dreadful_amulet",
+        "greater_dreadful_staff", "conjurer_cloak", "flying_boots", "emerald_ring", "obsidian_helmet"
       ],
       "achievements": [
         "ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman",
-        "cultist_purifier", "life_lover", "diamond_in_the_sky",
+        "lich_please", "cultist_purifier", "life_lover", "diamond_in_the_sky",
         "professional_fisherman", "professional_lumberjack", "professional_miner",
         "master_fisherman", "master_lumberjack", "master_miner", "grand_master"
       ]

@@ -27,13 +27,15 @@ const { setDataReader } = await imp("src/catalog/load.ts");
 const { loadCatalog } = await imp("src/catalog/index.ts");
 const { loadAtlas } = await imp("src/catalog/atlas.ts");
 const { DEFAULTS } = await imp("src/plan/planner/config.ts");
+// 038's roles (Second a worker): what this check tests is not Second's role (task 039b made it a fighter)
+const ROLES_038 = { ...DEFAULTS.roles, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] } };
 const { rank } = await imp("src/plan/planner/decide.ts");
 setDataReader(async (name: string) => JSON.parse(await readFile(`${tree}/public/data/${name}.json`, "utf8")));
 await loadCatalog();
 await loadAtlas();
 
 const fx = JSON.parse(await readFile("scripts/fixtures/world-2026-11-26.json", "utf8"));
-const config = { ...DEFAULTS, ...fx.world.config, on: { ...DEFAULTS.on, ...fx.world.config.on }, roles: DEFAULTS.roles };
+const config = { ...DEFAULTS, ...fx.world.config, on: { ...DEFAULTS.on, ...fx.world.config.on }, roles: ROLES_038 };
 const w0 = { ...fx.world, config };
 const NAMES: string[] = w0.characters.map((c: { name: string }) => c.name);
 // nobody admitted against the King Slime alone: the World without its potions and healing runes (in the bank and worn) — with

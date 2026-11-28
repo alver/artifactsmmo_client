@@ -44,7 +44,7 @@
 import { catalog, item, itemName, monster as monsterOf } from "../../catalog";
 import { canEquip } from "../bis";
 import { ownedQtyOf } from "../jobgear";
-import { CRAFT_SEC, fightXp } from "../xp";
+import { CRAFT_SEC, fightSec, fightXp } from "../xp";
 import { atlas } from "../../catalog/atlas";
 import { GATHER_LANES, NEED_RATIO } from "./config";
 import { actionSec, hoursOf, hoursToLevel, killWalk, levelHoursEstimate, levelOf, makePlace, perOf, stepSec } from "./cost";
@@ -56,13 +56,14 @@ import { crafterOf, fights, rolesOf } from "./roles";
 import { poolBank } from "./stock";
 import { billOf, fleetSec, recipeDemand } from "./supply";
 import type { Parent } from "./supply";
-import { targetsOf } from "./targets";
+import { perUnit, targetsOf } from "./targets";
+import { smallestParty } from "./party";
 import { stageOf } from "./stage";
 import { bestOrder, marketQuote } from "./market";
-import { SLOTS_FOR_TYPE, slotCode } from "../../types/api";
+import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../types/api";
 import type { Character } from "../../types/api";
 import type { GearRecommendation } from "../types";
-import type { Lane, World } from "./types";
+import type { Lane, Target, World } from "./types";
 
 export interface Need {
   for: string;
@@ -366,6 +367,42 @@ export function gearNeeds(world: World, name = ""): { needs: Need[]; rejected: R
       best = { for: ch.name, work: `${t.achievement} (${m.code})`, key: t.key, monster: m.code, pieces: n.pieces, H0, H1: n.H1, G: n.mk.G, parts: n.mk.parts, points: pts, fit: hours <= calH ? pts / hours : 0, any: pts / hours, hours, offered: n.mk.offered, ...boughtOf(n.pieces, c) };
     }
     if (best) needs.push(best);
+  }
+
+  // (d) task 039b (B): a boss a listed achievement asks — the smallest party of fighters that passes the floor with every listed
+  // piece made (party.ts smallestParty); the pieces of its winning set its members lack (on the stage's list, not in the bank)
+  // are asked for the member the solver gives each to, one need a piece, so the cheapest chain goes first. Nothing for a boss
+  // no party passes; nothing with no stage's achievements (a World with no stages decides as before).
+  if (stageOf(world)?.achievements) {
+    const listed = stageOf(world)?.pieces;
+    const bosses = new Map<string, Target[]>();
+    for (const t of targetsOf(world)) if (t.work.kind === "kill" && t.achievement && !t.filler && t.gates.some((g) => g.kind === "group") && t.left - inFlight(t.key) > 0) bosses.set(t.work.monster, [...(bosses.get(t.work.monster) ?? []), t]);
+    for (const [boss, ts] of bosses) {
+      const able = world.characters.filter((c) => isOn(c.name, world) && fights(c.name, world) && ts.every((t) => t.gates.every((g) => g.kind === "group" || met(g, c, world))));
+      const plan = smallestParty(world, boss, able);
+      if (!plan) continue;
+      const pts = ts.reduce((s, t) => s + t.points * (world.config.weight[t.achievement!] ?? 1), 0);
+      // shortcut: a drop at one roll a win (039's unread rule: a roll a member would take a third of it) and a kill at its
+      // cooldown alone; upgrade once the first party fights are in the journal
+      const kills = ts.reduce((s, t) => s + (t.left - inFlight(t.key)) * (t.work.kind === "kill" && t.work.drop ? perUnit(monsterOf(boss)!.drops, t.work.drop) : 1), 0);
+      const H1 = (kills * fightSec(plan.turns)) / 3600;
+      const work = `party: ${ts.map((t) => t.achievement).join(", ")} (${boss}: ${plan.members.map((x) => x.name).join(" + ")}, ${Math.round(plan.p * 100)}%)`;
+      const took = new Map<string, number>(); // the bank's copies the members before took
+      for (const mem of plan.members) {
+        const c = world.characters.find((x) => x.name === mem.name)!, cands = candidatesOf(c, world);
+        const stock = ownedQtyOf(c, poolBank(world, c.name));
+        const used = new Map<string, number>();
+        for (const code of mem.codes) if (item(code)?.type !== "utility") used.set(code, (used.get(code) ?? 0) + 1);
+        for (const [code, n] of used) {
+          const have = Math.max(0, (stock.get(code) ?? 0) - (took.get(code) ?? 0));
+          const worn = GEAR_SLOTS.filter((g) => slotCode(c, g) === code).length;
+          took.set(code, (took.get(code) ?? 0) + Math.max(0, Math.min(n, have) - worn));
+          if (n <= have || (listed && !listed.includes(code)) || !(item(code)?.craft || cands.bought.has(code))) continue;
+          const pieces = new Map([[code, n - have]]), mk = makeHours(pieces, c, world), hours = mk.G + H1;
+          needs.push({ for: c.name, work, key: ts[0].key, monster: boss, pieces, H0: Infinity, H1, G: mk.G, parts: mk.parts, points: pts, fit: hours <= calH ? pts / hours : 0, any: pts / hours, hours, offered: mk.offered, ...boughtOf(pieces, cands) });
+        }
+      }
+    }
   }
   const out = { needs, rejected };
   byName.set(name, out);

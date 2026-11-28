@@ -134,14 +134,15 @@ export function trainPick(lane: Lane, ch: Character, world: World, fixed?: strin
   return out;
 }
 
-/** A.1: the training parents — a gear craft's next level where its holder (a worker that is on) stands under the target. */
+/** A.1: the training parents — a gear craft's next level where its holder (a worker that is on; task 039b, A.2: or a fighter,
+ *  which trains only a batch the bank covers — its materials stay the workers' needs) stands under the target. */
 export function trainParents(world: World, name: string, calH: number): Parent[] {
   const out: Parent[] = [];
   for (const lane of GEAR_CRAFT) {
     const target = craftTarget(world, lane);
     const holder = crafterOf(lane, world);
     const h = holder ? world.characters.find((c) => c.name === holder) : undefined;
-    if (!h || !isOn(h.name, world) || roleOf(h.name, world) !== "worker" || levelOf(h, lane) >= target) continue;
+    if (!h || !isOn(h.name, world) || !roleOf(h.name, world) || levelOf(h, lane) >= target) continue;
     // A.2: while the holder runs a train step, the fleet supplies that step's recipe, for what is left of the level after it
     // (for the deciding holder `current` is its last step: a fresh pick)
     const run = h.name !== name ? world.current[h.name] : undefined;

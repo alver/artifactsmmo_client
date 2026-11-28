@@ -24,7 +24,7 @@ export type Work =
   | { kind: "recycle"; codes?: Record<string, number> } // the recycling objective; task 015: a tidy step's codes and copies
   | { kind: "use"; code: string }
   | { kind: "level"; lane: Lane; to: number }
-  | { kind: "train"; lane: Lane; code?: string; runs?: number }; // a workshop skill through the `train` item: one level, or (task 029) `runs` of the recipe `code` the picker named (train.ts)
+  | { kind: "train"; lane: Lane; code?: string; runs?: number; bank?: true }; // a workshop skill through the `train` item: one level, or (task 029) `runs` of the recipe `code` the picker named (train.ts); task 039b: `bank` — a fighter's batch, from the bank only
 
 /** A material of a craft or the currency of a buy: `per` units for one unit of the target, and where more comes from. */
 export interface Input {

@@ -92,7 +92,7 @@ const fmt = (h: number): string => (!Number.isFinite(h) ? "∞" : h < 10 ? h.toF
 
 /** Task 028 (A.1): each role's order of rules, as the page lists it (rank() below is the order itself). */
 export const ORDER: Record<"fighter" | "worker" | "none", [Rule, string][]> = {
-  fighter: [["first", "an achievement on ⭐ first"], ["market", "a need bought on the Grand Exchange, with no worker on"], ["forging", "forging by need"], ["need-kill", "a kill a need of the road asks"], ["train-kill", "a kill a craft's training asks"], ["xp-pick", "the XP pick"], ["free", "no fight admitted, or the level cap: today's rule"]],
+  fighter: [["first", "an achievement on ⭐ first"], ["market", "a need bought on the Grand Exchange, with no worker on"], ["forging", "forging by need"], ["need-kill", "a kill a need of the road asks"], ["train-kill", "a kill a craft's training asks"], ["train", "its gear craft: a batch from the bank"], ["xp-pick", "the XP pick"], ["free", "no fight admitted, or the level cap: today's rule"]],
   // task 030: GEAR_FIRST on — tier (1) in two halves, weapons and armour first
   // task 031 (KITCHEN): the stock's cook step before the rest of (1a); the road's food in (1a); the kitchen's levels in (3)
   // task 038 (docs/season-plan.md 5: the workers are for the fighters' food first): the stock's cook step and the fighters' food
@@ -721,14 +721,14 @@ export function rank(name: string, world: World, free = false): Ranking {
     const s = stepOf(t, p, "level", 0, `the XP pick: combat ${L}: ${p0.what}, ${p.units} now (${fmt(p.hours)} h)${p.note}`, {}, parts(goal, name, [p0.what, `${p.units} now (${fmt(p.hours)} h)`], p.note));
     return !stuck || !newCodes(s, world).length ? s : undefined;
   };
-  let step: Step, rule: Rule;
-  if (worker) {
-    // Task 029 (A.4): its gear craft's train step is a need of the first tier while the craft is under the target — first when
-    // the bank covers a batch (the crafts alone), else after the tier's other needs (what the bank lacks it sources itself)
+  // Task 029 (A.4): its gear craft's train step is a need of the first tier while the craft is under the target — first when
+  // the bank covers a batch (the crafts alone), else after the tier's other needs (what the bank lacks it sources itself);
+  // task 039b (A.2): a fighter that holds the craft takes only a batch the bank covers (its step `bank`: never sourced)
+  const trainCands = (): Candidate[] => {
     const trainC: Candidate[] = [];
     for (const par of trains) {
       const lane = par.key.slice(6) as Lane, key = `lvl:${lane}:${target(lane)}`;
-      const p = ownTrain.has(lane) && !blocked(key) ? planLevel(lane, ch, world, bonus) : undefined;
+      const p = lanes.includes(lane) && !blocked(key) ? planLevel(lane, ch, world, bonus) : undefined;
       if (!p) continue;
       const t: Target = targets.find((x) => x.key === key) ?? { key, points: 0, work: { kind: "level", lane, to: target(lane) }, left: 1, gates: [], filler: false };
       const c: Candidate = {
@@ -738,6 +738,11 @@ export function rank(name: string, world: World, free = false): Ranking {
       };
       if (fresh(c)) trainC.push(c);
     }
+    return trainC;
+  };
+  let step: Step, rule: Rule;
+  if (worker) {
+    const trainC = trainCands();
     const short = objectives.filter((c) => fresh(c) && achHours(c.target.achievement!, name, world) <= WORKER_SHORT_H);
     const buy = buyStep(); // task 032: a need bought on the Grand Exchange, before all else
     // task 038 (A.2): the fighters' food first — the stock's cook step (task 031, B.3), then the kitchen's ask for raw with a
@@ -781,13 +786,16 @@ export function rank(name: string, world: World, free = false): Ranking {
     const kill = pick(supply.filter((c) => pays(c) && (c.road || (trainHunt && c.train)) && (c.target.key === "src:tasks_coin" ? !!held && held === mine : c.step.work.kind === "kill" && c.step.work.monster !== mine && ((trainHunt && c.train) || !workerHunts(c.step.work.monster)))));
     const trainKill = trainHunt && !!kill?.train;
     const c = first ?? forge ?? kill;
-    if (!c && !x && !buy) {
+    // task 039b (A.2): its gear craft's training, a batch the bank covers — after forging and a need's kill, before the pick
+    const batch = c || buy ? undefined : pick(trainCands().filter((t) => t.covered && t.step.work.kind === "train"));
+    if (!c && !x && !buy && !batch) {
       const r = rank(name, world, true);
       return { ...r, step: { ...r.step, why: `fighter, ${capped ? "at the level cap" : "no fight admitted"}: ${r.step.why}`, ...(r.step.reason ? { reason: { ...r.step.reason, role: "fighter", rule: "free" } } : {}) } };
     }
     step = c && c === first ? { ...c.step, why: `fighter, first: ${c.step.as}: ${c.step.why}` } : buy ? { ...buy, why: `fighter, the market: ${buy.as}: ${buy.why}` }
-      : c ? { ...c.step, why: `fighter, ${c === forge ? "forging" : trainKill ? "a training's kill" : "a need's kill"}: ${c.step.as}: ${c.step.why}` } : { ...x!, why: `fighter: ${x!.why}` };
-    rule = c && c === first ? "first" : buy ? "market" : c ? (c === forge ? "forging" : trainKill ? "train-kill" : "need-kill") : "xp-pick";
+      : c ? { ...c.step, why: `fighter, ${c === forge ? "forging" : trainKill ? "a training's kill" : "a need's kill"}: ${c.step.as}: ${c.step.why}` }
+      : batch ? { ...batch.step, work: { ...batch.step.work, bank: true } as Work, why: `fighter, a batch from the bank: ${batch.step.as}: ${batch.step.why}` } : { ...x!, why: `fighter: ${x!.why}` };
+    rule = c && c === first ? "first" : buy ? "market" : c ? (c === forge ? "forging" : trainKill ? "train-kill" : "need-kill") : batch ? "train" : "xp-pick";
   } else { step = today(); rule = todayRule(); }
   const because: string[] = [], limits: string[] = []; // task 028: the clauses added below, beside the why's
   // Task 027d: a fighter's kill step starts at the monsters master when it holds no task, a finished one or an items task

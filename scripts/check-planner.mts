@@ -596,13 +596,14 @@ const rows: Promise<[number, string][]> = !VERBOSE ? Promise.resolve([]) : Promi
 {
   // Task 027 (decisions 63, 64): two fighters with no lane, three workers — one owner a gathering skill, no craft moved; task 029
   // (B.2): cooking is Fourth's; task 031 (B.1, KITCHEN): Third is the kitchen — cooking and fishing — and alchemy is nobody's lane
-  const table: Record<string, string[]> = KITCHEN ? { First: ["combat"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "cooking", "fishing"], Fourth: ["combat", "jewelrycrafting", "mining"], Fifth: ["combat"] }
-    : { First: ["combat"], Second: ["combat", "weaponcrafting", "woodcutting"], Third: ["combat", "gearcrafting", "alchemy", "fishing"], Fourth: ["combat", "jewelrycrafting", "cooking", "mining"], Fifth: ["combat"] };
+  // task 039b (A.1): Second a fighter that keeps weaponcrafting; woodcutting Fourth's
+  const table: Record<string, string[]> = KITCHEN ? { First: ["combat"], Second: ["combat", "weaponcrafting"], Third: ["combat", "gearcrafting", "cooking", "fishing"], Fourth: ["combat", "jewelrycrafting", "mining", "woodcutting"], Fifth: ["combat"] }
+    : { First: ["combat"], Second: ["combat", "weaponcrafting"], Third: ["combat", "gearcrafting", "alchemy", "fishing"], Fourth: ["combat", "jewelrycrafting", "cooking", "mining", "woodcutting"], Fifth: ["combat"] };
   const pinned = rolesFor(base);
   const same = NAMES.every((n) => [...table[n]].sort().join() === [...pinned[n]].sort().join());
-  console.log(`## Roles (DEFAULTS.roles, task ${KITCHEN ? "031's kitchen" : "027's"} table: ${same ? "the same" : "DIFFERENT"})`);
+  console.log(`## Roles (DEFAULTS.roles, task 039b's table${KITCHEN ? " with 031's kitchen" : ""}: ${same ? "the same" : "DIFFERENT"})`);
   for (const n of NAMES) console.log(`  ${pad(n, 7)} ${pad(roleOf(n, base) ?? "—", 7)} ${pad(pinned[n].length, 2)} lanes: ${pinned[n].join(", ")}`);
-  cases.push([`the roles are task 027's table (fighters First and Fifth, workers Second, Third and Fourth; ${KITCHEN ? "031: Third cooks, alchemy nobody's" : "029: Fourth cooks"})`, same]);
+  cases.push([`the roles are task 039b's table (fighters First, Fifth and Second — Second keeps weaponcrafting —, workers Third and Fourth; ${KITCHEN ? "031: Third cooks, alchemy nobody's" : "029: Fourth cooks"})`, same]);
 }
 
 // ── 2. unhandled; the nine of report 007 ─────────────────────────────────────

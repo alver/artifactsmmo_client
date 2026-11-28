@@ -56,9 +56,11 @@ export const DEFAULTS: PlannerConfig = {
   // and the fighters waited for its potions).
   // Task 031 (B.1, KITCHEN): Third is the kitchen — gearcrafting and cooking, fishing; Fourth keeps jewelrycrafting, mining and
   // woodcutting; alchemy is nobody's lane (roles.ts rolesOf). Without the kitchen, 030's.
+  // Task 039b (A.1; Alex, 11-23 and 11-28: the third fighter is for the group fights): Second is a fighter — woodcutting is
+  // Fourth's (rolesOf), weaponcrafting stays its pin and is trained in whole batches from the bank (train.ts, decide.ts).
   roles: {
     First: { role: "fighter" },
-    Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] },
+    Second: { role: "fighter", craft: ["weaponcrafting"] },
     Third: KITCHEN ? { role: "worker", craft: ["gearcrafting", "cooking"], gather: ["fishing"] } : { role: "worker", craft: ["gearcrafting"], gather: ["alchemy", "fishing"] },
     Fourth: KITCHEN ? { role: "worker", craft: ["jewelrycrafting"], gather: ["mining", "woodcutting"] } : { role: "worker", craft: ["jewelrycrafting", "cooking"], gather: ["mining", "woodcutting"] },
     Fifth: { role: "fighter" },

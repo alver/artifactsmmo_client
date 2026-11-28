@@ -31,6 +31,8 @@ const { setDataReader } = await imp("src/catalog/load.ts");
 const { loadCatalog, item } = await imp("src/catalog/index.ts");
 const { loadAtlas } = await imp("src/catalog/atlas.ts");
 const { DEFAULTS } = await imp("src/plan/planner/config.ts");
+// 038's roles (Second a worker): what this check tests is not Second's role (task 039b made it a fighter)
+const ROLES_038 = { ...DEFAULTS.roles, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] } };
 const { rank } = await imp("src/plan/planner/decide.ts");
 setDataReader(async (name: string) => JSON.parse(await readFile(`${tree}/public/data/${name}.json`, "utf8")));
 await loadCatalog();
@@ -39,7 +41,7 @@ await loadAtlas();
 type W = Record<string, any>;
 const worldOf = async (file: string): Promise<W> => {
   const fx = JSON.parse(await readFile(file, "utf8"));
-  return { ...fx.world, config: { ...DEFAULTS, ...fx.world.config, on: { ...DEFAULTS.on, ...fx.world.config.on }, roles: DEFAULTS.roles, market: DEFAULTS.market } };
+  return { ...fx.world, config: { ...DEFAULTS, ...fx.world.config, on: { ...DEFAULTS.on, ...fx.world.config.on }, roles: ROLES_038, market: DEFAULTS.market } };
 };
 const W26 = await worldOf("scripts/fixtures/world-2026-11-26.json"), W27 = await worldOf("scripts/fixtures/world-2026-11-27.json");
 const NAMES: string[] = W26.characters.map((c: { name: string }) => c.name);

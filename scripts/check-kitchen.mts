@@ -99,8 +99,8 @@ const cases: [string, boolean, string][] = [];
   const w = of(NEW);
   const roles = rolesFor(w);
   const ok = JSON.stringify(roles.Third) === JSON.stringify(["combat", "gearcrafting", "cooking", "fishing"]) && JSON.stringify(roles.Fourth) === JSON.stringify(["combat", "jewelrycrafting", "mining"])
-    && !Object.values(roles).some((l) => l.includes("alchemy")) && JSON.stringify(DEFAULTS.roles) === JSON.stringify(KITCHEN ? ROLES_KITCHEN : ROLES_030);
-  cases.push([`4a. Third's roles: gearcrafting and cooking, fishing; Fourth jewelrycrafting and mining (woodcutting is Second's); alchemy nobody's; DEFAULTS.roles ${KITCHEN ? "the kitchen's" : "030's (KITCHEN off)"}`, ok,
+    && !Object.values(roles).some((l) => l.includes("alchemy")) && JSON.stringify(DEFAULTS.roles) === JSON.stringify({ ...(KITCHEN ? ROLES_KITCHEN : ROLES_030), Second: { role: "fighter", craft: ["weaponcrafting"] } });
+  cases.push([`4a. Third's roles: gearcrafting and cooking, fishing; Fourth jewelrycrafting and mining (woodcutting is Second's); alchemy nobody's; DEFAULTS.roles ${KITCHEN ? "the kitchen's" : "030's (KITCHEN off)"}, Second a fighter (039b)`, ok,
     Object.entries(roles).map(([n, l]) => `${n}: ${l.join(", ")}`).join(" | ")]);
   // tier (3): every earlier candidate of Third blocked (its gear craft's train step and craft-ahead too), no fighter resting
   const tier3 = (fishing: number, extra: string[] = []): Step => {

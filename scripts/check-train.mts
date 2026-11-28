@@ -24,6 +24,8 @@ import { available } from "../src/plan/planner/stock";
 import { craftXpOf } from "../src/plan/planner/xp";
 import type { Character } from "../src/types/api";
 import type { Lane, Step, World } from "../src/plan/planner/types";
+// 038's roles (Second a worker): what this check tests is not Second's role (task 039b made it a fighter)
+const ROLES_038 = { ...DEFAULTS.roles, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] } } as World["config"]["roles"];
 setDataReader(async (name) => JSON.parse(await readFile(`public/data/${name}.json`, "utf8")));
 await loadCatalog();
 
@@ -37,7 +39,7 @@ function worldOf(patch: Patch = {}, bank?: Record<string, number>, config: Parti
     ...w25, current: {}, blocked: {}, bags: {}, bankSlots: undefined, nextExpansion: undefined, favors: undefined,
     bank: bank ? Object.entries(bank).map(([code, quantity]) => ({ code, quantity })) : w25.bank,
     characters: w25.characters.map((c) => ({ ...c, ...patch[c.name] }) as Character),
-    config: { ...w25.config, roles: DEFAULTS.roles, on: { First: true, Second: true, Third: true, Fourth: true, Fifth: true }, ...config } as World["config"],
+    config: { ...w25.config, roles: ROLES_038, on: { First: true, Second: true, Third: true, Fourth: true, Fifth: true }, ...config } as World["config"],
   };
 }
 const AT_TARGET: Patch = { Second: { weaponcrafting_level: 30 }, Third: { gearcrafting_level: 30 }, Fourth: { jewelrycrafting_level: 30 } };
@@ -123,7 +125,8 @@ function levelOf2(w: World, n: string): number { return (w.characters.find((c) =
   const roles = { ...w25.config, roles: DEFAULTS.roles } as World["config"];
   cases.push([`B.2 cooking is ${KITCHEN ? "the kitchen's, Third's (task 031)" : "Fourth's"}`, crafterOf("cooking", { ...worldOf(), config: roles }) === (KITCHEN ? "Third" : "Fourth"), `the cook: ${crafterOf("cooking", { ...worldOf(), config: roles })}`]);
   const sec = { ...ch(w25, "Second"), weaponcrafting_level: 30 } as Character;
-  cases.push(["B.4 Second at weaponcrafting 30 is a worker", roleOfCh(sec, roles) === "worker", `Second at 30: ${roleOfCh(sec, roles)}`]);
+  // task 039b (A.1): Second is a fighter, and weaponcrafting stays its pin
+  cases.push(["B.4 Second is a fighter (task 039b), weaponcrafting its pin", roleOfCh(sec, roles) === "fighter" && crafterOf("weaponcrafting", { ...worldOf(), config: roles }) === "Second", `Second at 30: ${roleOfCh(sec, roles)}, the weaponcrafter ${crafterOf("weaponcrafting", { ...worldOf(), config: roles })}`]);
   // no craft in training (each at its target, Second off): First's pick at the rat eats two trout a kill — the bag caps it
   const w = worldOf(AT_TARGET, undefined, { on: { First: true, Third: true, Fourth: true, Fifth: true } });
   const s = rank("First", w).step, max = ch(w, "First").inventory_max_items, half = Math.floor(max / 2), q = s.withdraw?.cooked_trout ?? 0;

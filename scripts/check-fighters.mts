@@ -41,6 +41,8 @@ import { trainParents } from "../src/plan/planner/train";
 import { fightXp } from "../src/plan/xp";
 import type { Character } from "../src/types/api";
 import type { Step, World } from "../src/plan/planner/types";
+// 038's roles (Second a worker): what this check tests is not Second's role (task 039b made it a fighter)
+const ROLES_038 = { ...DEFAULTS.roles, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] } } as World["config"]["roles"];
 setDataReader(async (name) => JSON.parse(await readFile(`public/data/${name}.json`, "utf8")));
 await loadCatalog();
 await loadAtlas();
@@ -52,7 +54,7 @@ function worldOf(o: { bank?: Record<string, number>; config?: Partial<World["con
     ...fx, current: o.current ?? {}, blocked: o.blocked ?? {},
     bank: [...fx.bank, ...Object.entries(o.bank ?? {}).map(([code, quantity]) => ({ code, quantity }))],
     characters: fx.characters.map((c) => ({ ...c, ...o.patch?.[c.name] }) as Character),
-    config: { ...DEFAULTS, ...fx.config, on: { ...DEFAULTS.on, ...fx.config.on }, roles: DEFAULTS.roles, ...o.config } as World["config"],
+    config: { ...DEFAULTS, ...fx.config, on: { ...DEFAULTS.on, ...fx.config.on }, roles: ROLES_038, ...o.config } as World["config"],
   };
 }
 const ch = (w: World, n: string): Character => w.characters.find((c) => c.name === n)!;
@@ -119,7 +121,7 @@ const cases: [string, boolean, string][] = [];
       ...lx, current: {}, ...(o.market ? { market: o.market } : {}),
       blocked: { ...lx.blocked, ...Object.fromEntries(["First", "Fifth"].map((n) => [`src:cyclops_eye@${n}`, { until: lx.now + 864e5, why: "check" }])) },
       bank: lx.bank.filter((b) => !gone(b.code)), bags: Object.fromEntries(Object.entries(lx.bags ?? {}).filter(([c]) => !gone(c))),
-      config: { ...DEFAULTS, ...lx.config, on: { ...DEFAULTS.on, ...lx.config.on }, roles: DEFAULTS.roles, ...o.config } as World["config"],
+      config: { ...DEFAULTS, ...lx.config, on: { ...DEFAULTS.on, ...lx.config.on }, roles: ROLES_038, ...o.config } as World["config"],
     };
   };
   const sale = (price: number, ref: number): World["market"] => ({ orders: [{ id: "k1", code: "king_slimeball", price, quantity: 500, account: "someone" }], refs: { king_slimeball: { price: ref, n: 30, from: "trades" } }, spent: 0, account: "alverus" });

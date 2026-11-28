@@ -77,7 +77,7 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
       out = [...visit("start"), ...(supply ? [] : [{ kind: "task-loop", master: "monsters", times: step.units, done: 0, gear: true } as const])];
       break;
     case "train": // task 029: `runs` of the recipe the step's picker named (train.ts), within its level
-      out = [reset(w), { kind: "train", skill: w.lane, toLevel: 0, levels: 1, gear: true, ...(w.code && w.runs ? { code: w.code, runs: w.runs, done: 0 } : {}) }];
+      out = [reset(w), { kind: "train", skill: w.lane, toLevel: 0, levels: 1, gear: true, ...(w.code && w.runs ? { code: w.code, runs: w.runs, done: 0 } : {}), ...(w.bank ? { bank: true } : {}) }];
       break;
     case "recycle": {
       // task 015, settled point 4: a tidy step — every copy of each code recycled (the item withdraws them a bagful at a

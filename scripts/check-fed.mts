@@ -23,6 +23,8 @@ import { roleOf } from "../src/plan/planner/roles";
 import * as C from "../src/plan/planner/consumables";
 import type { Character } from "../src/types/api";
 import type { Step, World } from "../src/plan/planner/types";
+// 038's roles (Second a worker): what this check tests is not Second's role (task 039b made it a fighter)
+const ROLES_038 = { ...DEFAULTS.roles, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] } } as World["config"]["roles"];
 setDataReader(async (name) => JSON.parse(await readFile(`public/data/${name}.json`, "utf8")));
 await loadCatalog();
 await loadAtlas();
@@ -37,7 +39,7 @@ function worldOf(o: { bank?: Record<string, number>; patch?: Record<string, Part
     ...fx, current: o.current ?? {}, blocked: o.blocked ?? {}, costs: {}, bags: undefined,
     bank: [...fx.bank.filter((b) => o.live || (!FOOD.has(b.code) && !RAW.has(b.code))), ...Object.entries(o.bank ?? {}).map(([code, quantity]) => ({ code, quantity }))],
     characters: fx.characters.map((c) => ({ ...c, ...o.patch?.[c.name] }) as Character),
-    config: { ...DEFAULTS, ...fx.config, on: Object.fromEntries(ALL.map((n) => [n, !o.off?.includes(n)])), roles: DEFAULTS.roles } as World["config"],
+    config: { ...DEFAULTS, ...fx.config, on: Object.fromEntries(ALL.map((n) => [n, !o.off?.includes(n)])), roles: ROLES_038 } as World["config"],
   };
 }
 const ch = (w: World, n: string): Character => w.characters.find((c) => c.name === n)!;

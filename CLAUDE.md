@@ -257,6 +257,15 @@ Design: `docs/design/planner.md`. **Core** `src/plan/planner/` (pure): `decide(n
 
 ## The roles (task 027)
 
+**Three fighters, two workers since task 039b** (Alex, 11-23 and 11-28: the third fighter is for the group fights): Second `role:
+"fighter"` with `craft: ["weaponcrafting"]` — woodcutting is Fourth's (`rolesOf`); its weaponcrafting is trained only in whole
+batches from the bank: `train.ts trainParents` takes a fighter holder (its materials stay the workers' needs; a fighter's road
+kill in (3) still leaves a training's leaf out), and the fighter's order gets rule `train`, "a batch from the bank", after forging
+and a need's kill and before the XP pick — `trainPlan`'s step only when `covered`, its work `bank: true`, compiled to a `train`
+item with `bank`, whose loop (`queue.ts runTrainCraft`) withdraws from the bank and never gathers or hunts: short, the item ends
+(scenario `train-bank-only`); the stage's number bounds it as a worker's. With Second a fighter, the stage advances only when it
+too reaches the stage's `fighters` (`stageOf` reads every fighter). The mechanism checks whose fixtures assumed Second a worker
+pin 038's roles (`ROLES_038`: `check-boss`, `-bought`, `-fed`, `-fighters`, `-market`, `-stage`, `-train`). Before 039b:
 **Two fighters, three workers** (Alex, decisions 63, 64): `DEFAULTS.roles` — First and Fifth `role: "fighter"` with no lane; Second
 `"worker"` (woodcutting, weaponcrafting; task 029, B.4: its `fighterFrom` went — it stays a worker, two fighters until the planning
 chat says otherwise); Third `"worker"` (alchemy, fishing, gearcrafting); Fourth `"worker"` (mining, jewelrycrafting, cooking — task
@@ -417,9 +426,10 @@ keeps deciding how; the stage narrows what is asked:
 
 ## A party (task 039)
 
-**A boss fought by two or three of ours: the solver and the verdict; nothing decides with them yet** — the party's step
-(food shares, the tile and its key, the leader's `fight` with `participants`, every member's echo, a loss ends it for all) is
-task 039b, so a boss still sits behind its `group` gate (`targets.ts`) and `actions.fight(name, participants)` has no caller.
+**A boss fought by two or three of ours: the solver, the verdict and (task 039b) the party's pieces as needs; no party step
+yet** — the step (food shares, the tile and its key, the leader's `fight` with `participants`, every member's echo, a loss ends
+it for all, the boss kept while it is every member's pick, a `party` journal record) is left for task 039c, so a boss still
+sits behind its `group` gate (`targets.ts`) and `actions.fight(name, participants)` has no caller.
 - **The rules as read** (docs.artifactsmmo.com `concepts/stats_and_fights`; the two King Slime fights of 11-11 in
   `logs/dev.log`, lines 411177 and 411382, the second with its turn log): up to three of one account on the boss's tile,
   bosses only (`486` otherwise — the code `runLoop` also holds as "an action in progress"); every actor's action is one turn
@@ -452,8 +462,23 @@ task 039b, so a boss still sits behind its `group` gate (`targets.ts`) and `acti
   to none at 45. At 35 it is stage 2's `pieces` that holds the lich back, not the level: without the list the trio wins at
   35, and First 36 + Fifth 34 with Second at 30, in level-30 pieces of craft level 30 not made yet (report 039, D.2). The
   bank holds 267 lich tomb keys (one a member each entry, the transition at (9, 7)).
+- **The party's needs (task 039b, B; `gear.ts` work (d))**: for a boss a listed achievement asks (a kill objective with a
+  `group` gate; only with a stage's `achievements`, so a World with no stages decides as before), the smallest party of the
+  fighters that are on and meet its other gates that passes the floor with every listed piece made (`party.ts smallestParty`:
+  the pairs, then the trio, each member at its own level in the stage's pieces — `partyPlan` uses the World itself then, its
+  market's bought candidates too); the pieces of its winning set the members lack (counted member by member against its pool
+  and the bank's copies the members before it took; on the stage's list; with a recipe or bought) are needs of their own, one
+  `Need` a piece for the member the solver gives it to (H0 ∞, H1 the work's kills at the party's cooldown — a drop at one roll
+  a win, a shortcut —, G `makeHours`), so they flow through `gearPieces` → `pieceParent` to the workers as a stage piece does
+  (rule `fed`'s `staged`), the cheapest chain first; nothing for a boss no party passes. `partyPlan` keeps one answer a party's
+  content (each member's base stats, pool and stock, free extras, potion prices, pinned artifacts, the floor, the stage's
+  pieces; `MEMO_CAP`), so the forward model re-solves a party only when one of them moves. On the World of 14:04 on 11-28 with
+  `stage.json` as committed no party passes (the trio 0% with Second at 29, 59% at 30: stage 1 lacks the gold and conjurer
+  pieces stage 2 lists) and nothing is asked; with stage 2's four added to stage 1 and Second at 30, the trio 100% and 18
+  pieces asked, gold shields at 0.02 h to emerald rings at 10.4 h (report 039b).
 - **Checks**: `check-party` (the solo equivalence, a turn an actor, whom the boss strikes, a pair where one loses, the
-  solver's party on the World of 09:46 on 11-28 and Second's lowest level).
+  solver's party on the World of 09:46 on 11-28 and Second's lowest level); `check-third` (task 039b, the World of 14:04 on
+  11-28, `scripts/fixtures/world-2026-11-28-1404.json`: Second a fighter, its batch from the bank, the party's needs).
 
 ## The fight solve (task 021)
 

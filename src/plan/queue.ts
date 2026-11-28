@@ -54,7 +54,7 @@ export type QueueItem = { id: string; error?: string } & (
   // skill and `for` (a helper) had their writers and handlers deleted — the
   // fields stay for the branches that still read them (`resource`, x, y, `for`).
   // task 029: `code` and `runs` — the planner's recipe and how many runs (`done` counts them); the item ends at either
-  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; layer?: string; gear?: boolean; for?: string; code?: string; runs?: number; done?: number }
+  | { kind: "train"; skill: string; toLevel: number; levels?: number; from?: number; resource?: string; x?: number; y?: number; layer?: string; gear?: boolean; for?: string; code?: string; runs?: number; done?: number; bank?: boolean }
   // Swap to the best job gear from the bank (see plan/jobgear.ts): `desired` =
   // slot map frozen at compile; `job` = live spec recomputed from the bank at
   // run time (hand-added). `reset` ⇒ full bank reset first: deposit EVERYTHING

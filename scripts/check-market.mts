@@ -22,12 +22,14 @@ import { DEFAULTS } from "../src/plan/planner/config";
 import { rank } from "../src/plan/planner/decide";
 import { itemsOf } from "../src/plan/planner/compile";
 import type { Market, MarketRef, Step, World } from "../src/plan/planner/types";
+// 038's roles (Second a worker): what this check tests is not Second's role (task 039b made it a fighter)
+const ROLES_038 = { ...DEFAULTS.roles, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] } } as World["config"]["roles"];
 setDataReader(async (name) => JSON.parse(await readFile(`public/data/${name}.json`, "utf8")));
 await loadCatalog();
 await loadAtlas();
 
 const fx = JSON.parse(await readFile("scripts/fixtures/world-2026-11-26.json", "utf8")) as { world: World };
-const config = { ...DEFAULTS, ...fx.world.config, on: { ...DEFAULTS.on, ...fx.world.config.on }, roles: DEFAULTS.roles, market: DEFAULTS.market } as World["config"];
+const config = { ...DEFAULTS, ...fx.world.config, on: { ...DEFAULTS.on, ...fx.world.config.on }, roles: ROLES_038, market: DEFAULTS.market } as World["config"];
 const w0: World = { ...fx.world, config };
 const NAMES = w0.characters.map((c) => c.name);
 const WORKERS = ["Second", "Third", "Fourth"], FIGHTERS = ["First", "Fifth"];

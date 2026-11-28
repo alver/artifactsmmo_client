@@ -38,6 +38,8 @@ import { setStageText, stageFile, stagesNow } from "../src/state/stage";
 import { item } from "../src/catalog";
 import type { Character } from "../src/types/api";
 import type { Lane, Stage, Step, World } from "../src/plan/planner/types";
+// 038's roles (Second a worker): what this check tests is not Second's role (task 039b made it a fighter)
+const ROLES_038 = { ...DEFAULTS.roles, Second: { role: "worker", craft: ["weaponcrafting"], gather: ["woodcutting"] } } as World["config"]["roles"];
 setDataReader(async (name) => JSON.parse(await readFile(`public/data/${name}.json`, "utf8")));
 await loadCatalog();
 await loadAtlas();
@@ -49,7 +51,7 @@ function worldOf(o: { stages?: Stage[]; market?: World["market"]; current?: Worl
     ...lx, current: o.current ?? {}, ...(o.market ? { market: o.market } : {}), ...(o.stages ? { stages: o.stages } : {}),
     blocked: { ...lx.blocked, ...Object.fromEntries(["First", "Fifth"].map((n) => [`src:cyclops_eye@${n}`, { until: lx.now + 864e5, why: "check" }])), ...o.blocked },
     characters: lx.characters.map((c) => ({ ...c, ...o.patch?.[c.name] }) as Character),
-    config: { ...DEFAULTS, ...lx.config, on: { ...DEFAULTS.on, ...lx.config.on }, roles: DEFAULTS.roles } as World["config"],
+    config: { ...DEFAULTS, ...lx.config, on: { ...DEFAULTS.on, ...lx.config.on }, roles: ROLES_038 } as World["config"],
   };
 }
 const stage = (s: Partial<Stage>): Stage[] => [{ name: "check", fighters: 35, ...s }];

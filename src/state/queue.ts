@@ -987,7 +987,8 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
     return false;
   }
   const shorts = recipe.items.filter((g) => invQty(ch, g.code) < g.quantity * runs);
-  const own = shorts.find((g) => bankQty(g.code) > 0 || unitSec([ch], g.code) < Infinity);
+  // task 039b (A.2): a fighter's batch comes from the bank only — it never gathers or hunts for it
+  const own = shorts.find((g) => bankQty(g.code) > 0 || (!it.bank && unitSec([ch], g.code) < Infinity));
   if (!own && by.length > 1) {
     ctx.note(`train ${titleCase(it.skill)}: waiting for ${itemName(shorts[0].code)} from helpers`);
     for (let i = 0; i < 15 && !stopFlags.has(name); i++) await sleep(1000);
@@ -995,7 +996,7 @@ async function runTrainCraft(name: string, ch: Character, it: Extract<QueueItem,
   }
   // task 029 (A.4): the planner's recipe — an ingredient the bank lacks and the crafter cannot get itself is the fleet's work: the
   // item ends (the planner decides again; the fleet supplies it), never a pause
-  if (!own && it.code) return skipItem(name, it, `${itemName(shorts[0].code)}: none in the bank, and ${name} cannot get it itself — the fleet supplies it`);
+  if (!own && it.code) return skipItem(name, it, `${itemName(shorts[0].code)}: none in the bank, and ${name} ${it.bank ? "trains from the bank only" : "cannot get it itself"} — the fleet supplies it`);
   const short = own ?? shorts[0];
   return sourceOne(name, ch, it, short.code, short.quantity * runs - invQty(ch, short.code), ctx, true);
 }
