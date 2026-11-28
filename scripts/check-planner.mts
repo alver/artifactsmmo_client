@@ -1435,8 +1435,8 @@ const BANK_NOW = bankWorld();
   cases.push(["…a character that may recycle nothing takes an ordinary step (Fifth)", f8.as !== "tidy"]);
   console.log(`  8 free: Third — ${t8.key}: ${t8.why}\n          Fifth — ${f8.key}: ${f8.why.slice(0, 160)}`);
   const s15 = rank("Third", bankWorld({ bankSlots: usedSlots(BANK_NOW) + TIDY_BELOW })).step;
-  cases.push(["…15 free — no tidy", s15.as !== "tidy"]);
-  console.log(`  15 free: Third — ${s15.key}`);
+  cases.push([`…${TIDY_BELOW} free — no tidy`, s15.as !== "tidy"]);
+  console.log(`  ${TIDY_BELOW} free: Third — ${s15.key}`);
   // a code worn by one character: kept
   const ww = bankWorld();
   const worn = { ...ww, characters: ww.characters.map((c) => (c.name === "Fifth" ? ({ ...c, helmet_slot: "copper_helmet" }) as Character : c)) };

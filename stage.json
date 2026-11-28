@@ -13,10 +13,11 @@
       "name": "1: fighters to 35",
       "fighters": 35,
       "crafts": { "weaponcrafting": 30, "gearcrafting": 30, "jewelrycrafting": 30 },
-      "gathering": { "fishing": 30, "mining": 38, "woodcutting": 37 },
+      "gathering": { "fishing": 30, "mining": 38, "woodcutting": 37, "alchemy": 40 },
       "pieces": [
         "slime_shield",
-        "greater_dreadful_staff", "conjurer_cloak", "flying_boots", "emerald_ring", "obsidian_helmet"
+        "greater_dreadful_staff", "conjurer_cloak", "flying_boots", "emerald_ring", "obsidian_helmet",
+        "conjurer_skirt", "gold_shield", "gold_helm", "greater_dreadful_amulet"
       ],
       "achievements": [
         "ecologist", "the_reaper", "expert_lumberjack", "cabinet_maker", "expert_fisherman",
@@ -29,7 +30,7 @@
       "name": "2: fighters to 40",
       "fighters": 40,
       "crafts": { "weaponcrafting": 31, "gearcrafting": 31, "jewelrycrafting": 30 },
-      "gathering": { "fishing": 40, "mining": 40, "woodcutting": 40 },
+      "gathering": { "fishing": 40, "mining": 40, "woodcutting": 40, "alchemy": 40 },
       "pieces": [
         "slime_shield", "death_knight_sword", "royal_skeleton_pants", "gold_platelegs", "royal_skeleton_armor",
         "gold_helm", "gold_shield", "conjurer_skirt", "greater_dreadful_amulet",
@@ -46,13 +47,19 @@
       "name": "3: fighters to 45",
       "fighters": 45,
       "crafts": { "weaponcrafting": 35, "gearcrafting": 36, "jewelrycrafting": 35 },
-      "gathering": { "fishing": 44, "mining": 42, "woodcutting": 45 }
+      "gathering": { "fishing": 45, "mining": 45, "woodcutting": 45, "alchemy": 45 }
     },
     {
       "name": "4: fighters to 50, the cap",
       "fighters": 50,
       "crafts": { "weaponcrafting": 38, "gearcrafting": 41, "jewelrycrafting": 39 },
-      "gathering": { "fishing": 48, "mining": 46, "woodcutting": 49 }
+      "gathering": { "fishing": 50, "mining": 50, "woodcutting": 50, "alchemy": 50 }
+    },
+    {
+      "name": "5: every skill to the cap, then the walk",
+      "fighters": 50,
+      "crafts": { "weaponcrafting": 50, "gearcrafting": 50, "jewelrycrafting": 50 },
+      "gathering": { "fishing": 50, "mining": 50, "woodcutting": 50, "alchemy": 50 }
     }
   ]
 }

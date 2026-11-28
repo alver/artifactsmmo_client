@@ -15,22 +15,26 @@ import { GOLD_FLOOR } from "../events";
 import { jobGear } from "../jobgear";
 import { CRAFT_SEC, autoRecyclable, recycleReturn } from "../xp";
 import { GATHER_LANES, GEAR_CRAFT } from "./config";
-import { perOf, stepSec } from "./cost";
+import { levelOf, perOf, stepSec } from "./cost";
 import { baseParents } from "./consumables";
 import { possibleMembers } from "./events";
 import { isOn } from "./gates";
 import { gearPieces } from "./gear";
 import { monsterName, pickMonster } from "./pick";
 import { fightRec, nearestSpot, placeOf } from "./reach";
-import { crafterOf, roleOf } from "./roles";
+import { crafterOf, roleOf, rolesFor } from "./roles";
 import { available, poolBank } from "./stock";
 import { mayCraft, supplyNeeds } from "./supply";
 import { sourceFor, targetsOf } from "./targets";
 import { GEAR_SLOTS, slotCode } from "../../types/api";
+import type { Character } from "../../types/api";
 import type { Lane, Step, World } from "./types";
 
-/** Settled point 4: a tidy step goes before any other while fewer than this many slots are free (a guess of the chat). */
-export const TIDY_BELOW = 15;
+/** Settled point 4: a tidy step goes before any other while fewer than this many slots are free (a guess of the chat; task
+ *  041, C: 15 → 40 — with 19 free it never ran). */
+export const TIDY_BELOW = 40;
+/** Task 041 (B.1): the cut starts while the bank's stones make at least this many of the listed products together. */
+export const CUT_MIN = 6;
 /** Settled point 5: below this many free slots, with nothing left to tidy, one expansion is bought (a guess of the chat). */
 export const EXPAND_BELOW = 10;
 /** Settled point 3: gear is outdated this many levels below the lowest combat level of the characters that are on. */
@@ -215,6 +219,58 @@ export function tidyStep(world: World, name: string): Step | undefined {
 // during a character's last tidy step the others' codes would read as nothing left and an expansion be bought early.
 export const tidyLeft = (world: World): boolean =>
   world.characters.some((c) => isOn(c.name, world) && (world.current[c.name]?.as === "tidy" || !!tidyStep(world, c.name)));
+
+/** Task 041 (A.3): why the merchants keep a gear code of the sell list — a running step's `wear` names it, or a solve of today
+ *  picks it (the tidy's own test: solvePicks); undefined: it may be sold. */
+export function soldKept(world: World, code: string): string | undefined {
+  if (!isGear(code)) return undefined;
+  const step = Object.values(world.current).find((s) => s && Object.values(s.wear ?? {}).includes(code));
+  if (step) return `a running step wears it (${step.key})`;
+  const s = solvePicks(world, "").get(code);
+  return s && `in a solve: ${s}`;
+}
+
+/**
+ * Task 041 (B): the cut — the listed products of one material (World.cut: a gem is 24 stones) made from the bank's stock by
+ * the mining lane's holder, else by the first character that is on and has a recipe's level; one character at a time. It
+ * starts while the bank's stones make at least CUT_MIN of them together and goes on, step after step, until no whole batch
+ * is left (the next step of a character whose last step cut); the remainder stays. At most three products a step (four
+ * items: a craft of each, the deposit; compile.ts: no reset), the most first, of one workshop; the stones reserved like any
+ * withdrawal. No objective, training or need: decide.ts ranks it right after the tidy. Undefined without World.cut (the
+ * forward model has none).
+ */
+export function cutStep(world: World, name: string): Step | undefined {
+  if (!world.cut?.length || Object.entries(world.current).some(([n, s]) => n !== name && s?.as === "cut")) return undefined;
+  const on = world.characters.filter((c) => isOn(c.name, world));
+  const recipes = world.cut.flatMap((code) => { const r = item(code)?.craft; return r?.items.length === 1 ? [{ code, r, stone: r.items[0] }] : []; });
+  const may = (c: Character, r: { skill: string; level: number }): boolean => levelOf(c, r.skill as Lane) >= r.level;
+  const holder = on.find((c) => rolesFor(world)[c.name]?.includes("mining"));
+  const who = [holder, ...on].find((c): c is Character => !!c && recipes.some((x) => may(c, x.r)));
+  if (!who || who.name !== name) return undefined;
+  const blocked = (code: string): boolean => (world.blocked[`cut:${code}@${name}`]?.until ?? 0) > world.now;
+  const lots = recipes.map((x) => ({ ...x, n: Math.floor(available(x.stone.code, world, name) / x.stone.quantity) }))
+    .filter((x) => x.n > 0 && may(who, x.r) && !blocked(x.code))
+    .sort((a, b) => b.n - a.n);
+  const last = world.current[name];
+  const total = lots.reduce((s, x) => s + x.n, 0);
+  if (!total || (total < CUT_MIN && last?.as !== "cut")) return undefined;
+  const mine = lots.filter((x) => x.r.skill === lots[0].r.skill).slice(0, 3);
+  const spot = nearestSpot(placeOf(who), "workshop", lots[0].r.skill, world);
+  if (!spot) return undefined;
+  const gems = mine.reduce((s, x) => s + x.n, 0);
+  // the craft item takes a bagful of stones at a time: a round trip bank ↔ workshop each
+  const trips = mine.reduce((s, x) => s + Math.ceil(x.n / Math.max(1, Math.floor(who.inventory_max_items / x.stone.quantity))), 0);
+  const target = `cut:${mine[0].code}`;
+  const k = last?.target === target ? Number(last.key.split("#").pop()) + 1 : 1;
+  const left = mine.map((x) => `${Math.floor(available(x.stone.code, world, name) - x.n * x.stone.quantity)} ${itemName(x.stone.code)}`);
+  return {
+    key: `${target}@${name}#${k}`, target, character: name, as: "cut",
+    work: { kind: "craft", code: mine[0].code, codes: Object.fromEntries(mine.map((x) => [x.code, x.n])) },
+    units: gems, hours: (stepSec(spot.place, placeOf(who)) + (trips - 1) * stepSec(spot.place) + gems * CRAFT_SEC) / 3600, score: 0,
+    why: `cut: ${mine.map((x) => `${x.n} ${itemName(x.code)} of ${x.n * x.stone.quantity} ${itemName(x.stone.code)}`).join(", ")} — ${trips} trip${trips === 1 ? "" : "s"} bank ↔ workshop; the remainder stays (${left.join(", ")})`,
+    place: spot.place, withdraw: Object.fromEntries(mine.map((x) => [x.stone.code, x.n * x.stone.quantity])),
+  };
+}
 
 /** Settled point 5: whether the next expansion may be bought — at most config.expansionCap, the bank keeping GOLD_FLOOR. */
 export function expansionOk(world: World): { ok: boolean; price: number; why?: string } {

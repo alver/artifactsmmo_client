@@ -58,6 +58,12 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
       out = [...visit("start"), reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9)), step.withdraw, wear, tollTake(step)), ...visit("end"), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
       break;
     case "craft": {
+      // task 041: a cut step — each product's whole batches from the bank (the craft item withdraws a bagful at a time and
+      // banks what it made between them), what is left banked; no reset, as the tidy's (a bank nearly full)
+      if (step.as === "cut") {
+        out = [...Object.entries(w.codes ?? {}).map(([code, quantity]): QueueItemInput => ({ kind: "craft", code, quantity, done: 0 })), { kind: "deposit-all" }];
+        break;
+      }
       if (supply) {
         out = [reset(w), { kind: "craft", code: w.code, quantity: step.units, done: 0 }, { kind: "deposit-all" }];
         break;

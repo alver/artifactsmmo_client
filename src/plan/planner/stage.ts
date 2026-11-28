@@ -13,15 +13,17 @@
 // Pure.
 
 import { achievement, item } from "../../catalog";
+import { npcForSell } from "../acquire";
 import { SLOTS_FOR_TYPE } from "../../types/api";
 import { GATHER_LANES, GEAR_CRAFT } from "./config";
 import { roleOfCh } from "./roles";
 import type { Lane, Stage, World } from "./types";
 
 /** The stages of a file's text, the codes the catalog does not know (or that cannot be what their field asks) left out and
- *  named. Throws where the text is no stage list (the caller keeps the last good one). */
-export function parseStages(text: string): { stages: Stage[]; unknown: string[] } {
-  const raw = JSON.parse(text) as { stages?: unknown };
+ *  named. Throws where the text is no stage list (the caller keeps the last good one). Task 041: and the top-level `sell`
+ *  (a code → the count the bank keeps; one no merchant buys for gold is left out) and `cut` (products of one material). */
+export function parseStages(text: string): { stages: Stage[]; unknown: string[]; sell?: Record<string, number>; cut?: string[] } {
+  const raw = JSON.parse(text) as { stages?: unknown; sell?: Record<string, unknown>; cut?: unknown };
   if (!Array.isArray(raw?.stages) || !raw.stages.length) throw new Error("no `stages` list");
   const unknown: string[] = [];
   const stages = raw.stages.map((s: Record<string, unknown>, i: number): Stage => {
@@ -50,7 +52,22 @@ export function parseStages(text: string): { stages: Stage[]; unknown: string[] 
     const achievements = codes("achievements", (c) => (achievement(c) ? undefined : "unknown"));
     return { name: s.name, fighters: s.fighters, ...(crafts ? { crafts } : {}), ...(gathering ? { gathering } : {}), ...(pieces ? { pieces } : {}), ...(achievements ? { achievements } : {}) };
   });
-  return { stages, unknown };
+  let sell: Record<string, number> | undefined;
+  if (raw.sell != null) {
+    sell = {};
+    for (const [c, n] of Object.entries(raw.sell)) {
+      const why = !item(c) ? "unknown" : typeof n !== "number" || n < 0 ? "not a count" : !npcForSell(c) ? "no merchant buys it for gold" : undefined;
+      if (why) unknown.push(`sell ${c} (${why})`);
+      else sell[c] = n as number;
+    }
+  }
+  const cut = raw.cut == null ? undefined : (Array.isArray(raw.cut) ? raw.cut : []).filter((c): c is string => {
+    const it = typeof c === "string" ? item(c) : undefined;
+    const why = typeof c !== "string" ? "not a code" : !it ? "unknown" : it.craft?.items.length !== 1 ? "not made of one material" : undefined;
+    if (why) unknown.push(`cut ${String(c)} (${why})`);
+    return !why;
+  });
+  return { stages, unknown, ...(sell ? { sell } : {}), ...(cut ? { cut } : {}) };
 }
 
 const memo = new WeakMap<World, Stage | null>();

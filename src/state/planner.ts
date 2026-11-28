@@ -21,7 +21,7 @@ import { achievements, achievementsError, bankDetails, bankItems, characterList,
 import { OUTAGE_NOTE, dropItem, haltQueue, insertItem, offeringSkips, queues, resetQueue, runQueue } from "./queue";
 import { liveEvents } from "./events";
 import { marketOf, marketState, noteOffers } from "./market";
-import { stageTick, stagesNow } from "./stage";
+import { cutNow, stageTick, stagesNow } from "./stage";
 import { invCount, setFightBlocks, setMinWin } from "./exec";
 import { noSlotFor, setNoSlotHook } from "./loopkit";
 import { DEFAULTS } from "../plan/planner/config";
@@ -128,6 +128,7 @@ export function worldOf(now: number): World {
     ...(st.hunted ? { hunted: st.hunted } : {}), // task 027
     ...((m) => (m ? { market: m } : {}))(marketOf(now)), // task 032: the last read's sell orders and the references
     ...((s) => (s ? { stages: s } : {}))(stagesNow()), // task 036: the plan's stages (stage.json, state/stage.ts)
+    ...((c) => (c ? { cut: c } : {}))(cutNow()), // task 041: what the bank's stones are cut into (bank.ts cutStep)
   };
 }
 
@@ -423,11 +424,12 @@ function measure(r: Running, ch: Character): { counter: number; units: number } 
   const items = itemsOf(r.step, ch).filter((it) => it.kind !== "deposit-all");
   const counts = (items.filter((it) => it.kind !== "task-visit").pop() ?? items.pop())?.id;
   const last = mine.find((it) => it.id === counts);
-  // task 017, settled point 13: a tidy step's units are the copies of all its codes (a finished recycle item: its quantity)
-  const tidy = r.step.as === "tidy" ? itemsOf(r.step, ch).reduce((s, it) => {
-    if (it.kind !== "recycle") return s;
+  // task 017, settled point 13: a tidy step's units are the copies of all its codes (a finished recycle item: its quantity);
+  // task 041: a cut step's, the gems of all its crafts
+  const tidy = r.step.as === "tidy" || r.step.as === "cut" ? itemsOf(r.step, ch).reduce((s, it) => {
+    if (it.kind !== "recycle" && it.kind !== "craft") return s;
     const live = mine.find((x) => x.id === it.id);
-    return s + (live?.kind === "recycle" ? live.done : it.quantity);
+    return s + (live?.kind === it.kind ? live.done : it.quantity);
   }, 0) : undefined;
   const units =
     w.kind === "train" && !w.runs ? (levelOf(ch, w.lane) > (r.from ?? Infinity) ? 1 : 0) // task 029: a named recipe's step counts its runs

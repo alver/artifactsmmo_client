@@ -154,7 +154,7 @@ function Why({ c }: { c: Character }) {
   return (
     <div class="hero-why small">
       {r?.over && <div class="muted">the last step's — it is over, the next decision is due</div>}
-      {why.rule === "tidy" ? <div class="hero-rule on">tidy: the bank is nearly full, so this goes before any other step</div> : (
+      {why.rule === "tidy" || why.rule === "cut" ? <div class="hero-rule on">{why.rule === "tidy" ? "tidy: the bank is nearly full, so this goes before any other step" : "cut: the bank's stones made gems, right after the tidy"}</div> : (
         <ol class="hero-order">
           {order.map(([k, text]) => <li key={k} class={k === why.rule ? "on" : undefined}>{text}{k === why.rule ? " ◀" : ""}</li>)}
         </ol>

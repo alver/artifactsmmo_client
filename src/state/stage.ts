@@ -17,7 +17,8 @@ import { GEAR_SLOTS, slotCode } from "../types/api";
 import type { NeedRow } from "../plan/planner/needs";
 import type { Lane, Stage, World } from "../plan/planner/types";
 
-export interface StageFile { stages?: Stage[]; at?: number; error?: string; unknown: string[] }
+/** Task 041: `sell` and `cut`, the file's top level — the merchants' sell list (eventorders.ts) and the cut (planner.ts worldOf). */
+export interface StageFile { stages?: Stage[]; sell?: Record<string, number>; cut?: string[]; at?: number; error?: string; unknown: string[] }
 /** The file as last read (server-only; not synced: the card carries what the page needs). */
 export const stageFile = signal<StageFile>({ unknown: [] });
 
@@ -29,9 +30,9 @@ export function setStageText(text: string | null, at = Date.now()): void {
     return;
   }
   try {
-    const { stages, unknown } = parseStages(text);
-    stageFile.value = { stages, unknown, at };
-    devlog(`stage: stage.json read — ${stages.length} stages${unknown.length ? `; left out: ${unknown.join(", ")}` : ""}`);
+    const { stages, unknown, sell, cut } = parseStages(text);
+    stageFile.value = { stages, unknown, at, ...(sell ? { sell } : {}), ...(cut ? { cut } : {}) };
+    devlog(`stage: stage.json read — ${stages.length} stages${sell ? `, sell ${Object.keys(sell).length} codes` : ""}${cut ? `, cut ${cut.length}` : ""}${unknown.length ? `; left out: ${unknown.join(", ")}` : ""}`);
   } catch (e) {
     const prev = stageFile.peek();
     stageFile.value = { ...prev, at, error: (e as Error).message };
@@ -39,6 +40,8 @@ export function setStageText(text: string | null, at = Date.now()): void {
   }
 }
 export const stagesNow = (): Stage[] | undefined => stageFile.peek().stages;
+export const sellNow = (): Record<string, number> | undefined => stageFile.peek().sell;
+export const cutNow = (): string[] | undefined => stageFile.peek().cut;
 
 let needs: { rows: NeedRow[]; from?: number } = { rows: [] };
 /** The outlook's needs of its newest run (state/outlook.ts): what a piece is asked for and waits for. */

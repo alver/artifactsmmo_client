@@ -372,7 +372,11 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
         if (!isAt(ch, tile)) { ctx.note("→ merchant"); await moveTo(name, tile); return false; }
         const qty = Math.min(held, left);
         ctx.note(`sell ${itemName(it.code)}`);
-        await step(name, () => actions.npcSell(name, it.code, qty));
+        await step(name, async () => {
+          const r = await actions.npcSell(name, it.code, qty);
+          // task 041 (A.5): a sale is a `sale` record, as a purchase is a `spend` one
+          journal("sale", { who: name, npc: seller, code: it.code, q: qty, gold: (r as { transaction?: { total_price?: number } }).transaction?.total_price, for: it.id.slice(0, it.id.lastIndexOf(":")) });
+        });
         patchItem(name, it.id, { done: it.done + qty });
         return false;
       }

@@ -132,8 +132,10 @@ const cases: [string, boolean, string][] = [];
   const lanes: Record<string, Lane> = { Second: "woodcutting", Fourth: "mining" };
   const best = (x: World, n: string): string | undefined => { const c = x.characters.find((y) => y.name === n)!; return pickNode(lanes[n], levelOf(c, lanes[n]), c, x)?.resource; };
   const at = (x: World, n: string): string | undefined => { const st = rank(n, x).step; return st.work.kind === "gather" ? st.work.resource : undefined; };
+  // task 041: the tidy runs below 40 free (the fixture has 17) and would take Fourth's step first — no bank slots here
+  const roomy = (x: World): World => ({ ...x, bankSlots: undefined });
   const rows = [quiet, { ...quiet, achievements: ["expert_lumberjack"] }].flatMap((q) => {
-    const w0 = worldOf({ stages: stage(q) }), w = worldOf({ stages: stage({ ...q, gathering: { mining: 38, woodcutting: 37 } }) });
+    const w0 = roomy(worldOf({ stages: stage(q) })), w = roomy(worldOf({ stages: stage({ ...q, gathering: { mining: 38, woodcutting: 37 } }) }));
     return Object.keys(lanes).map((n) => ({ n, q: q.achievements!.join() || "none listed", best: best(w0, n), got: at(w0, n), same: rank(n, w0).step.key === rank(n, w).step.key }));
   });
   cases.push(["6. gathering: a worker's free hours already go to its lane's best node — nothing built, `gathering` decides nothing", rows.every((r) => !!r.best && r.got === r.best && r.same),

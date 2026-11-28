@@ -42,6 +42,8 @@ await scenario(
 
     await t.run({ until: () => t.q("Pia").items[0]?.kind === "fight" && t.calls("npc/buy").length > 0 });
     t.eq(t.calls().filter((c) => c.action.startsWith("npc/")).map((c) => [c.action, c.body]), [["npc/sell", { code: "golden_egg", quantity: 5 }], ["npc/buy", { code: "lost_world_map", quantity: 1 }]], "sold the eggs, bought the map");
+    // task 041 (A.5): a sale is a `sale` record — the merchant, the code, the count, the gold
+    t.eq(t.journal("sale").map((r) => [r.who, r.npc, r.code, r.q, r.gold]), [["Pia", "nomadic_merchant", "golden_egg", 5, 5_000]], "the sale is a `sale` record");
     const f = t.q("Pia").items[0] as { id: string; done: number };
     t.ok(f.id === `pl:${step}:1` && f.done >= done, `the step resumes with its counter (${done} → ${f.done})`);
     t.ok(t.q("Pia").running, "running");

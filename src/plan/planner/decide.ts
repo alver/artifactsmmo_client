@@ -44,7 +44,7 @@ import { PINNED_ARTIFACTS, jobGear, ownedQtyOf } from "../jobgear";
 import { CHUNK_SEC, GATHER_LANES, GEAR_CRAFT, GEAR_FIRST, KITCHEN, TRAIN_HUNT, TRAIN_LANES } from "./config";
 import { actionSec, bagActions, craftsPerLevel, fareShare, hoursToLevel, levelOf, perOf, recycleLane, stepSec, unitSec } from "./cost";
 import { achHours, bundleOf, bundleScore } from "./bundle";
-import { bankStuck, newCodes, tidyStep } from "./bank";
+import { bankStuck, cutStep, newCodes, tidyStep } from "./bank";
 import { isOn, met } from "./gates";
 import { consFree, consParents, consumableNeeds, fedParents, fightTake, gearWorld, kitchenOn, nextFoodTier, stockCook } from "./consumables";
 import type { Take } from "./consumables";
@@ -313,6 +313,9 @@ export function rank(name: string, world: World, free = false): Ranking {
   const tidy = tidyStep(world, name);
   const realRole = roleOf(name, world) as Reason["role"];
   if (tidy) return { step: { ...tidy, reason: { ...(realRole ? { role: realRole } : {}), rule: "tidy", goal: "free bank slots", because: [tidy.why.replace(/^tidy: /, "")], limits: [] } }, objectives: [], levels: [], supply: [], fillers: [], lanes };
+  // Task 041 (B): the cut, right after the tidy — the bank's stones made the listed products (bank.ts cutStep)
+  const cut = cutStep(world, name);
+  if (cut) return { step: { ...cut, reason: { ...(realRole ? { role: realRole } : {}), rule: "cut", goal: "the bank's stones cut", because: [cut.why.replace(/^cut: /, "")], limits: [] } }, objectives: [], levels: [], supply: [], fillers: [], lanes };
   const targets = targetsOf(world);
   const calH = Math.max(0, (Date.parse(cfg.deadline) - world.now) / 3.6e6);
   const last = world.current[name];

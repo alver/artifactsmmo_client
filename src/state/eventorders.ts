@@ -19,6 +19,8 @@ import { achievements, bankDetails, bankItems, characters, isOwned, pushLog } fr
 import { queues } from "./queue";
 import { setReservedOf } from "./exec";
 import { interrupt, planner, worldOf } from "./planner";
+import { sellNow } from "./stage";
+import { soldKept } from "../plan/planner/bank";
 import { reserved } from "../plan/planner/stock";
 import { eventKey, liveEvents } from "./events";
 import { merchantOrder, type EventOrder } from "../plan/events";
@@ -27,6 +29,7 @@ import { eventDemandOpen, eventPlans as planEvents, tripOf } from "../plan/plann
 import type { Trips } from "../plan/planner/events";
 import type { QueueItemInput } from "../plan/queue";
 import type { ActiveEvent, Character } from "../types/api";
+import type { World } from "../plan/planner/types";
 
 // Task 023, settled point 2: an owned character's own fight solves and its offerings leave what the planner's running steps
 // reserved in the bank (exec.ts freeQty) — the hook is set here, the runtime module that reads the planner's World already
@@ -69,10 +72,14 @@ const isField = (e: ActiveEvent): boolean => ["monster", "resource"].includes(e.
 function orderFor(e: ActiveEvent, all: Character[]): EventOrder | "none" | undefined {
   const c = e.map.interactions?.content;
   if (c?.type === "npc") {
-    const o = merchantOrder(c.code, bankItems.value, bankDetails.value?.gold ?? 0, Object.values(characters.value));
-    if (!o) return "none";
     const dist = (ch: Character): number => Math.abs(ch.x - e.map.x) + Math.abs(ch.y - e.map.y);
     const near = [...all].sort((a, b) => dist(a) - dist(b))[0];
+    // task 041: stage.json's sell list, a gear code kept while a running step or a solve of today wants it, one bagful of the
+    // character sent (nobody free: no bag, only whether there is something to do)
+    let w: World | undefined;
+    const keep = (code: string): boolean => !!soldKept((w ??= worldOf(Date.now())), code);
+    const o = merchantOrder(c.code, bankItems.value, bankDetails.value?.gold ?? 0, Object.values(characters.value), sellNow(), keep, near?.inventory_max_items);
+    if (!o) return "none";
     return near ? { ...o, character: near.name } : undefined;
   }
   return "none";

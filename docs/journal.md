@@ -156,7 +156,7 @@ There is one record per spawn, and another only when the verdict changes: a memb
 
 ### `bank`: every `plan: bank` line, with its numbers apart (`planner.ts bankCheck`, `bankLine`, the hook; `src/state/queue.ts` `expand`; `src/state/loopkit.ts`)
 - `what`, one of:
-  - `boot`: the boot line, with `outdated` (code → copies) while fewer than 15 slots are free;
+  - `boot`: the boot line, with `outdated` (code → copies) while fewer than `TIDY_BELOW` slots are free (40 since task 041; 15 before);
   - `refused`: `who` could not bank `codes`;
   - `buy`: an expansion is asked for, from `who` at `price`;
   - `bought`: `who` paid `price`, `slots` `[before, after]`;
@@ -197,6 +197,14 @@ Keys: `who`, `skill` (`combat` for the character level), `lv` (the new level).
 {"t":"2026-01-15T14:52:56.650Z","run":"kbz1","k":"spend","who":"Pia","what":"market","code":"gold","q":30,"for":"pl:buy:copper_bar@Pia#1","item":"copper_bar","units":6,"price":5,"ref":5,"order":"o1"}
 ```
 `npm run journal`'s `## Spent` table lists every `spend` record and sums them by `what` and `code`, so the merchant's gold shows there beside the fares and the coins.
+
+### `sale`: a unit sold to a merchant (task 041; `src/state/queue.ts` `sell`, from the action's echo)
+- `who`; `npc` (the merchant: `nomadic_merchant`, `gemstone_merchant`, …); `code` and `q` (the count sold in one `npc/sell`);
+  `gold` (the echo's `transaction.total_price`); `for`: the bucket — the merchant interrupt's `pl:int:merchant:<event key>`.
+- One record a sale call: an order of several codes, or a code sold in more than one bagful, writes several.
+```json
+{"t":"2026-01-15T12:05:42.150Z","run":"kyo5","k":"sale","who":"Pia","npc":"nomadic_merchant","code":"golden_egg","q":5,"gold":5000,"for":"pl:int:merchant:nomadic_merchant@2026-01-15T11:30:00.000Z"}
+```
 
 ### `market`: the Grand Exchange said no (task 032; `src/state/market.ts noteOffers`, `src/state/queue.ts` `ge-buy`)
 - `what` `wanted`: a need that passes the market's rules 1–3 and fails only the purse (a purchase's cap, the day's gold, the

@@ -17,7 +17,7 @@ export type Gate =
 export type Work =
   | { kind: "kill"; monster: string; drop?: string }   // units are kills, or items of `drop` (a combat_drop objective)
   | { kind: "gather"; resource: string; drop: string } // units are items of `drop`
-  | { kind: "craft"; code: string }
+  | { kind: "craft"; code: string; codes?: Record<string, number> } // task 041: a cut step's products and their counts (`code` the first)
   | { kind: "buy"; code: string; npc: string; currency: string; price: number; order?: string; ref?: number } // task 032: `order` — a Grand Exchange sell order (npc "grand_exchange", gold), `ref` its reference
   | { kind: "sell"; code: string; npc: string }
   | { kind: "task" } | { kind: "favor" }
@@ -47,8 +47,8 @@ export interface Target {
 }
 
 /** "supply": a `src:` / `mat:` / `gear:` step — material or a gear piece for an open parent (task 009). "tidy": outdated
- *  gear recycled to free bank slots (task 015, bank.ts). */
-export type Answer = "objective" | "level" | "filler" | "fallback" | "supply" | "tidy";
+ *  gear recycled to free bank slots (task 015, bank.ts). "cut": the bank's stones made gems (task 041, bank.ts cutStep). */
+export type Answer = "objective" | "level" | "filler" | "fallback" | "supply" | "tidy" | "cut";
 
 export interface Place { x: number; y: number; layer: string }
 
@@ -96,7 +96,7 @@ export interface PartyStep {
 /** Task 028: the rule of a role's order that took a step (decide.ts ORDER): a fighter's first · forging · a need's kill ·
  *  the XP pick · the free pass; a worker's need · short · craft ahead · today · fallback; anyone's tidy. Task 029: a fighter's
  *  training's kill (`train-kill`), a worker's batch from the bank (`train`). */
-export type Rule = "first" | "party" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy" | "cook" | "market" | "fed";
+export type Rule = "first" | "party" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy" | "cook" | "market" | "fed" | "cut";
 /** Task 028 (A.1): a step's reason in parts. */
 export interface Reason {
   role?: "fighter" | "worker";
@@ -187,6 +187,9 @@ export interface World {  // everything decide() reads — a snapshot, so it run
   /** Task 036: the plan's stages (stage.json, state/stage.ts) — the runtime's World and the forward model's; none: the World
    *  of before (stage.ts). */
   stages?: Stage[];
+  /** Task 041 (B): the products of one material cut from the bank's stock (stage.json `cut`) — the runtime's World only; the
+   *  forward model has none (road.ts), so it does not cut. */
+  cut?: string[];
 }
 
 /** Task 036: a stage of the season plan (stage.json): it is current until every fighter has reached `fighters`. A field left
