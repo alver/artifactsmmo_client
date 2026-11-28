@@ -172,6 +172,22 @@ Four numbers against the table in section 2: each fighter's combat XP of the day
 levels, the crafts and gathering levels, the points. On the page: Everyone, sorted by "combat XP a day"; An account
 (alverus), the ribbons; Two accounts (alverus beside ShadyBliss, Zetark, sqidking).
 
+## 8. What the engine still lacks, in the order the stages ask for it
+Written 11-28 on Alex's question. A package is one to three tasks; the daily check and `stage.json` are not listed.
+
+| # | package | why, and when the plan needs it | size |
+|---|---|---|---|
+| 1 | **Group fights, and Second as the third fighter** | The game lets up to three of our characters fight a boss; the engine cannot. **43 points stand behind it**: 26 for boss kills (lich 30: 2; goblin priestess 35: 2; rosenblood 40: 3; duskworm 48: 3; sandwhisper empress 55: 3; all five: 5; the two raid bosses 3 and 5) and 17 for their drops (life_lover 4 from the lich, elementary_book 4 from rosenblood, coin_collector 4 and secrets_in_the_sand 5 from the empress). Rosenblood is also the most fought monster at 48–50 (best 15,464 XP an hour). First needed at the end of stage 2 (the lich, taken on the board by three at 40, 40, 44 or two at 46, 50). The solver's table — which boss falls to a pair or a trio of ours at which levels — says when Second changes role; a fighter then keeps its craft and trains it in batches (Zetark/Ashmere: fighter 36 with weaponcrafting 30). | large |
+| 2 | **The counters that ask only time** | 13 points no level buys: 500 favors, 1,000 tasks, 2,500 recycles. **Measured on 11-28 (16 hours of the board's reads): they move by themselves.** Favors 108 → 116: the daily offerings ran for all five and did 8 of the 15 (open: four alchemy ones for want of 10 minor health potions, three combat ones asked at 00:05 for owlbear hair the fighters dropped later that night) — at 8 a day done about 15 January, at 15 by Christmas. Tasks 409 → 414: 7.5 a day against the 6.7 the deadline asks, while the tools' coins keep the workers on tasks — to watch once the tools are bought. Recycles 971 → 1,095: done in about eight days. So this is not a package of its own: the offerings' misses go into package 7. | small |
+| 3 | **The crafts in batches** | Stage 3 takes the crafts 30 → 35–40; the board trains at a median 5,020 XP an hour, ours at about 2,000: batches from the bank, gold bars, craft and recycle. Needed when the fighters pass 40. To weigh there: gold bars stood on the market at 14 gold (369 on sale, 11-28 05:22). | medium |
+| 4 | **Gathering and better food** | Fishing 23 → 30 → 40 (bass, salmon: more healing a worker-second, so less rest for the fighters), the three steel tools (53–57 coins each). Mostly time and `stage.json`. | small |
+| 5 | **The island, the layers, `use`** | Stages 4–5: the monsters of 44–55, the keys and transitions, the potions and food that count when used (carnivore and gourmet_chef are half done). Needed from about 45. | large |
+| 6 | **Stage 5 written** | By the chat, from what the leaders have done by then. | — |
+| 7 | **What a fighter wears for XP, and the small things** — next after 039 | **The perfect pearl** (Alex, 11-28; planned nowhere until then): an artifact, +100 prospecting, 20 small pearls at the archaeologist (6, 13; no condition); the bank holds 24 small pearls, so one today; more come 1 in 300 casts at the trout and the bass, 1 in 100 at the salmon, and about five stand on the market at 244. On the board 76 of 195 characters in 25 of 39 accounts wear it (Fox___ and Myoto all five, Wudagem and Trobyss four). Ours all wear novice_guide, lost_world_map and altar_doll — and the doll does nothing in a fight, so on a fighter the pearl costs nothing. With it: the wisdom pieces the fleet owns on the XP pick (wolf_ears +50, old_boots +70, wisdom_amulet +60), the offerings' misses (package 2), a craft step's walks once a bagful, whatever the daily checks collect. | small |
+
+Dropped: the Lab (`stage.json` and the board's page do its job). Parked: the service's own checkout, the merge to main,
+the clean-up of the rules the stage has made idle.
+
 ## Daily log
 | read | fighters | combat XP since the last line | crafts wc / gc / jc | fishing, mining, woodcutting | points | what stood out |
 |---|---|---|---|---|---|---|
@@ -180,6 +196,6 @@ levels, the crafts and gathering levels, the points. On the page: Everyone, sort
 
 ## Open
 1. The demon event: First is admitted with the gold sword (0.7 h there on the night of 11-27); how much of it to take is open.
-2. Whether the lich is taken by two fighters or waits for Second (stage 2).
+2. The lich needs a group and a key (ten lich tomb keys came with The Reaper); pair or trio is package 1's table.
 3. Whether a fighter's XP pick should wear the wisdom pieces the fleet owns (the solver's count, the engine's task).
 4. Stage 5.
