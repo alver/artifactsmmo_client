@@ -284,7 +284,8 @@ function checkBerserk(c: Combatant): void {
 
 // Start of a combatant's own turn: DoTs it applies (first turn), self regen,
 // antipoison, then suffered DoTs. Returns false if it died from a DoT.
-function startOfTurn(c: Combatant, opp: Combatant): boolean {
+// `all` (task 039, a party): every enemy standing is drained ("drains X% HP from each enemy"); the DoTs go to `opp`.
+function startOfTurn(c: Combatant, opp: Combatant, all?: Combatant[]): boolean {
   c.turns++;
   if (c.turns === 1) {
     if (c.poisonApply > 0) opp.poison += c.poisonApply;
@@ -298,9 +299,7 @@ function startOfTurn(c: Combatant, opp: Combatant): boolean {
   if (c.barrierRegen > 0 && c.turns > 1 && (c.turns - 1) % 5 === 0) c.barrier += c.barrierRegen;
   if (c.restores) for (const r of c.restores) if (r.left > 0 && c.hp < 0.5 * c.maxHp) { c.hp = Math.min(c.maxHp, c.hp + r.v); c.restored += r.v; r.left--; r.n++; }
   if (c.voidDrain > 0 && c.turns % 4 === 0) {
-    const drain = (opp.hp * c.voidDrain) / 100;
-    hurt(opp, drain);
-    c.hp = Math.min(c.maxHp, c.hp + drain);
+    if (all) { for (const o of all) if (o.hp > 0) drain(c, o); } else drain(c, opp);
   }
   if (c.antipoison > 0 && c.poison > 0) c.poison = Math.max(0, c.poison - c.antipoison);
   if (c.poison > 0) hurt(c, c.poison);
@@ -311,6 +310,12 @@ function startOfTurn(c: Combatant, opp: Combatant): boolean {
   }
   checkBerserk(c);
   return c.hp > 0;
+}
+
+function drain(c: Combatant, o: Combatant): void {
+  const d = (o.hp * c.voidDrain) / 100;
+  hurt(o, d);
+  c.hp = Math.min(c.maxHp, c.hp + d);
 }
 
 // `a` attacks `d` on fight turn `turn`. Returns the damage dealt (after
@@ -359,28 +364,49 @@ function attack(a: Combatant, d: Combatant, turn: number, rng: (() => number) | 
 /** The `used` of a fight with no potion worn: one shared object, so the solver's hot loop allocates nothing for it. */
 const NO_USE: Record<string, number> = Object.freeze({}) as Record<string, number>;
 
-export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {}): FightForecast {
+/** A player's side of a fight: its opening boosts folded in, its effects applied. */
+function playerSide(player: Fighter, pessimistic?: boolean): Combatant {
   const { boostDmg, pMaxHp, pRes } = opening(player);
   const st = player.stats;
-  const rng = opts.rng;
-
-  const pCrit = opts.pessimistic ? 0 : Math.max(0, Math.min(1, st.critical_strike / 100));
-  const mCrit = opts.pessimistic ? 1 : Math.max(0, Math.min(1, monster.critical_strike / 100));
   const P = newSide(
     pMaxHp,
     { fire: st.attack_fire, earth: st.attack_earth, water: st.attack_water, air: st.attack_air },
     { fire: st.dmg + st.dmg_fire + boostDmg.fire, earth: st.dmg + st.dmg_earth + boostDmg.earth, water: st.dmg + st.dmg_water + boostDmg.water, air: st.dmg + st.dmg_air + boostDmg.air },
-    pRes, pCrit, st.initiative,
+    pRes, pessimistic ? 0 : Math.max(0, Math.min(1, st.critical_strike / 100)), st.initiative,
   );
+  applyEffects(P, player.effects);
+  return P;
+}
+
+function monsterSide(monster: Monster, pessimistic?: boolean): Combatant {
   const M = newSide(
     monster.hp,
     { fire: monster.attack_fire, earth: monster.attack_earth, water: monster.attack_water, air: monster.attack_air },
     { fire: 0, earth: 0, water: 0, air: 0 },
     { fire: monster.res_fire, earth: monster.res_earth, water: monster.res_water, air: monster.res_air },
-    mCrit, monster.initiative,
+    pessimistic ? 1 : Math.max(0, Math.min(1, monster.critical_strike / 100)), monster.initiative,
   );
-  applyEffects(P, player.effects);
   applyEffects(M, monster.effects);
+  return M;
+}
+
+/** The potions a fight drank (FightForecast.used) — the restore entries are in the order of the player's restore effects. */
+function usedOf(player: Fighter, P: Combatant): Record<string, number> {
+  let used = NO_USE;
+  let ri = 0;
+  for (const e of player.effects) {
+    const n = e.code === "restore" ? P.restores![ri++].n : 1;
+    if (!e.potion) continue;
+    if (used === NO_USE) used = {};
+    used[e.potion] = Math.max(used[e.potion] ?? 0, n);
+  }
+  return used;
+}
+
+export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {}): FightForecast {
+  const rng = opts.rng;
+  const P = playerSide(player, opts.pessimistic), M = monsterSide(monster, opts.pessimistic);
+  const pMaxHp = P.maxHp;
   // Anything that changes a hit mid-fight; without it the opening hits hold all fight.
   const bubbles = !!rng && !!(P.bubble || M.bubble);
   const dynamic = bubbles || !!(P.greed || P.frenzy || M.greed || M.frenzy || P.corrupted || M.corrupted);
@@ -438,14 +464,7 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
 
   const clampedHp = Math.max(0, Math.round(P.hp));
   const lost = pMaxHp - clampedHp;
-  let used = NO_USE;
-  let ri = 0; // the restore entries are in the order of the player's restore effects (applyEffects)
-  for (const e of player.effects) {
-    const n = e.code === "restore" ? P.restores![ri++].n : 1;
-    if (!e.potion) continue;
-    if (used === NO_USE) used = {};
-    used[e.potion] = Math.max(used[e.potion] ?? 0, n);
-  }
+  const used = usedOf(player, P);
   return {
     win,
     turns: turn,
@@ -459,4 +478,94 @@ export function simulate(player: Fighter, monster: Monster, opts: SimOptions = {
     maxHp: pMaxHp,
     used,
   };
+}
+
+// ── task 039: a boss fought by two or three ──
+
+/** One of a party — a boss fought by up to three of ours (docs: "up to 2 other of your own characters against `boss` and
+ *  `raid_boss` monsters", all on its tile): its fighter and its threat (Character.threat: the worn items' `threat`, 0 bare). */
+export interface PartyMember { fighter: Fighter; threat: number }
+export interface PartyForecast {
+  win: boolean;
+  /** Every actor's action is one turn of the 100 (the King Slime fights of 11-11); each member's cooldown is turns × 2 s. */
+  turns: number;
+  timedOut: boolean;
+  hp: number[]; // each member's HP at the end: 0 when it fell
+  maxHp: number[];
+  used: Record<string, number>[];
+  bossHp: number; // the boss's HP at the end
+}
+
+/** Whom the boss strikes: the highest threat 90% of the time, the lowest HP 10% (rolled only) — ties to the lowest HP, then
+ *  by chance (the expected pass: the first). */
+function targetOf(P: Combatant[], threat: number[], rng?: () => number): number {
+  let n = 0, only = -1;
+  for (let i = 0; i < P.length; i++) if (P[i].hp > 0) { n++; only = i; }
+  if (n === 1) return only;
+  const byHp = !!rng && rng() >= 0.9;
+  let best = -1, ties = 0;
+  for (let i = 0; i < P.length; i++) {
+    if (P[i].hp <= 0) continue;
+    if (best < 0) { best = i; ties = 1; continue; }
+    const cmp = (byHp ? 0 : threat[i] - threat[best]) || P[best].hp - P[i].hp; // > 0: i is the better target
+    if (cmp > 0) { best = i; ties = 1; } else if (cmp === 0 && rng && rng() * ++ties < 1) best = i;
+  }
+  return best;
+}
+
+/**
+ * Task 039: a party's fight against a boss; a party of one is simulate()'s fight to the unit (scripts/check-party.mts case 1).
+ * The game's rules as read (docs.artifactsmmo.com/concepts/stats_and_fights; logs/dev.log 2026-11-11 10:53 UTC, King Slime
+ * against Third, Fourth and Fifth — report 039, A):
+ *   - every actor acts in turn, the highest initiative first, a tie to the higher HP, then by chance (the expected pass: the
+ *     members in their order, the boss after them); a fallen member is passed over and its turn is no turn;
+ *   - the boss strikes one member a turn (targetOf); its effects count its own turns, as in a solo fight; it drains every
+ *     member standing (void drain, "from each enemy");
+ *   - the party wins when the boss falls, loses when every member has fallen or at 100 turns.
+ * shortcut: the boss's first-turn poison or burn goes to the member it strikes first, and "lowest HP" is the HP now — the docs
+ * leave both open; upgrade from the first group fight's log that shows them.
+ */
+export function simulateParty(members: PartyMember[], monster: Monster, opts: SimOptions = {}): PartyForecast {
+  const rng = opts.rng, roll = !!rng;
+  const P = members.map((m) => playerSide(m.fighter, opts.pessimistic)), M = monsterSide(monster, opts.pessimistic);
+  const threat = members.map((m) => m.threat);
+  const bubbles = roll && (!!M.bubble || P.some((p) => p.bubble));
+  const dynamic = bubbles || !!(M.greed || M.frenzy || M.corrupted) || P.some((p) => p.greed || p.frenzy || p.corrupted);
+  if (bubbles) { for (const p of P) rollBubble(p, rng!); rollBubble(M, rng!); }
+  for (const p of P) refreshHit(p, M, roll);
+  // the order: -1 the boss, i the i-th member; a full tie is shuffled (Fisher–Yates from its end, the boss first before it,
+  // so a party of one draws as simulate() does)
+  const init = (a: number): number => (a < 0 ? M.init : P[a].init), hp0 = (a: number): number => (a < 0 ? M.hp : P[a].hp);
+  const order = roll ? [-1, ...P.map((_, i) => i)] : [...P.map((_, i) => i), -1];
+  order.sort((a, b) => init(b) - init(a) || hp0(b) - hp0(a));
+  if (rng) for (let s = 0; s < order.length;) {
+    let e = s + 1;
+    while (e < order.length && init(order[e]) === init(order[s]) && hp0(order[e]) === hp0(order[s])) e++;
+    for (let i = e - 1; i > s; i--) { const j = s + Math.floor(rng() * (i - s + 1)); [order[i], order[j]] = [order[j], order[i]]; }
+    s = e;
+  }
+  const all = P.length > 1 ? P : undefined;
+  let win = false, timedOut = false, turn = 0, k = 0, last = -1, standing = P.length;
+  for (turn = 1; turn <= MAX_TURNS; turn++) {
+    let a = order[k++ % order.length];
+    while (a >= 0 && P[a].hp <= 0) a = order[k++ % order.length];
+    if (bubbles && turn > 1) { for (const p of P) rollBubble(p, rng!); rollBubble(M, rng!); }
+    if (a < 0) {
+      const t = targetOf(P, threat, rng);
+      if (t !== last) { last = t; M.dirty = true; refreshHit(M, P[t], roll); }
+      if (!startOfTurn(M, P[t], all)) { win = true; break; }
+      attack(M, P[t], turn, rng, dynamic);
+      if (P[t].hp <= 0 && --standing === 0) break;
+      if (M.hp <= 0) { win = true; break; } // its own reflected hit
+    } else {
+      const p = P[a];
+      if (!startOfTurn(p, M)) { if (--standing === 0) break; continue; }
+      attack(p, M, turn, rng, dynamic);
+      if (M.corrupted) for (const q of P) q.dirty = true; // its resistances moved for every member's hit
+      if (M.hp <= 0) { win = true; break; }
+      if (p.hp <= 0 && --standing === 0) break;
+    }
+  }
+  if (turn > MAX_TURNS) { win = false; timedOut = true; turn = MAX_TURNS; }
+  return { win, turns: turn, timedOut, hp: P.map((p) => Math.max(0, Math.round(p.hp))), maxHp: P.map((p) => p.maxHp), used: members.map((m, i) => usedOf(m.fighter, P[i])), bossHp: Math.max(0, Math.round(M.hp)) };
 }

@@ -415,6 +415,46 @@ keeps deciding how; the stage narrows what is asked:
   stage that narrows nothing, B.1, B.2; case 6: the workers' free hours on their lanes' best nodes; case 10, task 037: the slime
   shield at The Reaper a need at 4.6% saved, the gold shield's 29 h none); `check-fighters` cases 5, 7, 8 read the training on Skull Amulet where it is bought.
 
+## A party (task 039)
+
+**A boss fought by two or three of ours: the solver and the verdict; nothing decides with them yet** — the party's step
+(food shares, the tile and its key, the leader's `fight` with `participants`, every member's echo, a loss ends it for all) is
+task 039b, so a boss still sits behind its `group` gate (`targets.ts`) and `actions.fight(name, participants)` has no caller.
+- **The rules as read** (docs.artifactsmmo.com `concepts/stats_and_fights`; the two King Slime fights of 11-11 in
+  `logs/dev.log`, lines 411177 and 411382, the second with its turn log): up to three of one account on the boss's tile,
+  bosses only (`486` otherwise — the code `runLoop` also holds as "an action in progress"); every actor's action is one turn
+  of the 100 (a fallen member's turn is no turn); the highest initiative first, a tie to the higher HP, then by chance; the
+  boss strikes one member a turn — the highest `threat` 90% of the time, the lowest HP 10%, ties to the lowest HP
+  (`Character.threat` is the worn items' `threat`, 0 bare); its effects count its own turns (King Slime's barrier came back
+  at its 5th, 10th, 15th turn); XP by the party's average level rounded down, each member's wisdom its own; XP, gold and
+  drops "independently"; one `result` for the party and per member `xp`, `gold`, `drops`, `final_hp`
+  (`CharacterMultiFightResultSchema`), every member's character echoed; the 11-11 fight left all three in cooldown to the same
+  second (150 s). Unread: what a member that falls in a won fight loses and where it wakes, whether each member rolls the
+  drops, the boss's first-turn poison or burn with several (report 039, A).
+- **The fight** (`sim/combat.ts simulateParty`, `PartyMember` = fighter + threat): those rules on simulate()'s turn mechanics;
+  a party of one is simulate()'s fight to the unit, expected and rolled (`check-party` case 1). The expected pass strikes
+  the highest threat always. **The verdict** (`sim/monte.ts partyRate`): WIN_N rolled fights seeded by the boss and each
+  member's fight key and threat — p, and over the wins the turns (each member's cooldown 2 s a turn), each member's HP lost
+  and how often it falls; the boss's HP left ranks parties that never win.
+- **The sets** (`plan/planner/party.ts partyPlan(world, names, boss, levels?)`): each member solved by `bestInSlot` on
+  `fightOptions`' pool less what the members before it took (counted against the stock, not the pool's one-copy cap), two
+  ways — the boss as it is (a tank: a solo solve against a boss nobody beats alone ranks by turns survived) and its share of
+  the HP with no attack nor self-heal (a striker: its damage; `bestInSlot` takes a monster object under a code of its own) —
+  and of the 2^n parties the best verdict kept (p, then the fewest turns). A member given a level is `chAt` that level and
+  may wear the stage's craftable pieces of it (`candidatesOf` with crafts at the stage's numbers, no market; the stage the one
+  in force with the members at their levels). Admitted at the floor (`minWinOf`), as a solo fight. `lowestThird`: the lowest
+  level of a third member, from its own to 50, at which the trio is admitted.
+- **The table** (`scripts/party.mts [--world <snapshot>] [--snap <events.json>] [--boss a,b]`, read-only, about 45 s): the
+  lich, the goblin priestess, rosenblood and the duskworm against First + Fifth and the trio with Second, now and with all
+  three at 35, 40, 45; then Second's lowest level for the trio. On the live state of 13:40 UTC on 11-28 (First 36, Fifth 34,
+  Second 29): no boss falls to the pair; the lich to the trio from 40 (100%, 67 turns, 3 Cooked Trout a win) or to the pair at
+  40 with Second at 30; the priestess to the trio at 45 (81%; the pair at 45 with Second at 31); rosenblood and the duskworm
+  to none at 45. At 35 it is stage 2's `pieces` that holds the lich back, not the level: without the list the trio wins at
+  35, and First 36 + Fifth 34 with Second at 30, in level-30 pieces of craft level 30 not made yet (report 039, D.2). The
+  bank holds 267 lich tomb keys (one a member each entry, the transition at (9, 7)).
+- **Checks**: `check-party` (the solo equivalence, a turn an actor, whom the boss strikes, a pair where one loses, the
+  solver's party on the World of 09:46 on 11-28 and Second's lowest level).
+
 ## The fight solve (task 021)
 
 `src/plan/bis.ts bestInSlot` searches the candidates `bisPools` gives (the owned or craftable pieces the character may equip; per slot the pinned extras, then the best by a heuristic against the monster up to the caps — the planner's 3/3 for `planRec`/`potionRec` and 6/6 for `fightRec`, the executor's 12/10). The objective (the header of `bis.ts`; task 025: feasible, admitted — p at the floor —, the expected seconds a win, then the tiebreak; below the floor by p); a set that loses still ranks by turns survived. **The search**: per weapon option (unarmed, the candidates, the worn one) a climb from empty slots with the weapon fixed — passes of one slot at a time, then the ring pair, the artifacts and the utility pair each chosen whole among their fillings, until a pass changes nothing; three seeded random starts (the same candidates give the same starts) climbed with the weapon free; on the caps' ladder (3/3 ⊂ 6/6 ⊂ 12/10) the answer of the step below — its candidates are the wider ones' top by the same order — as one more start (`LADDER`, `capPools`); the best end climbed again with the weapon free. **What it guarantees**, proven by `scripts/check-solve.mts` (in the plain gate, about 15 s): every answer is a **fixpoint** (no change of one slot, the weapon too, or of one group improves it), the caps are **nested** (6/6 never scores below 3/3, 12/10 never below 6/6 — 1,740 solves of the snapshots of 11-20 and 11-21), and on a **sample of 45 fights** (the wall World of report 021, the replay rows' highwayman, Third's ogre and bandit lizard of 11-22, the vampires of 11-20) the answer has the tier of the best set known (found once by a far dearer search; the check keeps the tiers). **What it costs**: a set's two fights (the expected one, the pessimistic one) are kept across solves — they read neither the price nor what is worn — as numbers in a table per monster and base stats (`makeEvaluator`, `FIGHTS_CAP` 500,000 rows of about 100 bytes, dropped whole at the cap); the candidates before the caps are built once per pool and character (`ownedPools`, `reach.ts uncappedOf`). The price: a solve is about 1.6 times the old one's (6/6 median 7.3 ms against 4.6 ms, no fight table); what the run pays is in report 021. **The planner's solves do not read what is worn** (`worn: false` from `reach.ts`: no `keep` tiebreak, no worn weapon option), so one pool gives one answer whatever is worn — but for the worn pinned artifacts (task 027g, C: `fightOptions` passes them as `BisOptions.fixed`, the first artifact slots of every set, in the solve key; play never takes one off, so the step's verdict is the solve's — the Sandwarden of report 027e, 76% solved without the Novice Guide, 47% with it); the executor's solves (`jobgear.ts`) keep the term (no swap for an equal piece at the bank).

@@ -462,8 +462,10 @@ const MAX_PASSES = 50;
  *  same starts, so the answer stays a function of what the solve key holds. */
 const STARTS = 3;
 
-export function bestInSlot(ch: Character, monsterCode: string, opts: BisOptions = {}, given?: Record<GearSlot, string[]>): GearRecommendation[] {
-  const m = monsterOf(monsterCode);
+/** `monsterCode`: a code of the catalog, or (task 039) a monster of the caller's — a party member's share of a boss, under a
+ *  code of its own (the fight table and the win rates are keyed on the code). */
+export function bestInSlot(ch: Character, monsterCode: string | Monster, opts: BisOptions = {}, given?: Record<GearSlot, string[]>): GearRecommendation[] {
+  const m = typeof monsterCode === "string" ? monsterOf(monsterCode) : monsterCode;
   if (!m) return [];
   const pools = given ?? bisPools(ch, m, opts); // `given`: bisPools of the same arguments
   const worn: Partial<Record<GearSlot, string>> = {};

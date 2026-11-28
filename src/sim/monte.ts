@@ -4,7 +4,8 @@
 // win PROBABILITY instead of the EV pass's binary verdict. A run is ~a few
 // hundred float ops, so 2000 trials stay comfortably in a frame.
 
-import { simulate } from "./combat";
+import { simulate, simulateParty } from "./combat";
+import type { PartyMember } from "./combat";
 import type { Monster } from "../types/catalog";
 import type { EffectiveStats, Fighter } from "./types";
 
@@ -110,4 +111,37 @@ export function winRate(player: Fighter, monster: Monster, key = fightKey(player
   if (rates.size >= RATES_CAP) rates.clear();
   rates.set(mk, p);
   return p;
+}
+
+// ── task 039: a party's verdict ──
+
+/** A party's rolled verdict: p the share of wins over WIN_N fights, and over the wins (all fights when none is won) the mean
+ *  turns — each member's cooldown is turns × 2 s —, each member's mean HP lost and the share of wins in which it fell; over
+ *  all fights the share of the boss's HP left (what ranks parties that never win). */
+export interface PartyRate { p: number; turns: number; lost: number[]; fell: number[]; left: number }
+const partyRates = new Map<string, PartyRate>();
+/** Task 039: the party's verdict as a solo fight's (winRate): rolled WIN_N times, seeded by what the fight is — the boss and
+ *  each member's fight key and threat, in the party's order — so one party gives one answer in every process. */
+export function partyRate(members: PartyMember[], monster: Monster, n = WIN_N): PartyRate {
+  const key = `${n}|${members.map((m) => `${m.threat}@${fightKey(m.fighter, monster)}`).join("&")}`;
+  const hit = partyRates.get(key);
+  if (hit) return hit;
+  const rng = seeded(hash(key));
+  let wins = 0, turns = 0, allTurns = 0, left = 0;
+  const lost = members.map(() => 0), lostAll = members.map(() => 0), fell = members.map(() => 0);
+  for (let k = 0; k < n; k++) {
+    const f = simulateParty(members, monster, { rng });
+    allTurns += f.turns;
+    left += f.bossHp / monster.hp;
+    for (let i = 0; i < members.length; i++) lostAll[i] += f.maxHp[i] - f.hp[i];
+    if (!f.win) continue;
+    wins++;
+    turns += f.turns;
+    for (let i = 0; i < members.length; i++) { lost[i] += f.maxHp[i] - f.hp[i]; if (f.hp[i] <= 0) fell[i]++; }
+  }
+  const w = wins || n;
+  const r: PartyRate = { p: wins / n, turns: (wins ? turns : allTurns) / w, lost: (wins ? lost : lostAll).map((x) => x / w), fell: fell.map((x) => (wins ? x / wins : 0)), left: left / n };
+  if (partyRates.size >= RATES_CAP) partyRates.clear();
+  partyRates.set(key, r);
+  return r;
 }
