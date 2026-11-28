@@ -79,12 +79,24 @@ export interface Step {
   visit?: { at: "start" | "end"; cancel?: string };
   /** Task 028 (A.1): the why in parts, built where the why is (decide.ts) — the why stays the one string of record. */
   reason?: Reason;
+  /** Task 039c: a boss fought by a party — this step is the deciding member's share; state/planner.ts writes every other
+   *  member's (its set, food and key) into its queue under the same `key`, the leader fights with `participants`. */
+  party?: PartyStep;
+}
+export interface PartyStep {
+  key: string;
+  boss: string;
+  leader: string;
+  avg: number;            // the party's average level, rounded down: its fight XP's level (the docs)
+  p: number;
+  turns: number;
+  members: { name: string; wear: Record<string, string>; withdraw: Record<string, number>; toll?: Toll }[];
 }
 
 /** Task 028: the rule of a role's order that took a step (decide.ts ORDER): a fighter's first · forging · a need's kill ·
  *  the XP pick · the free pass; a worker's need · short · craft ahead · today · fallback; anyone's tidy. Task 029: a fighter's
  *  training's kill (`train-kill`), a worker's batch from the bank (`train`). */
-export type Rule = "first" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy" | "cook" | "market" | "fed";
+export type Rule = "first" | "party" | "forging" | "need-kill" | "train-kill" | "xp-pick" | "free" | "train" | "need" | "need-cons" | "short" | "craft-ahead" | "today" | "fallback" | "tidy" | "cook" | "market" | "fed";
 /** Task 028 (A.1): a step's reason in parts. */
 export interface Reason {
   role?: "fighter" | "worker";

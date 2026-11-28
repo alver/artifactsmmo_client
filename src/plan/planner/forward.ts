@@ -167,16 +167,19 @@ export function advance(world: World, step: Step): World {
     drawn = v.drawn;
   };
   if (step.visit?.at === "start") visit(step.visit.cancel);
+  // task 039c: a party's fight is counted once — its kills, drops and gold on the leader's step (shortcut: one drop roll a win,
+  // 039's unread rule; upgrade from the journal's `party` records) — and every member's XP at the party's average level (the docs)
+  const lead = !step.party || step.party.leader === ch.name;
   const field = (w: Work, actions: number): void => {
     if (w.kind === "kill") {
       const m = monsterOf(w.monster);
       if (!m) return;
-      if (tolls) gold += (actions * ((m.min_gold ?? 0) + (m.max_gold ?? 0))) / 2;
-      add(`combat_kill:${m.code}`, actions);
+      if (tolls && lead) gold += (actions * ((m.min_gold ?? 0) + (m.max_gold ?? 0))) / 2;
+      if (lead) add(`combat_kill:${m.code}`, actions);
       // task 027d: the kills count for the held monsters task whatever the fight is for (the game's rule)
       if (ch.task === m.code && ch.task_type === "monsters") ch.task_progress = Math.min(ch.task_total, ch.task_progress + actions);
-      for (const d of m.drops) { add(`combat_drop:${d.code}`, actions * odds(d)); put(d.code, actions * odds(d)); }
-      gain("combat", actions * fightXp(m.level, m.hp, m.type, ch.level, ch.wisdom ?? 0)); // task 012: the worn set's wisdom (wear keeps the stat)
+      if (lead) for (const d of m.drops) { add(`combat_drop:${d.code}`, actions * odds(d)); put(d.code, actions * odds(d)); }
+      gain("combat", actions * fightXp(m.level, m.hp, m.type, step.party?.avg ?? ch.level, ch.wisdom ?? 0)); // task 012: the worn set's wisdom (wear keeps the stat)
     } else if (w.kind === "gather") {
       const r = resourceOf(w.resource);
       if (!r) return;
@@ -301,6 +304,14 @@ export interface Forward { world: World; played: Played[]; steps: number; comple
  * Task 020: a character that is off (config.on) is not played — no decision, no step, its gear stays on it; `keep` false
  * keeps no played step (`played` empty, `steps` counts them: road.ts reads the count only).
  */
+/** Task 039c: a step cut to the share `f` of its run (units, hours, take, a train step's runs, its sources' actions). */
+const partOf = (s: Step, f: number): Step => (f >= 1 ? s : {
+  ...s, units: s.units * f, hours: s.hours * f,
+  ...(s.withdraw ? { withdraw: Object.fromEntries(Object.entries(s.withdraw).map(([c, q]) => [c, q * f])) } : {}),
+  ...(s.work.kind === "train" && s.work.runs ? { work: { ...s.work, runs: s.work.runs * f } } : {}),
+  ...(s.sources ? { sources: s.sources.map((x) => ({ ...x, times: x.times * f })) } : {}),
+});
+
 export function forward(world: World, until: number, onDecide?: (w: World, step: Step) => void, onEnd?: (w: World, step: Step, before: World) => void, seed?: Record<string, Step>, keep = true): Forward {
   const names = world.characters.map((c) => c.name).filter((n) => isOn(n, world));
   let w: World = { ...world, clock: { ...world.clock }, favors: undefined }; // the forward model ignores favors
@@ -347,13 +358,30 @@ export function forward(world: World, until: number, onDecide?: (w: World, step:
     if (runePays(w, name).pays) w = runeBought(w, name);
     const step = decide(name, w);
     onDecide?.(w, step);
-    const st = stretch(step.hours, sharesOf(name, w));
+    const st = step.party ? { hours: step.hours, events: [] } : stretch(step.hours, sharesOf(name, w)); // a party attends no event
     w = wear(w, step);
     steps++;
     if (keep) played.push(st.events.length ? { at: t, step, events: st.events } : { at: t, step });
     last[name] = pending[name] = step;
     attends[name] = st.events.length ? st : undefined;
     free[name] = finish(t, st.hours, w).end;
+    // task 039c: a party's step pulls its other members — as play does (state/planner.ts joinParty), each one's running step is
+    // cut where the party starts (what it did so far applied, pro rata), and its share of the party is its step, to the same end
+    for (const pm of step.party?.members ?? []) {
+      if (pm.name === name || !(pm.name in free)) continue;
+      const s = pending[pm.name];
+      if (s) {
+        const t0 = w.clock?.[pm.name] ?? t, f = free[pm.name] <= t ? 1 : Math.max(0, Math.min(1, (t - t0) / Math.max(1, free[pm.name] - t0)));
+        const part = partOf(s, f), prev: World = { ...w, current: { ...pending } };
+        if (f > 0) { w = advance(prev, part); onEnd?.(w, part, prev); }
+      }
+      const ms: Step = { ...step, character: pm.name, key: step.key.replace(`@${name}#`, `@${pm.name}#`), wear: pm.wear, withdraw: pm.withdraw, toll: pm.toll };
+      w = wear({ ...w, clock: { ...w.clock, [pm.name]: t } }, ms);
+      if (keep) played.push({ at: t, step: ms });
+      last[pm.name] = pending[pm.name] = ms;
+      attends[pm.name] = undefined;
+      free[pm.name] = free[name];
+    }
   }
   return { world: w, played, steps, completed };
 }

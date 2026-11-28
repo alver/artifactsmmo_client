@@ -28,12 +28,12 @@ import { API_BASE } from "../../src/api/client";
 import { catalog, item, monster, npc, resource, task, tileAt } from "../../src/catalog";
 import { canEquip } from "../../src/plan/bis";
 import { fightSec, gatherSec, recycleReturn } from "../../src/plan/xp";
-import { simulate } from "../../src/sim/combat";
+import { simulate, simulateParty } from "../../src/sim/combat";
 import { restSeconds } from "../../src/sim/cost";
 import { currentFighter } from "../../src/sim/stats";
 import { GEAR_SLOTS, SLOTS_FOR_TYPE, slotCode } from "../../src/types/api";
 import type { AccountAchievement, ActiveEvent, Character, GearSlot, PendingItem, SeasonalOffering, SelectedOffering } from "../../src/types/api";
-import type { DropRate, GameMap, Item, ItemStack, MapContent } from "../../src/types/catalog";
+import type { DropRate, GameMap, Item, ItemStack, MapContent, Monster } from "../../src/types/catalog";
 import { T0 } from "./clock.mts";
 
 /** A character of the world: any Character field, plus `bag` as a readable inventory and the `layer` it stands on. */
@@ -332,6 +332,8 @@ interface Done {
   reason: string;
   data?: Record<string, unknown>;
   note?: string;
+  /** Task 039c: a group fight's other members (drafts), committed with the fight's cooldown and echoed beside the leader. */
+  others?: Char[];
 }
 const bankList = (bank: Map<string, number>): ItemStack[] => [...bank].map(([code, quantity]) => ({ code, quantity }));
 const stacks = <T,>(body: T[]): T[] => (Array.isArray(body) && body.length ? body : fatal(`expected a non-empty array body, got ${JSON.stringify(body)}`));
@@ -630,8 +632,8 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
   },
 
   fight(d, body: { participants?: string[] } | undefined) {
-    if (body?.participants?.length) fatal("group fights are not implemented");
     const m = monster(standingOn(d.ch, "monster", "Monster").code)!;
+    if (body?.participants?.length) return groupFight(d, m, body.participants);
     if (carried(d.ch) >= d.ch.inventory_max_items) throw new GameError(497, FULL); // a fight needs free space [3.1]
     const f = forced.get(d.ch.name)?.shift();
     let win: boolean, turns: number, hp: number, used: Record<string, number> = f?.used ?? {};
@@ -679,6 +681,48 @@ const ACTIONS: Record<string, (d: Draft, body: never) => Done> = {
   },
 };
 
+/**
+ * Task 039c: POST fight with `participants` — a boss only (486, the docs), at most two more (422), every member on the leader's
+ * tile (guess: 598, as a fight off its tile) and off cooldown (499); the outcome the leader's forced fight (every member loses
+ * its `hpLost`), else the engine's simulateParty rolled (circular on purpose, as a solo fight's); won, every member gets its
+ * own drops and gold (guess: the docs' "independently"); lost, every member wakes at (0, 0) with 1 HP; every member is in the
+ * fight's cooldown (act). XP 0, as everywhere in the fake.
+ */
+function groupFight(d: Draft, m: Monster, names: string[]): Done {
+  if (m.type !== "boss" && m.type !== "raid_boss") throw new GameError(486, "Only boss monsters can be fought by multiple characters.");
+  if (names.length > 2) throw new GameError(422, "Request could not be processed due to an invalid payload.");
+  const layerOf = (c: Char): string => c.layer ?? "overworld";
+  const mates = names.map((n) => {
+    const c = world.chars.get(n);
+    if (!c) throw new GameError(498, "Character not found.");
+    if (c.x !== d.ch.x || c.y !== d.ch.y || layerOf(c) !== layerOf(d.ch)) throw new GameError(598, "Monster not found on this map.");
+    const left = (Date.parse(c.cooldown_expiration ?? "") - (Date.now() + world.skew)) / 1000;
+    if (left > 0) throw new GameError(499, `The character is in cooldown: ${left.toFixed(2)} seconds left.`);
+    return structuredClone(c);
+  });
+  const all = [d.ch, ...mates];
+  const f = forced.get(d.ch.name)?.shift();
+  let win: boolean, turns: number, hp: number[];
+  if (f) {
+    win = f.result === "win";
+    turns = f.turns ?? 60;
+    hp = all.map((c) => Math.max(1, c.hp - (f.hpLost ?? 0)));
+  } else {
+    const r = simulateParty(all.map((c) => { const fi = currentFighter(c); return { fighter: { ...fi, stats: { ...fi.stats, hp: c.hp } }, threat: (c as { threat?: number }).threat ?? 0 }; }), m, { rng });
+    win = r.win;
+    turns = r.turns;
+    hp = r.hp.map((x) => Math.max(1, x));
+  }
+  const results = all.map((c, i) => {
+    const drops = win ? (f?.drops ?? yieldOf(m.code, m.drops)) : [];
+    const gold = win ? (f?.gold ?? m.min_gold) : 0;
+    if (win) { c.hp = hp[i]; c.gold += gold; for (const s of drops) give(c, s.code, s.quantity); }
+    else Object.assign(c, { hp: 1, x: 0, y: 0, layer: "overworld", map_id: tileAt(0, 0)?.map_id ?? 0 });
+    return { character_name: c.name, xp: 0, gold, drops, final_hp: win ? hp[i] : 0 };
+  });
+  return { seconds: fightSec(turns), reason: "fight", note: win ? "win" : "loss", data: { fight: { result: win ? "win" : "loss", turns, opponent: m.code, logs: [], characters: results } }, others: mates };
+}
+
 /** POST claim_item/{id}: a pending reward's items into the bag, its gold into the pocket (guess: the pocket, as a
  *  fight's gold; 404 for an id that is not pending; 497 when it does not fit; 3 s). */
 function claim(d: Draft, id: string): Done {
@@ -707,12 +751,13 @@ function act(call: Call): unknown {
   d.ch.cooldown = seconds;
   d.ch.cooldown_expiration = new Date(started + seconds * 1000).toISOString();
   world.chars.set(who, d.ch);
+  for (const o of done.others ?? []) { o.cooldown = seconds; o.cooldown_expiration = d.ch.cooldown_expiration; world.chars.set(o.name, o); } // task 039c
   world.bank = d.bank;
   world.gold = d.gold;
   return {
     cooldown: { total_seconds: seconds, remaining_seconds: seconds, started_at: new Date(started).toISOString(), expiration: d.ch.cooldown_expiration, reason: done.reason },
     ...done.data,
-    ...(action === "fight" ? { characters: [d.ch] } : { character: d.ch }), // the fight echo is plural [2.1]
+    ...(action === "fight" ? { characters: [d.ch, ...(done.others ?? [])] } : { character: d.ch }), // the fight echo is plural [2.1]
   };
 }
 

@@ -14,6 +14,10 @@ import type { GearJob } from "./types";
 import type { GearSlot } from "../types/api";
 
 // An x, y saved without `layer` is on the overworld (queues saved before layers were stored).
+/** Task 039c: a fight item of a party's step — the boss fought by `members` together, `leader` fighting with `participants`;
+ *  `key` is the party's (every member's item carries it), `p` and `turns` its forecast (the `party` journal record). */
+export interface PartyItem { key: string; leader: string; members: string[]; p: number; turns: number }
+
 export type QueueItem = { id: string; error?: string } & (
   // times 0 = infinite (fight until stopped / paused). `gear` ⇒ re-derive the
   // best bank set vs the monster each round and swap when it improves.
@@ -25,7 +29,7 @@ export type QueueItem = { id: string; error?: string } & (
   // Task 017: `take` may hold the trip's toll too — `gold` (the fares, kept in the pocket), the keys a transition consumes
   // and the item one wants carried (kept in the bag); `wear` (the planner's items): the set its step planned, worn instead
   // of a fresh solve (a piece nowhere to be had: the executor's own solve, one raw line).
-  | { kind: "fight"; monster: string; times: number; done: number; food?: boolean; keep?: string[]; gear?: boolean; take?: Record<string, number>; wear?: Record<string, string> }
+  | { kind: "fight"; monster: string; times: number; done: number; food?: boolean; keep?: string[]; gear?: boolean; take?: Record<string, number>; wear?: Record<string, string>; party?: PartyItem; ended?: string }
   // times 0 = infinite. `gear` ⇒ keep the bank gathering set for the resource's skill on. `take` (task 017): a toll, as a fight's.
   | { kind: "gather"; code: string; resource: string; times: number; done: number; x?: number; y?: number; layer?: string; gear?: boolean; take?: Record<string, number> }
   // quantity 0 = infinite: withdraw a bagful of materials from the bank, craft,
@@ -116,7 +120,7 @@ export const withId = (it: QueueItemInput): QueueItem => ({ ...it, id: newId() }
 
 export function queueItemText(it: QueueItem): string {
   switch (it.kind) {
-    case "fight": return `Fight ${it.times > 0 ? `${it.times}× ` : "(∞) "}${monsterOf(it.monster)?.name ?? titleCase(it.monster)}`;
+    case "fight": return `Fight ${it.times > 0 ? `${it.times}× ` : "(∞) "}${monsterOf(it.monster)?.name ?? titleCase(it.monster)}${it.party ? ` — the party: ${it.party.members.join(", ")} (${it.party.leader} leads)` : ""}`;
     case "gather": return `Gather ${it.times > 0 ? `${it.times}× ` : "(∞) "}${itemName(it.code)}`;
     case "craft": return `Craft ${it.quantity > 0 ? `${it.quantity}× ` : "(∞) "}${itemName(it.code)}${it.wait ? " (as materials arrive)" : ""}`;
     case "withdraw": return `Withdraw ${it.quantity}× ${itemName(it.code)}`;

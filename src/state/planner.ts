@@ -37,7 +37,7 @@ import { isDone, targetsOf } from "../plan/planner/targets";
 import { queueItemText } from "../plan/queue";
 import type { QueueItem, QueueItemInput } from "../plan/queue";
 import type { AccountAchievement, Character } from "../types/api";
-import type { Lane, PlannerConfig, PlannerState, Running, Step, World } from "../plan/planner/types";
+import type { Lane, PartyStep, PlannerConfig, PlannerState, Running, Step, World } from "../plan/planner/types";
 
 // ── state ────────────────────────────────────────────────────────────────────
 
@@ -101,6 +101,8 @@ const setRunning = (name: string, r: Running | undefined): void => put({ current
 const plog = (name: string, text: string): void => devlog(`plan ${name}: ${text}`);
 const fmtH = (h: number): string => (h < 10 ? h.toFixed(1) : String(Math.round(h)));
 const owned = (): string[] => Object.keys(characters.value).filter(isOwned);
+/** Task 039c: a character in a party — its queue holds a party's fight item; it is given nothing else while it runs. */
+const inParty = (name: string): boolean => (queues.value[name]?.items ?? []).some((it) => it.kind === "fight" && !!it.party);
 const isStepId = (id: string): boolean => id.startsWith("pl:") && !id.startsWith("pl:int:");
 const stepItems = (name: string, key: string): QueueItem[] => (queues.value[name]?.items ?? []).filter((it) => it.id.startsWith(`pl:${key}:`));
 const laneOf = (s: Step): Lane | undefined => (s.as === "level" ? (s.target.split(":")[1] as Lane) : undefined);
@@ -188,6 +190,8 @@ const holdUntil = new Map<string, number>();
 function start(name: string): void {
   const ch = characters.value[name];
   if (!ch || !isOwned(name)) return;
+  const cur = planner.value.current[name];
+  if (cur && !cur.over && cur.step.party && stepItems(name, cur.step.key).length) return; // task 039c: pulled into a party meanwhile
   if (queues.value[name]?.items.some((it) => isStepId(it.id))) {
     journal("defect", { who: name, what: "a decision while a step item is queued — none made" });
     return void plog(name, "defect: a decision while a step item is queued — none made");
@@ -242,6 +246,15 @@ function start(name: string): void {
   noteOffers(name, offers);
   starts.set(name, [...recent, { at: now, target: step.target, key: step.key }]);
   lastSeen.delete(name);
+  begin(name, step, items, now);
+  // task 039c: a party's step pulls its other members — each one's running step dropped, its share written under the party's key
+  if (step.party) for (const m of step.party.members) if (m.name !== name) joinParty(m, step, now);
+  statusNow();
+}
+
+/** A decided step into the character's queue: its Running, its items, the queue started, its raw line and `step` record. */
+function begin(name: string, step: Step, items: QueueItem[], now: number): void {
+  const ch = characters.value[name]!;
   const prev = planner.value.current[name];
   const lane = laneOf(step);
   const run: Running = {
@@ -260,7 +273,23 @@ function start(name: string): void {
     who: name, key: step.key, target: step.target, as: step.as, work: step.work, units: step.units, h: Math.round(step.hours * 1000) / 1000,
     score: Number(step.score.toPrecision(4)), why: step.why, text: stepText(step, items), parent: step.parent, for: step.for, wd: some(step.withdraw), wear: some(step.wear), until: step.until && iso(step.until),
   });
-  statusNow();
+}
+
+/** Task 039c (A.1, A.3): a member pulled into a party — its running step's items dropped (an `end` record `dropped`), its share of
+ *  the party (its set, food and key) its step, the party's key on its fight item; already in this party: nothing. */
+function joinParty(m: PartyStep["members"][number], step: Step, now: number): void {
+  const ch = characters.value[m.name];
+  if (!ch || !isOwned(m.name)) return;
+  const r = planner.value.current[m.name];
+  if (r && !r.over) {
+    if (r.step.party?.key === step.party!.key) return;
+    for (const it of stepItems(m.name, r.step.key)) dropItem(m.name, it.id);
+    setRunning(m.name, { ...r, over: true });
+    endRecord(m.name, r, "dropped", `joins the party vs ${step.party!.boss}`);
+    plog(m.name, `${r.step.key} dropped — joins the party vs ${step.party!.boss}`);
+  }
+  const ms: Step = { ...step, character: m.name, key: step.key.replace(`@${step.character}#`, `@${m.name}#`), wear: m.wear, withdraw: m.withdraw, toll: m.toll };
+  begin(m.name, ms, itemsOf(ms, ch), now);
 }
 
 // ── task 016: the journal's records of a step's end and an interrupt's ──────
@@ -640,7 +669,7 @@ function heartbeat(): void {
  *  with the bank's gold (a `spend` record from the echo), wear it (a worn healing rune stays on: jobgear.ts PINNED_RUNE).
  *  One at a time; a character with a step that is no fight is asked too (the rune is for its fight work on the road). */
 function runeCheck(): void {
-  const names = owned();
+  const names = owned().filter((n) => !inParty(n)); // task 039c
   if (!names.length || !bankDetails.value) return;
   if (names.some((n) => queues.value[n]?.items.some((it) => it.id.startsWith("pl:int:merchant:rune")))) return;
   const world = worldOf(Date.now());
@@ -713,7 +742,8 @@ function bankCheck(): void {
   if (tidyLeft(world)) return;
   const e = expansionOk(world);
   if (e.ok) {
-    const who = [...names].sort((a, b) => bankSec(placeOf(characters.value[a]!)) - bankSec(placeOf(characters.value[b]!)) || (a < b ? -1 : 1))[0];
+    const who = names.filter((n) => !inParty(n)).sort((a, b) => bankSec(placeOf(characters.value[a]!)) - bankSec(placeOf(characters.value[b]!)) || (a < b ? -1 : 1))[0]; // task 039c
+    if (!who) return;
     devlog(`plan: bank — ${free} of ${slots} slots free and nothing left to tidy: ${who} buys an expansion for ${fmtG(e.price)} gold (bank gold ${fmtG(world.bankGold)})`);
     journal("bank", { what: "buy", who, price: e.price, ...bankNums(world) });
     interrupt(who, "bank", [{ kind: "expand", price: e.price }], `expand${bankDetails.value.expansions}`);
@@ -777,7 +807,7 @@ export async function refreshAchievements(): Promise<void> {
 /** A pending reward → one `claim` interrupt, on the owned character with the emptiest bag; one at a time. */
 function claimRewards(): void {
   if (!pendingRewards.value.length) return;
-  const names = owned();
+  const names = owned().filter((n) => !inParty(n)); // task 039c
   if (names.some((n) => queues.value[n]?.items.some((it) => it.id.startsWith("pl:int:claim:")))) return;
   const who = names.sort((a, b) => invCount(characters.value[a]) - invCount(characters.value[b]))[0];
   if (who) interrupt(who, "claim", [{ kind: "claim" }], Date.now().toString(36));
@@ -798,6 +828,7 @@ const classOf = (id: string): number => CLASSES.indexOf(/^pl:int:([a-z]+):/.exec
  */
 export function interrupt(name: string, cls: InterruptClass, items: QueueItemInput[], what: string): boolean {
   if (!IS_SERVER || !isOwned(name) || !characters.value[name]) return false;
+  if (cls !== "group" && inParty(name)) return false; // task 039c (A.3): a member in a party is given nothing else
   const prefix = `pl:int:${cls}:${what}:`;
   const q = queues.value[name] ?? { items: [], running: false };
   if (q.items.some((it) => it.id.startsWith(prefix))) return false;
@@ -827,7 +858,7 @@ const putOffered = (name: string, o: { day: string; n: number; again?: number })
 /** One offering interrupt for this character and today's offerings day, recorded: the catch-up (task 028: the panel's
  *  buttons are gone). False when one is already queued or the character is not owned. */
 export function offeringsDue(name: string): boolean {
-  if (!IS_SERVER || !isOwned(name) || !characters.value[name]) return false;
+  if (!IS_SERVER || !isOwned(name) || !characters.value[name] || inParty(name)) return false; // task 039c: after the party
   const day = offerDay(Date.now());
   if (planner.value.offered?.[name]?.day !== day) putOffered(name, { day, n: 0 });
   return interrupt(name, "offering", [{ kind: "offering" }], day);
@@ -837,7 +868,7 @@ export function offeringsDue(name: string): boolean {
 function catchUpOfferings(): void {
   const now = Date.now();
   const day = offerDay(now);
-  for (const name of owned()) {
+  for (const name of owned().filter((n) => !inParty(n))) {
     const o = planner.value.offered?.[name];
     if (o?.day !== day) offeringsDue(name);
     else if (o.again && o.again <= now) {

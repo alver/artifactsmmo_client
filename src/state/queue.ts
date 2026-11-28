@@ -26,12 +26,14 @@ import { npcForSell } from "../plan/acquire";
 import { RESET_UTILITY_STRIP, ownedFightForecast, stripAllMap } from "../plan/jobgear";
 import { QUEUE_KINDS, queueItemText } from "../plan/queue";
 import { CRAFT_SEC, FIGHT_SEC, autoRecyclable, craftXp, gatherSec, recycleReturn } from "../plan/xp";
-import { titleCase } from "../lib/util";
+import { cooldownLeft, titleCase } from "../lib/util";
+import { partyRate } from "../sim/monte";
+import { currentFighter } from "../sim/stats";
 import { CRAFT_TRAIN_SKILLS, bankDetails, bankItems, characters, isOwned, pendingRewards, pushLog, skillKey } from "./store";
 import { devlog } from "../lib/devlog";
 import { journal } from "../lib/journal";
 import { BankFullError, NoRouteError, bankQty, deposit, depositAll, isAt, isInventoryFull, missingText, moveTo, nearest, nearestBank, noSlotFor, sleep, step, walkTo } from "./loopkit";
-import { bankOff, blockFight, brakeWhy, craftableTimes, desiredForJob, fightBlocked, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gateP, gearSwapStep, goToMaster, invCount, invQty, minWinNow, provisionPotions, recoverFirst, runStep, stackCaps, otherCargo } from "./exec";
+import { bankOff, blockFight, brakeWhy, healOnce, craftableTimes, desiredForJob, fightBlocked, fightRound, fightSetFor, foodInHand, freeQty, freeSpace, gateP, gearSwapStep, goToMaster, invCount, invQty, minWinNow, provisionPotions, recoverFirst, runStep, stackCaps, otherCargo } from "./exec";
 import { categoryLevel, loadOfferings, offeringMayTake, offeringSlots, todayOfferings } from "./offerings";
 import { dropOrder, soldFrom } from "./market";
 import type { FightTally, StepCtx } from "./exec";
@@ -510,6 +512,7 @@ async function runItem(name: string, ch: Character, it: QueueItem): Promise<bool
       const m = monsterOf(it.monster);
       const tile = m ? nearest("monster", it.monster, ch) : undefined;
       if (!m || !tile) return skipItem(name, it, missingText("monster", it.monster, ch));
+      if (it.party) return runParty(name, ch, it, m, tile, ctx); // task 039c: a boss fought by the party
       // Bank-gear self-heal: when something better landed in the bank, detour
       // and swap (memoized per bank reference — free when nothing changed).
       // Planned-but-unowned utility potions get brewed (provisionPotions).
@@ -1495,6 +1498,75 @@ const S = (name: string, item: string): FightTally => {
 const lostLine = (name: string, item: string): string => { const t = S(name, item); return `lost a fight (${t.losses} of ${t.fights}; ${brakeWhy(t)}) — back, recover, fight on`; };
 /** The gate's refusal as a why: the worn set's p against the floor. */
 const gateWhy = (ch: Character, m: Monster): string => `forecast ${Math.round(100 * gateP(ch, m))}% at the gate vs ${m.name}, below the floor ${Math.round(100 * minWinNow())}%`;
+/** Task 039c: a member's fight item of the party `key` (every member runs one). */
+const partyItemOf = (name: string, key: string): Extract<QueueItem, { kind: "fight" }> | undefined =>
+  queues.value[name]?.items.find((x): x is Extract<QueueItem, { kind: "fight" }> => x.kind === "fight" && x.party?.key === key);
+const r3 = (x: number): number => Math.round(x * 1000) / 1000;
+
+/**
+ * Task 039c: a party's fight item — every member runs one under the party's key; the leader fights with `participants`. A tick:
+ * the item done (its fights made — the leader counts them on every member's item —, or the party `ended`) → true; recover; the
+ * planned set; heal to full (the food in hand, else rest); walk to the boss (the key the reset took opens its transition); then
+ * a member waits, and the leader — once every member stands on the tile, healed and off cooldown — gates the party's forecast on
+ * the sets as worn and fights. A lost fight, a member gone (its item off its queue: off, skipped for no key, paused), a member
+ * not on the tile after a fight or the gate below the floor end the party for all (each member's item `ended`) with the boss
+ * blocked for each, as a single fight's (exec.ts blockFight); a full bag ends it without. Each fight is a `party` record.
+ * shortcut: a member that never comes is waited for — the planner's stall bound ends such a step; upgrade if that ever bites.
+ */
+async function runParty(name: string, ch: Character, it: Extract<QueueItem, { kind: "fight" }>, m: Monster, tile: Place, ctx: StepCtx): Promise<boolean> {
+  const p = it.party!;
+  if (it.ended || (it.times > 0 && it.done >= it.times)) return true;
+  const mates = p.members.filter((n) => n !== name);
+  const end = (why: string, block: boolean): true => {
+    for (const n of p.members) {
+      const x = n === name ? it : partyItemOf(n, p.key);
+      if (x && !x.ended) patchItem(n, x.id, { ended: why });
+      const c = characters.value[n];
+      if (block && c) blockFight(n, c, m.code, why);
+    }
+    log(name, `the party vs ${m.name} ends: ${why}`, block ? "bad" : "info");
+    return true;
+  };
+  const gone = mates.find((n) => !partyItemOf(n, p.key));
+  if (gone) return end(`${gone} is not in the party any more`, true);
+  if (await recoverFirst(name, ch, ctx)) return false;
+  if (it.gear) {
+    const desired = plannedSet(name, ch, it, it.take);
+    const round = desired && Object.fromEntries(Object.entries(desired).filter(([g]) => !g.startsWith("utility")));
+    if (round && (await gearSwapStep(name, ch, round, ctx)) === "acted") return false;
+  }
+  if (ch.hp < ch.max_hp) { await healOnce(name, ch, foodInHand(ch), ctx.note); return false; }
+  if (invCount(ch) >= ch.inventory_max_items) return end(`${name}'s bag is full`, false);
+  if (!isAt(ch, tile)) { ctx.note(`→ ${m.name} (the party)`); await moveTo(name, tile); return false; }
+  const ready = (n: string): boolean => { const c = characters.value[n]; return !!c && isAt(c, tile) && c.hp >= c.max_hp && cooldownLeft(c, Date.now()) <= 0; };
+  const waitFor = p.leader !== name ? p.leader : mates.find((n) => !ready(n));
+  if (waitFor) {
+    ctx.note(`the party: waiting for ${waitFor}${p.leader === name ? "" : ` to fight ${m.name}`}`);
+    for (let i = 0; i < 5 && !stopFlags.has(name); i++) await sleep(1000);
+    return false;
+  }
+  // the leader: the party's forecast on the sets as worn, at the floor
+  const gate = partyRate(p.members.map((n) => { const c = characters.value[n]!; return { fighter: currentFighter(c), threat: (c as { threat?: number }).threat ?? 0 }; }), m).p;
+  if (gate < minWinNow()) {
+    // a member whose planned potions or food are gone ran dry: the step ends, no block (a solo item's rule, ranDry)
+    const dry = p.members.find((n) => { const x = n === name ? it : partyItemOf(n, p.key), c = characters.value[n]; return !!x?.take && !!c && ranDry(c, x.take); });
+    return end(`forecast ${Math.round(gate * 100)}% at the gate, below the floor ${Math.round(minWinNow() * 100)}%${dry ? ` — ${dry} ran dry` : ""}`, !dry);
+  }
+  ctx.note(`the party fights ${m.name} (${it.done + 1}/${it.times})`);
+  const r = await actions.fight(name, mates);
+  const won = r.fight?.result === "win";
+  journal("party", {
+    boss: m.code, key: p.key, p: r3(p.p), turns: Math.round(p.turns), gate: r3(gate), took: r.fight?.turns, result: r.fight?.result,
+    members: (r.fight?.characters ?? []).map((c) => { const a = characters.value[c.character_name]; return { name: c.character_name, xp: c.xp, gold: c.gold, drops: c.drops, hp: c.final_hp, cd: a?.cooldown, at: a ? { x: a.x, y: a.y, layer: (a as { layer?: string }).layer ?? "overworld" } : undefined }; }),
+  });
+  if (!won) return end(`lost a fight vs ${m.name}`, true);
+  for (const n of p.members) { const x = n === name ? it : partyItemOf(n, p.key); if (x) patchItem(n, x.id, { done: x.done + 1 }); }
+  const away = p.members.find((n) => { const c = characters.value[n]; return !c || !isAt(c, tile); });
+  if (away) return end(`${away} is not on the tile after the fight`, true);
+  await step(name, () => Promise.resolve()); // wait out the fight's cooldown
+  return false;
+}
+
 /** Task 025: the gate refused — the monster is blocked for this character (exec.ts blockFight) and the item ends. */
 function refusedFight(name: string, ch: Character, m: Monster): true {
   const why = gateWhy(ch, m);

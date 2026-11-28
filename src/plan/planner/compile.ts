@@ -47,6 +47,13 @@ export function itemsOf(step: Step, ch: Character): QueueItem[] {
   const visit = (at: "start" | "end"): QueueItemInput[] => (step.visit?.at === at ? [{ kind: "task-visit", done: 0, ...(step.visit.cancel ? { cancel: step.visit.cancel } : {}) }] : []);
   switch (w.kind) {
     case "kill": case "gather":
+      // task 039c: a party's step — the reset into its set with its food and key, the party's fight item (the leader fights
+      // with `participants`; every member's item carries the party), and the members bank at its end
+      if (step.party && w.kind === "kill") {
+        const p = step.party;
+        out = [reset(w), { ...fieldItem(w, step.units, step.withdraw, wear), party: { key: p.key, leader: p.leader, members: p.members.map((m) => m.name), p: p.p, turns: p.turns } } as QueueItemInput, { kind: "deposit-all" }];
+        break;
+      }
       // task 017: a fight item's take is the step's withdraw (its consumables and its toll); a gather item's, its toll
       out = [...visit("start"), reset(w), fieldItem(w, supply ? step.units : Math.max(1, Math.ceil(step.units * perOf(w) - 1e-9)), step.withdraw, wear, tollTake(step)), ...visit("end"), ...(supply ? [{ kind: "deposit-all" } as const] : [])];
       break;

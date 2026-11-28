@@ -426,10 +426,9 @@ keeps deciding how; the stage narrows what is asked:
 
 ## A party (task 039)
 
-**A boss fought by two or three of ours: the solver, the verdict and (task 039b) the party's pieces as needs; no party step
-yet** — the step (food shares, the tile and its key, the leader's `fight` with `participants`, every member's echo, a loss ends
-it for all, the boss kept while it is every member's pick, a `party` journal record) is left for task 039c, so a boss still
-sits behind its `group` gate (`targets.ts`) and `actions.fight(name, participants)` has no caller.
+**A boss fought by two or three of ours: the solver, the verdict, (task 039b) the party's pieces as needs and (task 039c) the
+party's step** — a boss's kill objective keeps its `group` gate (`targets.ts`); the party's step is decided apart from it
+(`party.ts partyChoice`), and `actions.fight(name, participants)` is the leader's.
 - **The rules as read** (docs.artifactsmmo.com `concepts/stats_and_fights`; the two King Slime fights of 11-11 in
   `logs/dev.log`, lines 411177 and 411382, the second with its turn log): up to three of one account on the boss's tile,
   bosses only (`486` otherwise — the code `runLoop` also holds as "an action in progress"); every actor's action is one turn
@@ -476,9 +475,45 @@ sits behind its `group` gate (`targets.ts`) and `actions.fight(name, participant
   `stage.json` as committed no party passes (the trio 0% with Second at 29, 59% at 30: stage 1 lacks the gold and conjurer
   pieces stage 2 lists) and nothing is asked; with stage 2's four added to stage 1 and Second at 30, the trio 100% and 18
   pieces asked, gold shields at 0.02 h to emerald rings at 10.4 h (report 039b).
+- **The party's step (task 039c)**: `party.ts partyChoice(world, name)` — for a boss a listed achievement asks, the smallest
+  party of the fighters that are on, meet its other gates, reach its tile (its transition's key: one a character each entry)
+  and are not blocked for it (`kill:<boss>@<name>`), admitted **in what they hold** (`smallestParty(…, false)`: no piece to
+  make), every member getting XP at the party's average level (035's guard), `name` among them: **the first kill** while the
+  kill objective is open, as soon as the party passes (rule `party`, right after ⭐ first: `decide.ts`); after it, **only while
+  the boss is every member's XP pick** — its rate there (the fight XP at the average level with its set's wisdom over the
+  party's cycle: the fight and the slowest member's healing as 038 counts it, over p; × 1.25 while a listed achievement still
+  asks the boss) at least its own pick's (`pickMonster`, its bonus) — a chunk (CHUNK_SEC over the cycle), in the XP pick's
+  place; else each fights alone. Each member's share (`Step.party.members`): its set's slots (`wear`), the potions its set
+  drinks over the kills (MARGIN kept, a stack at most, of the stock its users share — they cap the chunk; `PartyRate.used`), the
+  pool's best food its losses take (half its bag at most) and its tile's toll. The step (`Step.party`: key, boss, leader —
+  the plan's first member —, the average level, p, turns, the members) compiles to [reset into the set with the take, the
+  `fight` item with `party` (key, leader, members, p, turns), deposit-all] (`compile.ts`); no tasks-master visit, no solo
+  verdict. **The runtime** (`state/planner.ts`): the deciding member's step is written as any step (`begin`); every other
+  member is pulled (`joinParty`: its running step's items dropped, an `end` record `dropped`, its share under the same key; a
+  member already in this party is left as it is; `start` of a member pulled meanwhile decides nothing); a member with a party's
+  fight item is given no interrupt but `group` (`interrupt`, `offeringsDue`, the claim's, the bank's and the rune's picks;
+  `eventorders.ts busyOf`: "group"). **The runner** (`state/queue.ts runParty`): recover, the planned set, heal to full (the
+  food in hand, else rest), walk to the boss (the reset's key opens its transition), then a member waits and the leader — once
+  every member stands on the tile, healed and off cooldown — gates the party's rolled verdict on the sets as worn
+  (`partyRate` of `currentFighter` and the API's `threat`) and fights with `participants`; a win counts on every member's item,
+  each fight is a `party` journal record (`docs/journal.md`: the forecast, the turns it took, each member's xp, gold, drops,
+  final HP, cooldown and where it stands after — what settles 039's unread rules). A lost fight, a member gone (its item off
+  its queue: off, no key, paused), a member not on the tile after a fight or the gate below the floor end the party for all
+  (each item `ended`) and block the boss for each member as a single fight's; a member that ran dry ends it without the block,
+  a full bag without either. **The forward model**: a party step pulls its members at once (each one's running step applied
+  pro rata, `forward.ts partOf`, its share to the same end); its kills, drops and gold count once, on the leader's step (one
+  roll a win, a shortcut), every member's XP at the party's average level. **The fake** (`scripts/harness/fake.mts`): a fight
+  with `participants` — a boss only (486), every member on the tile and off cooldown, the outcome forced or `simulateParty`,
+  each member's drops, a loss sends all to (0, 0), every member in the fight's cooldown and echoed.
+- **What the lich asks (report 039c)**: the trio wins it only with Greater Health Potions — its tank drinks 13–15 a win at
+  every level from 30 to 42 in the stage's pieces, and without any potion the trio wins 0%; the bank held 50 on 11-28 and
+  `POTIONS` is off, so the fighters' solo steps drink them and nothing brews more.
 - **Checks**: `check-party` (the solo equivalence, a turn an actor, whom the boss strikes, a pair where one loses, the
   solver's party on the World of 09:46 on 11-28 and Second's lowest level); `check-third` (task 039b, the World of 14:04 on
-  11-28, `scripts/fixtures/world-2026-11-28-1404.json`: Second a fighter, its batch from the bank, the party's needs).
+  11-28, `scripts/fixtures/world-2026-11-28-1404.json`: Second a fighter, its batch from the bank, the party's needs);
+  `check-party-step` (task 039c: the first kill, every member's share and key, the boss as every member's pick, none at 45 or
+  blocked, the forward model's pull); scenarios `party-step` (participants, a key a member an entry, the echoes, no other
+  interrupt, a `party` record a fight) and `party-loss` (a loss ends the step for all).
 
 ## The fight solve (task 021)
 

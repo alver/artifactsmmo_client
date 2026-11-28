@@ -87,7 +87,7 @@ function busyOf(names: string[]): Record<string, string> {
   for (const n of names) {
     const items = queues.value[n]?.items ?? [];
     const trip = items.find((it) => it.id.startsWith(EVENT_PREFIX))?.id;
-    if (items.some((it) => it.id.startsWith("pl:int:group:"))) out[n] = "group";
+    if (items.some((it) => it.id.startsWith("pl:int:group:") || (it.kind === "fight" && !!it.party))) out[n] = "group"; // task 039c: a party
     else if (trip) out[n] = trip.slice(EVENT_PREFIX.length, trip.lastIndexOf(":"));
     else if (late && items.some((it) => it.id.startsWith("pl:int:offering:"))) out[n] = "offering";
   }

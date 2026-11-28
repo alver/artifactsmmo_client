@@ -232,6 +232,18 @@ overworld with 1 HP (as play shows: every loss since 11-19), recover, walk back,
 {"t":"2026-01-15T12:00:20.050Z","run":"x2a1","k":"loss","who":"Ann","monster":"chicken","set":["copper_dagger"],"p":1,"hp":165,"max":165,"turns":6,"item":"pl:ach:made_up_chickens:0@Ann#1:1","fights":1,"losses":1}
 ```
 
+### `party`: a boss fought by the party (task 039c; `src/state/queue.ts runParty`)
+One a fight, written by the leader when its `fight` with `participants` answers — so the planning chat reads 039's unread rules
+from play: whether each member rolls the drops, what a member that falls in a won fight gets, the forecast against the turns.
+- `boss`, `key` (the party's: every member's fight item carries it), `p` and `turns` (the plan's forecast: `party.ts partyPlan`),
+  `gate` (the leader's gate before the fight: the party's rolled win rate on the sets as worn), `took` (the echo's turns),
+  `result`; `members`, each its `name`, `xp`, `gold`, `drops`, `hp` (the echo's `final_hp`), `cd` (its cooldown, seconds, from
+  its echoed character) and `at` (where it stands after: x, y, layer). A loss is also each member's item ending (no `loss`
+  record: the party ends at once, its boss blocked for each member).
+```json
+{"t":"2026-01-15T12:01:08.500Z","run":"wimv","k":"party","boss":"lich","key":"party:lich@Ann#1","p":0.99,"turns":67,"gate":1,"took":67,"result":"win","members":[{"name":"Ann","xp":0,"gold":0,"drops":[{"code":"life_crystal_shard","quantity":1}],"hp":3700,"cd":134,"at":{"x":9,"y":8,"layer":"underground"}}]}
+```
+
 ### `rune`: the planner buys a healing rune (task 025; `src/state/planner.ts runeCheck`)
 - `who`, `price`, `why` (`consumables.ts runePays`: the fight work it pays for — "Pig: 82 → 71 s a win with it (−13%)", or
   "crosses the floor with it", or "no XP monster is admitted without it; with it …"), `held` (the fleet's runes before it).

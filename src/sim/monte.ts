@@ -116,9 +116,9 @@ export function winRate(player: Fighter, monster: Monster, key = fightKey(player
 // ── task 039: a party's verdict ──
 
 /** A party's rolled verdict: p the share of wins over WIN_N fights, and over the wins (all fights when none is won) the mean
- *  turns — each member's cooldown is turns × 2 s —, each member's mean HP lost and the share of wins in which it fell; over
- *  all fights the share of the boss's HP left (what ranks parties that never win). */
-export interface PartyRate { p: number; turns: number; lost: number[]; fell: number[]; left: number }
+ *  turns — each member's cooldown is turns × 2 s —, each member's mean HP lost, the share of wins in which it fell and (task
+ *  039c) the potions it drinks; over all fights the share of the boss's HP left (what ranks parties that never win). */
+export interface PartyRate { p: number; turns: number; lost: number[]; fell: number[]; left: number; used: Record<string, number>[] }
 const partyRates = new Map<string, PartyRate>();
 /** Task 039: the party's verdict as a solo fight's (winRate): rolled WIN_N times, seeded by what the fight is — the boss and
  *  each member's fight key and threat, in the party's order — so one party gives one answer in every process. */
@@ -129,6 +129,8 @@ export function partyRate(members: PartyMember[], monster: Monster, n = WIN_N): 
   const rng = seeded(hash(key));
   let wins = 0, turns = 0, allTurns = 0, left = 0;
   const lost = members.map(() => 0), lostAll = members.map(() => 0), fell = members.map(() => 0);
+  const used = members.map((): Record<string, number> => ({})); // task 039c: the potions a won fight drinks, a member's
+
   for (let k = 0; k < n; k++) {
     const f = simulateParty(members, monster, { rng });
     allTurns += f.turns;
@@ -137,10 +139,14 @@ export function partyRate(members: PartyMember[], monster: Monster, n = WIN_N): 
     if (!f.win) continue;
     wins++;
     turns += f.turns;
-    for (let i = 0; i < members.length; i++) { lost[i] += f.maxHp[i] - f.hp[i]; if (f.hp[i] <= 0) fell[i]++; }
+    for (let i = 0; i < members.length; i++) {
+      lost[i] += f.maxHp[i] - f.hp[i];
+      if (f.hp[i] <= 0) fell[i]++;
+      for (const [c, q] of Object.entries(f.used[i])) used[i][c] = (used[i][c] ?? 0) + q;
+    }
   }
   const w = wins || n;
-  const r: PartyRate = { p: wins / n, turns: (wins ? turns : allTurns) / w, lost: (wins ? lost : lostAll).map((x) => x / w), fell: fell.map((x) => (wins ? x / wins : 0)), left: left / n };
+  const r: PartyRate = { p: wins / n, turns: (wins ? turns : allTurns) / w, lost: (wins ? lost : lostAll).map((x) => x / w), fell: fell.map((x) => (wins ? x / wins : 0)), left: left / n, used: used.map((u) => Object.fromEntries(Object.entries(u).map(([c, q]) => [c, q / w]))) };
   if (partyRates.size >= RATES_CAP) partyRates.clear();
   partyRates.set(key, r);
   return r;

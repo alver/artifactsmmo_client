@@ -51,6 +51,7 @@ import type { Take } from "./consumables";
 import { candidatesOf, gearNeeds, gearPieces, pieceParent } from "./gear";
 import { atlas } from "../../catalog/atlas";
 import { monsterName, pickMonster, pickNode, pickRecipe, pickSource } from "./pick";
+import { partyChoice } from "./party";
 import { admitted, fightRec, nearestSpot, placeOf, withToll, verdictOf } from "./reach";
 import { crafterOf, fights, roleOf, rolesFor } from "./roles";
 import { cancelOf, coinsInFlight, monstersTask, startVisit, taskText, visitSec } from "./tasks";
@@ -92,7 +93,7 @@ const fmt = (h: number): string => (!Number.isFinite(h) ? "∞" : h < 10 ? h.toF
 
 /** Task 028 (A.1): each role's order of rules, as the page lists it (rank() below is the order itself). */
 export const ORDER: Record<"fighter" | "worker" | "none", [Rule, string][]> = {
-  fighter: [["first", "an achievement on ⭐ first"], ["market", "a need bought on the Grand Exchange, with no worker on"], ["forging", "forging by need"], ["need-kill", "a kill a need of the road asks"], ["train-kill", "a kill a craft's training asks"], ["train", "its gear craft: a batch from the bank"], ["xp-pick", "the XP pick"], ["free", "no fight admitted, or the level cap: today's rule"]],
+  fighter: [["first", "an achievement on ⭐ first"], ["party", "a boss fought by the party"], ["market", "a need bought on the Grand Exchange, with no worker on"], ["forging", "forging by need"], ["need-kill", "a kill a need of the road asks"], ["train-kill", "a kill a craft's training asks"], ["train", "its gear craft: a batch from the bank"], ["xp-pick", "the XP pick"], ["free", "no fight admitted, or the level cap: today's rule"]],
   // task 030: GEAR_FIRST on — tier (1) in two halves, weapons and armour first
   // task 031 (KITCHEN): the stock's cook step before the rest of (1a); the road's food in (1a); the kitchen's levels in (3)
   // task 038 (docs/season-plan.md 5: the workers are for the fighters' food first): the stock's cook step and the fighters' food
@@ -776,6 +777,21 @@ export function rank(name: string, world: World, free = false): Ranking {
     const first = pick(firsts.filter(pays));
     // task 032: a fighter buys only while no worker is on
     const buy = world.characters.some((c) => isOn(c.name, world) && roleOf(c.name, world) === "worker") ? undefined : buyStep();
+    // task 039c (A.1, B): the party's step — its first kill as soon as the party passes (after ⭐ first), and after it the boss
+    // in the XP pick's place while it is every member's pick (party.ts partyChoice); this step is this member's share
+    const pc = partyChoice(world, name);
+    const ps = ((): Step | undefined => {
+      if (!pc) return undefined;
+      const me = pc.members.find((m) => m.name === name)!, others = pc.members.filter((m) => m !== me).map((m) => m.name);
+      const hours = (pc.kills * pc.cycle) / 3600;
+      const t: Target = targets.find((x) => x.key === pc.target) ?? { key: pc.target, points: 0, work: { kind: "kill", monster: pc.boss }, left: pc.kills, gates: [], filler: false };
+      const rates = pc.members.map((m) => `${m.name} ${Math.round(m.rate * 3600)} (its pick ${Math.round(m.own * 3600)})`).join(", ");
+      const verdict = `wins ${Math.round(pc.plan.p * 100)}% of fights, ${Math.round(pc.plan.turns)} turns, ${Math.round(pc.cycle)} s a win`;
+      const s = stepOf(t, { work: { kind: "kill", monster: pc.boss }, units: pc.kills, hours, place: me.place, withdraw: me.withdraw, toll: me.toll }, "objective", t.points > 0 ? pts(t.achievement ?? "", t.points) / Math.max(hours, 1e-6) : 0,
+        `${pc.first ? "the party's first kill" : "the party, the boss every member's pick"}: ${monsterName(pc.boss)} with ${others.join(" and ")} (${pc.members[0].name} leads; ${verdict}), ${pc.kills} now (${fmt(hours)} h); XP an hour at the party's level ${pc.avg}: ${rates}`,
+        { wear: me.wear }, parts(`${monsterName(pc.boss)} ×${pc.kills}`, pc.members.map((m) => m.name).join(", "), [pc.first ? "the first kill a listed achievement asks" : "the boss is every member's XP pick", verdict, `XP an hour: ${rates}`]));
+      return { ...s, party: { key: s.key, boss: pc.boss, leader: pc.members[0].name, avg: pc.avg, p: pc.plan.p, turns: pc.plan.turns, members: pc.members.map((m) => ({ name: m.name, wear: m.wear, withdraw: m.withdraw, ...(m.toll ? { toll: m.toll } : {}) })) } };
+    })();
     const forge = pick(all.filter((c) => c.step.work.kind !== "kill" && c.target.key !== "src:tasks_coin")); // 027d: a coins visit is fight work
     // task 027g (A): a road need's kill whose monster is the pick comes along with it (the pick's step); another goes to a
     // worker that is on and admitted, to this fighter (before its pick) only when none is; 027d's coins stay a fighter's
@@ -788,20 +804,22 @@ export function rank(name: string, world: World, free = false): Ranking {
     const c = first ?? forge ?? kill;
     // task 039b (A.2): its gear craft's training, a batch the bank covers — after forging and a need's kill, before the pick
     const batch = c || buy ? undefined : pick(trainCands().filter((t) => t.covered && t.step.work.kind === "train"));
-    if (!c && !x && !buy && !batch) {
+    const party = !!ps && !first && !buy && (pc!.first || (!c && !batch)); // task 039c: the first kill, else in the pick's place
+    if (!c && !x && !buy && !batch && !party) {
       const r = rank(name, world, true);
       return { ...r, step: { ...r.step, why: `fighter, ${capped ? "at the level cap" : "no fight admitted"}: ${r.step.why}`, ...(r.step.reason ? { reason: { ...r.step.reason, role: "fighter", rule: "free" } } : {}) } };
     }
-    step = c && c === first ? { ...c.step, why: `fighter, first: ${c.step.as}: ${c.step.why}` } : buy ? { ...buy, why: `fighter, the market: ${buy.as}: ${buy.why}` }
+    step = party ? { ...ps!, why: `fighter, ${ps!.why}` }
+      : c && c === first ? { ...c.step, why: `fighter, first: ${c.step.as}: ${c.step.why}` } : buy ? { ...buy, why: `fighter, the market: ${buy.as}: ${buy.why}` }
       : c ? { ...c.step, why: `fighter, ${c === forge ? "forging" : trainKill ? "a training's kill" : "a need's kill"}: ${c.step.as}: ${c.step.why}` }
       : batch ? { ...batch.step, work: { ...batch.step.work, bank: true } as Work, why: `fighter, a batch from the bank: ${batch.step.as}: ${batch.step.why}` } : { ...x!, why: `fighter: ${x!.why}` };
-    rule = c && c === first ? "first" : buy ? "market" : c ? (c === forge ? "forging" : trainKill ? "train-kill" : "need-kill") : batch ? "train" : "xp-pick";
+    rule = party ? "party" : c && c === first ? "first" : buy ? "market" : c ? (c === forge ? "forging" : trainKill ? "train-kill" : "need-kill") : batch ? "train" : "xp-pick";
   } else { step = today(); rule = todayRule(); }
   const because: string[] = [], limits: string[] = []; // task 028: the clauses added below, beside the why's
   // Task 027d: a fighter's kill step starts at the monsters master when it holds no task, a finished one or an items task
   // (turn in, take a monsters task; an items task cancelled for a coin) — its walk in the step's hours; the filler's task,
   // worked on purpose, is cancelled there when rule 4 says so (tasks.ts cancelOf). A held task nobody works stays.
-  if (holder && step.work.kind === "kill" && !step.visit) {
+  if (holder && step.work.kind === "kill" && !step.visit && !step.party) { // task 039c: a party member walks to the boss, not to the master
     const v = startVisit(ch, world), sec = v ? visitSec(ch, world, v.cancel) : Infinity;
     const said = `task: ${v?.cancel ? `cancels ${taskText(ch)} for a coin, then takes` : ch.task ? `turns in ${taskText(ch)}, then takes` : "takes"} a monsters task at the master first`;
     if (v && Number.isFinite(sec)) { step = { ...step, hours: step.hours + sec / 3600, visit: { at: "start", ...v }, why: `${step.why}; ${said}` }; limits.push(said); }
@@ -838,7 +856,8 @@ export function rank(name: string, world: World, free = false): Ranking {
     : Object.keys(step.withdraw ?? {}).filter((c) => item(c)?.type === "utility");
   // task 038 (B): its seconds with the food it is sent with — the take's food for its kills, rest past them
   const kills = step.work.kind !== "kill" ? 0 : step.as === "supply" ? step.units : step.units * perOf(step.work);
-  const fight = step.work.kind === "kill" ? verdictOf(ch, world, step.work.monster, [...Object.values(wear ?? {}), ...pinned, ...pots], noTake ? undefined : { withdraw: step.withdraw, kills }) : undefined;
+  // task 039c: a party's step carries the party's verdict in its why — no solo verdict on a boss nobody wins alone
+  const fight = step.work.kind === "kill" && !step.party ? verdictOf(ch, world, step.work.monster, [...Object.values(wear ?? {}), ...pinned, ...pots], noTake ? undefined : { withdraw: step.withdraw, kills }) : undefined;
   const why = fight ? `${step.why}; wins ${Math.round(fight.p * 100)}% of fights, ${Math.round(fight.sec)} s a win` : step.why;
   if (fight) because.push(`wins ${Math.round(fight.p * 100)}% of fights, ${Math.round(fight.sec)} s a win`);
   // task 028 (A.1): the reason in parts — the rule that took it, and the three candidates ranked next by today's scoring
